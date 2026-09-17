@@ -1,0 +1,61 @@
+{
+  "name": "@cplieger/deadset-ts",
+  "version": "0.1.0",
+  "type": "module",
+  "sideEffects": false,
+  "description": "Deterministic dead-code analysis for TypeScript, class and type members included",
+  "license": "GPL-3.0-or-later",
+  "bin": {
+    "deadset-ts": "./bin/deadset-ts.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "typecheck:tests": "tsc -p tsconfig.test.json",
+    "test": "vitest --run",
+    "lint": "eslint .",
+    "lint:prettier": "prettier --check .",
+    "lint:fix": "eslint . --fix && prettier --write ."
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.13.4",
+    "@typescript/native": "npm:typescript@7.0.2",
+    "eslint": "10.10.0",
+    "prettier": "3.9.6",
+    "typescript": "npm:@typescript/typescript6@6.0.2",
+    "typescript-eslint": "8.70.0",
+    "vitest": "5.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cplieger/deadset-ts.git"
+  },
+  "homepage": "https://github.com/cplieger/deadset-ts",
+  "bugs": {
+    "url": "https://github.com/cplieger/deadset-ts/issues"
+  },
+  "author": "cplieger <917744+cplieger@users.noreply.github.com>",
+  "keywords": [
+    "dead-code",
+    "static-analysis",
+    "typescript",
+    "unused-exports",
+    "unused-members",
+    "cli"
+  ],
+  "files": [
+    "bin/",
+    "src/",
+    "!src/**/*.test.ts",
+    "jsr.json"
+  ]
+}

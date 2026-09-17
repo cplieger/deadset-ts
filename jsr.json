@@ -1,0 +1,12 @@
+{
+  "name": "@cplieger/deadset-ts",
+  "version": "0.1.0",
+  "license": "GPL-3.0-or-later",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publish": {
+    "include": ["LICENSE", "README.md", "bin/**", "src/**", "jsr.json"],
+    "exclude": ["src/**/*.test.ts"]
+  }
+}
