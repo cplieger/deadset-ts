@@ -2,8 +2,6 @@
 
 [![npm](https://img.shields.io/npm/v/@cplieger/deadset-ts)](https://www.npmjs.com/package/@cplieger/deadset-ts)
 [![JSR](https://jsr.io/badges/@cplieger/deadset-ts)](https://jsr.io/@cplieger/deadset-ts)
-[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/PROJECT_ID/badge)](https://www.bestpractices.dev/projects/PROJECT_ID)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/cplieger/deadset-ts/badge)](https://scorecard.dev/viewer/?uri=github.com/cplieger/deadset-ts)
 
 > Deterministic dead-code analysis for TypeScript, class and type members included.
 
