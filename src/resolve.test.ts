@@ -67,26 +67,26 @@ describe("a severity key", () => {
     {
       name: "a code whose severity the Contract fixes",
       text: '{"target":{"kind":"library"},"severity":{"DS1703":"warn"}}',
-      key: "severity.DS1703",
+      setting: "severity.DS1703",
       names: "DS1703",
     },
     {
       name: "a family prefix whose range holds a fixed code",
       text: '{"target":{"kind":"library"},"severity":{"DS17":"allow"}}',
-      key: "severity.DS17",
+      setting: "severity.DS17",
       names: "DS1703 and DS1704",
     },
     {
       name: "a key that is neither a code nor a family prefix",
       text: '{"target":{"kind":"library"},"severity":{"DS1":"warn"}}',
-      key: "severity.DS1",
+      setting: "severity.DS1",
       names: "one issue-kind code or one two-digit family prefix",
     },
-  ])("is refused when it names $name", ({ text, key, names }) => {
+  ])("is refused when it names $name", ({ text, setting, names }) => {
     const got = refuse(repository(text));
 
     expect(got.kind).toBe("unimplemented-key");
-    expect(got.key).toBe(key);
+    expect(got.key).toBe(setting);
     expect(got.message).toContain(names);
   });
 
@@ -119,49 +119,49 @@ describe("a value the closed key list constrains", () => {
     {
       name: "a value outside a closed set",
       text: '{"target":{"kind":"module"}}',
-      key: "target.kind",
+      setting: "target.kind",
       detail: '"module" is not one of "application", "library"',
     },
     {
       name: "a value of the wrong type",
       text: '{"target":{"kind":"library"},"consumers":{"complete":"yes"}}',
-      key: "consumers.complete",
+      setting: "consumers.complete",
       detail: "is not a boolean",
     },
     {
       name: "a count below its minimum",
       text: '{"target":{"kind":"library"},"reporters":{"max_findings":-1}}',
-      key: "reporters.max_findings",
+      setting: "reporters.max_findings",
       detail: "-1 is below the minimum of 0",
     },
     {
       name: "an array below its minimum length",
       text: '{"target":{"kind":"library"},"reporters":{"formats":[]}}',
-      key: "reporters.formats",
+      setting: "reporters.formats",
       detail: "holds 0 entries, want at least 1",
     },
     {
       name: "an array naming one entry twice",
       text: '{"target":{"kind":"library"},"roots":{"patterns":["a","a"]}}',
-      key: "roots.patterns",
+      setting: "roots.patterns",
       detail: 'names "a" twice',
     },
     {
       name: "an array holding an empty entry",
       text: '{"target":{"kind":"library"},"analysis":{"template_dirs":[""]}}',
-      key: "analysis.template_dirs",
+      setting: "analysis.template_dirs",
       detail: "holds an empty entry",
     },
     {
       name: "a contract version that is not a semantic version",
       text: '{"target":{"kind":"library"},"contract_version":"1.5"}',
-      key: "contract_version",
+      setting: "contract_version",
       detail: '"1.5" is not a semantic version',
     },
     {
       name: "an exemption class that is not a class name",
       text: '{"target":{"kind":"library"},"exemptions":{"disabled":["Template Field"]}}',
-      key: "exemptions.disabled",
+      setting: "exemptions.disabled",
       detail: '"Template Field" is not an exemption class name',
     },
     {
@@ -169,15 +169,15 @@ describe("a value the closed key list constrains", () => {
       text:
         '{"target":{"kind":"library"},"analysis":{"configurations":' +
         '[{"id":"a","os":"linux","arch":""}]}}',
-      key: "analysis.configurations[0].arch",
+      setting: "analysis.configurations[0].arch",
       detail: "is required and names nothing",
     },
-  ])("is refused when it is $name", ({ text, key, detail }) => {
+  ])("is refused when it is $name", ({ text, setting, detail }) => {
     const got = refuse(repository(text));
 
     expect(got.kind).toBe("malformed");
-    expect(got.key).toBe(key);
-    expect(got.message).toBe(`deadset.json: ${key}: ${detail}`);
+    expect(got.key).toBe(setting);
+    expect(got.message).toBe(`deadset.json: ${setting}: ${detail}`);
   });
 
   it("is refused when the document is not JSON, naming the document", () => {
