@@ -53,6 +53,8 @@
     "cli"
   ],
   "files": [
+    "LICENSE",
+    "NOTICE",
     "bin/",
     "src/",
     "!src/**/*.test.ts",
