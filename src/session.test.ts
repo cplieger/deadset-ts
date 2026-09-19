@@ -170,18 +170,21 @@ declare const _beta: unique symbol;
 /**
  * Two views at two distinct brands stand for two projects of one run: a visitor
  * call introduces its own brand, so this is the shape the session hands out.
- *
+ * They are declared, never constructed: the function below is never called.
+ */
+declare const firstProject: ProjectView<typeof _alpha>;
+declare const secondProject: ProjectView<typeof _beta>;
+declare const aNode: Parameters<ProjectView<typeof _alpha>["handle"]>[0];
+
+/**
  * The compiler is the assertion here and the type check is where it is made:
  * removing the brand from `Handle` or from `symbolsAt` makes the crossing legal,
- * which turns the expect-error line into an error of its own. Nothing calls this,
- * so no view is constructed.
+ * which turns the expect-error line into an error of its own.
  */
 function crossProjectHandle(): unknown {
-  const first = undefined as unknown as ProjectView<typeof _alpha>;
-  const second = undefined as unknown as ProjectView<typeof _beta>;
-  const fromFirst: Handle<typeof _alpha> = first.handle(undefined as never);
+  const fromFirst: Handle<typeof _alpha> = firstProject.handle(aNode);
   // @ts-expect-error a handle of one project is not a handle of another
-  return second.symbolsAt([fromFirst]);
+  return secondProject.symbolsAt([fromFirst]);
 }
 
 describe("a handle never reaches another project's checker", () => {
