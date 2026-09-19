@@ -1,0 +1,7 @@
+node_modules/
+coverage/
+
+# The committed copy of the Contract release corpus.lock.json names. Every file
+# is byte-identical to that release, which is what makes a diff against a clone
+# of the tag the verification, so nothing here is reformatted.
+fixtures/
