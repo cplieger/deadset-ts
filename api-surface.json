@@ -1,0 +1,40 @@
+{
+  "description": "Every export path of the compiler package this analyzer consumes, and every name it imports from each, so that a rename of an unstable path is an enumerated migration rather than a search. package is the name the manifest declares the compiler under and the name every import specifier is written against; specifier is the exact dependency value the manifest carries; version is the compiler version that specifier resolves to. consumed lists one entry per import specifier with the names imported from it, ascending. not_consumed lists the paths the package offers that this analyzer imports from nowhere, which is part of the record: this analyzer reads, so it needs no factory and no visitor that rewrites. A test compares both halves against the import statements of every source file, so an import of an unrecorded path and a recorded name nothing imports each fail rather than drift.",
+  "package": "@typescript/native",
+  "specifier": "npm:typescript@7.0.2",
+  "version": "7.0.2",
+  "consumed": [
+    {
+      "path": "@typescript/native/unstable/ast",
+      "names": ["Identifier", "Node", "SourceFile", "SyntaxKind"]
+    },
+    {
+      "path": "@typescript/native/unstable/sync",
+      "names": [
+        "API",
+        "Checker",
+        "Diagnostic",
+        "DiagnosticCategory",
+        "DocumentIdentifier",
+        "Program",
+        "Project",
+        "Snapshot",
+        "Symbol",
+        "TimingInfo"
+      ]
+    }
+  ],
+  "not_consumed": [
+    "@typescript/native",
+    "@typescript/native/package.json",
+    "@typescript/native/unstable/ast/clone",
+    "@typescript/native/unstable/ast/factory",
+    "@typescript/native/unstable/ast/is",
+    "@typescript/native/unstable/ast/scanner",
+    "@typescript/native/unstable/ast/utils",
+    "@typescript/native/unstable/ast/visitor",
+    "@typescript/native/unstable/async",
+    "@typescript/native/unstable/fs",
+    "@typescript/native/unstable/proto"
+  ]
+}

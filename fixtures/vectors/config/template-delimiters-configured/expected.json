@@ -1,0 +1,53 @@
+{
+  "contract_version": "1.5.0",
+  "target": { "kind": "library" },
+  "analysis": {
+    "languages": [],
+    "min_confidence": "possible",
+    "generated_files": "exclude",
+    "consumer_tests": "test",
+    "configurations": [],
+    "matrix": { "complete": false },
+    "template_dirs": ["templates"],
+    "template_delimiters": { "left": "[[", "right": "]]" }
+  },
+  "consumers": { "complete": false },
+  "roots": { "patterns": [] },
+  "severity": {},
+  "exemptions": { "disabled": [] },
+  "reporters": {
+    "formats": ["text"],
+    "sort": "position",
+    "cascade": "roots",
+    "max_findings": 0,
+    "fail_on": "deny"
+  },
+  "go": {},
+  "ts": {
+    "test_files": ["**/*.test.{ts,tsx,mts,cts}"],
+    "entry_files": []
+  },
+  "provenance": {
+    "contract_version": "default",
+    "target.kind": "repository: repository.json",
+    "analysis.languages": "default",
+    "analysis.min_confidence": "default",
+    "analysis.generated_files": "default",
+    "analysis.consumer_tests": "default",
+    "analysis.configurations": "default",
+    "analysis.matrix.complete": "default",
+    "analysis.template_dirs": "repository: repository.json",
+    "analysis.template_delimiters": "repository: repository.json",
+    "consumers.complete": "default",
+    "roots.patterns": "default",
+    "severity": "default",
+    "exemptions.disabled": "default",
+    "reporters.formats": "default",
+    "reporters.sort": "default",
+    "reporters.cascade": "default",
+    "reporters.max_findings": "default",
+    "reporters.fail_on": "default",
+    "ts.test_files": "default",
+    "ts.entry_files": "default"
+  }
+}
