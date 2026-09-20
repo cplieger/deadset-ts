@@ -283,6 +283,31 @@ describe("a type alias that writes more than one object type", () => {
   });
 });
 
+describe("a parenthesized type under a type alias", () => {
+  it("declares the members its own constituents declare, the parentheses aside", () => {
+    const analyzed = analyzeProject({
+      "src/unit.ts":
+        "export type Frame = ({ inset: number }) | { outset: number };\n" +
+        "export type Layout = ({ gap: number } | { width: number }) & { edge: number };\n" +
+        "export type Bezel = (({ depth: number }));\n",
+    });
+
+    expect(
+      (analyzed.inventories[0]?.symbols ?? [])
+        .filter((symbol) => symbol.kind === "type-member")
+        .map((symbol) => symbol.name)
+        .sort(),
+    ).toEqual([
+      "Bezel.depth",
+      "Frame.inset",
+      "Frame.outset",
+      "Layout.edge",
+      "Layout.gap",
+      "Layout.width",
+    ]);
+  });
+});
+
 describe("the files the inventory reads", () => {
   it("names no compiler library file and no file of a dependency directory", () => {
     const analyzed = analyzeProject({

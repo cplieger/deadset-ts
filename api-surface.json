@@ -35,6 +35,7 @@
         "isNamespaceExport",
         "isObjectLiteralExpression",
         "isParenthesizedExpression",
+        "isParenthesizedTypeNode",
         "isPostfixUnaryExpression",
         "isPrefixUnaryExpression",
         "isPrivateIdentifier",

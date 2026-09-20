@@ -105,3 +105,10 @@ export const exportedVariable = "value";
 export let exportedMutable = 1;
 
 const unexportedVariable = 0;
+
+
+export type Frame = ({ inset: number }) | { outset: number };
+
+export type Layout = ({ gap: number } | { width: number }) & { edge: number };
+
+export type Bezel = (({ depth: number }));

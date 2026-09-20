@@ -15,6 +15,7 @@ import {
   isModuleBlock,
   isModuleDeclaration,
   isNamespaceExport,
+  isParenthesizedTypeNode,
   isPrivateIdentifier,
   isPropertyDeclaration,
   isPropertySignatureDeclaration,
@@ -327,6 +328,31 @@ function memberKey(component: Component, isStatic: boolean): string {
   return `${component.computed ? "[" : ""}${component.text}${isStatic ? ":static" : ""}`;
 }
 
+/** The type one node is, through however many parentheses are written around it. */
+function unparenthesizedType(type: Node): Node {
+  let held = type;
+  while (isParenthesizedTypeNode(held)) {
+    held = held.type;
+  }
+  return held;
+}
+
+/**
+ * The direct constituents of one type. Parentheses are syntax and are not a
+ * constituent, so a parenthesized type contributes the constituents it holds: the
+ * constituents of `(A | B) & C` are `A`, `B` and `C`. A union or an intersection
+ * written without them stays one constituent.
+ */
+function constituentsOf(type: Node): readonly Node[] {
+  const held = unparenthesizedType(type);
+  if (!isUnionTypeNode(held) && !isIntersectionTypeNode(held)) {
+    return [held];
+  }
+  return held.types.flatMap((member) =>
+    isParenthesizedTypeNode(member) ? constituentsOf(member) : [member],
+  );
+}
+
 /**
  * The members one type alias declares: the members of the object type it writes, and
  * of every object type that is a direct constituent of a union or an intersection it
@@ -338,11 +364,7 @@ function memberKey(component: Component, isStatic: boolean): string {
  * neither of them is the one a reference to it would name.
  */
 function aliasMembers(type: Node): readonly Node[] {
-  const literals = isTypeLiteralNode(type)
-    ? [type]
-    : isUnionTypeNode(type) || isIntersectionTypeNode(type)
-      ? type.types.filter(isTypeLiteralNode)
-      : [];
+  const literals = constituentsOf(type).filter(isTypeLiteralNode);
   if (literals.length < 2) {
     return literals[0]?.members ?? [];
   }
