@@ -20,6 +20,18 @@ const RESOLVED = EVERY_REFERENCE.references[0];
 const SYMBOLS: readonly InventorySymbol[] = INVENTORY?.symbols ?? [];
 const REFERENCES: readonly Reference[] = RESOLVED?.references ?? [];
 
+/**
+ * The fixture holding the three default-export forms, resolved once for the cases below.
+ *
+ * Asking a symbol the binder did not flag an alias to step is a failed assertion in the
+ * compiler, which ends the session and leaves no table, so a pass that asks reds every
+ * case of this file at once rather than one of them.
+ */
+const DEFAULT_EXPORT = analyzeRoot(fixture("projects", "default-export"), {
+  references: { testFiles: [] },
+});
+const DEFAULTS = DEFAULT_EXPORT.references[0];
+
 /** The golden table: one reference per line, so a diff names the rows that moved. */
 function goldenText(references: readonly Reference[]): string {
   const rows = references.map((reference) =>
@@ -241,6 +253,49 @@ describe("the reference table of every reference form", () => {
       "one file of the fixture matches the pattern",
     ).toEqual(["src/unit.test.ts"]);
     expect(RESOLVED?.testFileRules).toEqual([{ rule: "test-file-pattern-1", matched: 1 }]);
+  });
+});
+
+describe("the three default-export forms", () => {
+  /** The declarations the references written at one position of the fixture name. */
+  function targetsAt(at: string): string[] {
+    return (DEFAULTS?.references ?? [])
+      .filter((reference) => positionKey(reference.position) === at)
+      .map((reference) => reference.to);
+  }
+
+  it("is the committed golden table, reference for reference", async () => {
+    await expect(
+      goldenText(DEFAULTS?.references ?? []),
+      "the table is produced by the production path; to record a reviewed change run " +
+        "`npx vitest --run -u src/references.test.ts` and read the diff as production code",
+    ).toMatchFileSnapshot(fixture("golden", "default-export.references.json"));
+  });
+
+  it("names the export a default export of an expression is, and nothing behind it", () => {
+    expect(targetsAt("src/index.ts:7:10"), "the object literal is declared at the export").toEqual([
+      "src/held.ts:2:1",
+    ]);
+    expect(targetsAt("src/index.ts:7:19"), "and so is the value the call answers").toEqual([
+      "src/made.ts:7:1",
+    ]);
+    expect(
+      DEFAULTS?.cost.aliasSteps,
+      "one step per link of the chains this fixture writes: the three imports, and the one " +
+        "default export that names a declaration; neither expression form is asked to step",
+    ).toBe(4);
+  });
+
+  it("names both links where a default export is a name", () => {
+    expect(
+      targetsAt("src/index.ts:7:26"),
+      "the export carries the declaration forward, so the import names the export and the " +
+        "function behind it",
+    ).toEqual(["src/named.ts:2:17", "src/named.ts:7:1"]);
+    expect(
+      targetsAt("src/named.ts:7:16"),
+      "while the name the export is written against reads the function directly",
+    ).toEqual(["src/named.ts:2:17"]);
   });
 });
 

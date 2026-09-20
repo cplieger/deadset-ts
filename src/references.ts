@@ -18,7 +18,7 @@ import {
   type Node,
   type SourceFile,
 } from "@typescript/native/unstable/ast";
-import type { Symbol as TSSymbol } from "@typescript/native/unstable/sync";
+import { SymbolFlags, type Symbol as TSSymbol } from "@typescript/native/unstable/sync";
 import { nodeKey, type Inventory } from "./inventory.ts";
 import { byPosition, renderPosition, type Position } from "./position.ts";
 import type { ProjectView } from "./session.ts";
@@ -157,22 +157,6 @@ const ASSIGNMENTS: ReadonlySet<SyntaxKind> = new Set([
   SyntaxKind.AmpersandAmpersandEqualsToken,
   SyntaxKind.QuestionQuestionEqualsToken,
   SyntaxKind.CaretEqualsToken,
-]);
-
-/**
- * The declaration forms that name something declared elsewhere. Each is a link rather
- * than a declaration of what it names, so a reference through one names the next link
- * and, at the end of the chain, the declaration itself: a re-export something imports
- * is used, and so is the declaration behind it.
- */
-const ALIASES: ReadonlySet<SyntaxKind> = new Set([
-  SyntaxKind.ImportClause,
-  SyntaxKind.ImportEqualsDeclaration,
-  SyntaxKind.ImportSpecifier,
-  SyntaxKind.NamespaceImport,
-  SyntaxKind.ExportAssignment,
-  SyntaxKind.ExportSpecifier,
-  SyntaxKind.NamespaceExport,
 ]);
 
 /** Whether one node is an identifier or a private name, the two forms a name takes. */
@@ -479,11 +463,17 @@ export function references<Brand>(
    * is the declaration behind it, so both are named; a link this project does not
    * declare is stepped over rather than recorded.
    *
-   * A declaration handle carries the file it is in and the syntax it is written as, so
-   * both questions the walk asks of a declaration are answered before it is resolved: a
-   * declaration outside the project's own files belongs to another program and is never
-   * read, which is what keeps the pass from fetching a library file to discover that the
-   * inventory does not hold what is in it.
+   * A symbol is asked to step only where the binder flagged it an alias, which is the
+   * same condition the step itself asserts on. The declaration's syntax is not that
+   * condition and does not stand in for it: a default export of an expression is
+   * written as one of the alias forms and names nothing declared elsewhere, so it is
+   * recorded as the declaration it is and the chain ends there.
+   *
+   * A declaration handle carries the file it is in, so the question the walk asks of a
+   * declaration is answered before it is resolved: a declaration outside the project's
+   * own files belongs to another program and is never read, which is what keeps the
+   * pass from fetching a library file to discover that the inventory does not hold what
+   * is in it.
    */
   const targetsOf = (symbol: TSSymbol): readonly Target[] => {
     const cached = reached.get(symbol.id);
@@ -496,9 +486,8 @@ export function references<Brand>(
     let stepped = false;
     while (at !== undefined && !walked.has(at.id)) {
       walked.add(at.id);
-      let alias = false;
+      const alias = (at.flags & SymbolFlags.Alias) !== 0;
       for (const handle of at.declarations) {
-        alias = alias || ALIASES.has(handle.kind);
         if (!ownFiles.has(handle.path)) {
           continue;
         }

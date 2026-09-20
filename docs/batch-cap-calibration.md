@@ -23,12 +23,12 @@ second being the time the server spent handling those requests. **Bytes sent** a
 **bytes received** are the request and response payloads. **Median wall clock** covers
 discovery, the snapshot and both passes.
 
-Nine packages were swept and seven are in the numbers. `@cplieger/deadset-ts` is not:
-it holds a project whose sources carry a deliberate type error, and the analysis
-refuses a target it cannot type-check. `vibekit-static-src` is not either: it holds a
-`export default` of an expression that is not a name, and the compiler's alias
-accessor ends the session with an assertion failure on the symbol that declaration
-makes.
+Nine packages were swept and seven are in the numbers. Both of the others are refused
+by the same rule, that a target the compiler reports an error for is not analyzed.
+`@cplieger/deadset-ts` holds a project whose sources carry a deliberate type error.
+`vibekit-static-src` holds a compiler configuration that names no input file, because
+every path its `include` list names is also named by the `exclude` list it inherits
+from the configuration it extends.
 
 ## The numbers
 

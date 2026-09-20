@@ -66,6 +66,7 @@
         "Project",
         "Snapshot",
         "Symbol",
+        "SymbolFlags",
         "TimingInfo"
       ]
     }
