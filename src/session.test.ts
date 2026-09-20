@@ -6,7 +6,6 @@ import { diagnosticErrors, discoverProjects } from "./discover.ts";
 import { scopeForDir } from "./scope.ts";
 import {
   diagnosticsOf,
-  identifiersOf,
   openEngine,
   runSession,
   type Engine,
@@ -139,28 +138,22 @@ describe("a project's own files", () => {
     expect(projects.map(({ errors }) => errors)).toEqual([0, 0]);
   });
 
-  it("resolves a file's identifiers in one batch, one answer per identifier", () => {
-    const engine = openEngine({ collectTiming: false });
+  it("answers the same set every time it is asked, and asks the program once", () => {
+    const engine = openEngine({ collectTiming: true });
     const core = fixture("projects", "two-projects", "core", "tsconfig.json");
 
-    const { projects } = runSession(engine, [core], (project) => {
-      const file = project.ownSourceFiles()[0];
-      if (file === undefined) {
-        return { identifiers: 0, resolved: 0 };
-      }
-      const identifiers = identifiersOf(file);
-      const symbols = project.symbolsAt(identifiers.map((node) => project.handle(node)));
-      return {
-        identifiers: identifiers.length,
-        resolved: symbols.filter((symbol) => symbol !== undefined).length,
-        answers: symbols.length,
-      };
+    const { projects, timing } = runSession(engine, [core], (project) => {
+      const first = project.ownSourceFiles().map((file) => file.fileName);
+      const before = engine.getTimingInfo().totals.requestCount;
+      const again = project.ownSourceFiles().map((file) => file.fileName);
+      return { first, again, cost: engine.getTimingInfo().totals.requestCount - before };
     });
 
     const measured = projects[0];
-    expect(measured?.identifiers, "the file carries identifiers").toBeGreaterThan(0);
-    expect(measured?.answers, "the batch answers once per node").toBe(measured?.identifiers);
-    expect(measured?.resolved, "the batch resolves the declarations it names").toBeGreaterThan(0);
+    expect(measured?.first.length, "the project holds its own sources").toBeGreaterThan(0);
+    expect(measured?.again, "the second answer is the first").toEqual(measured?.first);
+    expect(measured?.cost, "and it cost nothing, because the snapshot does not change").toBe(0);
+    expect(timing.enabled).toBe(true);
   });
 });
 

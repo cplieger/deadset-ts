@@ -133,6 +133,17 @@ export interface Inventory {
   /** The compiler configuration the project was opened from. */
   readonly configFile: string;
   readonly symbols: readonly InventorySymbol[];
+  /**
+   * Each declaring node's {@link nodeKey} mapped to the identifier of the declaration
+   * enumerated there. A reading that starts from a node of the same program, rather
+   * than from a position, resolves the declaration through this map instead of
+   * rendering the position a second time, so the rule that decides a declaration's
+   * identifier has one owner.
+   *
+   * A getter and a setter of one name are one declaration and two nodes, so both nodes
+   * name it.
+   */
+  readonly declarations: ReadonlyMap<string, string>;
   readonly cost: InventoryCost;
   /**
    * The module specifiers of the bare star re-exports the project's files carry, in
@@ -407,8 +418,15 @@ function nameNodeOf(node: Node): Node | undefined {
   return (node as { readonly name?: Node }).name;
 }
 
-/** One node's identity across the two mechanisms, which resolve it separately. */
-function nodeKey(file: SourceFile, node: Node): string {
+/**
+ * One node's identity inside one program, which is how two readings of that program
+ * name one declaration.
+ *
+ * The two mechanisms behind the member set resolve a member separately and meet here;
+ * so does the reference pass, which starts from a resolved symbol's declaration and
+ * needs the declaration this enumeration made for it.
+ */
+export function nodeKey(file: SourceFile, node: Node): string {
   return `${file.fileName}:${String(node.pos)}:${String(node.end)}`;
 }
 
@@ -828,8 +846,10 @@ export function inventory<Brand>(
     const endLine = renderPosition(file, targetRoot, Math.max(node.end - 1, 0)).line;
     if (held !== undefined) {
       // A getter and a setter of one name are one symbol and one reference, so the
-      // second declaration widens the first record rather than making a second.
+      // second declaration widens the first record rather than making a second. Both
+      // nodes name that record, so a reading that starts from either one finds it.
       held.endLine = Math.max(held.endLine, endLine);
+      byNode.set(nodeKey(file, node), held);
       return;
     }
     const at = name ?? node;
@@ -884,6 +904,9 @@ export function inventory<Brand>(
   return {
     configFile: project.configFile,
     symbols,
+    declarations: new Map(
+      [...byNode].map(([key, record]) => [key, positionKey(record.position)] as const),
+    ),
     cost: { batches: 1, exportTables, memberTables },
     starReExports,
     outsideOwnFiles,

@@ -1,5 +1,6 @@
 node_modules/
 coverage/
+dist/
 .vitest-cache/
 
 # Kiro skill artifacts (app-review, judgement, steering-maintenance)
