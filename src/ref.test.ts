@@ -184,6 +184,11 @@ const RENDERED: readonly { module: Module; fragment: Fragment; input: string }[]
     input: "ts://@example/app/src/layout.ts#Layout.gap",
   },
   {
+    module: { package: "@example/app", path: "src/layout.ts" },
+    fragment: declaration([name("Frame"), name("inset")]),
+    input: "ts://@example/app/src/layout.ts#Frame.inset",
+  },
+  {
     module: APP,
     fragment: declaration([name("Kind"), name("Resize")]),
     input: "ts://@example/app/src/wire.ts#Kind.Resize",

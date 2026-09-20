@@ -8,7 +8,7 @@ deadset-ts is a command-line analyzer for TypeScript and JavaScript projects. It
 
 deadset-ts is report-only. It never edits source, and it refuses any `--fix` flag.
 
-**Status: pre-release.** This version implements contract 1.7.0 and ships the analyzer's foundation: one compiler session per run over every `tsconfig` project discovered under the target (the explicit scope, every `tsconfig*.json`, each project's `references`), a fail-closed read of every project's diagnostics, configuration decoding against the contract's closed key list with `print-config` and its provenance, `print-projects`, the report-only guard, the symbol inventory of every declaration a project's own files hold down to its class and type members, and the one-pass reference resolution over that inventory. The inventory and the reference pass are library functions the package exports; no verb reports findings yet, so `analyze`, `explain`, `print-roots`, `print-retained` and `describe` exit with a usage message. The one runtime dependency is the `typescript` package at exactly 7.0.2, installed under the `@typescript/native` name until TypeScript 7.1 ships a compiler API the tooling can share.
+**Status: pre-release.** This version implements contract 2.0.0 and ships the analyzer's foundation: one compiler session per run over every `tsconfig` project discovered under the target (the explicit scope, every `tsconfig*.json`, each project's `references`), a fail-closed read of every project's diagnostics, configuration decoding against the contract's closed key list with `print-config` and its provenance, `print-projects`, the report-only guard, the symbol inventory of every declaration a project's own files hold down to its class and type members, and the one-pass reference resolution over that inventory. The inventory and the reference pass are library functions the package exports; no verb reports findings yet, so `analyze`, `explain`, `print-roots`, `print-retained` and `describe` exit with a usage message. The one runtime dependency is the `typescript` package at exactly 7.0.2, installed under the `@typescript/native` name until TypeScript 7.1 ships a compiler API the tooling can share.
 
 ## Install
 
@@ -20,7 +20,7 @@ npx jsr add -D @cplieger/deadset-ts
 npx @cplieger/deadset-ts version
 ```
 
-The npm package carries the command and the library as JavaScript that the compiler emits at publish, so `npx deadset-ts` and `import("@cplieger/deadset-ts")` both run on plain Node.js 24 or later, with no loader and no flag. It carries the TypeScript source as well, which is what a TypeScript consumer's own compiler resolves. That consumer sets `allowImportingTsExtensions`, because the source names each import with its `.ts` extension. The JSR package ships source only, and Deno compiles it.
+The npm package carries the command and the library as JavaScript that the compiler emits at publish, so `npx deadset-ts` and `import("@cplieger/deadset-ts")` both run on plain Node.js 24 or later, with no loader and no flag. It carries the TypeScript source as well, which is what a TypeScript consumer's own compiler resolves. That consumer sets `allowImportingTsExtensions`, because the source names each import with its `.ts` extension. The JSR package ships source only, and Deno compiles it: a Deno program imports and type-checks the library, but the compiler's synchronous session does not open under Deno, so running an analysis needs Node.
 
 ## Usage
 
