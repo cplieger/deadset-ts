@@ -1,11 +1,11 @@
 {
   "description": "The deadset-spec release this analyzer implements, and the digest of the copy of that release's documents committed under fixtures/. tag and commit name the release; every file under fixtures/contract is byte-identical to that commit's contract/ tree, which the copy holds whole so that a page's links to its siblings resolve, and every file under fixtures/vectors is byte-identical to the same commit's vectors/config/ case directories, so `git diff` against a clone of the tag verifies both. digest is sha256 over, for each file below the named directory in ascending path order, the path, a newline, the file's sha256 in lowercase hexadecimal and a newline; the suite recomputes it, so an edit to a committed copy fails a test rather than moving the Contract this analyzer is tested against. contract_version is the version contract/contract.json carries at that commit, which the analyzer names in every resolved configuration it prints.",
-  "tag": "v2.0.0",
-  "commit": "e152cddc06625204b426e2ff286373f8abfe36cf",
-  "contract_version": "2.0.0",
+  "tag": "v2.1.0",
+  "commit": "700e4065a9268fde6528f35fd52e4963b55719a0",
+  "contract_version": "2.1.0",
   "reason": "The release whose closed configuration key list, exit-code table, issue-kind vocabulary, exemption classes, stable-symbol-reference grammar with its token corpus, and published configuration vectors this analyzer is written against.",
   "digests": {
-    "fixtures/contract": "78de19050641933ab45776d004e7f405b244f1aca79ff8486a32cbc077ba3c6d",
-    "fixtures/vectors": "b93e9ff9e5d22088b806b174ea26f8127e71d55ed461b986957eb17ac66ef624"
+    "fixtures/contract": "9bda27d994427516cf5a2406de5671a58f8addf655dca8be14682f1373fcee8f",
+    "fixtures/vectors": "7ceba59a3415496a442a3ef801af26790ca5d66b05a644eb398975f74de0a4f3"
   }
 }

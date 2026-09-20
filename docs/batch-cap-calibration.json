@@ -1,0 +1,2517 @@
+{
+  "description": "What each batch cap cost the reference pass, measured by scripts/calibrate-batch-cap.ts with the compiler client's timing collection on. caps are the values swept, \"uncapped\" being one batch per file; repeat is how many measurements each package-and-cap pair took, and median is the middle one of each measurement, the lower of two middles. A sample's wallMs covers discovery, the snapshot and both passes; requestCount, roundTripMs, bytesSent, bytesReceived and serverTimeMs are the client's own totals for the same work. bound holds the three terms that bound a run's round trips, of which pairAssignabilityCalls is zero in every row because the calls are made by the interface-satisfaction pass, which this version does not run. chosenDefault is the cap these numbers chose, which is the reference pass option's default.",
+  "caps": [256, 1024, 4096, 16384, "uncapped"],
+  "repeat": 5,
+  "chosenDefault": 4096,
+  "packages": [
+    {
+      "package": "@cplieger/actions",
+      "loaded": true,
+      "projects": 2,
+      "results": [
+        {
+          "cap": 256,
+          "samples": [
+            {
+              "wallMs": 374.712742,
+              "requestCount": 764,
+              "roundTripMs": 270.85369799999984,
+              "bytesSent": 512585,
+              "bytesReceived": 3232747,
+              "serverTimeMs": 236.21452799999997
+            },
+            {
+              "wallMs": 280.242876,
+              "requestCount": 764,
+              "roundTripMs": 230.88844299999948,
+              "bytesSent": 512585,
+              "bytesReceived": 3232609,
+              "serverTimeMs": 207.82274199999992
+            },
+            {
+              "wallMs": 281.042103,
+              "requestCount": 764,
+              "roundTripMs": 228.85024999999985,
+              "bytesSent": 512585,
+              "bytesReceived": 3232747,
+              "serverTimeMs": 202.40408200000022
+            },
+            {
+              "wallMs": 293.304434,
+              "requestCount": 764,
+              "roundTripMs": 242.99419300000136,
+              "bytesSent": 512585,
+              "bytesReceived": 3232719,
+              "serverTimeMs": 218.63749699999983
+            },
+            {
+              "wallMs": 309.752049,
+              "requestCount": 764,
+              "roundTripMs": 255.25624999999945,
+              "bytesSent": 512585,
+              "bytesReceived": 3232732,
+              "serverTimeMs": 228.26512199999982
+            }
+          ],
+          "median": {
+            "wallMs": 293.304434,
+            "requestCount": 764,
+            "roundTripMs": 242.99419300000136,
+            "bytesSent": 512585,
+            "bytesReceived": 3232732,
+            "serverTimeMs": 218.63749699999983
+          },
+          "bound": {
+            "fileBatches": 44,
+            "residueFallbacks": 0,
+            "pairAssignabilityCalls": 0
+          },
+          "referenceCost": {
+            "batched": 5504,
+            "fileBatches": 44,
+            "residueFallbacks": 0,
+            "shorthandLookups": 94,
+            "aliasSteps": 144
+          },
+          "inventoryCost": {
+            "batches": 2,
+            "exportTables": 38,
+            "memberTables": 56
+          }
+        },
+        {
+          "cap": 1024,
+          "samples": [
+            {
+              "wallMs": 339.084087,
+              "requestCount": 754,
+              "roundTripMs": 271.74462200000494,
+              "bytesSent": 511560,
+              "bytesReceived": 3232711,
+              "serverTimeMs": 242.13747400000014
+            },
+            {
+              "wallMs": 322.879252,
+              "requestCount": 754,
+              "roundTripMs": 261.3896829999908,
+              "bytesSent": 511560,
+              "bytesReceived": 3232686,
+              "serverTimeMs": 232.8070350000006
+            },
+            {
+              "wallMs": 287.676697,
+              "requestCount": 754,
+              "roundTripMs": 234.09277900000598,
+              "bytesSent": 511558,
+              "bytesReceived": 3232412,
+              "serverTimeMs": 208.04047099999983
+            },
+            {
+              "wallMs": 273.075169,
+              "requestCount": 754,
+              "roundTripMs": 226.70781600000237,
+              "bytesSent": 511560,
+              "bytesReceived": 3232726,
+              "serverTimeMs": 199.91023400000003
+            },
+            {
+              "wallMs": 305.301635,
+              "requestCount": 754,
+              "roundTripMs": 253.5503999999978,
+              "bytesSent": 511558,
+              "bytesReceived": 3232668,
+              "serverTimeMs": 227.6617280000003
+            }
+          ],
+          "median": {
+            "wallMs": 305.301635,
+            "requestCount": 754,
+            "roundTripMs": 253.5503999999978,
+            "bytesSent": 511560,
+            "bytesReceived": 3232686,
+            "serverTimeMs": 227.6617280000003
+          },
+          "bound": {
+            "fileBatches": 34,
+            "residueFallbacks": 0,
+            "pairAssignabilityCalls": 0
+          },
+          "referenceCost": {
+            "batched": 5504,
+            "fileBatches": 34,
+            "residueFallbacks": 0,
+            "shorthandLookups": 94,
+            "aliasSteps": 144
+          },
+          "inventoryCost": {
+            "batches": 2,
+            "exportTables": 38,
+            "memberTables": 56
+          }
+        },
+        {
+          "cap": 4096,
+          "samples": [
+            {
+              "wallMs": 306.846612,
+              "requestCount": 754,
+              "roundTripMs": 252.98747599999297,
+              "bytesSent": 511560,
+              "bytesReceived": 3232737,
+              "serverTimeMs": 225.24716999999976
+            },
+            {
+              "wallMs": 308.587091,
+              "requestCount": 754,
+              "roundTripMs": 258.53162300000895,
+              "bytesSent": 511560,
+              "bytesReceived": 3232735,
+              "serverTimeMs": 232.06153800000018
+            },
+            {
+              "wallMs": 295.39289,
+              "requestCount": 754,
+              "roundTripMs": 244.10260600000402,
+              "bytesSent": 511560,
+              "bytesReceived": 3232709,
+              "serverTimeMs": 219.3183590000004
+            },
+            {
+              "wallMs": 304.856204,
+              "requestCount": 754,
+              "roundTripMs": 254.6411210000133,
+              "bytesSent": 511560,
+              "bytesReceived": 3232737,
+              "serverTimeMs": 230.1871139999998
+            },
+            {
+              "wallMs": 352.392459,
+              "requestCount": 754,
+              "roundTripMs": 287.5406499999999,
+              "bytesSent": 511560,
+              "bytesReceived": 3232737,
+              "serverTimeMs": 253.9016930000001
+            }
+          ],
+          "median": {
+            "wallMs": 306.846612,
+            "requestCount": 754,
+            "roundTripMs": 254.6411210000133,
+            "bytesSent": 511560,
+            "bytesReceived": 3232737,
+            "serverTimeMs": 230.1871139999998
+          },
+          "bound": {
+            "fileBatches": 34,
+            "residueFallbacks": 0,
+            "pairAssignabilityCalls": 0
+          },
+          "referenceCost": {
+            "batched": 5504,
+            "fileBatches": 34,
+            "residueFallbacks": 0,
+            "shorthandLookups": 94,
+            "aliasSteps": 144
+          },
+          "inventoryCost": {
+            "batches": 2,
+            "exportTables": 38,
+            "memberTables": 56
+          }
+        },
+        {
+          "cap": 16384,
+          "samples": [
+            {
+              "wallMs": 303.281326,
+              "requestCount": 754,
+              "roundTripMs": 252.15991699998358,
+              "bytesSent": 511560,
+              "bytesReceived": 3232709,
+              "serverTimeMs": 225.17804499999946
+            },
+            {
+              "wallMs": 352.46762,
+              "requestCount": 754,
+              "roundTripMs": 285.4747460000035,
+              "bytesSent": 511560,
+              "bytesReceived": 3232735,
+              "serverTimeMs": 250.56925200000003
+            },
+            {
+              "wallMs": 293.607245,
+              "requestCount": 754,
+              "roundTripMs": 241.88025300000936,
+              "bytesSent": 511560,
+              "bytesReceived": 3232699,
+              "serverTimeMs": 217.91814400000024
+            },
+            {
+              "wallMs": 280.269216,
+              "requestCount": 754,
+              "roundTripMs": 228.9554379999763,
+              "bytesSent": 511560,
+              "bytesReceived": 3232571,
+              "serverTimeMs": 206.2349100000001
+            },
+            {
+              "wallMs": 275.869767,
+              "requestCount": 754,
+              "roundTripMs": 226.36905800000295,
+              "bytesSent": 511552,
+              "bytesReceived": 3232276,
+              "serverTimeMs": 202.2032759999998
+            }
+          ],
+          "median": {
+            "wallMs": 293.607245,
+            "requestCount": 754,
+            "roundTripMs": 241.88025300000936,
+            "bytesSent": 511560,
+            "bytesReceived": 3232699,
+            "serverTimeMs": 217.91814400000024
+          },
+          "bound": {
+            "fileBatches": 34,
+            "residueFallbacks": 0,
+            "pairAssignabilityCalls": 0
+          },
+          "referenceCost": {
+            "batched": 5504,
+            "fileBatches": 34,
+            "residueFallbacks": 0,
+            "shorthandLookups": 94,
+            "aliasSteps": 144
+          },
+          "inventoryCost": {
+            "batches": 2,
+            "exportTables": 38,
+            "memberTables": 56
+          }
+        },
+        {
+          "cap": "uncapped",
+          "samples": [
+            {
+              "wallMs": 282.848874,
+              "requestCount": 754,
+              "roundTripMs": 234.23340300000746,
+              "bytesSent": 511560,
+              "bytesReceived": 3232711,
+              "serverTimeMs": 209.4522680000002
+            },
+            {
+              "wallMs": 287.393694,
+              "requestCount": 754,
+              "roundTripMs": 235.47453599998335,
+              "bytesSent": 511560,
+              "bytesReceived": 3232735,
+              "serverTimeMs": 212.2240200000001
+            },
+            {
+              "wallMs": 277.963014,
+              "requestCount": 754,
+              "roundTripMs": 229.80510699999923,
+              "bytesSent": 511560,
+              "bytesReceived": 3232711,
+              "serverTimeMs": 204.98379300000005
+            },
+            {
+              "wallMs": 299.772166,
+              "requestCount": 754,
+              "roundTripMs": 249.03823199998897,
+              "bytesSent": 511560,
+              "bytesReceived": 3232737,
+              "serverTimeMs": 221.410228
+            },
+            {
+              "wallMs": 279.357011,
+              "requestCount": 754,
+              "roundTripMs": 236.44770099997913,
+              "bytesSent": 511560,
+              "bytesReceived": 3232711,
+              "serverTimeMs": 209.9387469999999
+            }
+          ],
+          "median": {
+            "wallMs": 282.848874,
+            "requestCount": 754,
+            "roundTripMs": 235.47453599998335,
+            "bytesSent": 511560,
+            "bytesReceived": 3232711,
+            "serverTimeMs": 209.9387469999999
+          },
+          "bound": {
+            "fileBatches": 34,
+            "residueFallbacks": 0,
+            "pairAssignabilityCalls": 0
+          },
+          "referenceCost": {
+            "batched": 5504,
+            "fileBatches": 34,
+            "residueFallbacks": 0,
+            "shorthandLookups": 94,
+            "aliasSteps": 144
+          },
+          "inventoryCost": {
+            "batches": 2,
+            "exportTables": 38,
+            "memberTables": 56
+          }
+        }
+      ]
+    },
+    {
+      "package": "@cplieger/deadset-ts",
+      "loaded": false,
+      "reason": "fixtures/projects/semantic-error/tsconfig.json: 1 error(s): fixtures/projects/semantic-error/broken.ts:79: TS2322: Type 'number' is not assignable to type 'string'."
+    },
+    {
+      "package": "@cplieger/fetch",
+      "loaded": true,
+      "projects": 2,
+      "results": [
+        {
+          "cap": 256,
+          "samples": [
+            {
+              "wallMs": 141.554967,
+              "requestCount": 455,
+              "roundTripMs": 126.05479500002184,
+              "bytesSent": 164899,
+              "bytesReceived": 850175,
+              "serverTimeMs": 113.28558000000007
+            },
+            {
+              "wallMs": 160.594747,
+              "requestCount": 455,
+              "roundTripMs": 139.5394599999927,
+              "bytesSent": 164899,
+              "bytesReceived": 850175,
+              "serverTimeMs": 125.11319999999995
+            },
+            {
+              "wallMs": 127.48433,
+              "requestCount": 455,
+              "roundTripMs": 113.92460599998776,
+              "bytesSent": 164899,
+              "bytesReceived": 850165,
+              "serverTimeMs": 101.95866799999995
+            },
+            {
+              "wallMs": 119.262366,
+              "requestCount": 455,
+              "roundTripMs": 107.38545200000772,
+              "bytesSent": 164899,
+              "bytesReceived": 850179,
+              "serverTimeMs": 96.92534300000001
+            },
+            {
+              "wallMs": 148.831261,
+              "requestCount": 455,
+              "roundTripMs": 127.69894300003943,
+              "bytesSent": 164899,
+              "bytesReceived": 850165,
+              "serverTimeMs": 114.551512
+            }
+          ],
+          "median": {
+            "wallMs": 141.554967,
+            "requestCount": 455,
+            "roundTripMs": 126.05479500002184,
+            "bytesSent": 164899,
+            "bytesReceived": 850175,
+            "serverTimeMs": 113.28558000000007
+          },
+          "bound": {
+            "fileBatches": 12,
+            "residueFallbacks": 0,
+            "pairAssignabilityCalls": 0
+          },
+          "referenceCost": {
+            "batched": 1282,
+            "fileBatches": 12,
+            "residueFallbacks": 0,
+            "shorthandLookups": 38,
+            "aliasSteps": 42
+          },
+          "inventoryCost": {
+            "batches": 2,
+            "exportTables": 12,
+            "memberTables": 12
+          }
+        },
+        {
+          "cap": 1024,
+          "samples": [
+            {
+              "wallMs": 152.510307,
+              "requestCount": 453,
+              "roundTripMs": 140.04952499998763,
+              "bytesSent": 164698,
+              "bytesReceived": 850173,
+              "serverTimeMs": 128.31265400000004
+            },
+            {
+              "wallMs": 151.917101,
+              "requestCount": 453,
+              "roundTripMs": 134.3930489999875,
+              "bytesSent": 164698,
+              "bytesReceived": 850173,
+              "serverTimeMs": 120.21972900000009
+            },
+            {
+              "wallMs": 152.954978,
+              "requestCount": 453,
+              "roundTripMs": 136.73436700000275,
+              "bytesSent": 164698,
+              "bytesReceived": 850173,
+              "serverTimeMs": 123.71607200000004
+            },
+            {
+              "wallMs": 125.968501,
+              "requestCount": 453,
+              "roundTripMs": 113.12399700000242,
+              "bytesSent": 164698,
+              "bytesReceived": 850163,
+              "serverTimeMs": 101.10744199999999
+            },
+            {
+              "wallMs": 126.795347,
+              "requestCount": 453,
+              "roundTripMs": 112.52588500001002,
+              "bytesSent": 164698,
+              "bytesReceived": 850163,
+              "serverTimeMs": 101.26849900000006
+            }
+          ],
+          "median": {
+            "wallMs": 151.917101,
+            "requestCount": 453,
+            "roundTripMs": 134.3930489999875,
+            "bytesSent": 164698,
+            "bytesReceived": 850173,
+            "serverTimeMs": 120.21972900000009
+          },
+          "bound": {
+            "fileBatches": 10,
+            "residueFallbacks": 0,
+            "pairAssignabilityCalls": 0
+          },
+          "referenceCost": {
+            "batched": 1282,
+            "fileBatches": 10,
+            "residueFallbacks": 0,
+            "shorthandLookups": 38,
+            "aliasSteps": 42
+          },
+          "inventoryCost": {
+            "batches": 2,
+            "exportTables": 12,
+            "memberTables": 12
+          }
+        },
+        {
+          "cap": 4096,
+          "samples": [
+            {
+              "wallMs": 126.886198,
+              "requestCount": 453,
+              "roundTripMs": 112.23886700000185,
+              "bytesSent": 164698,
+              "bytesReceived": 850173,
+              "serverTimeMs": 101.55126400000006
+            },
+            {
+              "wallMs": 130.834199,
+              "requestCount": 453,
+              "roundTripMs": 117.32971800003179,
+              "bytesSent": 164698,
+              "bytesReceived": 850173,
+              "serverTimeMs": 105.96924599999993
+            },
+            {
+              "wallMs": 126.938235,
+              "requestCount": 453,
+              "roundTripMs": 112.86989000002905,
+              "bytesSent": 164698,
+              "bytesReceived": 850173,
+              "serverTimeMs": 100.38477999999994
+            },
+            {
+              "wallMs": 150.266747,
+              "requestCount": 453,
+              "roundTripMs": 129.41030199999295,
+              "bytesSent": 164698,
+              "bytesReceived": 850163,
+              "serverTimeMs": 113.78502800000003
+            },
+            {
+              "wallMs": 175.420175,
+              "requestCount": 453,
+              "roundTripMs": 157.37678399999095,
+              "bytesSent": 164698,
+              "bytesReceived": 850173,
+              "serverTimeMs": 138.31213100000008
+            }
+          ],
+          "median": {
+            "wallMs": 130.834199,
+            "requestCount": 453,
+            "roundTripMs": 117.32971800003179,
+            "bytesSent": 164698,
+            "bytesReceived": 850173,
+            "serverTimeMs": 105.96924599999993
+          },
+          "bound": {
+            "fileBatches": 10,
+            "residueFallbacks": 0,
+            "pairAssignabilityCalls": 0
+          },
+          "referenceCost": {
+            "batched": 1282,
+            "fileBatches": 10,
+            "residueFallbacks": 0,
+            "shorthandLookups": 38,
+            "aliasSteps": 42
+          },
+          "inventoryCost": {
+            "batches": 2,
+            "exportTables": 12,
+            "memberTables": 12
+          }
+        },
+        {
+          "cap": 16384,
+          "samples": [
+            {
+              "wallMs": 157.302514,
+              "requestCount": 453,
+              "roundTripMs": 140.65898699998252,
+              "bytesSent": 164698,
+              "bytesReceived": 850173,
+              "serverTimeMs": 125.54321699999996
+            },
+            {
+              "wallMs": 140.882792,
+              "requestCount": 453,
+              "roundTripMs": 122.90606499997739,
+              "bytesSent": 164698,
+              "bytesReceived": 850163,
+              "serverTimeMs": 108.23425899999997
+            },
+            {
+              "wallMs": 153.37739,
+              "requestCount": 453,
+              "roundTripMs": 134.59314100000665,
+              "bytesSent": 164698,
+              "bytesReceived": 850173,
+              "serverTimeMs": 119.161473
+            },
+            {
+              "wallMs": 137.490589,
+              "requestCount": 453,
+              "roundTripMs": 123.38926500001435,
+              "bytesSent": 164698,
+              "bytesReceived": 850173,
+              "serverTimeMs": 110.62713599999994
+            },
+            {
+              "wallMs": 168.402715,
+              "requestCount": 453,
+              "roundTripMs": 143.39902400000756,
+              "bytesSent": 164698,
+              "bytesReceived": 850177,
+              "serverTimeMs": 123.52971700000005
+            }
+          ],
+          "median": {
+            "wallMs": 153.37739,
+            "requestCount": 453,
+            "roundTripMs": 134.59314100000665,
+            "bytesSent": 164698,
+            "bytesReceived": 850173,
+            "serverTimeMs": 119.161473
+          },
+          "bound": {
+            "fileBatches": 10,
+            "residueFallbacks": 0,
+            "pairAssignabilityCalls": 0
+          },
+          "referenceCost": {
+            "batched": 1282,
+            "fileBatches": 10,
+            "residueFallbacks": 0,
+            "shorthandLookups": 38,
+            "aliasSteps": 42
+          },
+          "inventoryCost": {
+            "batches": 2,
+            "exportTables": 12,
+            "memberTables": 12
+          }
+        },
+        {
+          "cap": "uncapped",
+          "samples": [
+            {
+              "wallMs": 185.643651,
+              "requestCount": 453,
+              "roundTripMs": 165.33565400000953,
+              "bytesSent": 164698,
+              "bytesReceived": 850173,
+              "serverTimeMs": 148.89910700000019
+            },
+            {
+              "wallMs": 134.215723,
+              "requestCount": 453,
+              "roundTripMs": 120.81453999996302,
+              "bytesSent": 164698,
+              "bytesReceived": 850173,
+              "serverTimeMs": 108.02472700000001
+            },
+            {
+              "wallMs": 153.654759,
+              "requestCount": 453,
+              "roundTripMs": 134.55548699999235,
+              "bytesSent": 164698,
+              "bytesReceived": 850167,
+              "serverTimeMs": 117.80675699999998
+            },
+            {
+              "wallMs": 154.922177,
+              "requestCount": 453,
+              "roundTripMs": 135.96483500000795,
+              "bytesSent": 164698,
+              "bytesReceived": 850167,
+              "serverTimeMs": 121.60803700000005
+            },
+            {
+              "wallMs": 192.421485,
+              "requestCount": 453,
+              "roundTripMs": 175.6310270000031,
+              "bytesSent": 164698,
+              "bytesReceived": 850163,
+              "serverTimeMs": 160.25958
+            }
+          ],
+          "median": {
+            "wallMs": 154.922177,
+            "requestCount": 453,
+            "roundTripMs": 135.96483500000795,
+            "bytesSent": 164698,
+            "bytesReceived": 850167,
+            "serverTimeMs": 121.60803700000005
+          },
+          "bound": {
+            "fileBatches": 10,
+            "residueFallbacks": 0,
+            "pairAssignabilityCalls": 0
+          },
+          "referenceCost": {
+            "batched": 1282,
+            "fileBatches": 10,
+            "residueFallbacks": 0,
+            "shorthandLookups": 38,
+            "aliasSteps": 42
+          },
+          "inventoryCost": {
+            "batches": 2,
+            "exportTables": 12,
+            "memberTables": 12
+          }
+        }
+      ]
+    },
+    {
+      "package": "@cplieger/reactive",
+      "loaded": true,
+      "projects": 2,
+      "results": [
+        {
+          "cap": 256,
+          "samples": [
+            {
+              "wallMs": 735.241712,
+              "requestCount": 961,
+              "roundTripMs": 559.5724269999846,
+              "bytesSent": 1370883,
+              "bytesReceived": 8004052,
+              "serverTimeMs": 490.6870690000001
+            },
+            {
+              "wallMs": 736.468264,
+              "requestCount": 961,
+              "roundTripMs": 541.8471460000128,
+              "bytesSent": 1370883,
+              "bytesReceived": 8004016,
+              "serverTimeMs": 479.6591150000003
+            },
+            {
+              "wallMs": 825.807571,
+              "requestCount": 961,
+              "roundTripMs": 642.9916799999864,
+              "bytesSent": 1370883,
+              "bytesReceived": 8003971,
+              "serverTimeMs": 561.284383999999
+            },
+            {
+              "wallMs": 747.498235,
+              "requestCount": 961,
+              "roundTripMs": 588.6509839999999,
+              "bytesSent": 1370883,
+              "bytesReceived": 8004026,
+              "serverTimeMs": 524.1192459999992
+            },
+            {
+              "wallMs": 744.260542,
+              "requestCount": 961,
+              "roundTripMs": 590.4850230000047,
+              "bytesSent": 1370883,
+              "bytesReceived": 8004087,
+              "serverTimeMs": 522.554556999999
+            }
+          ],
+          "median": {
+            "wallMs": 744.260542,
+            "requestCount": 961,
+            "roundTripMs": 588.6509839999999,
+            "bytesSent": 1370883,
+            "bytesReceived": 8004026,
+            "serverTimeMs": 522.554556999999
+          },
+          "bound": {
+            "fileBatches": 82,
+            "residueFallbacks": 0,
+            "pairAssignabilityCalls": 0
+          },
+          "referenceCost": {
+            "batched": 15231,
+            "fileBatches": 82,
+            "residueFallbacks": 0,
+            "shorthandLookups": 65,
+            "aliasSteps": 433
+          },
+          "inventoryCost": {
+            "batches": 2,
+            "exportTables": 45,
+            "memberTables": 41
+          }
+        },
+        {
+          "cap": 1024,
+          "samples": [
+            {
+              "wallMs": 740.489886,
+              "requestCount": 925,
+              "roundTripMs": 589.5117629999913,
+              "bytesSent": 1367049,
+              "bytesReceived": 8004016,
+              "serverTimeMs": 512.4054619999991
+            },
+            {
+              "wallMs": 733.139219,
+              "requestCount": 925,
+              "roundTripMs": 581.5366610000019,
+              "bytesSent": 1367049,
+              "bytesReceived": 8004036,
+              "serverTimeMs": 519.0642920000006
+            },
+            {
+              "wallMs": 806.272251,
+              "requestCount": 925,
+              "roundTripMs": 616.4035489999624,
+              "bytesSent": 1367049,
+              "bytesReceived": 8003925,
+              "serverTimeMs": 535.5265009999989
+            },
+            {
+              "wallMs": 795.92447,
+              "requestCount": 925,
+              "roundTripMs": 627.322393000024,
+              "bytesSent": 1367049,
+              "bytesReceived": 8003919,
+              "serverTimeMs": 558.174638
+            },
+            {
+              "wallMs": 719.752122,
+              "requestCount": 925,
+              "roundTripMs": 576.3365130000275,
+              "bytesSent": 1367049,
+              "bytesReceived": 8003999,
+              "serverTimeMs": 513.1505250000001
+            }
+          ],
+          "median": {
+            "wallMs": 740.489886,
+            "requestCount": 925,
+            "roundTripMs": 589.5117629999913,
+            "bytesSent": 1367049,
+            "bytesReceived": 8003999,
+            "serverTimeMs": 519.0642920000006
+          },
+          "bound": {
+            "fileBatches": 46,
+            "residueFallbacks": 0,
+            "pairAssignabilityCalls": 0
+          },
+          "referenceCost": {
+            "batched": 15231,
+            "fileBatches": 46,
+            "residueFallbacks": 0,
+            "shorthandLookups": 65,
+            "aliasSteps": 433
+          },
+          "inventoryCost": {
+            "batches": 2,
+            "exportTables": 45,
+            "memberTables": 41
+          }
+        },
+        {
+          "cap": 4096,
+          "samples": [
+            {
+              "wallMs": 603.920012,
+              "requestCount": 922,
+              "roundTripMs": 470.5235019999127,
+              "bytesSent": 1366728,
+              "bytesReceived": 8004006,
+              "serverTimeMs": 421.8332570000005
+            },
+            {
+              "wallMs": 551.753926,
+              "requestCount": 922,
+              "roundTripMs": 434.78441400006704,
+              "bytesSent": 1366728,
+              "bytesReceived": 8003999,
+              "serverTimeMs": 390.6711540000002
+            },
+            {
+              "wallMs": 675.450541,
+              "requestCount": 922,
+              "roundTripMs": 513.5474529999301,
+              "bytesSent": 1366728,
+              "bytesReceived": 8004007,
+              "serverTimeMs": 454.9789539999999
+            },
+            {
+              "wallMs": 555.417466,
+              "requestCount": 922,
+              "roundTripMs": 432.71176299997023,
+              "bytesSent": 1366728,
+              "bytesReceived": 8004017,
+              "serverTimeMs": 384.62872699999997
+            },
+            {
+              "wallMs": 746.060046,
+              "requestCount": 922,
+              "roundTripMs": 562.2750969999615,
+              "bytesSent": 1366728,
+              "bytesReceived": 8004011,
+              "serverTimeMs": 490.8038059999999
+            }
+          ],
+          "median": {
+            "wallMs": 603.920012,
+            "requestCount": 922,
+            "roundTripMs": 470.5235019999127,
+            "bytesSent": 1366728,
+            "bytesReceived": 8004007,
+            "serverTimeMs": 421.8332570000005
+          },
+          "bound": {
+            "fileBatches": 43,
+            "residueFallbacks": 0,
+            "pairAssignabilityCalls": 0
+          },
+          "referenceCost": {
+            "batched": 15231,
+            "fileBatches": 43,
+            "residueFallbacks": 0,
+            "shorthandLookups": 65,
+            "aliasSteps": 433
+          },
+          "inventoryCost": {
+            "batches": 2,
+            "exportTables": 45,
+            "memberTables": 41
+          }
+        },
+        {
+          "cap": 16384,
+          "samples": [
+            {
+              "wallMs": 623.782278,
+              "requestCount": 922,
+              "roundTripMs": 493.43104200004746,
+              "bytesSent": 1366728,
+              "bytesReceived": 8004026,
+              "serverTimeMs": 443.7478750000003
+            },
+            {
+              "wallMs": 637.821836,
+              "requestCount": 922,
+              "roundTripMs": 491.31184700004087,
+              "bytesSent": 1366728,
+              "bytesReceived": 8003932,
+              "serverTimeMs": 442.4947540000003
+            },
+            {
+              "wallMs": 735.72642,
+              "requestCount": 922,
+              "roundTripMs": 602.8498270000273,
+              "bytesSent": 1366728,
+              "bytesReceived": 8004007,
+              "serverTimeMs": 544.0607600000001
+            },
+            {
+              "wallMs": 585.567714,
+              "requestCount": 922,
+              "roundTripMs": 464.1282649999521,
+              "bytesSent": 1366728,
+              "bytesReceived": 8003952,
+              "serverTimeMs": 416.68170600000064
+            },
+            {
+              "wallMs": 571.279662,
+              "requestCount": 922,
+              "roundTripMs": 442.1113340000047,
+              "bytesSent": 1366728,
+              "bytesReceived": 8003977,
+              "serverTimeMs": 393.94266400000015
+            }
+          ],
+          "median": {
+            "wallMs": 623.782278,
+            "requestCount": 922,
+            "roundTripMs": 491.31184700004087,
+            "bytesSent": 1366728,
+            "bytesReceived": 8003977,
+            "serverTimeMs": 442.4947540000003
+          },
+          "bound": {
+            "fileBatches": 43,
+            "residueFallbacks": 0,
+            "pairAssignabilityCalls": 0
+          },
+          "referenceCost": {
+            "batched": 15231,
+            "fileBatches": 43,
+            "residueFallbacks": 0,
+            "shorthandLookups": 65,
+            "aliasSteps": 433
+          },
+          "inventoryCost": {
+            "batches": 2,
+            "exportTables": 45,
+            "memberTables": 41
+          }
+        },
+        {
+          "cap": "uncapped",
+          "samples": [
+            {
+              "wallMs": 602.244619,
+              "requestCount": 922,
+              "roundTripMs": 476.4315730000453,
+              "bytesSent": 1366728,
+              "bytesReceived": 8003990,
+              "serverTimeMs": 431.36998099999994
+            },
+            {
+              "wallMs": 551.623403,
+              "requestCount": 922,
+              "roundTripMs": 433.5971449999597,
+              "bytesSent": 1366728,
+              "bytesReceived": 8004048,
+              "serverTimeMs": 390.2359739999994
+            },
+            {
+              "wallMs": 566.425714,
+              "requestCount": 922,
+              "roundTripMs": 438.1557320000611,
+              "bytesSent": 1366728,
+              "bytesReceived": 8003996,
+              "serverTimeMs": 387.6740350000002
+            },
+            {
+              "wallMs": 650.568126,
+              "requestCount": 922,
+              "roundTripMs": 520.9453569999969,
+              "bytesSent": 1366728,
+              "bytesReceived": 8003987,
+              "serverTimeMs": 467.5223129999997
+            },
+            {
+              "wallMs": 574.436647,
+              "requestCount": 922,
+              "roundTripMs": 450.8523100000639,
+              "bytesSent": 1366728,
+              "bytesReceived": 8003922,
+              "serverTimeMs": 403.65040099999993
+            }
+          ],
+          "median": {
+            "wallMs": 574.436647,
+            "requestCount": 922,
+            "roundTripMs": 450.8523100000639,
+            "bytesSent": 1366728,
+            "bytesReceived": 8003990,
+            "serverTimeMs": 403.65040099999993
+          },
+          "bound": {
+            "fileBatches": 43,
+            "residueFallbacks": 0,
+            "pairAssignabilityCalls": 0
+          },
+          "referenceCost": {
+            "batched": 15231,
+            "fileBatches": 43,
+            "residueFallbacks": 0,
+            "shorthandLookups": 65,
+            "aliasSteps": 433
+          },
+          "inventoryCost": {
+            "batches": 2,
+            "exportTables": 45,
+            "memberTables": 41
+          }
+        }
+      ]
+    },
+    {
+      "package": "@cplieger/ui-primitives",
+      "loaded": true,
+      "projects": 2,
+      "results": [
+        {
+          "cap": 256,
+          "samples": [
+            {
+              "wallMs": 892.490412,
+              "requestCount": 1364,
+              "roundTripMs": 709.4204789999458,
+              "bytesSent": 1859894,
+              "bytesReceived": 11275315,
+              "serverTimeMs": 645.8148979999991
+            },
+            {
+              "wallMs": 850.931058,
+              "requestCount": 1364,
+              "roundTripMs": 671.6726189998444,
+              "bytesSent": 1859892,
+              "bytesReceived": 11274955,
+              "serverTimeMs": 607.3112720000001
+            },
+            {
+              "wallMs": 870.218978,
+              "requestCount": 1364,
+              "roundTripMs": 699.913088000023,
+              "bytesSent": 1859896,
+              "bytesReceived": 11275393,
+              "serverTimeMs": 623.9617149999997
+            },
+            {
+              "wallMs": 920.074752,
+              "requestCount": 1364,
+              "roundTripMs": 733.9665660000319,
+              "bytesSent": 1859896,
+              "bytesReceived": 11275325,
+              "serverTimeMs": 665.6830139999997
+            },
+            {
+              "wallMs": 829.690462,
+              "requestCount": 1364,
+              "roundTripMs": 672.7711710000076,
+              "bytesSent": 1859896,
+              "bytesReceived": 11275393,
+              "serverTimeMs": 612.0545139999992
+            }
+          ],
+          "median": {
+            "wallMs": 870.218978,
+            "requestCount": 1364,
+            "roundTripMs": 699.913088000023,
+            "bytesSent": 1859896,
+            "bytesReceived": 11275325,
+            "serverTimeMs": 623.9617149999997
+          },
+          "bound": {
+            "fileBatches": 114,
+            "residueFallbacks": 4,
+            "pairAssignabilityCalls": 0
+          },
+          "referenceCost": {
+            "batched": 20211,
+            "fileBatches": 114,
+            "residueFallbacks": 4,
+            "shorthandLookups": 220,
+            "aliasSteps": 438
+          },
+          "inventoryCost": {
+            "batches": 2,
+            "exportTables": 62,
+            "memberTables": 98
+          }
+        },
+        {
+          "cap": 1024,
+          "samples": [
+            {
+              "wallMs": 809.902782,
+              "requestCount": 1315,
+              "roundTripMs": 650.2154329999539,
+              "bytesSent": 1854476,
+              "bytesReceived": 11274849,
+              "serverTimeMs": 590.1839239999989
+            },
+            {
+              "wallMs": 780.696045,
+              "requestCount": 1315,
+              "roundTripMs": 632.4755800002458,
+              "bytesSent": 1854482,
+              "bytesReceived": 11275322,
+              "serverTimeMs": 577.702328
+            },
+            {
+              "wallMs": 871.314475,
+              "requestCount": 1315,
+              "roundTripMs": 679.9051309999704,
+              "bytesSent": 1854482,
+              "bytesReceived": 11275321,
+              "serverTimeMs": 603.1115390000002
+            },
+            {
+              "wallMs": 1053.368062,
+              "requestCount": 1315,
+              "roundTripMs": 834.0253859999939,
+              "bytesSent": 1854482,
+              "bytesReceived": 11275344,
+              "serverTimeMs": 737.849240999999
+            },
+            {
+              "wallMs": 1058.230509,
+              "requestCount": 1315,
+              "roundTripMs": 881.0309680001446,
+              "bytesSent": 1854482,
+              "bytesReceived": 11275261,
+              "serverTimeMs": 805.0855590000001
+            }
+          ],
+          "median": {
+            "wallMs": 871.314475,
+            "requestCount": 1315,
+            "roundTripMs": 679.9051309999704,
+            "bytesSent": 1854482,
+            "bytesReceived": 11275321,
+            "serverTimeMs": 603.1115390000002
+          },
+          "bound": {
+            "fileBatches": 65,
+            "residueFallbacks": 4,
+            "pairAssignabilityCalls": 0
+          },
+          "referenceCost": {
+            "batched": 20211,
+            "fileBatches": 65,
+            "residueFallbacks": 4,
+            "shorthandLookups": 220,
+            "aliasSteps": 438
+          },
+          "inventoryCost": {
+            "batches": 2,
+            "exportTables": 62,
+            "memberTables": 98
+          }
+        },
+        {
+          "cap": 4096,
+          "samples": [
+            {
+              "wallMs": 804.487233,
+              "requestCount": 1310,
+              "roundTripMs": 646.8443210000041,
+              "bytesSent": 1853927,
+              "bytesReceived": 11275331,
+              "serverTimeMs": 581.9991030000003
+            },
+            {
+              "wallMs": 842.582456,
+              "requestCount": 1310,
+              "roundTripMs": 669.1481079999794,
+              "bytesSent": 1853927,
+              "bytesReceived": 11275339,
+              "serverTimeMs": 607.7687689999999
+            },
+            {
+              "wallMs": 782.20896,
+              "requestCount": 1310,
+              "roundTripMs": 614.3132529999784,
+              "bytesSent": 1853927,
+              "bytesReceived": 11275339,
+              "serverTimeMs": 557.1432699999996
+            },
+            {
+              "wallMs": 723.199956,
+              "requestCount": 1310,
+              "roundTripMs": 585.1260460000703,
+              "bytesSent": 1853927,
+              "bytesReceived": 11275263,
+              "serverTimeMs": 532.1495500000002
+            },
+            {
+              "wallMs": 733.429481,
+              "requestCount": 1310,
+              "roundTripMs": 582.9001360000038,
+              "bytesSent": 1853927,
+              "bytesReceived": 11275339,
+              "serverTimeMs": 533.1587339999994
+            }
+          ],
+          "median": {
+            "wallMs": 782.20896,
+            "requestCount": 1310,
+            "roundTripMs": 614.3132529999784,
+            "bytesSent": 1853927,
+            "bytesReceived": 11275339,
+            "serverTimeMs": 557.1432699999996
+          },
+          "bound": {
+            "fileBatches": 60,
+            "residueFallbacks": 4,
+            "pairAssignabilityCalls": 0
+          },
+          "referenceCost": {
+            "batched": 20211,
+            "fileBatches": 60,
+            "residueFallbacks": 4,
+            "shorthandLookups": 220,
+            "aliasSteps": 438
+          },
+          "inventoryCost": {
+            "batches": 2,
+            "exportTables": 62,
+            "memberTables": 98
+          }
+        },
+        {
+          "cap": 16384,
+          "samples": [
+            {
+              "wallMs": 790.765638,
+              "requestCount": 1310,
+              "roundTripMs": 652.4850530000258,
+              "bytesSent": 1853921,
+              "bytesReceived": 11274780,
+              "serverTimeMs": 585.7223260000006
+            },
+            {
+              "wallMs": 812.061197,
+              "requestCount": 1310,
+              "roundTripMs": 663.030626000058,
+              "bytesSent": 1853927,
+              "bytesReceived": 11275299,
+              "serverTimeMs": 601.6534659999994
+            },
+            {
+              "wallMs": 825.762355,
+              "requestCount": 1310,
+              "roundTripMs": 668.5537319998766,
+              "bytesSent": 1853927,
+              "bytesReceived": 11275309,
+              "serverTimeMs": 613.8331
+            },
+            {
+              "wallMs": 710.304013,
+              "requestCount": 1310,
+              "roundTripMs": 578.3425160000261,
+              "bytesSent": 1853927,
+              "bytesReceived": 11275339,
+              "serverTimeMs": 524.7632760000005
+            },
+            {
+              "wallMs": 729.174828,
+              "requestCount": 1310,
+              "roundTripMs": 571.0445899999395,
+              "bytesSent": 1853927,
+              "bytesReceived": 11275287,
+              "serverTimeMs": 509.2270580000006
+            }
+          ],
+          "median": {
+            "wallMs": 790.765638,
+            "requestCount": 1310,
+            "roundTripMs": 652.4850530000258,
+            "bytesSent": 1853927,
+            "bytesReceived": 11275299,
+            "serverTimeMs": 585.7223260000006
+          },
+          "bound": {
+            "fileBatches": 60,
+            "residueFallbacks": 4,
+            "pairAssignabilityCalls": 0
+          },
+          "referenceCost": {
+            "batched": 20211,
+            "fileBatches": 60,
+            "residueFallbacks": 4,
+            "shorthandLookups": 220,
+            "aliasSteps": 438
+          },
+          "inventoryCost": {
+            "batches": 2,
+            "exportTables": 62,
+            "memberTables": 98
+          }
+        },
+        {
+          "cap": "uncapped",
+          "samples": [
+            {
+              "wallMs": 841.916972,
+              "requestCount": 1310,
+              "roundTripMs": 659.1330009999001,
+              "bytesSent": 1853927,
+              "bytesReceived": 11275339,
+              "serverTimeMs": 585.905552
+            },
+            {
+              "wallMs": 881.709188,
+              "requestCount": 1310,
+              "roundTripMs": 707.2054270000008,
+              "bytesSent": 1853927,
+              "bytesReceived": 11275317,
+              "serverTimeMs": 638.4105270000008
+            },
+            {
+              "wallMs": 763.494712,
+              "requestCount": 1310,
+              "roundTripMs": 610.336176000048,
+              "bytesSent": 1853927,
+              "bytesReceived": 11275325,
+              "serverTimeMs": 542.6917500000001
+            },
+            {
+              "wallMs": 731.911905,
+              "requestCount": 1310,
+              "roundTripMs": 600.8082580002447,
+              "bytesSent": 1853927,
+              "bytesReceived": 11275317,
+              "serverTimeMs": 548.5813380000001
+            },
+            {
+              "wallMs": 777.697056,
+              "requestCount": 1310,
+              "roundTripMs": 620.9838549999477,
+              "bytesSent": 1853927,
+              "bytesReceived": 11275331,
+              "serverTimeMs": 567.0563880000004
+            }
+          ],
+          "median": {
+            "wallMs": 777.697056,
+            "requestCount": 1310,
+            "roundTripMs": 620.9838549999477,
+            "bytesSent": 1853927,
+            "bytesReceived": 11275325,
+            "serverTimeMs": 567.0563880000004
+          },
+          "bound": {
+            "fileBatches": 60,
+            "residueFallbacks": 4,
+            "pairAssignabilityCalls": 0
+          },
+          "referenceCost": {
+            "batched": 20211,
+            "fileBatches": 60,
+            "residueFallbacks": 4,
+            "shorthandLookups": 220,
+            "aliasSteps": 438
+          },
+          "inventoryCost": {
+            "batches": 2,
+            "exportTables": 62,
+            "memberTables": 98
+          }
+        }
+      ]
+    },
+    {
+      "package": "vibekit-static-src",
+      "loaded": false,
+      "reason": "panic: Debug failure. False expression: Should only get Alias here."
+    },
+    {
+      "package": "@cplieger/web-terminal-engine",
+      "loaded": true,
+      "projects": 2,
+      "results": [
+        {
+          "cap": 256,
+          "samples": [
+            {
+              "wallMs": 1328.18155,
+              "requestCount": 3032,
+              "roundTripMs": 969.5527279999296,
+              "bytesSent": 4801218,
+              "bytesReceived": 36292054,
+              "serverTimeMs": 854.8324269999993
+            },
+            {
+              "wallMs": 1368.645154,
+              "requestCount": 3032,
+              "roundTripMs": 1021.6813120000006,
+              "bytesSent": 4801218,
+              "bytesReceived": 36291936,
+              "serverTimeMs": 894.9335149999973
+            },
+            {
+              "wallMs": 1573.18531,
+              "requestCount": 3032,
+              "roundTripMs": 1140.9103540001306,
+              "bytesSent": 4801218,
+              "bytesReceived": 36292024,
+              "serverTimeMs": 975.7494889999994
+            },
+            {
+              "wallMs": 1559.696073,
+              "requestCount": 3032,
+              "roundTripMs": 1199.2171219998781,
+              "bytesSent": 4801218,
+              "bytesReceived": 36292062,
+              "serverTimeMs": 1058.208031000002
+            },
+            {
+              "wallMs": 1413.027292,
+              "requestCount": 3032,
+              "roundTripMs": 1040.0463879998351,
+              "bytesSent": 4801218,
+              "bytesReceived": 36292059,
+              "serverTimeMs": 912.0943979999972
+            }
+          ],
+          "median": {
+            "wallMs": 1413.027292,
+            "requestCount": 3032,
+            "roundTripMs": 1040.0463879998351,
+            "bytesSent": 4801218,
+            "bytesReceived": 36292054,
+            "serverTimeMs": 912.0943979999972
+          },
+          "bound": {
+            "fileBatches": 249,
+            "residueFallbacks": 9,
+            "pairAssignabilityCalls": 0
+          },
+          "referenceCost": {
+            "batched": 44789,
+            "fileBatches": 249,
+            "residueFallbacks": 9,
+            "shorthandLookups": 535,
+            "aliasSteps": 1286
+          },
+          "inventoryCost": {
+            "batches": 2,
+            "exportTables": 134,
+            "memberTables": 141
+          }
+        },
+        {
+          "cap": 1024,
+          "samples": [
+            {
+              "wallMs": 1527.488314,
+              "requestCount": 2921,
+              "roundTripMs": 1113.2230220000129,
+              "bytesSent": 4787862,
+              "bytesReceived": 36291929,
+              "serverTimeMs": 956.0436390000008
+            },
+            {
+              "wallMs": 1317.102913,
+              "requestCount": 2921,
+              "roundTripMs": 970.4658350003738,
+              "bytesSent": 4787862,
+              "bytesReceived": 36291968,
+              "serverTimeMs": 838.4033489999997
+            },
+            {
+              "wallMs": 1285.919743,
+              "requestCount": 2921,
+              "roundTripMs": 963.781838999319,
+              "bytesSent": 4787862,
+              "bytesReceived": 36292011,
+              "serverTimeMs": 846.4184370000006
+            },
+            {
+              "wallMs": 1547.010162,
+              "requestCount": 2921,
+              "roundTripMs": 1148.129597999854,
+              "bytesSent": 4787858,
+              "bytesReceived": 36291458,
+              "serverTimeMs": 1000.761741000002
+            },
+            {
+              "wallMs": 1351.397998,
+              "requestCount": 2921,
+              "roundTripMs": 1011.7974129998183,
+              "bytesSent": 4787860,
+              "bytesReceived": 36291049,
+              "serverTimeMs": 884.9020640000027
+            }
+          ],
+          "median": {
+            "wallMs": 1351.397998,
+            "requestCount": 2921,
+            "roundTripMs": 1011.7974129998183,
+            "bytesSent": 4787862,
+            "bytesReceived": 36291929,
+            "serverTimeMs": 884.9020640000027
+          },
+          "bound": {
+            "fileBatches": 138,
+            "residueFallbacks": 9,
+            "pairAssignabilityCalls": 0
+          },
+          "referenceCost": {
+            "batched": 44789,
+            "fileBatches": 138,
+            "residueFallbacks": 9,
+            "shorthandLookups": 535,
+            "aliasSteps": 1286
+          },
+          "inventoryCost": {
+            "batches": 2,
+            "exportTables": 134,
+            "memberTables": 141
+          }
+        },
+        {
+          "cap": 4096,
+          "samples": [
+            {
+              "wallMs": 1429.247371,
+              "requestCount": 2909,
+              "roundTripMs": 1052.9197509997903,
+              "bytesSent": 4786423,
+              "bytesReceived": 36291808,
+              "serverTimeMs": 914.8282389999997
+            },
+            {
+              "wallMs": 1710.941607,
+              "requestCount": 2909,
+              "roundTripMs": 1247.5995829999592,
+              "bytesSent": 4786425,
+              "bytesReceived": 36291925,
+              "serverTimeMs": 1082.0631770000005
+            },
+            {
+              "wallMs": 1741.506225,
+              "requestCount": 2909,
+              "roundTripMs": 1253.9151440003043,
+              "bytesSent": 4786425,
+              "bytesReceived": 36291939,
+              "serverTimeMs": 1057.941854000001
+            },
+            {
+              "wallMs": 1649.98582,
+              "requestCount": 2909,
+              "roundTripMs": 1197.2687299998943,
+              "bytesSent": 4786425,
+              "bytesReceived": 36291918,
+              "serverTimeMs": 1031.0617889999996
+            },
+            {
+              "wallMs": 1693.630756,
+              "requestCount": 2909,
+              "roundTripMs": 1253.9620619999623,
+              "bytesSent": 4786425,
+              "bytesReceived": 36291922,
+              "serverTimeMs": 1072.4219519999979
+            }
+          ],
+          "median": {
+            "wallMs": 1693.630756,
+            "requestCount": 2909,
+            "roundTripMs": 1247.5995829999592,
+            "bytesSent": 4786425,
+            "bytesReceived": 36291922,
+            "serverTimeMs": 1057.941854000001
+          },
+          "bound": {
+            "fileBatches": 126,
+            "residueFallbacks": 9,
+            "pairAssignabilityCalls": 0
+          },
+          "referenceCost": {
+            "batched": 44789,
+            "fileBatches": 126,
+            "residueFallbacks": 9,
+            "shorthandLookups": 535,
+            "aliasSteps": 1286
+          },
+          "inventoryCost": {
+            "batches": 2,
+            "exportTables": 134,
+            "memberTables": 141
+          }
+        },
+        {
+          "cap": 16384,
+          "samples": [
+            {
+              "wallMs": 1623.205383,
+              "requestCount": 2909,
+              "roundTripMs": 1190.967132000238,
+              "bytesSent": 4786425,
+              "bytesReceived": 36291902,
+              "serverTimeMs": 1019.6438750000009
+            },
+            {
+              "wallMs": 1550.160104,
+              "requestCount": 2909,
+              "roundTripMs": 1128.0779820005264,
+              "bytesSent": 4786425,
+              "bytesReceived": 36291933,
+              "serverTimeMs": 964.6240279999984
+            },
+            {
+              "wallMs": 1926.269026,
+              "requestCount": 2909,
+              "roundTripMs": 1365.282044999738,
+              "bytesSent": 4786421,
+              "bytesReceived": 36291564,
+              "serverTimeMs": 1143.6937529999961
+            },
+            {
+              "wallMs": 2033.991289,
+              "requestCount": 2909,
+              "roundTripMs": 1502.9246929998335,
+              "bytesSent": 4786425,
+              "bytesReceived": 36291939,
+              "serverTimeMs": 1284.2533720000013
+            },
+            {
+              "wallMs": 3265.469337,
+              "requestCount": 2909,
+              "roundTripMs": 2255.4608200008224,
+              "bytesSent": 4786425,
+              "bytesReceived": 36291895,
+              "serverTimeMs": 1874.2144439999975
+            }
+          ],
+          "median": {
+            "wallMs": 1926.269026,
+            "requestCount": 2909,
+            "roundTripMs": 1365.282044999738,
+            "bytesSent": 4786425,
+            "bytesReceived": 36291902,
+            "serverTimeMs": 1143.6937529999961
+          },
+          "bound": {
+            "fileBatches": 126,
+            "residueFallbacks": 9,
+            "pairAssignabilityCalls": 0
+          },
+          "referenceCost": {
+            "batched": 44789,
+            "fileBatches": 126,
+            "residueFallbacks": 9,
+            "shorthandLookups": 535,
+            "aliasSteps": 1286
+          },
+          "inventoryCost": {
+            "batches": 2,
+            "exportTables": 134,
+            "memberTables": 141
+          }
+        },
+        {
+          "cap": "uncapped",
+          "samples": [
+            {
+              "wallMs": 4383.541325,
+              "requestCount": 2909,
+              "roundTripMs": 3271.5161950002075,
+              "bytesSent": 4786423,
+              "bytesReceived": 36291004,
+              "serverTimeMs": 2823.621726000002
+            },
+            {
+              "wallMs": 4682.884283,
+              "requestCount": 2909,
+              "roundTripMs": 3523.075624000092,
+              "bytesSent": 4786421,
+              "bytesReceived": 36291530,
+              "serverTimeMs": 2931.356595
+            },
+            {
+              "wallMs": 4109.334617,
+              "requestCount": 2909,
+              "roundTripMs": 3128.204096999718,
+              "bytesSent": 4786425,
+              "bytesReceived": 36291887,
+              "serverTimeMs": 2737.660280000002
+            },
+            {
+              "wallMs": 3723.127233,
+              "requestCount": 2909,
+              "roundTripMs": 2630.0070820005058,
+              "bytesSent": 4786425,
+              "bytesReceived": 36291901,
+              "serverTimeMs": 2209.306936000003
+            },
+            {
+              "wallMs": 3852.789168,
+              "requestCount": 2909,
+              "roundTripMs": 2940.151933999732,
+              "bytesSent": 4786425,
+              "bytesReceived": 36291789,
+              "serverTimeMs": 2550.5352729999986
+            }
+          ],
+          "median": {
+            "wallMs": 4109.334617,
+            "requestCount": 2909,
+            "roundTripMs": 3128.204096999718,
+            "bytesSent": 4786425,
+            "bytesReceived": 36291789,
+            "serverTimeMs": 2737.660280000002
+          },
+          "bound": {
+            "fileBatches": 126,
+            "residueFallbacks": 9,
+            "pairAssignabilityCalls": 0
+          },
+          "referenceCost": {
+            "batched": 44789,
+            "fileBatches": 126,
+            "residueFallbacks": 9,
+            "shorthandLookups": 535,
+            "aliasSteps": 1286
+          },
+          "inventoryCost": {
+            "batches": 2,
+            "exportTables": 134,
+            "memberTables": 141
+          }
+        }
+      ]
+    },
+    {
+      "package": "web-terminal-kiro-static-src",
+      "loaded": true,
+      "projects": 2,
+      "results": [
+        {
+          "cap": 256,
+          "samples": [
+            {
+              "wallMs": 1009.752547,
+              "requestCount": 768,
+              "roundTripMs": 974.2686539999559,
+              "bytesSent": 309523,
+              "bytesReceived": 1229416,
+              "serverTimeMs": 928.7642230000009
+            },
+            {
+              "wallMs": 1102.052309,
+              "requestCount": 768,
+              "roundTripMs": 1064.3896580000146,
+              "bytesSent": 309523,
+              "bytesReceived": 1229414,
+              "serverTimeMs": 1020.8485540000006
+            },
+            {
+              "wallMs": 1473.693464,
+              "requestCount": 768,
+              "roundTripMs": 1406.8579550001741,
+              "bytesSent": 309523,
+              "bytesReceived": 1229370,
+              "serverTimeMs": 1356.7987020000025
+            },
+            {
+              "wallMs": 1396.915127,
+              "requestCount": 768,
+              "roundTripMs": 1356.7227960001037,
+              "bytesSent": 309523,
+              "bytesReceived": 1229345,
+              "serverTimeMs": 1309.1295739999994
+            },
+            {
+              "wallMs": 965.20404,
+              "requestCount": 768,
+              "roundTripMs": 917.8259239999752,
+              "bytesSent": 309523,
+              "bytesReceived": 1229366,
+              "serverTimeMs": 847.1701519999999
+            }
+          ],
+          "median": {
+            "wallMs": 1102.052309,
+            "requestCount": 768,
+            "roundTripMs": 1064.3896580000146,
+            "bytesSent": 309523,
+            "bytesReceived": 1229370,
+            "serverTimeMs": 1020.8485540000006
+          },
+          "bound": {
+            "fileBatches": 14,
+            "residueFallbacks": 0,
+            "pairAssignabilityCalls": 0
+          },
+          "referenceCost": {
+            "batched": 1605,
+            "fileBatches": 14,
+            "residueFallbacks": 0,
+            "shorthandLookups": 5,
+            "aliasSteps": 73
+          },
+          "inventoryCost": {
+            "batches": 2,
+            "exportTables": 9,
+            "memberTables": 0
+          }
+        },
+        {
+          "cap": 1024,
+          "samples": [
+            {
+              "wallMs": 1267.872406,
+              "requestCount": 764,
+              "roundTripMs": 1233.013924000028,
+              "bytesSent": 309019,
+              "bytesReceived": 1229412,
+              "serverTimeMs": 1178.783232
+            },
+            {
+              "wallMs": 1172.222488,
+              "requestCount": 764,
+              "roundTripMs": 1122.6838669999124,
+              "bytesSent": 309019,
+              "bytesReceived": 1229410,
+              "serverTimeMs": 1068.8882209999995
+            },
+            {
+              "wallMs": 1438.291067,
+              "requestCount": 764,
+              "roundTripMs": 1380.4033540000091,
+              "bytesSent": 309019,
+              "bytesReceived": 1229362,
+              "serverTimeMs": 1310.0146869999985
+            },
+            {
+              "wallMs": 1154.587536,
+              "requestCount": 764,
+              "roundTripMs": 1115.5556599998527,
+              "bytesSent": 309019,
+              "bytesReceived": 1229375,
+              "serverTimeMs": 1080.3734690000003
+            },
+            {
+              "wallMs": 1469.604056,
+              "requestCount": 764,
+              "roundTripMs": 1423.6721549998329,
+              "bytesSent": 309019,
+              "bytesReceived": 1229410,
+              "serverTimeMs": 1373.3765000000012
+            }
+          ],
+          "median": {
+            "wallMs": 1267.872406,
+            "requestCount": 764,
+            "roundTripMs": 1233.013924000028,
+            "bytesSent": 309019,
+            "bytesReceived": 1229410,
+            "serverTimeMs": 1178.783232
+          },
+          "bound": {
+            "fileBatches": 10,
+            "residueFallbacks": 0,
+            "pairAssignabilityCalls": 0
+          },
+          "referenceCost": {
+            "batched": 1605,
+            "fileBatches": 10,
+            "residueFallbacks": 0,
+            "shorthandLookups": 5,
+            "aliasSteps": 73
+          },
+          "inventoryCost": {
+            "batches": 2,
+            "exportTables": 9,
+            "memberTables": 0
+          }
+        },
+        {
+          "cap": 4096,
+          "samples": [
+            {
+              "wallMs": 1047.18419,
+              "requestCount": 763,
+              "roundTripMs": 1023.6627229998994,
+              "bytesSent": 308893,
+              "bytesReceived": 1229411,
+              "serverTimeMs": 999.9072029999986
+            },
+            {
+              "wallMs": 1014.096309,
+              "requestCount": 763,
+              "roundTripMs": 979.1048129999836,
+              "bytesSent": 308893,
+              "bytesReceived": 1229398,
+              "serverTimeMs": 936.3670929999993
+            },
+            {
+              "wallMs": 1276.104867,
+              "requestCount": 763,
+              "roundTripMs": 1233.4474010001286,
+              "bytesSent": 308893,
+              "bytesReceived": 1229354,
+              "serverTimeMs": 1196.633225
+            },
+            {
+              "wallMs": 925.091903,
+              "requestCount": 763,
+              "roundTripMs": 886.4276549999777,
+              "bytesSent": 308893,
+              "bytesReceived": 1229327,
+              "serverTimeMs": 846.7464449999997
+            },
+            {
+              "wallMs": 1008.731276,
+              "requestCount": 763,
+              "roundTripMs": 976.4402060001157,
+              "bytesSent": 308893,
+              "bytesReceived": 1229409,
+              "serverTimeMs": 945.1215830000011
+            }
+          ],
+          "median": {
+            "wallMs": 1014.096309,
+            "requestCount": 763,
+            "roundTripMs": 979.1048129999836,
+            "bytesSent": 308893,
+            "bytesReceived": 1229398,
+            "serverTimeMs": 945.1215830000011
+          },
+          "bound": {
+            "fileBatches": 9,
+            "residueFallbacks": 0,
+            "pairAssignabilityCalls": 0
+          },
+          "referenceCost": {
+            "batched": 1605,
+            "fileBatches": 9,
+            "residueFallbacks": 0,
+            "shorthandLookups": 5,
+            "aliasSteps": 73
+          },
+          "inventoryCost": {
+            "batches": 2,
+            "exportTables": 9,
+            "memberTables": 0
+          }
+        },
+        {
+          "cap": 16384,
+          "samples": [
+            {
+              "wallMs": 954.323407,
+              "requestCount": 763,
+              "roundTripMs": 925.9543889997585,
+              "bytesSent": 308893,
+              "bytesReceived": 1229409,
+              "serverTimeMs": 877.6379960000008
+            },
+            {
+              "wallMs": 984.5999,
+              "requestCount": 763,
+              "roundTripMs": 949.7330740003381,
+              "bytesSent": 308893,
+              "bytesReceived": 1229411,
+              "serverTimeMs": 909.6123970000002
+            },
+            {
+              "wallMs": 1053.563116,
+              "requestCount": 763,
+              "roundTripMs": 1017.9125429997366,
+              "bytesSent": 308893,
+              "bytesReceived": 1229411,
+              "serverTimeMs": 969.1152659999991
+            },
+            {
+              "wallMs": 829.448918,
+              "requestCount": 763,
+              "roundTripMs": 800.143788999907,
+              "bytesSent": 308893,
+              "bytesReceived": 1229373,
+              "serverTimeMs": 768.9356619999996
+            },
+            {
+              "wallMs": 1108.571666,
+              "requestCount": 763,
+              "roundTripMs": 1072.3875420002732,
+              "bytesSent": 308893,
+              "bytesReceived": 1229409,
+              "serverTimeMs": 1011.4010770000003
+            }
+          ],
+          "median": {
+            "wallMs": 984.5999,
+            "requestCount": 763,
+            "roundTripMs": 949.7330740003381,
+            "bytesSent": 308893,
+            "bytesReceived": 1229409,
+            "serverTimeMs": 909.6123970000002
+          },
+          "bound": {
+            "fileBatches": 9,
+            "residueFallbacks": 0,
+            "pairAssignabilityCalls": 0
+          },
+          "referenceCost": {
+            "batched": 1605,
+            "fileBatches": 9,
+            "residueFallbacks": 0,
+            "shorthandLookups": 5,
+            "aliasSteps": 73
+          },
+          "inventoryCost": {
+            "batches": 2,
+            "exportTables": 9,
+            "memberTables": 0
+          }
+        },
+        {
+          "cap": "uncapped",
+          "samples": [
+            {
+              "wallMs": 994.134707,
+              "requestCount": 763,
+              "roundTripMs": 968.3478749996284,
+              "bytesSent": 308893,
+              "bytesReceived": 1229409,
+              "serverTimeMs": 924.8945210000021
+            },
+            {
+              "wallMs": 1092.826006,
+              "requestCount": 763,
+              "roundTripMs": 1057.1162619993556,
+              "bytesSent": 308893,
+              "bytesReceived": 1229411,
+              "serverTimeMs": 1011.0406539999999
+            },
+            {
+              "wallMs": 886.068716,
+              "requestCount": 763,
+              "roundTripMs": 845.7588809988811,
+              "bytesSent": 308893,
+              "bytesReceived": 1229365,
+              "serverTimeMs": 795.2703499999989
+            },
+            {
+              "wallMs": 914.333165,
+              "requestCount": 763,
+              "roundTripMs": 876.8005170007818,
+              "bytesSent": 308893,
+              "bytesReceived": 1229354,
+              "serverTimeMs": 840.184809
+            },
+            {
+              "wallMs": 1128.775289,
+              "requestCount": 763,
+              "roundTripMs": 1093.0063610001525,
+              "bytesSent": 308893,
+              "bytesReceived": 1229374,
+              "serverTimeMs": 1058.9365719999992
+            }
+          ],
+          "median": {
+            "wallMs": 994.134707,
+            "requestCount": 763,
+            "roundTripMs": 968.3478749996284,
+            "bytesSent": 308893,
+            "bytesReceived": 1229374,
+            "serverTimeMs": 924.8945210000021
+          },
+          "bound": {
+            "fileBatches": 9,
+            "residueFallbacks": 0,
+            "pairAssignabilityCalls": 0
+          },
+          "referenceCost": {
+            "batched": 1605,
+            "fileBatches": 9,
+            "residueFallbacks": 0,
+            "shorthandLookups": 5,
+            "aliasSteps": 73
+          },
+          "inventoryCost": {
+            "batches": 2,
+            "exportTables": 9,
+            "memberTables": 0
+          }
+        }
+      ]
+    },
+    {
+      "package": "@cplieger/web-terminal-ui",
+      "loaded": true,
+      "projects": 2,
+      "results": [
+        {
+          "cap": 256,
+          "samples": [
+            {
+              "wallMs": 4102.135237,
+              "requestCount": 3101,
+              "roundTripMs": 3140.9806359999347,
+              "bytesSent": 6222132,
+              "bytesReceived": 44787250,
+              "serverTimeMs": 2734.294575000002
+            },
+            {
+              "wallMs": 3615.686632,
+              "requestCount": 3101,
+              "roundTripMs": 2686.7554970005294,
+              "bytesSent": 6222132,
+              "bytesReceived": 44787197,
+              "serverTimeMs": 2272.1211410000014
+            },
+            {
+              "wallMs": 3884.704588,
+              "requestCount": 3101,
+              "roundTripMs": 3037.5636549999763,
+              "bytesSent": 6222132,
+              "bytesReceived": 44787239,
+              "serverTimeMs": 2633.6096650000018
+            },
+            {
+              "wallMs": 3806.297348,
+              "requestCount": 3101,
+              "roundTripMs": 2859.2716080000973,
+              "bytesSent": 6222132,
+              "bytesReceived": 44787250,
+              "serverTimeMs": 2428.3045760000077
+            },
+            {
+              "wallMs": 3745.327876,
+              "requestCount": 3101,
+              "roundTripMs": 2810.890975999995,
+              "bytesSent": 6222132,
+              "bytesReceived": 44787197,
+              "serverTimeMs": 2441.0568029999977
+            }
+          ],
+          "median": {
+            "wallMs": 3806.297348,
+            "requestCount": 3101,
+            "roundTripMs": 2859.2716080000973,
+            "bytesSent": 6222132,
+            "bytesReceived": 44787239,
+            "serverTimeMs": 2441.0568029999977
+          },
+          "bound": {
+            "fileBatches": 322,
+            "residueFallbacks": 0,
+            "pairAssignabilityCalls": 0
+          },
+          "referenceCost": {
+            "batched": 60286,
+            "fileBatches": 322,
+            "residueFallbacks": 0,
+            "shorthandLookups": 618,
+            "aliasSteps": 1312
+          },
+          "inventoryCost": {
+            "batches": 2,
+            "exportTables": 142,
+            "memberTables": 123
+          }
+        },
+        {
+          "cap": 1024,
+          "samples": [
+            {
+              "wallMs": 3494.352438,
+              "requestCount": 2945,
+              "roundTripMs": 2638.9751429996977,
+              "bytesSent": 6204589,
+              "bytesReceived": 44785071,
+              "serverTimeMs": 2322.1494219999986
+            },
+            {
+              "wallMs": 4954.184423,
+              "requestCount": 2945,
+              "roundTripMs": 3680.099008999532,
+              "bytesSent": 6204589,
+              "bytesReceived": 44787054,
+              "serverTimeMs": 3172.4602519999985
+            },
+            {
+              "wallMs": 5594.296426,
+              "requestCount": 2945,
+              "roundTripMs": 4289.165638999839,
+              "bytesSent": 6204589,
+              "bytesReceived": 44787043,
+              "serverTimeMs": 3677.4626039999994
+            },
+            {
+              "wallMs": 7469.486756,
+              "requestCount": 2945,
+              "roundTripMs": 5896.893650000333,
+              "bytesSent": 6204559,
+              "bytesReceived": 44785034,
+              "serverTimeMs": 5165.040926999983
+            },
+            {
+              "wallMs": 4983.547044,
+              "requestCount": 2945,
+              "roundTripMs": 3723.164342999953,
+              "bytesSent": 6204589,
+              "bytesReceived": 44787005,
+              "serverTimeMs": 3042.179888000007
+            }
+          ],
+          "median": {
+            "wallMs": 4983.547044,
+            "requestCount": 2945,
+            "roundTripMs": 3723.164342999953,
+            "bytesSent": 6204589,
+            "bytesReceived": 44787005,
+            "serverTimeMs": 3172.4602519999985
+          },
+          "bound": {
+            "fileBatches": 166,
+            "residueFallbacks": 0,
+            "pairAssignabilityCalls": 0
+          },
+          "referenceCost": {
+            "batched": 60286,
+            "fileBatches": 166,
+            "residueFallbacks": 0,
+            "shorthandLookups": 618,
+            "aliasSteps": 1312
+          },
+          "inventoryCost": {
+            "batches": 2,
+            "exportTables": 142,
+            "memberTables": 123
+          }
+        },
+        {
+          "cap": 4096,
+          "samples": [
+            {
+              "wallMs": 4966.958792,
+              "requestCount": 2915,
+              "roundTripMs": 3830.2925049997284,
+              "bytesSent": 6201219,
+              "bytesReceived": 44786975,
+              "serverTimeMs": 3262.2042770000085
+            },
+            {
+              "wallMs": 4185.919042,
+              "requestCount": 2915,
+              "roundTripMs": 3189.5189249994,
+              "bytesSent": 6201219,
+              "bytesReceived": 44787014,
+              "serverTimeMs": 2757.2209840000014
+            },
+            {
+              "wallMs": 4308.25526,
+              "requestCount": 2915,
+              "roundTripMs": 3210.5839760000526,
+              "bytesSent": 6201219,
+              "bytesReceived": 44787029,
+              "serverTimeMs": 2738.5890079999967
+            },
+            {
+              "wallMs": 4439.395496,
+              "requestCount": 2915,
+              "roundTripMs": 3345.348632000969,
+              "bytesSent": 6201209,
+              "bytesReceived": 44786581,
+              "serverTimeMs": 2869.8765759999974
+            },
+            {
+              "wallMs": 4590.281035,
+              "requestCount": 2915,
+              "roundTripMs": 3499.29194500047,
+              "bytesSent": 6201191,
+              "bytesReceived": 44785025,
+              "serverTimeMs": 3089.309170999993
+            }
+          ],
+          "median": {
+            "wallMs": 4439.395496,
+            "requestCount": 2915,
+            "roundTripMs": 3345.348632000969,
+            "bytesSent": 6201219,
+            "bytesReceived": 44786975,
+            "serverTimeMs": 2869.8765759999974
+          },
+          "bound": {
+            "fileBatches": 136,
+            "residueFallbacks": 0,
+            "pairAssignabilityCalls": 0
+          },
+          "referenceCost": {
+            "batched": 60286,
+            "fileBatches": 136,
+            "residueFallbacks": 0,
+            "shorthandLookups": 618,
+            "aliasSteps": 1312
+          },
+          "inventoryCost": {
+            "batches": 2,
+            "exportTables": 142,
+            "memberTables": 123
+          }
+        },
+        {
+          "cap": 16384,
+          "samples": [
+            {
+              "wallMs": 3686.931794,
+              "requestCount": 2913,
+              "roundTripMs": 2798.2919249997067,
+              "bytesSent": 6200993,
+              "bytesReceived": 44787051,
+              "serverTimeMs": 2422.9424820000045
+            },
+            {
+              "wallMs": 3804.520179,
+              "requestCount": 2913,
+              "roundTripMs": 2836.099887000106,
+              "bytesSent": 6200993,
+              "bytesReceived": 44786981,
+              "serverTimeMs": 2453.126527000003
+            },
+            {
+              "wallMs": 2969.75153,
+              "requestCount": 2913,
+              "roundTripMs": 2211.48832000079,
+              "bytesSent": 6200993,
+              "bytesReceived": 44786075,
+              "serverTimeMs": 1920.3905030000024
+            },
+            {
+              "wallMs": 2762.418413,
+              "requestCount": 2913,
+              "roundTripMs": 2046.4956980001589,
+              "bytesSent": 6200993,
+              "bytesReceived": 44787060,
+              "serverTimeMs": 1769.524001999999
+            },
+            {
+              "wallMs": 2856.562993,
+              "requestCount": 2913,
+              "roundTripMs": 2124.4869980002113,
+              "bytesSent": 6200993,
+              "bytesReceived": 44787055,
+              "serverTimeMs": 1856.558819000002
+            }
+          ],
+          "median": {
+            "wallMs": 2969.75153,
+            "requestCount": 2913,
+            "roundTripMs": 2211.48832000079,
+            "bytesSent": 6200993,
+            "bytesReceived": 44787051,
+            "serverTimeMs": 1920.3905030000024
+          },
+          "bound": {
+            "fileBatches": 134,
+            "residueFallbacks": 0,
+            "pairAssignabilityCalls": 0
+          },
+          "referenceCost": {
+            "batched": 60286,
+            "fileBatches": 134,
+            "residueFallbacks": 0,
+            "shorthandLookups": 618,
+            "aliasSteps": 1312
+          },
+          "inventoryCost": {
+            "batches": 2,
+            "exportTables": 142,
+            "memberTables": 123
+          }
+        },
+        {
+          "cap": "uncapped",
+          "samples": [
+            {
+              "wallMs": 2645.550265,
+              "requestCount": 2913,
+              "roundTripMs": 1936.0308320005133,
+              "bytesSent": 6200993,
+              "bytesReceived": 44787045,
+              "serverTimeMs": 1659.942036000002
+            },
+            {
+              "wallMs": 2763.90311,
+              "requestCount": 2913,
+              "roundTripMs": 2020.7014570008323,
+              "bytesSent": 6200993,
+              "bytesReceived": 44787037,
+              "serverTimeMs": 1723.081370999995
+            },
+            {
+              "wallMs": 2622.428487,
+              "requestCount": 2913,
+              "roundTripMs": 1942.5669469998684,
+              "bytesSent": 6200993,
+              "bytesReceived": 44787062,
+              "serverTimeMs": 1679.8017370000057
+            },
+            {
+              "wallMs": 2832.60221,
+              "requestCount": 2913,
+              "roundTripMs": 2124.3132799998566,
+              "bytesSent": 6200993,
+              "bytesReceived": 44785637,
+              "serverTimeMs": 1833.924734999995
+            },
+            {
+              "wallMs": 2882.126516,
+              "requestCount": 2913,
+              "roundTripMs": 2173.823100999871,
+              "bytesSent": 6200993,
+              "bytesReceived": 44787021,
+              "serverTimeMs": 1890.8413779999983
+            }
+          ],
+          "median": {
+            "wallMs": 2763.90311,
+            "requestCount": 2913,
+            "roundTripMs": 2020.7014570008323,
+            "bytesSent": 6200993,
+            "bytesReceived": 44787037,
+            "serverTimeMs": 1723.081370999995
+          },
+          "bound": {
+            "fileBatches": 134,
+            "residueFallbacks": 0,
+            "pairAssignabilityCalls": 0
+          },
+          "referenceCost": {
+            "batched": 60286,
+            "fileBatches": 134,
+            "residueFallbacks": 0,
+            "shorthandLookups": 618,
+            "aliasSteps": 1312
+          },
+          "inventoryCost": {
+            "batches": 2,
+            "exportTables": 142,
+            "memberTables": 123
+          }
+        }
+      ]
+    }
+  ]
+}
