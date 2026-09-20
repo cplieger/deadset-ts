@@ -71,3 +71,23 @@ export function dirnamePath(path: string): string {
 export function resolvePath(against: string, path: string): string {
   return isAbsolutePath(path) ? normalizePath(path) : joinPath(against, path);
 }
+
+/**
+ * One path as it reads below a root, or undefined when it is not below the root.
+ * Both are normalized first, so a root written with a trailing separator or a `.`
+ * segment reaches the same answer, and the comparison is then lexical, so a root
+ * and a path spelled through different symbolic links name nothing in common. The
+ * root itself is not below itself.
+ *
+ * The caller resolves both against the same directory before calling: a relative
+ * root and an absolute path are two spellings this cannot reconcile.
+ */
+export function relativePath(root: string, path: string): string | undefined {
+  const at = normalizePath(root);
+  const prefix = at.endsWith(SEPARATOR) ? at : at + SEPARATOR;
+  const under = normalizePath(path);
+  if (!under.startsWith(prefix) || under.length === prefix.length) {
+    return undefined;
+  }
+  return under.slice(prefix.length);
+}

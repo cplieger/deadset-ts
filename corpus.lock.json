@@ -1,11 +1,11 @@
 {
-  "description": "The deadset-spec release this analyzer implements, and the digest of the copy of that release's documents committed under fixtures/. tag and commit name the release; the copy under fixtures/contract and fixtures/vectors is byte-identical to that commit's contract/ and vectors/config/ trees, so `git diff` against a clone of the tag verifies it. digest is sha256 over, for each file below the named directory in ascending path order, the path, a newline, the file's sha256 in lowercase hexadecimal and a newline; the suite recomputes it, so an edit to a committed copy fails a test rather than moving the Contract this analyzer is tested against. contract_version is the version contract/contract.json carries at that commit, which the analyzer names in every resolved configuration it prints.",
-  "tag": "v1.12.0",
-  "commit": "d366ea8140a464d3afb9bc6764f61672bf3bccd2",
-  "contract_version": "1.5.0",
-  "reason": "The release whose closed configuration key list, exit-code table, issue-kind vocabulary and published configuration vectors this analyzer is written against.",
+  "description": "The deadset-spec release this analyzer implements, and the digest of the copy of that release's documents committed under fixtures/. tag and commit name the release; every file under fixtures/contract is byte-identical to that commit's contract/ tree, which the copy holds whole so that a page's links to its siblings resolve, and every file under fixtures/vectors is byte-identical to the same commit's vectors/config/ case directories, so `git diff` against a clone of the tag verifies both. digest is sha256 over, for each file below the named directory in ascending path order, the path, a newline, the file's sha256 in lowercase hexadecimal and a newline; the suite recomputes it, so an edit to a committed copy fails a test rather than moving the Contract this analyzer is tested against. contract_version is the version contract/contract.json carries at that commit, which the analyzer names in every resolved configuration it prints.",
+  "tag": "v1.13.0",
+  "commit": "aa38aeed91740d182336ec945d9ac42c4ab1ce5a",
+  "contract_version": "1.6.0",
+  "reason": "The release whose closed configuration key list, exit-code table, issue-kind vocabulary, exemption classes, stable-symbol-reference grammar with its token corpus, and published configuration vectors this analyzer is written against.",
   "digests": {
-    "fixtures/contract": "14e2814b127a54a8798a9d9b54becfdf32d48e8494b4b4a2f041576cd1204f8e",
-    "fixtures/vectors": "630fff9da48b6f18c678c2eebee308e401d02c4f9099820a12c64739ec241db9"
+    "fixtures/contract": "7420171980e5661a611d51ed3ec16d62b6c47a38c10cb8a8f4d3664368453184",
+    "fixtures/vectors": "1a99fd79d658e3413d96bc2584ac0cd926a7a7f2acd9d87e42d09cc9a4fadc3d"
   }
 }

@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { dirnamePath, isAbsolutePath, joinPath, normalizePath, resolvePath } from "./paths.ts";
+import {
+  dirnamePath,
+  isAbsolutePath,
+  joinPath,
+  normalizePath,
+  relativePath,
+  resolvePath,
+} from "./paths.ts";
 
 describe("isAbsolutePath", () => {
   it.each([
@@ -71,5 +78,22 @@ describe("resolvePath", () => {
     { against: "/work", path: "/a/../b", want: "/b" },
   ])("resolves $path against $against to $want", ({ against, path, want }) => {
     expect(resolvePath(against, path)).toBe(want);
+  });
+});
+
+describe("relativePath", () => {
+  it.each([
+    { root: "/work", path: "/work/src/a.ts", want: "src/a.ts" },
+    { root: "/work/", path: "/work/src/a.ts", want: "src/a.ts" },
+    { root: "/work/./", path: "/work/src/a.ts", want: "src/a.ts" },
+    { root: "/work", path: "/work/a.ts", want: "a.ts" },
+    { root: "/", path: "/a.ts", want: "a.ts" },
+    { root: "/work", path: "/work", want: undefined },
+    { root: "/work", path: "/worktree/a.ts", want: undefined },
+    { root: "/work", path: "/other/a.ts", want: undefined },
+    { root: "/work/sub", path: "/work/a.ts", want: undefined },
+    { root: "/work", path: "/work/sub/../a.ts", want: "a.ts" },
+  ])("answers $want for $path below $root", ({ root, path, want }) => {
+    expect(relativePath(root, path)).toBe(want);
   });
 });

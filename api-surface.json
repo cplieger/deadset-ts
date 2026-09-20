@@ -6,7 +6,37 @@
   "consumed": [
     {
       "path": "@typescript/native/unstable/ast",
-      "names": ["Identifier", "Node", "SourceFile", "SyntaxKind"]
+      "names": [
+        "Identifier",
+        "ModifierFlags",
+        "Node",
+        "SourceFile",
+        "SyntaxKind",
+        "isClassDeclaration",
+        "isComputedPropertyName",
+        "isEnumDeclaration",
+        "isEnumMember",
+        "isExportAssignment",
+        "isExportDeclaration",
+        "isFunctionDeclaration",
+        "isGetAccessorDeclaration",
+        "isIdentifier",
+        "isInterfaceDeclaration",
+        "isIntersectionTypeNode",
+        "isMethodDeclaration",
+        "isMethodSignatureDeclaration",
+        "isModuleBlock",
+        "isModuleDeclaration",
+        "isNamespaceExport",
+        "isPrivateIdentifier",
+        "isPropertyDeclaration",
+        "isPropertySignatureDeclaration",
+        "isSetAccessorDeclaration",
+        "isTypeAliasDeclaration",
+        "isTypeLiteralNode",
+        "isUnionTypeNode",
+        "isVariableStatement"
+      ]
     },
     {
       "path": "@typescript/native/unstable/sync",
@@ -16,6 +46,7 @@
         "Diagnostic",
         "DiagnosticCategory",
         "DocumentIdentifier",
+        "NodeHandle",
         "Program",
         "Project",
         "Snapshot",

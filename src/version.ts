@@ -5,7 +5,7 @@ import manifest from "../package.json" with { type: "json" };
  * `contract_version` when no configuration source supplies one, and it moves
  * independently of {@link version}.
  */
-export const CONTRACT_VERSION = "1.5.0";
+export const CONTRACT_VERSION = "1.6.0";
 
 /**
  * This analyzer's own version, which the published package carries rather than
