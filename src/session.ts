@@ -10,8 +10,8 @@ import type {
   Symbol as TSSymbol,
   TimingInfo,
 } from "@typescript/native/unstable/sync";
-import { SyntaxKind } from "@typescript/native/unstable/ast";
-import type { Identifier, Node, SourceFile } from "@typescript/native/unstable/ast";
+import { isIdentifier } from "@typescript/native/unstable/ast";
+import type { Node, SourceFile } from "@typescript/native/unstable/ast";
 
 /**
  * The compiler the analysis reads through. It is a client over a protocol to a
@@ -103,6 +103,25 @@ export interface ProjectView<Brand> {
    */
   symbolsAt(handles: readonly Handle<Brand>[]): readonly (TSSymbol | undefined)[];
   /**
+   * The symbol one node resolves to, asked for that node alone. The accessor behind
+   * it takes one identifier and offers no array overload, so it is one round trip per
+   * node and it answers only for the residue a batch left unresolved. A node that is
+   * not an identifier has no such answer.
+   */
+  resolvedSymbolAt(handle: Handle<Brand>): TSSymbol | undefined;
+  /**
+   * The symbol the value of one shorthand property assignment names, which is the
+   * declaration `{ a }` reads; the symbol the property's own name resolves to is the
+   * property the literal declares. The handle names the assignment, not its name.
+   */
+  shorthandValueAt(handle: Handle<Brand>): TSSymbol | undefined;
+  /**
+   * The symbol one alias names, one link along: an import or export specifier
+   * resolves to the declaration it carries forward, or to the next alias of a chain.
+   * `undefined` where the symbol is no alias, or where the alias resolves to nothing.
+   */
+  aliasStepOf(symbol: TSSymbol): TSSymbol | undefined;
+  /**
    * The node one symbol's declaration handle names, read in this project's program,
    * or `undefined` where this project's program does not hold that file.
    *
@@ -122,30 +141,18 @@ export interface ProjectView<Brand> {
  */
 export type ProjectVisitor<Result> = <Brand>(project: ProjectView<Brand>) => Result;
 
-/**
- * The identifiers of one source file, in source order. A file is the unit a batch
- * resolves: the walk is local to this process and the resolution is not, so one
- * file's identifiers are gathered here and handed to the checker together.
- */
-export function identifiersOf(file: SourceFile): Identifier[] {
-  const found: Identifier[] = [];
-  const visit = (node: Node): void => {
-    if (node.kind === SyntaxKind.Identifier) {
-      found.push(node as Identifier);
-    }
-    node.forEachChild(visit);
-  };
-  file.forEachChild(visit);
-  return found;
-}
-
 function viewOf<Brand>(project: Project): ProjectView<Brand> {
+  // The snapshot is never updated, so a project's own file set is the same answer
+  // every time it is asked for. It is read once because the question is not free:
+  // deciding it consults the metadata of every file the program holds, the compiler's
+  // own library files included, and a run asks for the set once per pass.
+  let ownFiles: readonly SourceFile[] | undefined;
   return {
     configFile: project.configFileName,
     program: project.program,
     checker: project.checker,
-    ownSourceFiles: () =>
-      project.program
+    ownSourceFiles: () => {
+      ownFiles ??= project.program
         .getSourceFileNames()
         // The metadata decides which files belong to the target, and it is read by
         // name. Fetching each file first and filtering afterwards costs one round
@@ -158,9 +165,21 @@ function viewOf<Brand>(project: Project): ProjectView<Brand> {
           );
         })
         .map((name) => project.program.getSourceFile(name))
-        .filter((file): file is SourceFile => file !== undefined),
+        .filter((file): file is SourceFile => file !== undefined);
+      return ownFiles;
+    },
     handle: (node) => ({ node }),
     symbolsAt: (handles) => project.checker.getSymbolAtLocation(handles.map(({ node }) => node)),
+    resolvedSymbolAt: ({ node }) =>
+      isIdentifier(node) ? project.checker.getResolvedSymbol(node) : undefined,
+    shorthandValueAt: ({ node }) => project.checker.getShorthandAssignmentValueSymbol(node),
+    aliasStepOf: (symbol) => {
+      const held = project.checker.getImmediateAliasedSymbol(symbol);
+      // An alias that resolves to nothing answers with the checker's own unknown
+      // symbol, which declares nothing; a symbol that is no alias answers with
+      // nothing at all.
+      return held === undefined || held.declarations.length === 0 ? undefined : held;
+    },
     declarationAt: (handle) => {
       const node = handle.resolve(project);
       return node === undefined ? undefined : { node };

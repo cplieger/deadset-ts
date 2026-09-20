@@ -4,9 +4,10 @@ import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
 import { fixture, ROOT } from "../__test-helpers__/fixtures.ts";
+import type { Host } from "./host.ts";
 import { run, SETTING_OPTIONS, type Writer } from "./run.ts";
 import { declaresSetting } from "./schema.ts";
-import { CONTRACT_VERSION, version } from "./version.ts";
+import { CONTRACT_VERSION } from "./version.ts";
 
 class MemoryWriter implements Writer {
   text = "";
@@ -21,10 +22,10 @@ interface Invocation {
   readonly err: string;
 }
 
-function invoke(args: readonly string[]): Invocation {
+function invoke(args: readonly string[], host: Host = nodeHost()): Invocation {
   const out = new MemoryWriter();
   const err = new MemoryWriter();
-  const code = run(args, out, err, nodeHost());
+  const code = run(args, out, err, host);
   return { code, out: out.text, err: err.text };
 }
 
@@ -56,10 +57,12 @@ function hashTree(dir: string): Map<string, string> {
 }
 
 describe("the command line", () => {
-  it("prints the build and Contract versions and exits 0", () => {
-    expect(invoke(["version"])).toEqual({
+  it("prints the version its host reports and the Contract version, and exits 0", () => {
+    const host: Host = { ...nodeHost(), analyzerVersion: () => "9.9.9-probe" };
+
+    expect(invoke(["version"], host)).toEqual({
       code: 0,
-      out: `deadset-ts ${version()}\ncontract ${CONTRACT_VERSION}\n`,
+      out: `deadset-ts 9.9.9-probe\ncontract ${CONTRACT_VERSION}\n`,
       err: "",
     });
   });

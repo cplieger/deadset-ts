@@ -11,7 +11,7 @@ import { printConfig } from "./print.ts";
 import { resolve } from "./resolve.ts";
 import { readScope, ScopeError, scopeForDir, type Scope } from "./scope.ts";
 import { diagnosticsOf, openEngine, runSession, type Engine } from "./session.ts";
-import { CONTRACT_VERSION, version } from "./version.ts";
+import { CONTRACT_VERSION } from "./version.ts";
 
 /** One output stream of the command line. `process.stdout` and `process.stderr` satisfy it. */
 export interface Writer {
@@ -186,8 +186,8 @@ function scopeOf(host: Host, options: Options): Scope {
  * An option asking for a source edit is refused before the verb is read: this
  * analyzer reports and never edits a source file.
  *
- * `host` is the filesystem the run reads and the directory it reads relative paths
- * against; `openClient` opens the compiler client a verb that reads projects needs.
+ * `host` is the platform the run reads, the version it reports included;
+ * `openClient` opens the compiler client a verb that reads projects needs.
  * Both are parameters because both are the platform, which no module below this one
  * names: the command entry binds them, and a caller that wants to watch what a run
  * reads supplies its own.
@@ -210,7 +210,7 @@ export function run(
 
   const verb = args[0];
   if (verb === "version") {
-    out.write(`deadset-ts ${version()}\ncontract ${CONTRACT_VERSION}\n`);
+    out.write(`deadset-ts ${host.analyzerVersion()}\ncontract ${CONTRACT_VERSION}\n`);
     return EXIT_CLEAN;
   }
   if (verb === "print-config") {

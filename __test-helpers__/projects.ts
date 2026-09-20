@@ -5,6 +5,7 @@ import type { Symbol as TSSymbol } from "@typescript/native/unstable/sync";
 import { nodeHost } from "../bin/node-host.ts";
 import { discoverProjects } from "../src/discover.ts";
 import { inventory, type Inventory } from "../src/inventory.ts";
+import { references, type ReferenceOptions, type References } from "../src/references.ts";
 import { scopeForDir } from "../src/scope.ts";
 import { openEngine, runSession, type ProjectView } from "../src/session.ts";
 
@@ -115,31 +116,66 @@ export interface Analyzed {
   readonly programFiles: readonly string[];
   /** The symbol tables every project's enumeration read, in order. */
   readonly tableReads: TableReads;
+  /** One entry per project, and none where no reference pass was asked for. */
+  readonly references: readonly References[];
+  /**
+   * The client requests the reference pass made, summed over the projects, measured
+   * at the client's own timing counter rather than counted by the pass. It is zero
+   * where no reference pass was asked for.
+   */
+  readonly referenceRequests: number;
+}
+
+/** What one analysis does besides enumerating the declarations. */
+export interface AnalyzeOptions {
+  /**
+   * Resolve the references too, under these options, and measure what the pass cost.
+   * Absent leaves the reference pass unrun, so a case that reads declarations alone
+   * pays nothing for it.
+   */
+  readonly references?: ReferenceOptions;
 }
 
 /** Enumerates one project under `root`, in one client and one snapshot. */
-export function analyzeRoot(root: string): Analyzed {
+export function analyzeRoot(root: string, options: AnalyzeOptions = {}): Analyzed {
   const host = nodeHost();
-  const engine = openEngine({ collectTiming: false });
+  const wanted = options.references;
+  const engine = openEngine({ collectTiming: wanted !== undefined });
   const configFiles = discoverProjects(engine, host, scopeForDir(host, root)).configFiles;
   const programFiles: string[] = [];
   const tally: Tally = { members: [], exports: [] };
+  const resolved: References[] = [];
+  let requests = 0;
   const { projects } = runSession(engine, configFiles, (project) => {
     programFiles.push(...project.program.getSourceFileNames());
-    return inventory(recordingView(project, tally), host, root);
+    const held = inventory(recordingView(project, tally), host, root);
+    if (wanted !== undefined) {
+      const before = engine.getTimingInfo().totals.requestCount;
+      resolved.push(references(project, held, root, wanted));
+      requests += engine.getTimingInfo().totals.requestCount - before;
+    }
+    return held;
   });
-  return { inventories: projects, programFiles, tableReads: tally };
+  return {
+    inventories: projects,
+    programFiles,
+    tableReads: tally,
+    references: resolved,
+    referenceRequests: requests,
+  };
 }
 
 /**
- * Writes one project, enumerates it, and removes the tree. One client and one
- * snapshot per call, which is the cost a property that draws a tree pays per
- * iteration.
+ * Writes one project, analyzes it, and removes the tree. One client and one snapshot
+ * per call, which is the cost a property that draws a tree pays per iteration.
  */
-export function analyzeProject(files: Readonly<Record<string, string>>): Analyzed {
+export function analyzeProject(
+  files: Readonly<Record<string, string>>,
+  options: AnalyzeOptions = {},
+): Analyzed {
   const root = writeProject(files);
   try {
-    return analyzeRoot(root);
+    return analyzeRoot(root, options);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
