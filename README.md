@@ -8,7 +8,7 @@ deadset-ts is a command-line analyzer for TypeScript and JavaScript projects. It
 
 deadset-ts is report-only. It never edits source, and it refuses any `--fix` flag.
 
-**Status: pre-release.** This version implements contract 1.5.0 and ships the analyzer's foundation: one compiler session per run over every `tsconfig` project discovered under the target (the explicit scope, every `tsconfig*.json`, each project's `references`), a fail-closed read of every project's diagnostics, configuration decoding against the contract's closed key list with `print-config` and its provenance, `print-projects`, and the report-only guard. `analyze` and `explain` are not implemented yet and exit with a usage message. The one runtime dependency is the `typescript` package at exactly 7.0.2, installed under the `@typescript/native` name until TypeScript 7.1 ships a compiler API the tooling can share. Running the command from an npm install under plain Node does not work yet, because Node does not strip types under `node_modules`; run it from a checkout or the JSR package until the command ships as JavaScript.
+**Status: pre-release.** This version implements contract 1.5.0 and ships the analyzer's foundation: one compiler session per run over every `tsconfig` project discovered under the target (the explicit scope, every `tsconfig*.json`, each project's `references`), a fail-closed read of every project's diagnostics, configuration decoding against the contract's closed key list with `print-config` and its provenance, `print-projects`, and the report-only guard. `analyze` and `explain` are not implemented yet and exit with a usage message. The one runtime dependency is the `typescript` package at exactly 7.0.2, installed under the `@typescript/native` name until TypeScript 7.1 ships a compiler API the tooling can share.
 
 ## Install
 
@@ -16,9 +16,11 @@ deadset-ts is report-only. It never edits source, and it refuses any `--fix` fla
 npm i -D @cplieger/deadset-ts
 # or
 npx jsr add -D @cplieger/deadset-ts
+# or run the command without installing it
+npx @cplieger/deadset-ts version
 ```
 
-The package ships TypeScript source, not compiled JavaScript: the `deadset-ts` command is a `.ts` file that Node.js 24 or later runs directly through its built-in type stripping, and the exported API is imported as source by the consumer's own compiler. There is no build step on either side.
+The package ships TypeScript source, not compiled JavaScript, and there is no build step on either side. The `deadset-ts` command runs on plain Node.js 24 or later; its entry strips the types of the package's own source itself, because Node refuses to do that for a file under `node_modules`. The exported API is source too, so a consumer compiles it with its own TypeScript, or imports it under Deno from the JSR package; plain Node cannot import it.
 
 ## Usage
 

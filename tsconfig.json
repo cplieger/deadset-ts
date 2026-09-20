@@ -8,6 +8,8 @@
     "types": ["node"],
     "noEmit": true,
     "allowImportingTsExtensions": true,
+    "allowJs": true,
+    "checkJs": true,
     "erasableSyntaxOnly": true,
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
@@ -24,6 +26,6 @@
     "allowUnreachableCode": false,
     "allowUnusedLabels": false
   },
-  "include": ["bin/**/*.ts", "src/**/*.ts"],
+  "include": ["bin/**/*.mjs", "bin/**/*.ts", "src/**/*.ts"],
   "exclude": ["src/**/*.test.ts"]
 }

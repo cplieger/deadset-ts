@@ -164,6 +164,37 @@ describe("a project's own files", () => {
   });
 });
 
+describe("a symbol's declaration", () => {
+  it("resolves in this project's program, whichever project first saw the symbol", () => {
+    const engine = openEngine({ collectTiming: false });
+    const configFiles = discoverProjects(engine, HOST, scopeForDir(HOST, TWO_PROJECTS)).configFiles;
+
+    const { projects } = runSession(engine, configFiles, (project) => {
+      const file = project.ownSourceFiles().find((held) => held.fileName.endsWith("catalog.ts"));
+      if (file === undefined) {
+        return [];
+      }
+      const [module] = project.symbolsAt([project.handle(file)]);
+      return [...(module?.getExports() ?? [])].flatMap(([, symbol]) =>
+        symbol.declarations.map((handle) => {
+          const held = project.declarationAt(handle);
+          return held === undefined ? "unresolved" : held.node.getSourceFile().fileName;
+        }),
+      );
+    });
+
+    // Every project that builds the shared file resolves the declaration in its own
+    // program, so nothing depends on which project reached the symbol first.
+    expect(projects.length).toBe(2);
+    for (const resolvedIn of projects) {
+      expect(resolvedIn.length, "the module exports two declarations").toBe(2);
+      expect(new Set(resolvedIn)).toEqual(
+        new Set([fixture("projects", "two-projects", "core", "catalog.ts")]),
+      );
+    }
+  });
+});
+
 declare const _alpha: unique symbol;
 declare const _beta: unique symbol;
 

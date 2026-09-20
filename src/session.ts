@@ -3,6 +3,7 @@ import type {
   Checker,
   Diagnostic,
   DocumentIdentifier,
+  NodeHandle,
   Project,
   Program,
   Snapshot,
@@ -101,6 +102,17 @@ export interface ProjectView<Brand> {
    * resolve.
    */
   symbolsAt(handles: readonly Handle<Brand>[]): readonly (TSSymbol | undefined)[];
+  /**
+   * The node one symbol's declaration handle names, read in this project's program,
+   * or `undefined` where this project's program does not hold that file.
+   *
+   * A symbol is shared by every project of the snapshot and remembers the project it
+   * was first seen in, so resolving its handle without saying which program to read
+   * would answer out of whichever project reached the symbol first. The project is
+   * named here instead, and the answer becomes a handle of this project like any
+   * other. The read is local once the file has been fetched.
+   */
+  declarationAt(handle: NodeHandle): Handle<Brand> | undefined;
 }
 
 /**
@@ -149,6 +161,10 @@ function viewOf<Brand>(project: Project): ProjectView<Brand> {
         .filter((file): file is SourceFile => file !== undefined),
     handle: (node) => ({ node }),
     symbolsAt: (handles) => project.checker.getSymbolAtLocation(handles.map(({ node }) => node)),
+    declarationAt: (handle) => {
+      const node = handle.resolve(project);
+      return node === undefined ? undefined : { node };
+    },
   };
 }
 
