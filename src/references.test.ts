@@ -316,6 +316,7 @@ describe("the per-symbol reference accessors", () => {
     };
     walk(join(ROOT, "src"));
     walk(join(ROOT, "bin"));
+    walk(join(ROOT, "scripts"));
     walk(join(ROOT, "__test-helpers__"));
 
     expect(
@@ -323,5 +324,26 @@ describe("the per-symbol reference accessors", () => {
       "a per-symbol reference query is the shape whose answers depend on the order the " +
         "symbols are asked about",
     ).toEqual([]);
+  });
+});
+
+describe("the default batch cap", () => {
+  const record = JSON.parse(
+    readFileSync(join(ROOT, "docs", "batch-cap-calibration.json"), "utf8"),
+  ) as { chosenDefault: number; caps: readonly (number | string)[] };
+
+  it("is the cap the calibration record chose", () => {
+    expect(
+      record.chosenDefault,
+      "the default is read off the committed measurements, so moving one without the other " +
+        "leaves the code taking a cap no run measured",
+    ).toBe(DEFAULT_BATCH_CAP);
+  });
+
+  it("is one of the values the sweep measured", () => {
+    expect(
+      record.caps,
+      "a chosen default the sweep never ran is a number, not a reading",
+    ).toContain(DEFAULT_BATCH_CAP);
   });
 });
