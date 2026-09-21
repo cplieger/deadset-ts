@@ -33,7 +33,7 @@
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "@types/node": "24.13.5",
-    "eslint": "10.10.0",
+    "eslint": "10.11.0",
     "fast-check": "4.10.1",
     "prettier": "3.9.8",
     "typescript": "npm:@typescript/typescript6@6.0.2",
