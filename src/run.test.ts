@@ -8,6 +8,7 @@ import { fixture, ROOT } from "../__test-helpers__/fixtures.ts";
 import type { Host } from "./host.ts";
 import { run, SETTING_OPTIONS, type Writer } from "./run.ts";
 import { declaresSetting } from "./schema.ts";
+import { openEngine, type Engine } from "./session.ts";
 import { CONTRACT_VERSION } from "./version.ts";
 
 class MemoryWriter implements Writer {
@@ -328,6 +329,37 @@ describe("print-projects", () => {
 
     expect(got.code).toBe(3);
     expect(got.err).toContain("no-such-scope.json");
+  });
+});
+
+describe("the compiler client a verb opens", () => {
+  it("is closed when the verb fails before its session reads a project", () => {
+    const target = matrixTree({
+      "deadset.json":
+        '{"analysis":{"configurations":[{"id":"gone","project":"packages/gone/tsconfig.json"}]}}\n',
+    });
+    let closes = 0;
+    const counted = (collectTiming: boolean): Engine => {
+      const engine = openEngine({ collectTiming });
+      return {
+        ...engine,
+        close: () => {
+          closes += 1;
+          engine.close();
+        },
+      };
+    };
+
+    const code = run(
+      ["print-projects", `--target=${target}`],
+      new MemoryWriter(),
+      new MemoryWriter(),
+      nodeHost(),
+      counted,
+    );
+
+    expect(code).toBe(3);
+    expect(closes).toBe(1);
   });
 });
 

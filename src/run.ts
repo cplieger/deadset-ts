@@ -1,43 +1,38 @@
-import { runRoots, runSweep, type RunRoot } from "./analysis.ts";
 import { ConfigError, REPOSITORY_DOCUMENT, type Inputs } from "./config.ts";
-import {
-  diagnosticErrors,
-  discoverProjects,
-  DiscoveryError,
-  renderDiagnostic,
-} from "./discover.ts";
-import { retainedLines } from "./exempt.ts";
+import { DiscoveryError, renderDiagnostic } from "./discover.ts";
+import { EMITTERS } from "./findings/emitters.ts";
 import type { Host } from "./host.ts";
 import { joinPath, resolvePath } from "./paths.ts";
-import { printConfig } from "./print.ts";
-import { resolve, resolveMatrix } from "./resolve.ts";
 import { readScope, ScopeError, scopeForDir, type Scope } from "./scope.ts";
-import { diagnosticsOf, openEngine, runSession, type Engine } from "./session.ts";
-import { CONTRACT_VERSION } from "./version.ts";
+import { openEngine, type Engine } from "./session.ts";
+import { printConfigVerb } from "./verbs/print-config.ts";
+import { printProjectsVerb } from "./verbs/print-projects.ts";
+import { printRetainedVerb } from "./verbs/print-retained.ts";
+import { printRootsVerb } from "./verbs/print-roots.ts";
+import { EXIT_FAILURE, EXIT_USAGE, type Verb } from "./verbs/verb.ts";
+import { versionVerb } from "./verbs/version.ts";
 
 /** One output stream of the command line. `process.stdout` and `process.stderr` satisfy it. */
 export interface Writer {
   write(text: string): void;
 }
 
-/** The exit codes the Contract's exit-code table names. */
-const EXIT_CLEAN = 0;
-const EXIT_FINDINGS = 1;
-const EXIT_USAGE = 2;
-const EXIT_FAILURE = 3;
+/**
+ * Every verb this command answers, in the order the usage text lists them. A verb
+ * with no `run` is listed, and invoking it is a usage error.
+ */
+const VERBS: readonly { readonly name: string; readonly run?: Verb }[] = [
+  { name: "analyze" },
+  { name: "explain" },
+  { name: "print-config", run: printConfigVerb },
+  { name: "print-projects", run: printProjectsVerb },
+  { name: "print-roots", run: printRootsVerb },
+  { name: "print-retained", run: printRetainedVerb },
+  { name: "describe" },
+  { name: "version", run: versionVerb },
+];
 
-const VERBS = [
-  "analyze",
-  "explain",
-  "print-config",
-  "print-projects",
-  "print-roots",
-  "print-retained",
-  "describe",
-  "version",
-] as const;
-
-const USAGE = `usage: deadset-ts <verb> [options]\nverbs: ${VERBS.join(", ")}\n`;
+const USAGE = `usage: deadset-ts <verb> [options]\nverbs: ${VERBS.map((verb) => verb.name).join(", ")}\n`;
 
 /**
  * The tokens whose presence in an option's name makes that option a request to
@@ -47,15 +42,11 @@ const USAGE = `usage: deadset-ts <verb> [options]\nverbs: ${VERBS.join(", ")}\n`
 const SOURCE_EDIT_TOKENS = ["fix", "edit", "delete", "rewrite"] as const;
 
 /**
- * Maps an option name to the setting it supplies, so one entry registers the
- * option, supplies the document resolution reads, and gives the spelling the
- * setting's provenance names.
- *
- * An option's name is this command's own vocabulary, chosen for how it reads on a
- * command line, and its path is the setting of the Contract's configuration schema
- * that option supplies. The two are mapped here and never derived from one
- * another, so this table is the authority for both: a setting reaches the command
- * line only by an entry, and a path names a key the schema declares.
+ * Maps an option name to the setting of the Contract's configuration schema it supplies,
+ * so one entry registers the option, supplies the document resolution reads, and gives
+ * the spelling the setting's provenance names. The name is this command's vocabulary and
+ * is never derived from the path: a setting reaches the command line only by an entry,
+ * and a path names a key the schema declares.
  */
 export const SETTING_OPTIONS: ReadonlyMap<string, string> = new Map([
   ["min-confidence", "analysis.min_confidence"],
@@ -177,20 +168,13 @@ function scopeOf(host: Host, options: Options): Scope {
 }
 
 /**
- * Runs the deadset-ts command line over `args` (the arguments after the program
- * name) and returns the process exit code: 0 for a completed verb, 2 for a usage
- * error or a configuration this analyzer refuses, 3 for a failure that produced no
- * answer. It writes nothing outside `out` and `err` and never exits the process,
- * so a caller decides what the code means.
- *
- * An option asking for a source edit is refused before the verb is read: this
- * analyzer reports and never edits a source file.
- *
- * `host` is the platform the run reads, the version it reports included;
- * `openClient` opens the compiler client a verb that reads projects needs.
- * Both are parameters because both are the platform, which no module below this one
- * names: the command entry binds them, and a caller that wants to watch what a run
- * reads supplies its own.
+ * Runs the command line over `args`, the arguments after the program name, and returns
+ * the exit code: 0 for a completed verb, 1 for a finding that fails the run, 2 for a
+ * usage error, a requested source edit or a refused configuration, 3 for a failure that
+ * produced no answer. It writes nothing outside `out` and `err` and never exits the
+ * process. `host` is the platform the run reads, the version it reports included, and
+ * `openClient` opens the compiler client; a caller that watches what a run reads
+ * supplies its own of either.
  */
 export function run(
   args: readonly string[],
@@ -208,170 +192,50 @@ export function run(
     return EXIT_USAGE;
   }
 
-  const verb = args[0];
-  if (verb === "version") {
-    out.write(`deadset-ts ${host.analyzerVersion()}\ncontract ${CONTRACT_VERSION}\n`);
-    return EXIT_CLEAN;
-  }
-  if (verb === "print-config") {
-    return printConfigVerb(args.slice(1), out, err, host);
-  }
-  if (verb === "print-projects") {
-    return printProjectsVerb(args.slice(1), out, err, host, openClient);
-  }
-  if (verb === "print-roots") {
-    return printRootsVerb(args.slice(1), out, err, host, openClient);
-  }
-  if (verb === "print-retained") {
-    return printRetainedVerb(args.slice(1), out, err, host, openClient);
-  }
-  if (verb !== undefined && (VERBS as readonly string[]).includes(verb)) {
-    err.write(`deadset-ts: ${verb} is not implemented\n`);
-    return EXIT_USAGE;
+  const name = args[0];
+  const verb = VERBS.find((listed) => listed.name === name);
+  if (verb?.run !== undefined) {
+    return invoke(verb.run, args.slice(1), { out, err, host }, openClient);
   }
   if (verb !== undefined) {
-    err.write(`deadset-ts: unknown verb ${JSON.stringify(verb)}\n`);
+    err.write(`deadset-ts: ${verb.name} is not implemented\n`);
+    return EXIT_USAGE;
+  }
+  if (name !== undefined) {
+    err.write(`deadset-ts: unknown verb ${JSON.stringify(name)}\n`);
   }
   err.write(USAGE);
   return EXIT_USAGE;
 }
 
-/** Writes the resolved configuration with the source of every setting. */
-function printConfigVerb(args: readonly string[], out: Writer, err: Writer, host: Host): number {
-  try {
-    const options = readOptions(args);
-    const { config, provenance } = resolve(inputsOf(host, options));
-    out.write(printConfig(config, provenance));
-    return EXIT_CLEAN;
-  } catch (error: unknown) {
-    return refuse(error, err);
-  }
-}
-
 /**
- * Writes the name of every project one run analyzes, one per line, having read each
- * project's diagnostics first: the identifier the build matrix declares for it, or,
- * where discovery derived the project, its configuration file's path below the
- * target root.
+ * Runs one verb over the arguments after its name. The options are read the first
+ * time the verb asks for what they name, and a refusal the verb throws is written
+ * and turned into its exit code once the client the verb opened is closed.
  */
-function printProjectsVerb(
+function invoke(
+  verb: Verb,
   args: readonly string[],
-  out: Writer,
-  err: Writer,
-  host: Host,
+  streams: { readonly out: Writer; readonly err: Writer; readonly host: Host },
   openClient: (collectTiming: boolean) => Engine,
 ): number {
-  let engine: Engine | undefined;
+  let options: Options | undefined;
+  const read = (): Options => (options ??= readOptions(args));
+  let opened: Engine | undefined;
   try {
-    const options = readOptions(args);
-    const matrix = resolveMatrix(inputsOf(host, options));
-    const scope = scopeOf(host, options);
-    engine = openClient(false);
-    const discovered = discoverProjects(engine, host, scope, matrix);
-    const ids = new Map(discovered.projects.map((project) => [project.configFile, project.id]));
-    const failures: string[] = [];
-    const { projects } = runSession(engine, discovered.configFiles, (project) => {
-      const errors = diagnosticErrors(diagnosticsOf(project));
-      failures.push(...errors.map(renderDiagnostic));
-      return ids.get(project.configFile) ?? project.configFile;
+    return verb({
+      ...streams,
+      inputs: () => inputsOf(streams.host, read()),
+      scope: () => scopeOf(streams.host, read()),
+      openClient: (collectTiming) => {
+        opened = openClient(collectTiming);
+        return opened;
+      },
+      emitters: EMITTERS,
     });
-    if (failures.length > 0) {
-      for (const line of failures) {
-        err.write(`${line}\n`);
-      }
-      err.write(`deadset-ts: ${String(failures.length)} error(s); no answer was produced\n`);
-      return EXIT_FAILURE;
-    }
-    for (const id of projects) {
-      out.write(`${id}\n`);
-    }
-    return EXIT_CLEAN;
   } catch (error: unknown) {
-    engine?.close();
-    return refuse(error, err);
-  }
-}
-
-/**
- * One root as a line: the declaration's reference, why it is a root, and the string
- * that named it, separated by tabs. A run of several configurations adds the ones
- * whose project holds the root as a fourth field, and writes the third present and
- * empty where no string named the root, so every line of one run holds the same
- * fields.
- */
-function rootLine(root: RunRoot, several: boolean): string {
-  const line = `${root.ref}\t${root.kind}`;
-  if (several) {
-    return `${line}\t${root.source}\t${root.configurations.join(" ")}`;
-  }
-  return root.source === "" ? line : `${line}\t${root.source}`;
-}
-
-/**
- * Writes the root set of the run, one root per line, and then names on the error
- * stream, by its issue kind, every configured root or pattern that named nothing;
- * one such string fails the run. The line shape is this command's own rather than a
- * Contract format, so that sort and cut read it.
- */
-function printRootsVerb(
-  args: readonly string[],
-  out: Writer,
-  err: Writer,
-  host: Host,
-  openClient: (collectTiming: boolean) => Engine,
-): number {
-  let engine: Engine | undefined;
-  try {
-    const options = readOptions(args);
-    const { config, provenance } = resolve(inputsOf(host, options));
-    const scope = scopeOf(host, options);
-    engine = openClient(false);
-    const answer = runRoots(engine, host, scope, config, provenance);
-    const several = answer.configurations.length > 1;
-    for (const root of answer.roots) {
-      out.write(`${rootLine(root, several)}\n`);
-    }
-    for (const finding of answer.findings) {
-      err.write(`${finding.code}: roots.patterns names nothing: ${finding.symbol.ref}\n`);
-    }
-    return answer.findings.length > 0 ? EXIT_FINDINGS : EXIT_CLEAN;
-  } catch (error: unknown) {
-    engine?.close();
-    return refuse(error, err);
-  }
-}
-
-/**
- * Writes every declaration an exemption held back in the production sweep a report is
- * built from, one per line, and nothing where no exemption held one back. One fact
- * several configurations found is one record, so the line names no configuration. The
- * line shape is this command's own rather than a Contract format, so that sort and cut
- * read it.
- */
-function printRetainedVerb(
-  args: readonly string[],
-  out: Writer,
-  err: Writer,
-  host: Host,
-  openClient: (collectTiming: boolean) => Engine,
-): number {
-  let engine: Engine | undefined;
-  try {
-    const options = readOptions(args);
-    const { config } = resolve(inputsOf(host, options));
-    const scope = scopeOf(host, options);
-    engine = openClient(false);
-    const swept = runSweep(engine, host, scope, config, {
-      marked: [],
-      mode: { production: true },
-    });
-    for (const line of retainedLines(swept.matrix.union.symbols, swept.retained)) {
-      out.write(`${line}\n`);
-    }
-    return EXIT_CLEAN;
-  } catch (error: unknown) {
-    engine?.close();
-    return refuse(error, err);
+    opened?.close();
+    return refuse(error, streams.err);
   }
 }
 
