@@ -2,7 +2,8 @@ import { rmSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
 import { TSCONFIG, writeProject } from "../__test-helpers__/projects.ts";
-import { runRoots, runSweeps } from "./analysis.ts";
+import { runRoots, runSweep } from "./analysis.ts";
+import { DiscoveryError } from "./discover.ts";
 import { resolve } from "./resolve.ts";
 import { scopeForDir } from "./scope.ts";
 import { openEngine } from "./session.ts";
@@ -34,16 +35,46 @@ describe("the projects a run composes", () => {
         config,
         provenance,
       );
-      const swept = runSweeps(openEngine({ collectTiming: false }), host, scope, config, {
+      const swept = runSweep(openEngine({ collectTiming: false }), host, scope, config, {
         marked: [],
         mode: { production: true },
       });
 
       expect(rooted.configurations, "the root set's configurations").toEqual(["app"]);
-      expect(
-        swept.map((one) => one.configuration),
-        "the sweeps' configurations",
-      ).toEqual(["app"]);
+      expect(swept.matrix.configurations, "the sweep's configurations").toEqual(["app"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("end the run before any intersection when one carries an error", () => {
+    const root = writeProject({
+      "tsconfig.json": TSCONFIG.replace('"**/*.ts"', '"src/**/*.ts"'),
+      "src/main.ts": "export const value = 1;\n",
+      "broken/tsconfig.json": TSCONFIG,
+      "broken/broken.ts": "export const wrong: number = 'text';\n",
+    });
+    try {
+      const { config } = resolve({
+        repository: JSON.stringify({
+          target: { kind: "application" },
+          analysis: {
+            configurations: [
+              { id: "app", project: "tsconfig.json" },
+              { id: "broken", project: "broken/tsconfig.json" },
+            ],
+          },
+        }),
+        repositoryLabel: "deadset.json",
+      });
+      const host = nodeHost();
+
+      expect(() =>
+        runSweep(openEngine({ collectTiming: false }), host, scopeForDir(host, root), config, {
+          marked: [],
+          mode: { production: true },
+        }),
+      ).toThrow(DiscoveryError);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

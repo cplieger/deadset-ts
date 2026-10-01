@@ -1,12 +1,11 @@
 /**
- * Which declarations of one graph are dead, under which liveness relation, and which
- * dead component each belongs to. Reference counting holds a declaration live when any
- * declaration references it, whatever that one's own liveness, and no root plays a part;
+ * Which declarations of one graph are dead, and under which liveness relation.
+ * Reference counting holds a declaration live when any declaration references it,
+ * whatever that one's own liveness, or when it is a root of a kind that names a caller;
  * reachability holds it live when a path of references reaches it from a root. So a
  * declaration only unreachable ones reference is live under the first, dead under the second.
  */
 
-import { componentsOf, type Component } from "./components.ts";
 import { namesACaller, OUTSIDE, type Graph } from "./graph.ts";
 
 /** The liveness relation that decided a declaration, as a finding spells it. */
@@ -54,8 +53,8 @@ export interface Candidate {
   readonly testOfDeadCode: boolean;
 }
 
-/** One sweep's answer. */
-export interface SweepResult {
+/** One graph's answer: what each relation holds live, and what is dead. */
+export interface Liveness {
   /**
    * Per declaration, the relations that hold it live, reference counting first. A
    * declaration neither holds live has no entry.
@@ -63,8 +62,6 @@ export interface SweepResult {
   readonly liveUnder: ReadonlyMap<string, readonly Relation[]>;
   /** The dead declarations, in the order the inventory holds them. */
   readonly candidates: readonly Candidate[];
-  /** The dead components, each before every component it reaches. */
-  readonly components: readonly Component[];
 }
 
 /**
@@ -72,10 +69,9 @@ export interface SweepResult {
  *
  * The order is the order the answers depend on: the callers and the marks are live
  * before either relation runs, the candidate set is every judged declaration at least
- * one relation does not hold live, the tests of dead code join it, and the components
- * are computed over the set that results.
+ * one relation does not hold live, and the tests of dead code join it.
  */
-export function sweep(graph: Graph, input: SweepInput): SweepResult {
+export function sweep(graph: Graph, input: SweepInput): Liveness {
   const marked = graph.symbols.map(() => false);
   for (const id of input.marked) {
     const at = graph.at(id);
@@ -136,11 +132,7 @@ export function sweep(graph: Graph, input: SweepInput): SweepResult {
     });
   });
 
-  return {
-    liveUnder: live,
-    candidates,
-    components: componentsOf(graph, dead, testOfDeadCode),
-  };
+  return { liveUnder: live, candidates };
 }
 
 /**

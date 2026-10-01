@@ -12,17 +12,17 @@ import type { Diagnostic } from "@typescript/native/unstable/sync";
 import type { Config, Provenance } from "./config.ts";
 import { diagnosticErrors, discoverProjects, DiscoveryError } from "./discover.ts";
 import type { Finding } from "./finding.ts";
-import { graphOf } from "./graph.ts";
 import type { Host } from "./host.ts";
-import { inventory, type Inventory, type InventorySymbol } from "./inventory.ts";
+import { inventory, type Inventory } from "./inventory.ts";
 import { readManifest } from "./manifest.ts";
+import { matrixOf, sweepMatrix, type Configured, type Matrix, type SweepResult } from "./matrix.ts";
 import { relativePath, resolvePath } from "./paths.ts";
 import { byPosition, type Position } from "./position.ts";
 import { references } from "./references.ts";
 import { roots, unmatchedEverywhere, unmatchedRoots, type RootKind, type Roots } from "./roots.ts";
 import type { Scope } from "./scope.ts";
 import { diagnosticsOf, runSession, type Engine, type ProjectView } from "./session.ts";
-import { sweep, type SweepInput, type SweepResult } from "./sweep.ts";
+import type { SweepInput } from "./sweep.ts";
 
 /** The setting whose source decides where a finding about a configured root sits. */
 const ROOTS_SETTING = "roots.patterns";
@@ -192,42 +192,39 @@ export function runRoots(
   };
 }
 
-/** One configuration's sweep, beside the declarations it judged. */
-export interface ConfigurationSweep {
-  /** The name discovery gives the configuration's project. */
-  readonly configuration: string;
-  readonly symbols: readonly InventorySymbol[];
+/** The run's sweep, beside the matrix it judged. */
+export interface RunSweep {
+  readonly matrix: Matrix;
   readonly sweep: SweepResult;
 }
 
 /**
- * Sweeps every project of the run the scope and the configuration describe, one
- * configuration at a time, in discovery order. Each project's references are read
- * against its own inventory with the configured test-file patterns, and its graph is
- * swept under the input the caller decided once for the run.
+ * Sweeps the run the scope and the configuration describe. Each project's references
+ * are read against its own inventory with the configured test-file patterns while its
+ * view is open; the projects then merge into one matrix in discovery order, which is
+ * swept under the input the caller decided once for the run. A project that carries
+ * an error ends the run before any project is swept.
  */
-export function runSweeps(
+export function runSweep(
   engine: Engine,
   host: Host,
   scope: Scope,
   config: Config,
   input: SweepInput,
-): readonly ConfigurationSweep[] {
+): RunSweep {
   const targetRoot = scope.target.path;
-  return readProjects(engine, host, scope, config, (project, read) => {
+  const configured = readProjects(engine, host, scope, config, (project, read): Configured => {
     const resolved = references(project, read.held, targetRoot, {
       testFiles: config.ts.testFiles,
     });
-    const graph = graphOf(
-      read.held.symbols,
-      resolved.references,
-      read.rooted.liveUnderReachability,
-      resolved.testFilePaths,
-    );
     return {
       configuration: read.configuration,
       symbols: read.held.symbols,
-      sweep: sweep(graph, input),
+      references: resolved.references,
+      roots: read.rooted.liveUnderReachability,
+      testFiles: resolved.testFilePaths,
     };
   });
+  const matrix = matrixOf(configured);
+  return { matrix, sweep: sweepMatrix(matrix, input) };
 }

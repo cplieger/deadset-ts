@@ -3,21 +3,20 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
 import { contractDocument, fixture } from "../__test-helpers__/fixtures.ts";
-import { runSweeps, type ConfigurationSweep } from "./analysis.ts";
+import { runSweep, type RunSweep } from "./analysis.ts";
 import { listing, type Component } from "./components.ts";
-import { graphOf } from "./graph.ts";
 import type { InventorySymbol } from "./inventory.ts";
+import { matrixOf, sweepMatrix } from "./matrix.ts";
 import type { Reference } from "./references.ts";
 import { resolve } from "./resolve.ts";
 import { scopeForDir } from "./scope.ts";
 import { openEngine } from "./session.ts";
-import { sweep } from "./sweep.ts";
 
 /**
  * The fixture holding one instance of each component shape, swept once in the mode a
  * report is built in, for every case below.
  */
-const COMPONENTS = ((): ConfigurationSweep => {
+const COMPONENTS = ((): RunSweep => {
   const target = fixture("projects", "components");
   const document = join(target, "deadset.json");
   const { config } = resolve({
@@ -25,22 +24,18 @@ const COMPONENTS = ((): ConfigurationSweep => {
     repositoryLabel: document,
   });
   const host = nodeHost();
-  const [only] = runSweeps(
-    openEngine({ collectTiming: false }),
-    host,
-    scopeForDir(host, target),
-    config,
-    { marked: [], mode: { production: true } },
-  );
-  if (only === undefined) {
-    throw new Error("the fixture discovered no configuration");
-  }
-  return only;
+  return runSweep(openEngine({ collectTiming: false }), host, scopeForDir(host, target), config, {
+    marked: [],
+    mode: { production: true },
+  });
 })();
 
 /** The fixture's declarations by identifier, each spelled by its file and display name. */
 const NAMES = new Map(
-  COMPONENTS.symbols.map((symbol) => [symbol.id, `${symbol.position.path}#${symbol.name}`]),
+  COMPONENTS.matrix.union.symbols.map((symbol) => [
+    symbol.id,
+    `${symbol.position.path}#${symbol.name}`,
+  ]),
 );
 
 function named(ids: readonly string[]): string[] {
@@ -53,8 +48,8 @@ function componentOf(name: string): Component | undefined {
 }
 
 /** The golden table: one line per component, so a diff names the component that moved. */
-function goldenText(swept: ConfigurationSweep): string {
-  const refs = new Map(swept.symbols.map((symbol) => [symbol.id, symbol.ref]));
+function goldenText(swept: RunSweep): string {
+  const refs = new Map(swept.matrix.union.symbols.map((symbol) => [symbol.id, symbol.ref]));
   const spelled = (ids: readonly string[]): string =>
     ids.length === 0 ? "-" : ids.map((id) => refs.get(id) ?? id).join(" ");
   return swept.sweep.components
@@ -210,10 +205,10 @@ describe("a chain of dead declarations far longer than any call stack", () => {
       resolution: "batch",
       test: false,
     }));
-    const result = sweep(graphOf(symbols, references, [], []), {
-      marked: [],
-      mode: { production: true },
-    });
+    const result = sweepMatrix(
+      matrixOf([{ configuration: "memory", symbols, references, roots: [], testFiles: [] }]),
+      { marked: [], mode: { production: true } },
+    );
 
     expect(result.components.length, "a chain has no cycle").toBe(LINKS);
     expect(result.components[0]?.roots, "the head is where the deletion starts").toEqual([

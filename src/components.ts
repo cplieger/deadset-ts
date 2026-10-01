@@ -35,7 +35,7 @@ export interface Component {
    * neither and is counted by its own component.
    */
   readonly falls: readonly string[];
-  /** The source lines the deletion removes, summed over {@link Component.falls}. */
+  /** The source lines the deletion removes: the distinct lines {@link Component.falls} spans. */
   readonly deletableLines: number;
 }
 
