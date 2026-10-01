@@ -20,7 +20,8 @@ import {
   type Node,
   type SourceFile,
 } from "@typescript/native/unstable/ast";
-import { SymbolFlags, type Symbol as TSSymbol } from "@typescript/native/unstable/sync";
+import type { Symbol as TSSymbol } from "@typescript/native/unstable/sync";
+import { aliasChains } from "./alias-chain.ts";
 import { globExpression } from "./glob.ts";
 import { nodeKey, type Inventory } from "./inventory.ts";
 import { byPosition, renderPosition, type Position } from "./position.ts";
@@ -431,12 +432,6 @@ function compare(a: string, b: string): number {
   return a < b ? -1 : 1;
 }
 
-/** One declaration one symbol reaches, and whether a step along an alias reached it. */
-interface Target {
-  readonly id: string;
-  readonly stepped: boolean;
-}
-
 /**
  * Every reference one project's own files make to the project's own declarations, in
  * position order, and the test-file rules that classified those files.
@@ -462,91 +457,17 @@ export function references<Brand>(
   const matched = options.testFiles.map(() => 0);
   const found: Reference[] = [];
   const tests: string[] = [];
-  const reached = new Map<number, readonly Target[]>();
-  const steps = new Map<number, TSSymbol | undefined>();
+  const chains = aliasChains(project, held);
   let batched = 0;
   let fileBatches = 0;
   let residueFallbacks = 0;
   let shorthandLookups = 0;
-  let aliasSteps = 0;
 
   const files = project.ownSourceFiles();
-  const ownFiles = new Set(files.map((file) => file.fileName));
 
   /** The identifier of the declaration one node of this program is, where it is one. */
   const declaredAt = (node: Node): string | undefined =>
     declarations.get(nodeKey(node.getSourceFile(), node));
-
-  /**
-   * The declarations of the inventory one symbol is.
-   *
-   * A declaration handle carries the file it is in, so the question is answered before
-   * the handle is resolved: a declaration outside the project's own files belongs to
-   * another program and is never read, which is what keeps the pass from fetching a
-   * library file to discover that the inventory does not hold what is in it.
-   */
-  const declarationsOf = (symbol: TSSymbol): string[] => {
-    const ids: string[] = [];
-    for (const handle of symbol.declarations) {
-      if (!ownFiles.has(handle.path)) {
-        continue;
-      }
-      const node = project.declarationAt(handle)?.node;
-      const id = node === undefined ? undefined : declaredAt(node);
-      if (id !== undefined && !ids.includes(id)) {
-        ids.push(id);
-      }
-    }
-    return ids;
-  };
-
-  /**
-   * What one alias names, one link along, asked once per alias whatever the number of
-   * chains it is a link of. Only a symbol the binder flagged an alias is asked, which is
-   * the condition the step asserts on: a default export of an expression is written in
-   * an alias form and names nothing declared elsewhere, so its chain ends at itself.
-   */
-  const stepOf = (symbol: TSSymbol): TSSymbol | undefined => {
-    if ((symbol.flags & SymbolFlags.Alias) === 0) {
-      return undefined;
-    }
-    if (steps.has(symbol.id)) {
-      return steps.get(symbol.id);
-    }
-    const next = project.aliasStepOf(symbol);
-    aliasSteps += 1;
-    steps.set(symbol.id, next);
-    return next;
-  };
-
-  /**
-   * The declarations one symbol names: the declaration it is, and every link of the
-   * alias chain it stands at the head of. A re-export something imports is used and so
-   * is the declaration behind it, so both are named; a link this project does not
-   * declare is stepped over rather than recorded.
-   */
-  const targetsOf = (symbol: TSSymbol): readonly Target[] => {
-    const cached = reached.get(symbol.id);
-    if (cached !== undefined) {
-      return cached;
-    }
-    const targets: Target[] = [];
-    const walked = new Set<number>();
-    let at: TSSymbol | undefined = symbol;
-    let stepped = false;
-    while (at !== undefined && !walked.has(at.id)) {
-      walked.add(at.id);
-      for (const id of declarationsOf(at)) {
-        if (!targets.some((target) => target.id === id)) {
-          targets.push({ id, stepped });
-        }
-      }
-      at = stepOf(at);
-      stepped = true;
-    }
-    reached.set(symbol.id, targets);
-    return targets;
-  };
 
   /**
    * The declarations one re-export carries forward: for an alias, the first link along
@@ -555,22 +476,8 @@ export function references<Brand>(
    * Each later link is a declaration of its own that references the next, so one link
    * per re-export is what lets a chain be followed one declaration at a time.
    */
-  const carriedBy = (link: Link, symbol: TSSymbol): readonly string[] => {
-    if (!link.alias) {
-      return declarationsOf(symbol);
-    }
-    const walked = new Set<number>([symbol.id]);
-    let at = stepOf(symbol);
-    while (at !== undefined && !walked.has(at.id)) {
-      walked.add(at.id);
-      const ids = declarationsOf(at);
-      if (ids.length > 0) {
-        return ids;
-      }
-      at = stepOf(at);
-    }
-    return [];
-  };
+  const carriedBy = (link: Link, symbol: TSSymbol): readonly string[] =>
+    link.alias ? chains.nextDeclared(symbol) : chains.declarationsOf(symbol);
 
   /** The symbol one site resolves to, asking only the accessor the site's form names. */
   const symbolFor = (site: Site, answered: ReadonlyMap<Node, TSSymbol>): TSSymbol | undefined => {
@@ -652,7 +559,9 @@ export function references<Brand>(
         continue;
       }
       const position = renderPosition(file, targetRoot, site.node.getStart());
-      for (const target of targetsOf(symbol)) {
+      // A re-export something imports is used and so is the declaration behind it, so
+      // the use names every link of the chain its name stands at the head of.
+      for (const target of chains.chainOf(symbol)) {
         found.push({
           from: site.from,
           to: target.id,
@@ -680,6 +589,6 @@ export function references<Brand>(
       .map((_pattern, index) => ({ rule: patternRule(index), matched: matched[index] ?? 0 }))
       .sort((a, b) => compare(a.rule, b.rule)),
     testFilePaths: tests.sort(compare),
-    cost: { batched, fileBatches, residueFallbacks, shorthandLookups, aliasSteps },
+    cost: { batched, fileBatches, residueFallbacks, shorthandLookups, aliasSteps: chains.steps },
   };
 }

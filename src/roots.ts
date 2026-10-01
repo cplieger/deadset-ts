@@ -2,15 +2,15 @@
  * The root set of one project: every declaration the analysis keeps live without a
  * reference, and why.
  *
- * A root makes its declaration live under REACHABILITY and plays no part in
- * reference counting, which asks only whether some declaration of the loaded graph
- * names it. The two relations are different sets, so an exported declaration that
- * something outside the program reaches is live under the first and still a
- * candidate under the second.
+ * Every root seeds REACHABILITY, and no root counts as a reference. A root of a kind
+ * that names a caller is live under reference counting as well, which the sweep
+ * decides; a root that only supposes a consumer is not, so an exported declaration
+ * something outside the program reaches is live under reachability and still a
+ * candidate under reference counting.
  */
 
 import type { SourceFile } from "@typescript/native/unstable/ast";
-import type { Symbol as TSSymbol } from "@typescript/native/unstable/sync";
+import { aliasChains } from "./alias-chain.ts";
 import { REPOSITORY_DOCUMENT } from "./config.ts";
 import { entryPoints, type EntryRule } from "./entry-points.ts";
 import type { Finding } from "./finding.ts";
@@ -63,7 +63,8 @@ export interface Roots {
    * reason it is live.
    *
    * The member says which relation the set feeds: every declaration here is live
-   * under reachability, and nothing here is live under reference counting.
+   * under reachability. A root of a kind that names a caller is also live under
+   * reference counting, which the sweep decides.
    */
   readonly liveUnderReachability: readonly Root[];
   /**
@@ -230,12 +231,10 @@ export function roots<Brand>(
     enter(point.file, point.rule, point.source, point.exports);
   }
 
-  const exportsOf = exportTables(
-    project,
-    held,
-    [...entered.filter((entry) => entry.exports).map((entry) => entry.file), ...published],
-    files.byName,
-  );
+  const exportsOf = exportTables(project, held, [
+    ...entered.filter((entry) => entry.exports).map((entry) => entry.file),
+    ...published,
+  ]);
   for (const entry of entered) {
     const id = fileIds.get(entry.file.fileName);
     if (id === undefined) {
@@ -282,7 +281,6 @@ function exportTables<Brand>(
   project: ProjectView<Brand>,
   held: Inventory,
   wanted: readonly SourceFile[],
-  ownFiles: ReadonlyMap<string, SourceFile>,
 ): ReadonlyMap<string, readonly string[]> {
   const unique = [...new Map(wanted.map((file) => [file.fileName, file])).values()];
   const tables = new Map<string, readonly string[]>();
@@ -290,36 +288,7 @@ function exportTables<Brand>(
     return tables;
   }
   const modules = project.symbolsAt(unique.map((file) => project.handle(file)));
-  const chains = new Map<number, readonly string[]>();
-
-  const chainOf = (symbol: TSSymbol): readonly string[] => {
-    const cached = chains.get(symbol.id);
-    if (cached !== undefined) {
-      return cached;
-    }
-    const ids: string[] = [];
-    const walked = new Set<number>();
-    let at: TSSymbol | undefined = symbol;
-    while (at !== undefined && !walked.has(at.id)) {
-      walked.add(at.id);
-      for (const handle of at.declarations) {
-        if (!ownFiles.has(handle.path)) {
-          continue;
-        }
-        const node = project.declarationAt(handle)?.node;
-        const id =
-          node === undefined
-            ? undefined
-            : held.declarations.get(nodeKey(node.getSourceFile(), node));
-        if (id !== undefined && !ids.includes(id)) {
-          ids.push(id);
-        }
-      }
-      at = project.aliasStepOf(at);
-    }
-    chains.set(symbol.id, ids);
-    return ids;
-  };
+  const chains = aliasChains(project, held);
 
   unique.forEach((file, index) => {
     const module = modules[index];
@@ -329,8 +298,8 @@ function exportTables<Brand>(
     }
     const ids = new Set<string>();
     for (const exported of project.checker.getExportsOfModule(module)) {
-      for (const id of chainOf(exported)) {
-        ids.add(id);
+      for (const target of chains.chainOf(exported)) {
+        ids.add(target.id);
       }
     }
     tables.set(file.fileName, [...ids]);
