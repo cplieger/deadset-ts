@@ -41,14 +41,23 @@ describe("the class registry", () => {
     class: string;
     languages: string[];
     confidence: string;
+    typescript_visibility?: { private: boolean; private_name: boolean };
   }[];
 
   it("is the Contract's vocabulary, class for class and in its order", () => {
-    expect(EXEMPTION_CLASSES).toEqual(
+    expect(EXEMPTION_CLASSES).toStrictEqual(
       contract.map((row) => ({
         class: row.class,
         languages: row.languages,
         confidence: row.confidence,
+        ...(row.typescript_visibility === undefined
+          ? {}
+          : {
+              typescriptVisibility: {
+                private: row.typescript_visibility.private,
+                privateName: row.typescript_visibility.private_name,
+              },
+            }),
       })),
     );
   });
@@ -435,6 +444,37 @@ describe("the framework over a project", () => {
       "heldTwice decorator",
       "heldTwice serialization-contract",
     ]);
+  });
+});
+
+describe("the private members a class may retain", () => {
+  const visibility = fixture("projects", "member-visibility");
+  const MEMBERS = "src/held.ts";
+  const allThree = (detail: string): Detector => {
+    const named = (held: Inventory, name: string): Evidence =>
+      evidence(held, MEMBERS, name, detail);
+    return ({ held }) => [
+      named(held, "Held.visible"),
+      named(held, "Held.hidden"),
+      named(held, "Held.#named"),
+    ];
+  };
+  const swept = sweepFixture(
+    PRODUCTION,
+    visibility,
+    new Map<TSExemptionClass, Detector>([
+      ["interface-satisfaction", allThree("satisfies Shape")],
+      ["decorator", allThree("named by @register")],
+    ]),
+  );
+
+  it("drops evidence on a private member under a class that retains neither kind, and on a private name under every class", () => {
+    expect(retainedNames(swept)).toEqual([
+      "Held.visible decorator",
+      "Held.visible interface-satisfaction",
+      "Held.hidden decorator",
+    ]);
+    expect(deadNames(swept)).toEqual(["Held.#named"]);
   });
 });
 

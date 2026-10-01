@@ -10,26 +10,32 @@
 
 import type { Diagnostic } from "@typescript/native/unstable/sync";
 import type { Config, Provenance } from "./config.ts";
+import { decorator } from "./decorator.ts";
 import { diagnosticErrors, discoverProjects, DiscoveryError } from "./discover.ts";
 import {
   computeExemptions,
   disabledClasses,
   exemptionsOf,
   retainedIn,
+  type Detector,
   type Detectors,
 } from "./exempt.ts";
+import type { TSExemptionClass } from "./exempt-classes.ts";
 import type { Finding } from "./finding.ts";
 import type { Host } from "./host.ts";
+import { interfaceSatisfaction } from "./interface-satisfaction.ts";
 import { inventory, type Inventory } from "./inventory.ts";
 import { readManifest } from "./manifest.ts";
 import { matrixOf, sweepMatrix, type Configured, type Matrix, type SweepResult } from "./matrix.ts";
 import { relativePath, resolvePath } from "./paths.ts";
 import { byPosition, type Position } from "./position.ts";
+import { reflectiveLookup } from "./reflective-lookup.ts";
 import { references } from "./references.ts";
 import { roots, unmatchedEverywhere, unmatchedRoots, type RootKind, type Roots } from "./roots.ts";
 import type { Scope } from "./scope.ts";
 import { diagnosticsOf, runSession, type Engine, type ProjectView } from "./session.ts";
 import type { Exemption, SweepInput } from "./sweep.ts";
+import { readTemplates, templateField } from "./template-field.ts";
 
 /** The setting whose source decides where a finding about a configured root sits. */
 const ROOTS_SETTING = "roots.patterns";
@@ -211,7 +217,12 @@ export interface RunSweep {
 }
 
 /** The exemption classes this analyzer detects, each by its detector; any other retains nothing. */
-const DETECTORS: Detectors = new Map();
+const DETECTORS: Detectors = new Map<TSExemptionClass, Detector>([
+  ["interface-satisfaction", interfaceSatisfaction],
+  ["template-field", templateField],
+  ["reflective-lookup", reflectiveLookup],
+  ["decorator", decorator],
+]);
 
 /**
  * Sweeps the run the scope and the configuration describe. Each project's references
@@ -233,6 +244,9 @@ export function runSweep(
 ): RunSweep {
   const targetRoot = scope.target.path;
   const disabled = disabledClasses(config);
+  const templates = disabled.has("template-field")
+    ? { delimiters: config.analysis.templateDelimiters, files: [] }
+    : readTemplates(host, targetRoot, config.analysis);
   const read = readProjects(engine, host, scope, config, (project, projectRead) => {
     const resolved = references(project, projectRead.held, targetRoot, {
       testFiles: config.ts.testFiles,
@@ -244,11 +258,15 @@ export function runSweep(
       roots: projectRead.rooted.liveUnderReachability,
       testFiles: resolved.testFilePaths,
     };
-    const exempt = computeExemptions({ project, held: projectRead.held, targetRoot }, detectors, {
-      disabled,
-      mode: input.mode,
-      testFiles: new Set(resolved.testFilePaths),
-    });
+    const exempt = computeExemptions(
+      { project, held: projectRead.held, targetRoot, templates },
+      detectors,
+      {
+        disabled,
+        mode: input.mode,
+        testFiles: new Set(resolved.testFilePaths),
+      },
+    );
     return { configured, exempt };
   });
   const matrix = matrixOf(read.map((one) => one.configured));

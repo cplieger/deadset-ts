@@ -2,6 +2,7 @@ import {
   isArrayLiteralExpression,
   isBinaryExpression,
   isCallExpression,
+  isDecorator,
   isDeleteExpression,
   isElementAccessExpression,
   isExportDeclaration,
@@ -53,9 +54,11 @@ import type { ProjectView } from "./session.ts";
 /**
  * How one reference uses the declaration it names. An `evaluation` names a file: the
  * place it is written imports the module, which runs the module's top level and reads
- * none of what it exports. A `read` of a file reads the module's namespace.
+ * none of what it exports. A `read` of a file reads the module's namespace. A
+ * `decorator` names the declaration a decorator expression is attached to, which the
+ * decorator receives when the class is defined.
  */
-export type Use = "read" | "write" | "evaluation";
+export type Use = "read" | "write" | "evaluation" | "decorator";
 
 /**
  * Which accessor answered for one reference, so that the cost of a run is attributable
@@ -67,8 +70,9 @@ export type Use = "read" | "write" | "evaluation";
  * - `shorthand` is the per-node lookup for `{ a }`, whose name resolves to the property
  *   the literal declares rather than to the declaration that name reads.
  * - `alias` is a step along an import or export chain, from one link to what it names.
+ * - `syntax` is the tree alone, which says what a decorator is attached to.
  */
-export type Resolution = "batch" | "resolved-symbol" | "shorthand" | "alias";
+export type Resolution = "batch" | "resolved-symbol" | "shorthand" | "alias" | "syntax";
 
 /** One use of one declaration by one declaration. */
 export interface Reference {
@@ -318,11 +322,18 @@ interface Evaluation {
   readonly from: string;
 }
 
-/** Everything one file's walk found to resolve. */
+/** One decorator expression, and the declaration it is attached to. */
+interface Decorated {
+  readonly decorator: Node;
+  readonly declaration: string;
+}
+
+/** Everything one file's walk found to resolve, and the decorators it needs no resolution for. */
 interface FileSites {
   readonly uses: readonly Site[];
   readonly links: readonly Link[];
   readonly evaluations: readonly Evaluation[];
+  readonly decorated: readonly Decorated[];
 }
 
 /** Whether one node is a string literal or a template literal with no substitution. */
@@ -418,6 +429,7 @@ function sitesOf(
   const found: Site[] = [];
   const links: Link[] = [];
   const evaluations: Evaluation[] = [];
+  const decorated: Decorated[] = [];
   const writes = new Set<number>();
   const declared = new Set<number>();
   const shorthands = new Map<number, Node>();
@@ -464,13 +476,18 @@ function sitesOf(
     const outer = enclosing;
     if (held !== undefined) {
       enclosing = held;
+      for (const modifier of (node as { readonly modifiers?: readonly Node[] }).modifiers ?? []) {
+        if (isDecorator(modifier)) {
+          decorated.push({ decorator: modifier, declaration: held });
+        }
+      }
     }
     node.forEachChild(visit);
     enclosing = outer;
   };
 
   file.forEachChild(visit);
-  return { uses: found, links, evaluations };
+  return { uses: found, links, evaluations, decorated };
 }
 
 /**
@@ -567,7 +584,25 @@ export function references<Brand>(
     if (test) {
       tests.push(path);
     }
-    const { uses, links, evaluations } = sitesOf(file, declarations, declaredAt(file) ?? "");
+    const { uses, links, evaluations, decorated } = sitesOf(
+      file,
+      declarations,
+      declaredAt(file) ?? "",
+    );
+
+    // A decorator is written inside the declaration it is attached to and receives it,
+    // so the declaration is used where the decorator is written, whatever the
+    // decorator does with it.
+    for (const { decorator, declaration } of decorated) {
+      found.push({
+        from: declaration,
+        to: declaration,
+        position: renderPosition(file, targetRoot, decorator.getStart()),
+        use: "decorator",
+        resolution: "syntax",
+        test,
+      });
+    }
 
     // One batch per capped run of the file's name nodes, the re-exports' nodes after
     // the uses and the evaluated modules' specifiers last, each node once: a bare star

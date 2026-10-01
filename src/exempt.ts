@@ -13,13 +13,16 @@ import {
   EXEMPTION_CLASSES,
   isExemptionClass,
   TS_EXEMPTION_CLASSES,
+  typescriptVisibilityOf,
   type ExemptionClass,
   type TSExemptionClass,
+  type TypeScriptVisibility,
 } from "./exempt-classes.ts";
-import type { Inventory, InventorySymbol } from "./inventory.ts";
+import type { Inventory, InventorySymbol, Visibility } from "./inventory.ts";
 import type { Matrix } from "./matrix.ts";
 import { byPosition, positionKey, type Position } from "./position.ts";
 import type { ProjectView } from "./session.ts";
+import type { Templates } from "./template-field.ts";
 import { sweep, type Exemption, type Mode, type SweepInput } from "./sweep.ts";
 
 /** One declaration a detector holds back, and where and why. */
@@ -36,6 +39,8 @@ export interface DetectorInput<Brand> {
   readonly project: ProjectView<Brand>;
   readonly held: Inventory;
   readonly targetRoot: string;
+  /** The configured templates, read once for the run. */
+  readonly templates: Templates;
 }
 
 /**
@@ -78,22 +83,43 @@ export function disabledClasses(config: Config): ReadonlySet<ExemptionClass> {
 }
 
 /**
+ * Whether a class whose row states `allowed` may retain a member of one visibility. A
+ * declaration the inventory does not hold has no visibility to refuse it by.
+ */
+function retainable(allowed: TypeScriptVisibility, visibility: Visibility | undefined): boolean {
+  if (visibility === "private") {
+    return allowed.private;
+  }
+  if (visibility === "private-name") {
+    return allowed.privateName;
+  }
+  return true;
+}
+
+/**
  * The records one project's detectors found, each class in the vocabulary's order and
- * none of a switched-off class. Under a production mode a record whose evidence is
- * written in a test file holds nothing, as a reference a test file makes is none there.
+ * none of a switched-off class. Evidence on a private member the class's row says it
+ * cannot retain is dropped first, whatever the detector found. Under a production mode
+ * a record whose evidence is written in a test file holds nothing, as a reference a
+ * test file makes is none there.
  */
 export function computeExemptions<Brand>(
   input: DetectorInput<Brand>,
   detectors: Detectors,
   holding: Holding,
 ): readonly Exemption[] {
+  const visibility = new Map(input.held.symbols.map((symbol) => [symbol.id, symbol.visibility]));
   const found: Exemption[] = [];
   for (const exemptionClass of TS_EXEMPTION_CLASSES) {
     const detect = detectors.get(exemptionClass);
     if (detect === undefined || holding.disabled.has(exemptionClass)) {
       continue;
     }
+    const allowed = typescriptVisibilityOf(exemptionClass);
     for (const evidence of detect(input)) {
+      if (!retainable(allowed, visibility.get(evidence.id))) {
+        continue;
+      }
       if (holding.mode.production && holding.testFiles.has(evidence.site.path)) {
         continue;
       }

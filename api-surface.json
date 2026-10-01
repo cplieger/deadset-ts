@@ -7,16 +7,23 @@
     {
       "path": "@typescript/native/unstable/ast",
       "names": [
+        "Decorator",
+        "Expression",
         "ModifierFlags",
         "Node",
         "SourceFile",
         "SyntaxKind",
         "isArrayLiteralExpression",
+        "isArrowFunction",
         "isAsExpression",
         "isBinaryExpression",
         "isCallExpression",
         "isClassDeclaration",
+        "isClassExpression",
+        "isClassStaticBlockDeclaration",
         "isComputedPropertyName",
+        "isConditionalExpression",
+        "isDecorator",
         "isDeleteExpression",
         "isElementAccessExpression",
         "isEnumDeclaration",
@@ -27,7 +34,9 @@
         "isForInStatement",
         "isForOfStatement",
         "isFunctionDeclaration",
+        "isFunctionExpression",
         "isGetAccessorDeclaration",
+        "isHeritageClause",
         "isIdentifier",
         "isImportDeclaration",
         "isImportEqualsDeclaration",
@@ -41,7 +50,9 @@
         "isNamespaceExport",
         "isNewExpression",
         "isNoSubstitutionTemplateLiteral",
+        "isNumericLiteral",
         "isObjectLiteralExpression",
+        "isParameterDeclaration",
         "isParenthesizedExpression",
         "isParenthesizedTypeNode",
         "isPostfixUnaryExpression",
@@ -51,6 +62,7 @@
         "isPropertyAssignment",
         "isPropertyDeclaration",
         "isPropertySignatureDeclaration",
+        "isReturnStatement",
         "isSatisfiesExpression",
         "isSetAccessorDeclaration",
         "isShorthandPropertyAssignment",
@@ -60,6 +72,7 @@
         "isTypeAliasDeclaration",
         "isTypeLiteralNode",
         "isUnionTypeNode",
+        "isVariableDeclaration",
         "isVariableStatement"
       ]
     },
@@ -77,7 +90,8 @@
         "Snapshot",
         "Symbol",
         "SymbolFlags",
-        "TimingInfo"
+        "TimingInfo",
+        "Type"
       ]
     }
   ],
