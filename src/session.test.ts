@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Snapshot, TimingInfo } from "@typescript/native/unstable/sync";
 import { nodeHost } from "../bin/node-host.ts";
 import { fixture } from "../__test-helpers__/fixtures.ts";
-import { diagnosticErrors, discoverProjects } from "./discover.ts";
+import { diagnosticErrors, discoverProjects, DiscoveryError } from "./discover.ts";
 import { scopeForDir } from "./scope.ts";
 import {
   diagnosticsOf,
@@ -82,6 +82,38 @@ describe("the run lifetime", () => {
     ).toThrow("the work failed");
     expect(recorded.disposals, "the snapshot is disposed once").toBe(1);
     expect(recorded.closes, "the client is released once").toBe(1);
+  });
+
+  it("visits the projects in the order the configurations are named, and answers in it", () => {
+    const engine = openEngine({ collectTiming: false });
+    const [first, second] = discoverProjects(
+      engine,
+      HOST,
+      scopeForDir(HOST, TWO_PROJECTS),
+    ).configFiles;
+    if (first === undefined || second === undefined) {
+      throw new Error("the fixture holds two projects");
+    }
+
+    const { projects } = runSession(engine, [second, first], (project) => project.configFile);
+
+    expect(projects).toEqual([second, first]);
+  });
+
+  it("ends the run when the snapshot opens no project for a named configuration", () => {
+    const real = openEngine({ collectTiming: false });
+    const configFiles = discoverProjects(real, HOST, scopeForDir(HOST, TWO_PROJECTS)).configFiles;
+    const engine: Engine = {
+      ...real,
+      updateSnapshot: (openProjects) => {
+        const snapshot = real.updateSnapshot(openProjects);
+        const short: Snapshot = Object.create(snapshot) as Snapshot;
+        short.getProjects = () => snapshot.getProjects().slice(1);
+        return short;
+      },
+    };
+
+    expect(() => runSession(engine, configFiles, () => 0)).toThrow(DiscoveryError);
   });
 
   it("reports what one snapshot over two projects cost", () => {
