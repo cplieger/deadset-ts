@@ -22,7 +22,9 @@ import {
 } from "./exempt.ts";
 import type { TSExemptionClass } from "./exempt-classes.ts";
 import type { Finding } from "./finding.ts";
+import { frameworkLifecycle } from "./framework-lifecycle.ts";
 import type { Host } from "./host.ts";
+import { injectionContainer } from "./injection-container.ts";
 import { interfaceSatisfaction } from "./interface-satisfaction.ts";
 import { inventory, type Inventory } from "./inventory.ts";
 import { readManifest } from "./manifest.ts";
@@ -33,6 +35,7 @@ import { reflectiveLookup } from "./reflective-lookup.ts";
 import { references } from "./references.ts";
 import { roots, unmatchedEverywhere, unmatchedRoots, type RootKind, type Roots } from "./roots.ts";
 import type { Scope } from "./scope.ts";
+import { serializationContract } from "./serialization-contract.ts";
 import { diagnosticsOf, runSession, type Engine, type ProjectView } from "./session.ts";
 import type { Exemption, SweepInput } from "./sweep.ts";
 import { readTemplates, templateField } from "./template-field.ts";
@@ -222,6 +225,9 @@ const DETECTORS: Detectors = new Map<TSExemptionClass, Detector>([
   ["template-field", templateField],
   ["reflective-lookup", reflectiveLookup],
   ["decorator", decorator],
+  ["injection-container", injectionContainer],
+  ["framework-lifecycle", frameworkLifecycle],
+  ["serialization-contract", serializationContract],
 ]);
 
 /**
@@ -247,6 +253,7 @@ export function runSweep(
   const templates = disabled.has("template-field")
     ? { delimiters: config.analysis.templateDelimiters, files: [] }
     : readTemplates(host, targetRoot, config.analysis);
+  const consumers = scope.consumers.map((consumer) => consumer.path);
   const read = readProjects(engine, host, scope, config, (project, projectRead) => {
     const resolved = references(project, projectRead.held, targetRoot, {
       testFiles: config.ts.testFiles,
@@ -259,7 +266,7 @@ export function runSweep(
       testFiles: resolved.testFilePaths,
     };
     const exempt = computeExemptions(
-      { project, held: projectRead.held, targetRoot, templates },
+      { project, held: projectRead.held, targetRoot, templates, ts: config.ts, consumers },
       detectors,
       {
         disabled,

@@ -6,10 +6,12 @@ import {
   type Config,
   type Confidence,
   type ConsumerTests,
+  type DeclarationEntry,
   type Format,
   type GeneratedFiles,
   type Inputs,
   type Language,
+  type LifecycleContract,
   type Origin,
   type Provenance,
   type Severity,
@@ -94,6 +96,9 @@ interface Doc {
   readonly failOn: Severity | undefined;
   readonly testFiles: readonly string[] | undefined;
   readonly entryFiles: readonly string[] | undefined;
+  readonly injectionRegistrations: readonly DeclarationEntry[] | undefined;
+  readonly lifecycleContracts: readonly LifecycleContract[] | undefined;
+  readonly serializers: readonly DeclarationEntry[] | undefined;
 }
 
 /** One document the resolution reads, with the origin its settings carry. */
@@ -476,6 +481,137 @@ function readExemptions(
   return disabled;
 }
 
+/** The members that name a declaration, each belonging to exactly one shape. */
+const SHAPE_MEMBERS = ["symbol", "module", "name", "global"] as const;
+
+/** The prefix of a stable symbol reference in the TypeScript form. */
+const SYMBOL_PREFIX = "ts://";
+
+/**
+ * A bare specifier: neither relative nor absolute, and not one the package's own
+ * imports field maps, each of which names a file of the analyzed program.
+ */
+const BARE_SPECIFIER = /^[^./#]/u;
+
+/**
+ * One declaration entry, read as the one shape its members name. An entry carrying
+ * members of two shapes, or of none, is refused at the entry, as is a module named
+ * without the declaration's path or a path without its module.
+ */
+function readDeclaration(entry: unknown, at: string, label: string): DeclarationEntry {
+  if (!isRecord(entry)) {
+    throw malformed(label, at, "is not an object");
+  }
+  const named = SHAPE_MEMBERS.filter((name) => Object.hasOwn(entry, name));
+  if (named.length === 1 && named[0] === "symbol") {
+    const symbol = requireMember(
+      readString(entry, "symbol", `${at}.symbol`, label),
+      `${at}.symbol`,
+      label,
+    );
+    if (!symbol.startsWith(SYMBOL_PREFIX)) {
+      throw malformed(label, `${at}.symbol`, `${JSON.stringify(symbol)} is not a ts:// reference`);
+    }
+    return { shape: "symbol", symbol };
+  }
+  if (named.length === 1 && named[0] === "global") {
+    const path = `${at}.global`;
+    return {
+      shape: "global",
+      global: requireMember(readString(entry, "global", path, label), path, label),
+    };
+  }
+  if (named.length === 2 && named.includes("module") && named.includes("name")) {
+    const module = requireMember(
+      readString(entry, "module", `${at}.module`, label),
+      `${at}.module`,
+      label,
+    );
+    if (!BARE_SPECIFIER.test(module)) {
+      throw malformed(
+        label,
+        `${at}.module`,
+        `${JSON.stringify(module)} is not a bare specifier: a file of the analyzed program is named by its symbol`,
+      );
+    }
+    const path = `${at}.name`;
+    return {
+      shape: "module",
+      module,
+      name: requireMember(readString(entry, "name", path, label), path, label),
+    };
+  }
+  throw malformed(
+    label,
+    at,
+    named.length === 0
+      ? 'names no declaration: an entry carries "symbol", "module" with "name", or "global"'
+      : `carries ${spell(named)}, which is not one of "symbol", "module" with "name", or "global"`,
+  );
+}
+
+/** One array of declaration entries, absent where the document does not write it. */
+function readDeclarations(
+  parent: Record<string, unknown> | undefined,
+  name: string,
+  path: string,
+  label: string,
+): readonly DeclarationEntry[] | undefined {
+  const value = member(parent, name);
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(value)) {
+    throw malformed(label, path, "is not an array");
+  }
+  return (value as unknown[]).map((entry, index) =>
+    readDeclaration(entry, `${path}[${String(index)}]`, label),
+  );
+}
+
+/**
+ * One lifecycle contract. The member names are required, and the entry names at least
+ * one component declaration or one base class, because a contract naming neither
+ * makes no class a component and so retains nothing.
+ */
+function readLifecycleContract(entry: unknown, at: string, label: string): LifecycleContract {
+  if (!isRecord(entry)) {
+    throw malformed(label, at, "is not an object");
+  }
+  const components = readDeclarations(entry, "components", `${at}.components`, label) ?? [];
+  const bases = readDeclarations(entry, "bases", `${at}.bases`, label) ?? [];
+  const members = readStrings(entry, "members", `${at}.members`, label, 1);
+  if (members === undefined) {
+    throw malformed(label, `${at}.members`, "is required and names nothing");
+  }
+  if (components.length === 0 && bases.length === 0) {
+    throw malformed(
+      label,
+      at,
+      'names no declaration in "components" and no class in "bases", so it makes no class a component',
+    );
+  }
+  return { components, bases, members };
+}
+
+/** The lifecycle contracts, one per framework the project declares. */
+function readLifecycleContracts(
+  ts: Record<string, unknown> | undefined,
+  label: string,
+): readonly LifecycleContract[] | undefined {
+  const path = "ts.lifecycle_contracts";
+  const value = member(ts, "lifecycle_contracts");
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(value)) {
+    throw malformed(label, path, "is not an array");
+  }
+  return (value as unknown[]).map((entry, index) =>
+    readLifecycleContract(entry, `${path}[${String(index)}]`, label),
+  );
+}
+
 /**
  * Reads one already-parsed configuration document as the settings it supplies,
  * refusing every constraint the closed key list declares that a parse cannot
@@ -545,6 +681,14 @@ function readDoc(value: unknown, label: string): Doc {
     failOn: readEnum(reporters, "fail_on", "reporters.fail_on", label, SEVERITIES),
     testFiles: readStrings(ts, "test_files", "ts.test_files", label, 1),
     entryFiles: readStrings(ts, "entry_files", "ts.entry_files", label, 0),
+    injectionRegistrations: readDeclarations(
+      ts,
+      "injection_registrations",
+      "ts.injection_registrations",
+      label,
+    ),
+    lifecycleContracts: readLifecycleContracts(ts, label),
+    serializers: readDeclarations(ts, "serializers", "ts.serializers", label),
   };
 }
 
@@ -818,6 +962,17 @@ function settleAll(inputs: Inputs): { config: Config; provenance: Map<string, Or
     ts: {
       testFiles: at("ts.test_files", defaults.ts.testFiles, (doc) => doc.testFiles),
       entryFiles: at("ts.entry_files", defaults.ts.entryFiles, (doc) => doc.entryFiles),
+      injectionRegistrations: at(
+        "ts.injection_registrations",
+        defaults.ts.injectionRegistrations,
+        (doc) => doc.injectionRegistrations,
+      ),
+      lifecycleContracts: at(
+        "ts.lifecycle_contracts",
+        defaults.ts.lifecycleContracts,
+        (doc) => doc.lifecycleContracts,
+      ),
+      serializers: at("ts.serializers", defaults.ts.serializers, (doc) => doc.serializers),
     },
   };
 

@@ -11,25 +11,14 @@
  * the inventory holds for the class, static members included.
  */
 
-import {
-  isCallExpression,
-  isDecorator,
-  type Decorator,
-  type Node,
-} from "@typescript/native/unstable/ast";
+import type { Node } from "@typescript/native/unstable/ast";
+import { decoratorsOf, spelledDecorator } from "./calls.ts";
 import type { DetectorInput, Evidence } from "./exempt.ts";
 import { nodeKey, type InventorySymbol, type SymbolKind } from "./inventory.ts";
 import { renderPosition } from "./position.ts";
 
 /** The kinds of declaration a decorator is attached to and holds back. */
 const DECORATED: ReadonlySet<SymbolKind> = new Set(["class", "method", "class-member"]);
-
-/** How one decorator is spelled in a record: its expression, without a call's arguments. */
-function spelled(decorator: Decorator): string {
-  const expression = decorator.expression;
-  const named = isCallExpression(expression) ? expression.expression : expression;
-  return `@${named.getText().replace(/\s+/gu, "")}`;
-}
 
 /**
  * The decorator detector: each decorated member, and each member of a decorated
@@ -56,9 +45,8 @@ export function decorator<Brand>(input: DetectorInput<Brand>): readonly Evidence
       const id = held.declarations.get(nodeKey(file, node));
       const symbol = id === undefined ? undefined : byId.get(id);
       if (symbol !== undefined && DECORATED.has(symbol.kind)) {
-        const modifiers = (node as { readonly modifiers?: readonly Node[] }).modifiers ?? [];
-        for (const attached of modifiers.filter(isDecorator)) {
-          const detail = `decorated by ${spelled(attached)}`;
+        for (const attached of decoratorsOf(node)) {
+          const detail = `decorated by ${spelledDecorator(attached)}`;
           const site = renderPosition(file, targetRoot, attached.getStart());
           const reached = symbol.kind === "class" ? (membersOf.get(symbol.id) ?? []) : [symbol];
           for (const member of reached) {

@@ -357,3 +357,160 @@ describe("the build matrix on its own", () => {
     expect(thrown instanceof ConfigError ? thrown.key : "").toBe("analysis.configurations[0]");
   });
 });
+
+/** A repository configuration whose `ts` section is the given object. */
+function tsSection(ts: unknown): Inputs {
+  return repository(JSON.stringify({ target: { kind: "application" }, ts }));
+}
+
+describe("a declaration the ts section names", () => {
+  it("is read as the one shape its members name, in the order the document lists them", () => {
+    const { config } = resolve(
+      tsSection({
+        serializers: [
+          { symbol: "ts://@example/app/src/wire.ts#encode" },
+          { module: "@example/codec", name: "Codec.write:static" },
+          { global: "structuredClone" },
+        ],
+      }),
+    );
+
+    expect(config.ts.serializers).toEqual([
+      { shape: "symbol", symbol: "ts://@example/app/src/wire.ts#encode" },
+      { shape: "module", module: "@example/codec", name: "Codec.write:static" },
+      { shape: "global", global: "structuredClone" },
+    ]);
+  });
+
+  it("leaves a lifecycle contract's components or bases empty where the entry omits them", () => {
+    const { config } = resolve(
+      tsSection({
+        lifecycle_contracts: [
+          { bases: [{ global: "HTMLElement" }], members: ["connectedCallback"] },
+          { components: [{ module: "@example/ui", name: "element" }], members: ["render"] },
+        ],
+      }),
+    );
+
+    expect(config.ts.lifecycleContracts).toEqual([
+      {
+        components: [],
+        bases: [{ shape: "global", global: "HTMLElement" }],
+        members: ["connectedCallback"],
+      },
+      {
+        components: [{ shape: "module", module: "@example/ui", name: "element" }],
+        bases: [],
+        members: ["render"],
+      },
+    ]);
+  });
+
+  it.each([
+    {
+      name: "an entry carrying the members of two shapes",
+      ts: { injection_registrations: [{ symbol: "ts://./a.ts#f", global: "f" }] },
+      setting: "ts.injection_registrations[0]",
+      detail:
+        'carries "symbol", "global", which is not one of "symbol", "module" with "name", or "global"',
+    },
+    {
+      name: "an entry naming no declaration",
+      ts: { serializers: [{}] },
+      setting: "ts.serializers[0]",
+      detail: 'names no declaration: an entry carries "symbol", "module" with "name", or "global"',
+    },
+    {
+      name: "a declaration path named without its module",
+      ts: { serializers: [{ name: "encode" }] },
+      setting: "ts.serializers[0]",
+      detail: 'carries "name", which is not one of "symbol", "module" with "name", or "global"',
+    },
+    {
+      name: "a relative module specifier",
+      ts: { serializers: [{ module: "./wire.ts", name: "encode" }] },
+      setting: "ts.serializers[0].module",
+      detail:
+        '"./wire.ts" is not a bare specifier: a file of the analyzed program is named by its symbol',
+    },
+    {
+      name: "a specifier the package's imports field maps",
+      ts: { serializers: [{ module: "#wire", name: "encode" }] },
+      setting: "ts.serializers[0].module",
+      detail:
+        '"#wire" is not a bare specifier: a file of the analyzed program is named by its symbol',
+    },
+    {
+      name: "a symbol spelled outside the TypeScript reference form",
+      ts: { serializers: [{ symbol: "go://example.com/app#Encode" }] },
+      setting: "ts.serializers[0].symbol",
+      detail: '"go://example.com/app#Encode" is not a ts:// reference',
+    },
+    {
+      name: "a global path that names nothing",
+      ts: { serializers: [{ global: "" }] },
+      setting: "ts.serializers[0].global",
+      detail: "is required and names nothing",
+    },
+    {
+      name: "a lifecycle contract naming no member",
+      ts: { lifecycle_contracts: [{ bases: [{ global: "HTMLElement" }], members: [] }] },
+      setting: "ts.lifecycle_contracts[0].members",
+      detail: "holds 0 entries, want at least 1",
+    },
+    {
+      name: "a lifecycle contract leaving its members out",
+      ts: { lifecycle_contracts: [{ bases: [{ global: "HTMLElement" }] }] },
+      setting: "ts.lifecycle_contracts[0].members",
+      detail: "is required and names nothing",
+    },
+    {
+      name: "a lifecycle contract whose component and base lists are both empty",
+      ts: { lifecycle_contracts: [{ components: [], bases: [], members: ["render"] }] },
+      setting: "ts.lifecycle_contracts[0]",
+      detail:
+        'names no declaration in "components" and no class in "bases", so it makes no class a component',
+    },
+  ])("is refused when it is $name", ({ ts, setting, detail }) => {
+    const got = refuse(tsSection(ts));
+
+    expect(got.kind).toBe("malformed");
+    expect(got.key).toBe(setting);
+    expect(got.message).toBe(`deadset.json: ${setting}: ${detail}`);
+  });
+
+  it.each([
+    {
+      file: "ts-injection-registration-unknown-member.json",
+      text: '{"contract_version":"3.1.0","target":{"kind":"application"},"ts":{"injection_registrations":[{"module":"@example/container","name":"Container.bind","argument":0}]}}',
+      kind: "unimplemented-key",
+      key: "ts.injection_registrations[0].argument",
+    },
+    {
+      file: "ts-lifecycle-contract-framework-name.json",
+      text: '{"contract_version":"3.1.0","target":{"kind":"application"},"ts":{"lifecycle_contracts":[{"framework":"elements","components":[{"global":"CustomElementRegistry.define"}],"members":["connectedCallback"]}]}}',
+      kind: "unimplemented-key",
+      key: "ts.lifecycle_contracts[0].framework",
+    },
+    {
+      file: "ts-lifecycle-contract-no-component-route.json",
+      text: '{"contract_version":"3.1.0","target":{"kind":"application"},"ts":{"lifecycle_contracts":[{"members":["connectedCallback"]}]}}',
+      kind: "malformed",
+      key: "ts.lifecycle_contracts[0]",
+    },
+    {
+      file: "ts-serializer-unknown-member.json",
+      text: '{"contract_version":"3.1.0","target":{"kind":"application"},"ts":{"serializers":[{"global":"structuredClone","returns":"string"}]}}',
+      kind: "unimplemented-key",
+      key: "ts.serializers[0].returns",
+    },
+  ])(
+    "refuses the Contract's refused document $file at the entry it names",
+    ({ text, kind, key }) => {
+      const got = refuse(repository(text));
+
+      expect(got.kind).toBe(kind);
+      expect(got.key).toBe(key);
+    },
+  );
+});

@@ -1,0 +1,4 @@
+ts://@example/injection-container/src/services.ts#Mailer.transport	injection-container	src/main.ts:6:22	registered by Container.bind	decorator	src/services.ts:7:3	decorated by @inject
+ts://@example/injection-container/src/services.ts#Clock.zone	injection-container	src/main.ts:8:23	registered by Module	decorator	src/services.ts:15:3	decorated by @inject
+ts://@example/injection-container/src/services.ts#Reporter.sink	decorator	src/services.ts:21:3	decorated by @inject	injection-container	src/services.ts:21:3	injected by @inject
+ts://@example/injection-container/src/services.ts#Plain.value	decorator	src/services.ts:33:3	decorated by @inject

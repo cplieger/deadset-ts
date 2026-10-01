@@ -1,4 +1,16 @@
-import { renderOrigin, type Config, type Provenance } from "./config.ts";
+import { renderOrigin, type Config, type DeclarationEntry, type Provenance } from "./config.ts";
+
+/** One declaration entry as a document writes it: the members of its shape alone. */
+function declarationOf(entry: DeclarationEntry): Record<string, string> {
+  switch (entry.shape) {
+    case "symbol":
+      return { symbol: entry.symbol };
+    case "module":
+      return { module: entry.module, name: entry.name };
+    case "global":
+      return { global: entry.global };
+  }
+}
 
 /**
  * The resolved configuration and its provenance as one JSON object, indented,
@@ -47,6 +59,13 @@ export function printConfig(config: Config, provenance: Provenance): string {
     ts: {
       test_files: config.ts.testFiles,
       entry_files: config.ts.entryFiles,
+      injection_registrations: config.ts.injectionRegistrations.map(declarationOf),
+      lifecycle_contracts: config.ts.lifecycleContracts.map((entry) => ({
+        components: entry.components.map(declarationOf),
+        bases: entry.bases.map(declarationOf),
+        members: entry.members,
+      })),
+      serializers: config.ts.serializers.map(declarationOf),
     },
     provenance: Object.fromEntries(
       [...provenance]

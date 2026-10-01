@@ -28,6 +28,12 @@ export interface KeyNode {
 
 const leaf: KeyNode = { kind: "leaf" };
 
+/** A list of declarations, each entry in one of the three shapes the `ts` section states. */
+const declarations: KeyNode = {
+  kind: "list",
+  members: { symbol: leaf, module: leaf, name: leaf, global: leaf },
+};
+
 /**
  * The closed key list the Contract's configuration schema declares, derived from
  * that schema key by key. A test pins the two equal, so a Contract change that
@@ -72,7 +78,19 @@ export const SCHEMA_ROOT: KeyNode = {
       },
     },
     go: { kind: "section", members: {} },
-    ts: { kind: "section", members: { test_files: leaf, entry_files: leaf } },
+    ts: {
+      kind: "section",
+      members: {
+        test_files: leaf,
+        entry_files: leaf,
+        injection_registrations: declarations,
+        lifecycle_contracts: {
+          kind: "list",
+          members: { components: declarations, bases: declarations, members: leaf },
+        },
+        serializers: declarations,
+      },
+    },
     provenance: { kind: "map" },
   },
 };

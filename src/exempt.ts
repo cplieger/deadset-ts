@@ -7,7 +7,7 @@
  * hands it the table of the classes it has.
  */
 
-import type { Config } from "./config.ts";
+import type { Config, TSSection } from "./config.ts";
 import { ConfigError } from "./config.ts";
 import {
   EXEMPTION_CLASSES,
@@ -41,6 +41,10 @@ export interface DetectorInput<Brand> {
   readonly targetRoot: string;
   /** The configured templates, read once for the run. */
   readonly templates: Templates;
+  /** The `ts` section, whose declarations the configured classes read. */
+  readonly ts: TSSection;
+  /** The absolute path of each declared consumer, whose modules are part of the analysis. */
+  readonly consumers: readonly string[];
 }
 
 /**

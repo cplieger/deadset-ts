@@ -1,0 +1,24 @@
+{
+  "target": { "kind": "application" },
+  "ts": {
+    "lifecycle_contracts": [
+      {
+        "components": [{ "global": "CustomElementRegistry.define" }],
+        "bases": [{ "global": "HTMLElement" }],
+        "members": [
+          "connectedCallback",
+          "disconnectedCallback",
+          "attributeChangedCallback",
+          "observedAttributes:static"
+        ]
+      },
+      {
+        "components": [
+          { "symbol": "ts://@example/framework-lifecycle/src/framework.ts#view" },
+          { "symbol": "ts://@example/framework-lifecycle/src/framework.ts#register" }
+        ],
+        "members": ["mount", "unmount"]
+      }
+    ]
+  }
+}

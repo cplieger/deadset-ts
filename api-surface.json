@@ -7,10 +7,12 @@
     {
       "path": "@typescript/native/unstable/ast",
       "names": [
+        "CallExpression",
         "Decorator",
         "Expression",
         "ModifierFlags",
         "Node",
+        "ParameterDeclaration",
         "SourceFile",
         "SyntaxKind",
         "isArrayLiteralExpression",
@@ -23,6 +25,7 @@
         "isClassStaticBlockDeclaration",
         "isComputedPropertyName",
         "isConditionalExpression",
+        "isConstructorDeclaration",
         "isDecorator",
         "isDeleteExpression",
         "isElementAccessExpression",
@@ -85,13 +88,16 @@
         "DiagnosticCategory",
         "DocumentIdentifier",
         "NodeHandle",
+        "ObjectFlags",
+        "ObjectType",
         "Program",
         "Project",
         "Snapshot",
         "Symbol",
         "SymbolFlags",
         "TimingInfo",
-        "Type"
+        "Type",
+        "TypeFlags"
       ]
     }
   ],

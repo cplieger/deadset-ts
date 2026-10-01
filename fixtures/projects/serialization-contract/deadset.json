@@ -1,0 +1,9 @@
+{
+  "target": { "kind": "application" },
+  "ts": {
+    "serializers": [
+      { "symbol": "ts://@example/serialization-contract/src/wire.ts#encode" },
+      { "module": "@example/schema", "name": "Schema.parse" }
+    ]
+  }
+}
