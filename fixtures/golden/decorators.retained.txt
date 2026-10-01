@@ -1,0 +1,5 @@
+ts://@example/decorators/src/handlers.ts#Handlers.onStart	decorator	src/handlers.ts:7:3	decorated by @register
+ts://@example/decorators/src/handlers.ts#Handlers.label	decorator	src/handlers.ts:10:3	decorated by @field
+ts://@example/decorators/src/handlers.ts#Widget.render	decorator	src/handlers.ts:16:1	decorated by @component
+ts://@example/decorators/src/handlers.ts#Widget.state	decorator	src/handlers.ts:16:1	decorated by @component
+ts://@example/decorators/src/handlers.ts#Widget.create:static	decorator	src/handlers.ts:16:1	decorated by @component

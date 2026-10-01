@@ -1,0 +1,7 @@
+{
+  "target": { "kind": "application" },
+  "analysis": {
+    "template_dirs": ["templates"],
+    "template_delimiters": { "left": "[[", "right": "]]" }
+  }
+}

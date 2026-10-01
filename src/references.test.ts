@@ -117,6 +117,27 @@ describe("the reference table of every reference form", () => {
     ).toBe(4 + 0 + 4 + 11);
   });
 
+  it("records each decorator as a use of the declaration it is attached to, at the decorator", () => {
+    const decorated = analyzeRoot(fixture("projects", "decorators"), {
+      references: { testFiles: [] },
+    });
+    const held = decorated.inventories[0]?.symbols ?? [];
+    const named = (id: string): string => held.find((symbol) => symbol.id === id)?.name ?? id;
+
+    expect(
+      (decorated.references[0]?.references ?? [])
+        .filter((reference) => reference.use === "decorator")
+        .map(
+          (reference) =>
+            `${positionKey(reference.position)} ${named(reference.from)} -> ${named(reference.to)} ${reference.resolution}`,
+        ),
+    ).toEqual([
+      "src/handlers.ts:7:3 Handlers.onStart -> Handlers.onStart syntax",
+      "src/handlers.ts:10:3 Handlers.label -> Handlers.label syntax",
+      "src/handlers.ts:16:1 Widget -> Widget syntax",
+    ]);
+  });
+
   it("accounts for every request over a tree of more than one project", () => {
     const analyzed = analyzeRoot(fixture("projects", "two-projects"), {
       references: { testFiles: [] },

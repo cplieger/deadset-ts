@@ -1,0 +1,9 @@
+ts://@example/interface-satisfaction/src/classes.ts#Assigned.area	interface-satisfaction	src/main.ts:27:12	satisfies Shape
+ts://@example/interface-satisfaction/src/classes.ts#Passed.label	interface-satisfaction	src/main.ts:37:12	satisfies Named
+ts://@example/interface-satisfaction/src/classes.ts#Returned.label	interface-satisfaction	src/main.ts:23:10	satisfies Sized
+ts://@example/interface-satisfaction/src/classes.ts#Returned.size	interface-satisfaction	src/main.ts:23:10	satisfies Sized
+ts://@example/interface-satisfaction/src/classes.ts#Stored.area	interface-satisfaction	src/main.ts:28:26	satisfies Shape
+ts://@example/interface-satisfaction/src/classes.ts#Pushed.label	interface-satisfaction	src/main.ts:30:13	satisfies Named
+ts://@example/interface-satisfaction/src/classes.ts#Base.label	interface-satisfaction	src/main.ts:38:12	satisfies Named
+ts://@example/interface-satisfaction/src/classes.ts#Boxed.label	interface-satisfaction	src/main.ts:39:12	satisfies Named
+ts://@example/interface-satisfaction/src/classes.ts#Declared.label	interface-satisfaction	src/classes.ts:84:34	satisfies Named
