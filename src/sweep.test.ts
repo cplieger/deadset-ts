@@ -140,6 +140,48 @@ describe("the two relations over one project", () => {
   });
 });
 
+/** The fixture whose modules are imported for what their top levels do, swept once. */
+const EVALUATION = sweepFixture("evaluation", PRODUCTION);
+
+/** The verdict on one declaration of the evaluation fixture. */
+function evaluated(ref: string): string {
+  const symbol = EVALUATION.symbols.find((held) => held.ref === `ts://@example/evaluation/${ref}`);
+  return symbol === undefined ? `no declaration ${ref}` : verdictOf(EVALUATION.sweep, symbol);
+}
+
+describe("a module's evaluation", () => {
+  it("runs the top level of a module the entry imports one binding from", () => {
+    expect(
+      [evaluated("src/b.ts#helper"), evaluated("src/b.ts#registry")],
+      "the binding references neither, and the module's top level references both",
+    ).toEqual(["reference-counting,reachability\tlive", "reference-counting,reachability\tlive"]);
+  });
+
+  it("runs the top level of the dependency of a module imported for its evaluation alone", () => {
+    expect(evaluated("src/d.ts#sideEffect")).toBe("reference-counting,reachability\tlive");
+  });
+
+  it("runs the top level of a module a literal import() or an import-equals loads", () => {
+    expect(
+      [evaluated("src/lazy.ts#lazyEffect"), evaluated("src/loaded.cts#loadedEffect")],
+      "the function holding the call is reached, and so is the declaration holding the " +
+        "import-equals, while the one function reading the import is called by nothing",
+    ).toEqual(["reference-counting,reachability\tlive", "reference-counting,reachability\tlive"]);
+  });
+
+  it("reaches none of what an evaluated module exports", () => {
+    expect(
+      evaluated("src/b.ts#unimported"),
+      "an evaluation runs the top level and reads no export, so the export nothing " +
+        "imports is unreached",
+    ).toBe("-\treference-counting");
+    expect(
+      evaluated("src/spaced.ts#unread"),
+      "while a namespace import reads the module's namespace, which holds every export",
+    ).toBe("reachability\treference-counting");
+  });
+});
+
 /** One declaration of an in-memory graph, a function at its own line of one file. */
 function declared(name: string, line: number, path = "src/a.ts"): InventorySymbol {
   return {

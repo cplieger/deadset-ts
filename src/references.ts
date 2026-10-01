@@ -1,12 +1,17 @@
 import {
   isArrayLiteralExpression,
   isBinaryExpression,
+  isCallExpression,
   isDeleteExpression,
   isElementAccessExpression,
   isExportDeclaration,
+  isExternalModuleReference,
   isForInStatement,
   isForOfStatement,
+  isImportDeclaration,
+  isImportEqualsDeclaration,
   isNamespaceExport,
+  isNoSubstitutionTemplateLiteral,
   isObjectLiteralExpression,
   isParenthesizedExpression,
   isPostfixUnaryExpression,
@@ -16,6 +21,7 @@ import {
   isShorthandPropertyAssignment,
   isSpreadAssignment,
   isSpreadElement,
+  isStringLiteral,
   SyntaxKind,
   type Node,
   type SourceFile,
@@ -38,13 +44,18 @@ import type { ProjectView } from "./session.ts";
  *
  * What the pass records and what it does not: a reference carries its use, its
  * position, the declaration that encloses it and the classification of the file that
- * made it. It carries no mode. Which of the references a run counts is the reading the
- * sweep makes of this set, so the mode is one value the run decides once and this pass
- * never sees it.
+ * made it, and every place that imports one of the project's own modules is an
+ * evaluation of that module's file. It carries no mode. Which of the references a run
+ * counts is the reading the sweep makes of this set, so the mode is one value the run
+ * decides once and this pass never sees it.
  */
 
-/** How one reference uses the declaration it names. */
-export type Use = "read" | "write";
+/**
+ * How one reference uses the declaration it names. An `evaluation` names a file: the
+ * place it is written imports the module, which runs the module's top level and reads
+ * none of what it exports. A `read` of a file reads the module's namespace.
+ */
+export type Use = "read" | "write" | "evaluation";
 
 /**
  * Which accessor answered for one reference, so that the cost of a run is attributable
@@ -300,10 +311,52 @@ interface Link {
   readonly alias: boolean;
 }
 
+/** One place the walk found that evaluates a module, and the declaration that holds it. */
+interface Evaluation {
+  /** The module specifier, whose symbol is the module evaluated. */
+  readonly node: Node;
+  readonly from: string;
+}
+
 /** Everything one file's walk found to resolve. */
 interface FileSites {
   readonly uses: readonly Site[];
   readonly links: readonly Link[];
+  readonly evaluations: readonly Evaluation[];
+}
+
+/** Whether one node is a string literal or a template literal with no substitution. */
+function isLiteralText(node: Node | undefined): node is Node {
+  return node !== undefined && (isStringLiteral(node) || isNoSubstitutionTemplateLiteral(node));
+}
+
+/**
+ * The module specifier of the module one node evaluates, if it evaluates one: an import
+ * declaration, an import-equals declaration of an external module, an export
+ * declaration that names a module, and an `import()` call whose argument is literal
+ * text. A type-only form evaluates nothing. An `import()` of a computed argument names
+ * no module this pass can know.
+ */
+function evaluatedBy(node: Node): Node | undefined {
+  if (isImportDeclaration(node)) {
+    return node.importClause?.phaseModifier === SyntaxKind.TypeKeyword
+      ? undefined
+      : node.moduleSpecifier;
+  }
+  if (isExportDeclaration(node)) {
+    return node.isTypeOnly ? undefined : node.moduleSpecifier;
+  }
+  if (isImportEqualsDeclaration(node)) {
+    const reference = node.moduleReference;
+    return !node.isTypeOnly && isExternalModuleReference(reference)
+      ? reference.expression
+      : undefined;
+  }
+  if (isCallExpression(node) && node.expression.kind === SyntaxKind.ImportKeyword) {
+    const [argument] = node.arguments;
+    return isLiteralText(argument) ? argument : undefined;
+  }
+  return undefined;
 }
 
 /**
@@ -364,6 +417,7 @@ function sitesOf(
 ): FileSites {
   const found: Site[] = [];
   const links: Link[] = [];
+  const evaluations: Evaluation[] = [];
   const writes = new Set<number>();
   const declared = new Set<number>();
   const shorthands = new Map<number, Node>();
@@ -402,6 +456,10 @@ function sitesOf(
     markNames(node);
     markStores(node, writes);
     links.push(...linksOf(file, node, declarations, enclosing));
+    const evaluated = evaluatedBy(node);
+    if (evaluated !== undefined) {
+      evaluations.push({ node: evaluated, from: enclosing });
+    }
     const held = declarations.get(nodeKey(file, node));
     const outer = enclosing;
     if (held !== undefined) {
@@ -412,7 +470,7 @@ function sitesOf(
   };
 
   file.forEachChild(visit);
-  return { uses: found, links };
+  return { uses: found, links, evaluations };
 }
 
 /**
@@ -443,7 +501,8 @@ function compare(a: string, b: string): number {
  * The order is by the referencing position, then by the declaration named, the
  * declaration referencing it and the use. That is a total order because one name
  * references one declaration once from one declaration, while a chain of aliases reaches
- * several declarations at one position.
+ * several declarations at one position and a bare star re-export's specifier both reads
+ * and evaluates the module it names.
  */
 export function references<Brand>(
   project: ProjectView<Brand>,
@@ -464,6 +523,9 @@ export function references<Brand>(
   let shorthandLookups = 0;
 
   const files = project.ownSourceFiles();
+  const fileIds = new Set(
+    held.symbols.filter((symbol) => symbol.kind === "file").map((symbol) => symbol.id),
+  );
 
   /** The identifier of the declaration one node of this program is, where it is one. */
   const declaredAt = (node: Node): string | undefined =>
@@ -505,15 +567,19 @@ export function references<Brand>(
     if (test) {
       tests.push(path);
     }
-    const { uses, links } = sitesOf(file, declarations, declaredAt(file) ?? "");
+    const { uses, links, evaluations } = sitesOf(file, declarations, declaredAt(file) ?? "");
 
     // One batch per capped run of the file's name nodes, the re-exports' nodes after
-    // the uses. A shorthand is left out of the batch: its name resolves to the property
-    // the literal declares, so the batch's answer for it would name something this
-    // project's inventory never holds.
+    // the uses and the evaluated modules' specifiers last, each node once: a bare star
+    // re-export's specifier is a link and an evaluation both. A shorthand is left out
+    // of the batch: its name resolves to the property the literal declares, so the
+    // batch's answer for it would name something this project's inventory never holds.
     const batching = [
-      ...uses.filter((site) => site.shorthand === undefined).map((site) => site.node),
-      ...links.map((link) => link.node),
+      ...new Set([
+        ...uses.filter((site) => site.shorthand === undefined).map((site) => site.node),
+        ...links.map((link) => link.node),
+        ...evaluations.map((evaluation) => evaluation.node),
+      ]),
     ];
     const answered = new Map<Node, TSSymbol>();
     batched += batching.length;
@@ -544,6 +610,26 @@ export function references<Brand>(
           resolution: link.alias ? "alias" : "batch",
           test,
         });
+      }
+    }
+
+    for (const evaluation of evaluations) {
+      const module = answered.get(evaluation.node);
+      if (module === undefined) {
+        continue;
+      }
+      const position = renderPosition(file, targetRoot, evaluation.node.getStart());
+      for (const id of chains.declarationsOf(module)) {
+        if (fileIds.has(id)) {
+          found.push({
+            from: evaluation.from,
+            to: id,
+            position,
+            use: "evaluation",
+            resolution: "batch",
+            test,
+          });
+        }
       }
     }
 

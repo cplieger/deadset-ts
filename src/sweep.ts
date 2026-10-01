@@ -154,15 +154,17 @@ function reachable(graph: Graph, marked: readonly boolean[], mode: Mode): readon
   const expanded = graph.symbols.map(() => false);
   const queue: number[] = [];
 
-  // A reference to a file is a reference to the module's namespace, which reaches what
-  // the module exports as well as its top level. A root does not expand: a file a
-  // runtime runs without reading its exports is a root by itself.
-  const enter = (at: number, viaReference: boolean): void => {
+  // Reaching a file reaches its top level: the references written outside every
+  // declaration it holds. A reference that reads a file reads the module's namespace,
+  // which reaches what the module exports as well. An evaluation runs the top level
+  // and reads no export, and a root does not expand either: a file a runtime runs
+  // without reading its exports is a root by itself.
+  const enter = (at: number, expands: boolean): void => {
     if (!reached[at]) {
       reached[at] = true;
       queue.push(at);
     }
-    if (!viaReference || expanded[at] === true) {
+    if (!expands || expanded[at] === true) {
       return;
     }
     expanded[at] = true;
@@ -176,7 +178,7 @@ function reachable(graph: Graph, marked: readonly boolean[], mode: Mode): readon
         if (!held && mode.production && edge.test) {
           continue;
         }
-        enter(edge.to, true);
+        enter(edge.to, !edge.evaluation);
       }
     }
   };
