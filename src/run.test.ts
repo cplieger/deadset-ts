@@ -227,6 +227,30 @@ describe("print-projects", () => {
     expect(got.out).toBe("main\n");
   });
 
+  it("prints the projects in the order the matrix lists them, whatever their paths", () => {
+    const project = '{"compilerOptions":{"strict":true,"noEmit":true},"include":["src/*.ts"]}\n';
+    const target = matrixTree({
+      "tsconfig.a.json": project,
+      "tsconfig.b.json": project,
+      "deadset.json": JSON.stringify({
+        analysis: {
+          configurations: [
+            { id: "a1", project: "tsconfig.json" },
+            { id: "c3", project: "tsconfig.b.json" },
+            { id: "b2", project: "tsconfig.a.json" },
+          ],
+        },
+      }),
+    });
+
+    const got = invoke(["print-projects", `--target=${target}`]);
+
+    expect(got.code, got.err).toBe(0);
+    expect(got.out, "neither the configuration files' path order nor the identifiers'").toBe(
+      "a1\nc3\nb2\n",
+    );
+  });
+
   it("derives every project of the tree, and fails on the one that does not check, with no declared matrix", () => {
     const got = invoke(["print-projects", `--target=${matrixTree()}`]);
 

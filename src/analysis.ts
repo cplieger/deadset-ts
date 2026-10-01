@@ -43,7 +43,7 @@ export interface RunRoot {
 export interface RunRoots {
   /**
    * The configurations the run analyzed, each by the name discovery gives its
-   * project, in discovery order.
+   * project, in discovery order: the order a declared matrix lists them in.
    */
   readonly configurations: readonly string[];
   /**
@@ -122,10 +122,7 @@ function readProjects<Answer>(
     }
     const held = inventory(project, host, targetRoot);
     const rooted = roots(project, held, targetRoot, options);
-    const configuration =
-      ids.get(project.configFile) ??
-      relativePath(targetRoot, project.configFile) ??
-      project.configFile;
+    const configuration = ids.get(project.configFile) ?? project.configFile;
     return stage(project, { configuration, held, rooted });
   });
   if (failures.length > 0) {

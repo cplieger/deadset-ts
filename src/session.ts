@@ -12,6 +12,7 @@ import type {
 } from "@typescript/native/unstable/sync";
 import { isIdentifier } from "@typescript/native/unstable/ast";
 import type { Node, SourceFile } from "@typescript/native/unstable/ast";
+import { DiscoveryError } from "./discover.ts";
 
 /**
  * The compiler the analysis reads through. It is a client over a protocol to a
@@ -218,13 +219,16 @@ export interface SessionResult<Result> {
 
 /**
  * Runs `visit` over every project the compiler configurations name, inside one
- * snapshot of one client.
+ * snapshot of one client, in the order they are named, and answers in that order.
  *
  * The snapshot is opened once with every configuration, so each becomes a project
  * with its own program and checker; it is never updated, because the analysis
- * reads and the tree does not change under it. It is disposed once when the last
- * project has been visited, and the client is released after it, whether the visit
- * completed or threw.
+ * reads and the tree does not change under it. The order the snapshot lists its
+ * projects in is the compiler's own, so each named configuration is looked up in it
+ * instead, and a configuration the snapshot opened no project for ends the run: the
+ * run would otherwise answer for fewer projects than it was asked to analyze. The
+ * snapshot is disposed once when the last project has been visited, and the client
+ * is released after it, whether the visit completed or threw.
  */
 export function runSession<Result>(
   engine: Engine,
@@ -234,7 +238,16 @@ export function runSession<Result>(
   try {
     const snapshot = engine.updateSnapshot(configFiles);
     try {
-      const projects = snapshot.getProjects().map((project) => visit(viewOf(project)));
+      const opened = new Map(
+        snapshot.getProjects().map((project) => [project.configFileName, project]),
+      );
+      const projects = configFiles.map((configFile) => {
+        const project = opened.get(configFile);
+        if (project === undefined) {
+          throw new DiscoveryError(`${configFile} opened no project`, []);
+        }
+        return visit(viewOf(project));
+      });
       return { projects, timing: engine.getTimingInfo() };
     } finally {
       snapshot.dispose();
