@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
 import { fixture } from "../__test-helpers__/fixtures.ts";
 import { runSweep, type RunSweep } from "./analysis.ts";
+import { defaultConfig } from "./config.ts";
 import { discoverProjects } from "./discover.ts";
 import type { Evidence } from "./exempt.ts";
 import { interfaceSatisfaction } from "./interface-satisfaction.ts";
@@ -65,6 +66,8 @@ function measure(): Measured {
       held,
       targetRoot: TARGET,
       templates: { delimiters: { left: "{{", right: "}}" }, files: [] },
+      ts: defaultConfig().ts,
+      consumers: [],
     });
     return { held, evidence, requests: engine.getTimingInfo().totals.requestCount - before };
   });

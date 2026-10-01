@@ -1,0 +1,9 @@
+ts://@example/framework-lifecycle/src/elements.ts#Counter.observedAttributes:static	framework-lifecycle	src/elements.ts:4:30	extends HTMLElement	framework-lifecycle	src/main.ts:7:36	registered by CustomElementRegistry.define
+ts://@example/framework-lifecycle/src/elements.ts#Counter.connectedCallback	framework-lifecycle	src/elements.ts:4:30	extends HTMLElement	framework-lifecycle	src/main.ts:7:36	registered by CustomElementRegistry.define
+ts://@example/framework-lifecycle/src/elements.ts#Counter.attributeChangedCallback	framework-lifecycle	src/elements.ts:4:30	extends HTMLElement	framework-lifecycle	src/main.ts:7:36	registered by CustomElementRegistry.define
+ts://@example/framework-lifecycle/src/elements.ts#Base.disconnectedCallback	framework-lifecycle	src/elements.ts:15:27	extends HTMLElement
+ts://@example/framework-lifecycle/src/elements.ts#Fancy.connectedCallback	framework-lifecycle	src/elements.ts:20:28	extends HTMLElement
+ts://@example/framework-lifecycle/src/views.ts#Panel.mount	decorator	src/views.ts:6:1	decorated by @view	framework-lifecycle	src/views.ts:6:1	decorated by @view
+ts://@example/framework-lifecycle/src/views.ts#Panel.unmount	decorator	src/views.ts:6:1	decorated by @view	framework-lifecycle	src/views.ts:6:1	decorated by @view
+ts://@example/framework-lifecycle/src/views.ts#Panel.hidden	decorator	src/views.ts:6:1	decorated by @view
+ts://@example/framework-lifecycle/src/views.ts#Dialog.mount	framework-lifecycle	src/views.ts:22:10	registered by register

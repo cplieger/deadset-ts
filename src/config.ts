@@ -97,10 +97,38 @@ export interface Reporters {
   readonly failOn: Severity;
 }
 
+/**
+ * One declaration a configuration entry names, in exactly one of three shapes: a
+ * declaration of the analyzed program by its stable symbol reference, a declaration a
+ * module exports by the bare specifier an import writes for the module and the
+ * declaration's path from its exports, or a declaration of the global scope by its
+ * path from that scope. A path joins the name and each member with dots and spells a
+ * static member with `:static` after it.
+ */
+export type DeclarationEntry =
+  | { readonly shape: "symbol"; readonly symbol: string }
+  | { readonly shape: "module"; readonly module: string; readonly name: string }
+  | { readonly shape: "global"; readonly global: string };
+
+/**
+ * One framework's lifecycle contract: the declarations whose use makes a class one of
+ * the framework's components, the classes whose subclasses are its components, and the
+ * names of the members the framework calls on a component, each spelled as the last
+ * component of a member's stable symbol reference.
+ */
+export interface LifecycleContract {
+  readonly components: readonly DeclarationEntry[];
+  readonly bases: readonly DeclarationEntry[];
+  readonly members: readonly string[];
+}
+
 /** The section the TypeScript analyzer owns. */
 export interface TSSection {
   readonly testFiles: readonly string[];
   readonly entryFiles: readonly string[];
+  readonly injectionRegistrations: readonly DeclarationEntry[];
+  readonly lifecycleContracts: readonly LifecycleContract[];
+  readonly serializers: readonly DeclarationEntry[];
 }
 
 /**
@@ -159,6 +187,9 @@ export function defaultConfig(): Config {
     ts: {
       testFiles: ["**/*.test.{ts,tsx,mts,cts}"],
       entryFiles: [],
+      injectionRegistrations: [],
+      lifecycleContracts: [],
+      serializers: [],
     },
   };
 }
