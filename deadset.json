@@ -1,0 +1,6 @@
+{
+  "target": { "kind": "library" },
+  "analysis": {
+    "configurations": [{ "id": "tsconfig.test.json", "project": "tsconfig.test.json" }]
+  }
+}

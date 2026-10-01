@@ -2,26 +2,6 @@ export { run, SETTING_OPTIONS, type Writer } from "./run.ts";
 export type { DirectoryEntry, Host, PathKind } from "./host.ts";
 export { DECLINED_CONVENTIONS, type DeclinedConvention } from "./entry-point-gaps.ts";
 export {
-  inventory,
-  nodeKey,
-  type Inventory,
-  type InventoryCost,
-  type InventorySymbol,
-  type SymbolKind,
-  type Visibility,
-} from "./inventory.ts";
-export {
-  DEFAULT_BATCH_CAP,
-  references,
-  type Reference,
-  type ReferenceCost,
-  type ReferenceOptions,
-  type References,
-  type Resolution,
-  type TestFileRule,
-  type Use,
-} from "./references.ts";
-export {
   byPosition,
   positionKey,
   PositionError,

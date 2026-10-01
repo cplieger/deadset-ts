@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, onTestFinished } from "vitest";
 import { DiagnosticCategory } from "@typescript/native/unstable/sync";
 import { nodeHost } from "../bin/node-host.ts";
 import { fixture } from "../__test-helpers__/fixtures.ts";
+import type { BuildConfiguration } from "./config.ts";
 import { discoverProjects, DiscoveryError, renderDiagnostic } from "./discover.ts";
 import { scopeForDir, type Scope } from "./scope.ts";
 import { openEngine, type Engine } from "./session.ts";
@@ -45,6 +46,36 @@ function scratch(): string {
 function scopeOf(path: string): Scope {
   return { target: { id: "", path }, consumers: [] };
 }
+
+/** Writes each path below `root` with the text given for it, creating its directory. */
+function write(root: string, files: Readonly<Record<string, string>>): void {
+  for (const [path, text] of Object.entries(files)) {
+    mkdirSync(join(root, path, ".."), { recursive: true });
+    writeFileSync(join(root, path), text);
+  }
+}
+
+/** The error one call threw, or undefined when it returned. */
+function thrownBy(call: () => unknown): unknown {
+  try {
+    call();
+  } catch (error: unknown) {
+    return error;
+  }
+  return undefined;
+}
+
+/** A configuration file that parses and names no input. */
+const EMPTY = '{ "include": [] }\n';
+
+/** A platform entry, which names a configuration of another language. */
+const PLATFORM: BuildConfiguration = {
+  shape: "platform",
+  id: "linux-amd64",
+  os: "linux",
+  arch: "amd64",
+  tags: [],
+};
 
 describe("project discovery", () => {
   it("reads every configuration under the target root and each one's references", () => {
@@ -119,6 +150,151 @@ describe("project discovery", () => {
 
     expect(thrown).toBeInstanceOf(DiscoveryError);
     expect(thrown instanceof DiscoveryError ? thrown.message : "").toContain(missing);
+  });
+});
+
+describe("a declared matrix", () => {
+  it("is exactly the projects its entries name, in their order, by their identifiers", () => {
+    const root = scratch();
+    write(root, {
+      "tsconfig.json": EMPTY,
+      "tsconfig.build.json": EMPTY,
+      "packages/app/tsconfig.json": EMPTY,
+      "fixtures/broken/tsconfig.json": "{ not json",
+    });
+
+    const found = discoverProjects(engine(), HOST, scopeOf(root), [
+      PLATFORM,
+      { shape: "project", id: "app", project: "packages/app/tsconfig.json" },
+      { shape: "project", id: "tsconfig.json", project: "tsconfig.json" },
+    ]);
+
+    expect(found.projects).toEqual([
+      { id: "app", configFile: join(root, "packages", "app", "tsconfig.json") },
+      { id: "tsconfig.json", configFile: join(root, "tsconfig.json") },
+    ]);
+    expect(found.configFiles).toEqual([
+      join(root, "packages", "app", "tsconfig.json"),
+      join(root, "tsconfig.json"),
+    ]);
+  });
+
+  it("ends the run naming a configuration a declared project references and the matrix does not name", () => {
+    const root = scratch();
+    write(root, {
+      "a/tsconfig.json": '{ "include": [], "references": [{ "path": "../b" }] }\n',
+      "b/tsconfig.json": EMPTY,
+    });
+
+    const thrown = thrownBy(() =>
+      discoverProjects(engine(), HOST, scopeOf(root), [
+        { shape: "project", id: "a", project: "a/tsconfig.json" },
+      ]),
+    );
+
+    expect(thrown).toBeInstanceOf(DiscoveryError);
+    const message = thrown instanceof DiscoveryError ? thrown.message : "";
+    expect(message).toContain(`the project "a" (${join(root, "a", "tsconfig.json")}) references`);
+    expect(message).toContain(
+      `${join(root, "b", "tsconfig.json")}, which the build matrix does not name`,
+    );
+  });
+
+  it("follows no reference, so a referenced configuration the matrix names keeps its own place and identifier", () => {
+    const root = scratch();
+    write(root, {
+      "a/tsconfig.json": '{ "include": [], "references": [{ "path": "../b" }] }\n',
+      "b/tsconfig.json": EMPTY,
+    });
+
+    const found = discoverProjects(engine(), HOST, scopeOf(root), [
+      { shape: "project", id: "a", project: "a/tsconfig.json" },
+      { shape: "project", id: "core", project: "b/tsconfig.json" },
+    ]);
+
+    expect(found.projects).toEqual([
+      { id: "a", configFile: join(root, "a", "tsconfig.json") },
+      { id: "core", configFile: join(root, "b", "tsconfig.json") },
+    ]);
+  });
+
+  it("reads none of the configuration files the scope names", () => {
+    const root = scratch();
+    write(root, { "tsconfig.json": EMPTY, "other/tsconfig.json": EMPTY });
+
+    const found = discoverProjects(
+      engine(),
+      HOST,
+      {
+        target: { id: "", path: root },
+        consumers: [{ id: "", path: join(root, "other", "tsconfig.json") }],
+      },
+      [{ shape: "project", id: "root", project: "tsconfig.json" }],
+    );
+
+    expect(found.configFiles).toEqual([join(root, "tsconfig.json")]);
+    expect(found.fromScope).toEqual([]);
+  });
+
+  it("keeps the first identifier of a configuration two entries name", () => {
+    const root = scratch();
+    write(root, { "tsconfig.json": EMPTY });
+
+    const found = discoverProjects(engine(), HOST, scopeOf(root), [
+      { shape: "project", id: "first", project: "tsconfig.json" },
+      { shape: "project", id: "second", project: "tsconfig.json" },
+    ]);
+
+    expect(found.projects).toEqual([{ id: "first", configFile: join(root, "tsconfig.json") }]);
+  });
+
+  it.each([
+    { name: "does not exist", files: {}, says: "does not exist" },
+    {
+      name: "is a directory",
+      files: { "tsconfig.json/inner.json": EMPTY },
+      says: "is a directory",
+    },
+  ])("ends the run naming an entry whose file $name", ({ files, says }) => {
+    const root = scratch();
+    write(root, files);
+
+    const thrown = thrownBy(() =>
+      discoverProjects(engine(), HOST, scopeOf(root), [
+        { shape: "project", id: "named", project: "tsconfig.json" },
+      ]),
+    );
+
+    expect(thrown).toBeInstanceOf(DiscoveryError);
+    const message = thrown instanceof DiscoveryError ? thrown.message : "";
+    expect(message).toContain('"named"');
+    expect(message).toContain(join(root, "tsconfig.json"));
+    expect(message).toContain(says);
+  });
+});
+
+describe("a derived matrix", () => {
+  it("names each project by its configuration file's path below the target root", () => {
+    const root = fixture("projects", "two-projects");
+
+    const found = discoverProjects(engine(), HOST, scopeForDir(HOST, root));
+
+    expect(found.projects.map((project) => project.id)).toEqual([
+      "app/tsconfig.json",
+      "core/tsconfig.json",
+    ]);
+  });
+
+  it("is what a matrix of platform entries alone leaves discovery to read", () => {
+    const root = scratch();
+    write(root, { "tsconfig.json": EMPTY, "tools/tsconfig.json": EMPTY });
+
+    const found = discoverProjects(engine(), HOST, scopeForDir(HOST, root), [PLATFORM]);
+
+    expect(found.projects.map((project) => project.id)).toEqual([
+      "tools/tsconfig.json",
+      "tsconfig.json",
+    ]);
   });
 });
 

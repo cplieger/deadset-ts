@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
-import { readdirSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
 import { fixture, ROOT } from "../__test-helpers__/fixtures.ts";
 import type { Host } from "./host.ts";
@@ -33,6 +34,33 @@ const USAGE =
   "usage: deadset-ts <verb> [options]\n" +
   "verbs: analyze, explain, print-config, print-projects, print-roots, print-retained, " +
   "describe, version\n";
+
+/**
+ * A tree of this test's own, removed afterwards: the matrix vector's two projects,
+ * each naming its own source, beside a project that does not type-check.
+ */
+function matrixTree(extra: Readonly<Record<string, string>> = {}): string {
+  const root = mkdtempSync(join(tmpdir(), "deadset-ts-matrix-"));
+  onTestFinished(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+  const project = (include: string): string =>
+    `${JSON.stringify({ compilerOptions: { strict: true, noEmit: true }, include: [include] })}\n`;
+  const files: Record<string, string> = {
+    "tsconfig.json": project("src/*.ts"),
+    "src/main.ts": "export const main: number = 1;\n",
+    "packages/app/tsconfig.json": project("*.ts"),
+    "packages/app/app.ts": 'export const app: string = "app";\n',
+    "fixtures/broken/tsconfig.json": project("*.ts"),
+    "fixtures/broken/broken.ts": "export const broken: string = 1;\n",
+    ...extra,
+  };
+  for (const [path, text] of Object.entries(files)) {
+    mkdirSync(join(root, path, ".."), { recursive: true });
+    writeFileSync(join(root, path), text);
+  }
+  return root;
+}
 
 /** The sha256 of every file below one directory, keyed by its relative path. */
 function hashTree(dir: string): Map<string, string> {
@@ -154,18 +182,14 @@ describe("print-projects", () => {
     const got = invoke(["print-projects", `--target=${fixture("projects", "two-projects")}`]);
 
     expect(got.code, got.err).toBe(0);
-    expect(got.out.trim().split("\n").sort()).toEqual([
-      fixture("projects", "two-projects", "app", "tsconfig.json"),
-      fixture("projects", "two-projects", "core", "tsconfig.json"),
-    ]);
+    expect(got.out.trim().split("\n").sort()).toEqual(["app/tsconfig.json", "core/tsconfig.json"]);
   });
 
   it("analyzes a package whose sources ship as TypeScript with no build step", () => {
-    const target = fixture("projects", "sources-only");
-    const got = invoke(["print-projects", `--target=${target}`]);
+    const got = invoke(["print-projects", `--target=${fixture("projects", "sources-only")}`]);
 
     expect(got.code, got.err).toBe(0);
-    expect(got.out).toBe(`${join(target, "tsconfig.json")}\n`);
+    expect(got.out).toBe("tsconfig.json\n");
   });
 
   it("exits 3 printing the diagnostics and no project list for a project that fails to check", () => {
@@ -176,6 +200,103 @@ describe("print-projects", () => {
     expect(got.err).toContain("broken.ts");
     expect(got.err).toContain("TS2322");
     expect(got.err).toContain("no answer was produced");
+  });
+
+  it("analyzes exactly the projects a declared matrix names, by their identifiers", () => {
+    const got = invoke([
+      "print-projects",
+      `--target=${matrixTree()}`,
+      `--config=${fixture("vectors", "config", "typescript-matrix-declared", "repository.json")}`,
+    ]);
+
+    expect(got.code, got.err).toBe(0);
+    expect(got.out.trim().split("\n").sort()).toEqual([
+      "packages/app/tsconfig.json",
+      "tsconfig.json",
+    ]);
+  });
+
+  it("reads the declared matrix from the target's own configuration document", () => {
+    const target = matrixTree({
+      "deadset.json": '{"analysis":{"configurations":[{"id":"main","project":"tsconfig.json"}]}}\n',
+    });
+
+    const got = invoke(["print-projects", `--target=${target}`]);
+
+    expect(got.code, got.err).toBe(0);
+    expect(got.out).toBe("main\n");
+  });
+
+  it("derives every project of the tree, and fails on the one that does not check, with no declared matrix", () => {
+    const got = invoke(["print-projects", `--target=${matrixTree()}`]);
+
+    expect(got.code).toBe(3);
+    expect(got.out).toBe("");
+    expect(got.err).toContain("broken.ts");
+  });
+
+  it("exits 3 naming a declared project whose configuration does not exist", () => {
+    const target = matrixTree({
+      "deadset.json":
+        '{"analysis":{"configurations":[{"id":"gone","project":"packages/gone/tsconfig.json"}]}}\n',
+    });
+
+    const got = invoke(["print-projects", `--target=${target}`]);
+
+    expect(got.code).toBe(3);
+    expect(got.out).toBe("");
+    expect(got.err).toContain('the project "gone"');
+    expect(got.err).toContain(join(target, "packages", "gone", "tsconfig.json"));
+  });
+
+  it("exits 3 for a declared project that does not check", () => {
+    const target = matrixTree({
+      "deadset.json":
+        '{"analysis":{"configurations":[{"id":"broken","project":"fixtures/broken/tsconfig.json"}]}}\n',
+    });
+
+    const got = invoke(["print-projects", `--target=${target}`]);
+
+    expect(got.code).toBe(3);
+    expect(got.err).toContain("TS2322");
+  });
+
+  it("exits 3 for a declared project referencing one the matrix leaves out, whose errors the run would not read", () => {
+    const target = matrixTree({
+      "deadset.json": '{"analysis":{"configurations":[{"id":"a","project":"a/tsconfig.json"}]}}\n',
+      "a/tsconfig.json":
+        '{"compilerOptions":{"strict":true,"module":"NodeNext","noEmit":true},' +
+        '"include":["*.ts"],"references":[{"path":"../b"}]}\n',
+      "a/a.ts": 'import { fromB } from "../b/b.js";\nexport const fromA: number = fromB;\n',
+      "b/tsconfig.json":
+        '{"compilerOptions":{"composite":true,"strict":true,"module":"NodeNext","outDir":"out"},' +
+        '"include":["*.ts"]}\n',
+      "b/b.ts": "export const fromB: number = 1;\nexport const broken: string = 2;\n",
+    });
+
+    const got = invoke(["print-projects", `--target=${target}`]);
+
+    expect(got.code, got.out).toBe(3);
+    expect(got.err).toContain("which the build matrix does not name");
+  });
+
+  it("exits 2 naming a build configuration of both shapes", () => {
+    const target = matrixTree({
+      "deadset.json":
+        '{"analysis":{"configurations":[{"id":"x","os":"linux","arch":"amd64","project":"tsconfig.json"}]}}\n',
+    });
+
+    const got = invoke(["print-projects", `--target=${target}`]);
+
+    expect(got.code).toBe(2);
+    expect(got.err).toContain("analysis.configurations[0]");
+  });
+
+  it("analyzes this repository under the matrix its own configuration declares", () => {
+    const got = invoke(["print-projects", `--target=${ROOT}`]);
+
+    expect(got.code, got.err).toBe(0);
+    expect(got.out).toBe("tsconfig.test.json\n");
   });
 
   it("exits 3 naming a scope document it cannot read", () => {

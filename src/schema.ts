@@ -8,7 +8,10 @@ import { ConfigError } from "./config.ts";
  *   holds no value of its own.
  * - `map` is an object whose member names the key list leaves open, its values
  *   scalars: the severity and provenance objects.
- * - `list` is an array whose entries are objects with declared members.
+ * - `list` is an array whose entries are objects with declared members. Where
+ *   the key list admits an entry in more than one shape, the members are every
+ *   shape's together, and which of them one entry may hold is the decoder's
+ *   refusal, not the walk's.
  * - `object` is one setting written as an object: its member names are declared
  *   and a source supplies the object whole.
  */
@@ -44,7 +47,7 @@ export const SCHEMA_ROOT: KeyNode = {
         consumer_tests: leaf,
         configurations: {
           kind: "list",
-          members: { id: leaf, os: leaf, arch: leaf, tags: leaf },
+          members: { id: leaf, os: leaf, arch: leaf, tags: leaf, project: leaf },
         },
         matrix: { kind: "section", members: { complete: leaf } },
         template_dirs: leaf,

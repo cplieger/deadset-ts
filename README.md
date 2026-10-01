@@ -8,7 +8,7 @@ deadset-ts is a command-line analyzer for TypeScript and JavaScript projects. It
 
 deadset-ts is report-only. It never edits source, and it refuses any `--fix` flag.
 
-**Status: pre-release.** This version implements contract 2.1.0 and ships the analyzer's foundation: one compiler session per run over every `tsconfig` project discovered under the target (the explicit scope, every `tsconfig*.json`, each project's `references`), a fail-closed read of every project's diagnostics, configuration decoding against the contract's closed key list with `print-config` and its provenance, `print-projects`, the report-only guard, the symbol inventory of every declaration a project's own files hold down to its class and type members, the one-pass reference resolution over that inventory, and the root set `print-roots` prints. A root is a declaration the analysis keeps live without a reference: what a file exports when the manifest names it through `main`, `module`, `types`, `bin` or `exports`, or when `ts.entry_files` matches it; a library target's published API; the configuration, setup and test files of Vitest, Stryker and Playwright, the flat configuration of ESLint, and a worker or service worker a call addresses by a string literal; and every declaration a `roots.patterns` entry names. An entry that names nothing is reported as `DS1704` and fails the run. The entry-point conventions of other tools are not read, and `DECLINED_CONVENTIONS` lists each one with the reason. The inventory and the reference pass are library functions the package exports; no other verb reports findings yet, so `analyze`, `explain`, `print-retained` and `describe` exit with a usage message. The one runtime dependency is the `typescript` package at exactly 7.0.2, installed under the `@typescript/native` name until TypeScript 7.1 ships a compiler API the tooling can share.
+**Status: pre-release.** This version implements contract 2.2.0 and ships the analyzer's foundation: one compiler session per run over the projects `analysis.configurations` declares, each a compiler configuration file below the target, or, where it declares none, every `tsconfig` project discovered under the target (the explicit scope, every `tsconfig*.json`, each project's `references`), a fail-closed read of every project's diagnostics, configuration decoding against the contract's closed key list with `print-config` and its provenance, `print-projects`, the report-only guard, the symbol inventory of every declaration a project's own files hold down to its class and type members, the one-pass reference resolution over that inventory, which resolves each file's identifiers in batches ([batch-cap calibration](docs/batch-cap-calibration.md) is the measurement behind the batch size), and the root set `print-roots` prints. A root is a declaration the analysis keeps live without a reference: what a file exports when the manifest names it through `main`, `module`, `types`, `bin` or `exports`, or when `ts.entry_files` matches it; a library target's published API; the configuration, setup and test files of Vitest, Stryker and Playwright, the flat configuration of ESLint, and a worker or service worker a call addresses by a string literal; and every declaration a `roots.patterns` entry names. An entry that names nothing is reported as `DS1704` and fails the run. The entry-point conventions of other tools are not read, and `DECLINED_CONVENTIONS` lists each one with the reason. The analysis is reached through the command, and through `run()` for a caller that runs the command in-process; no other verb reports findings yet, so `analyze`, `explain`, `print-retained` and `describe` exit with a usage message. The one runtime dependency is the `typescript` package at exactly 7.0.2, installed under the `@typescript/native` name until TypeScript 7.1 ships a compiler API the tooling can share.
 
 ## Install
 
@@ -35,7 +35,7 @@ npx deadset-ts version
 | `analyze`        | Analyze a project and print the findings                                        |
 | `explain`        | Explain one finding: the relation, the roots and the references that decided it |
 | `print-config`   | Print the resolved configuration and where each setting came from               |
-| `print-projects` | Print the compiler configuration of every project a run analyzes                |
+| `print-projects` | Print the identifier of every project a run analyzes                            |
 | `print-roots`    | Print every declaration the analysis keeps live without a reference, and why    |
 | `print-retained` | Print every symbol an exemption class held back, with the class                 |
 | `describe`       | Describe the analyzer: version, Contract version, supported issue kinds         |
@@ -49,7 +49,7 @@ npx deadset-ts version
 
 ## API
 
-The package exports the command line and the analyzer's own stages, for callers that embed them. Every one of them reads the platform through a `Host`: the filesystem, the directory relative paths resolve against, and the version of the package the analyzer was installed from. `bin/node-host.ts` is the Node one the command line binds; a caller embedding the analyzer, or running it on another platform, supplies its own and supplies its own version with it.
+The package exports the command line, for callers that run it in-process, and the vocabularies and helpers its output is spelled with. The command line reads the platform through a `Host`: the filesystem, the directory relative paths resolve against, and the version of the package the analyzer was installed from. `bin/node-host.ts` is the Node one the command line binds; a caller embedding the analyzer, or running it on another platform, supplies its own and supplies its own version with it.
 
 The command line:
 
@@ -61,18 +61,6 @@ The platform:
 
 - `Host`: the filesystem a run reads, the directory it reads relative paths against, and the analyzer's own version.
 - `DirectoryEntry`, `PathKind`: one entry of a directory read, and what one path names.
-
-The symbol inventory:
-
-- `inventory(project, host, targetRoot)`: every declaration one project's own files hold, in position order, down to class and type members.
-- `nodeKey(file, node)`: the key one declaration is recorded under.
-- `Inventory`, `InventorySymbol`, `InventoryCost`, `SymbolKind`, `Visibility`: one project's inventory, one declaration of it, what reading it cost, and the two vocabularies a declaration is described by.
-
-The reference pass:
-
-- `references(project, held, targetRoot, options)`: every reference from one project's own files to a declaration of its inventory, in position order, with the rules that classified files as test files.
-- `DEFAULT_BATCH_CAP`: the batch size the reference pass takes when its caller passes none; it is an option of the pass, not a configuration key. [Batch-cap calibration](docs/batch-cap-calibration.md) is the measurement that set it.
-- `Reference`, `References`, `ReferenceOptions`, `ReferenceCost`, `TestFileRule`, `Resolution`, `Use`: one reference, one project's set of them, how a run resolves them, what that cost, one test-file rule, which accessor answered a reference, and whether it reads or writes.
 
 Positions:
 
@@ -89,9 +77,12 @@ Stable symbol references:
 - `REF_EXPRESSIONS`: one regular expression per form the grammar defines.
 - `Module`, `Component`, `Fragment`, `DependencySection`: the module half of a reference, one component of its fragment, what the fragment names, and the manifest section a dependency was declared in.
 
-Versions:
+Entry points:
 
 - `DECLINED_CONVENTIONS`, `DeclinedConvention`: the entry-point conventions of other tools the analysis does not read, one row per tool or convention with the reason.
+
+Versions:
+
 - `CONTRACT_VERSION`: the contract version this analyzer implements.
 
 ## Contributing

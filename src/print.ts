@@ -20,12 +20,11 @@ export function printConfig(config: Config, provenance: Provenance): string {
       min_confidence: config.analysis.minConfidence,
       generated_files: config.analysis.generatedFiles,
       consumer_tests: config.analysis.consumerTests,
-      configurations: config.analysis.configurations.map((entry) => ({
-        id: entry.id,
-        os: entry.os,
-        arch: entry.arch,
-        tags: entry.tags,
-      })),
+      configurations: config.analysis.configurations.map((entry) =>
+        entry.shape === "project"
+          ? { id: entry.id, project: entry.project }
+          : { id: entry.id, os: entry.os, arch: entry.arch, tags: entry.tags },
+      ),
       matrix: { complete: config.analysis.matrixComplete },
       template_dirs: config.analysis.templateDirs,
       template_delimiters: {

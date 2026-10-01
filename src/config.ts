@@ -37,13 +37,34 @@ export type Sort = "position" | "size";
 /** How much of a dead component a rendering names. */
 export type Cascade = "roots" | "full";
 
-/** One entry of the build matrix: a configuration the target builds under. */
-export interface BuildConfiguration {
+/**
+ * A platform configuration: an operating system, an architecture and the build
+ * tags in effect. It is the shape a language built under build constraints reads,
+ * and this analyzer leaves it to that analysis.
+ */
+export interface PlatformConfiguration {
+  readonly shape: "platform";
   readonly id: string;
   readonly os: string;
   readonly arch: string;
   readonly tags: readonly string[];
 }
+
+/**
+ * A project configuration: one compiler configuration file, as a path below the
+ * target root with `/` between segments.
+ */
+export interface ProjectConfiguration {
+  readonly shape: "project";
+  readonly id: string;
+  readonly project: string;
+}
+
+/**
+ * One entry of the build matrix: a configuration the target builds under, in
+ * exactly one of the two shapes the matrix admits.
+ */
+export type BuildConfiguration = PlatformConfiguration | ProjectConfiguration;
 
 /**
  * The pair of action delimiters a template is parsed with. Both members are

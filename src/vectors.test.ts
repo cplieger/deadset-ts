@@ -75,6 +75,7 @@ describe("the published configuration vectors", () => {
       "resolved-configuration-round-trip",
       "template-delimiters-configured",
       "template-delimiters-half",
+      "typescript-matrix-declared",
       "unimplemented-key",
     ]);
   });
