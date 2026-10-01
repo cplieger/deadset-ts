@@ -77,10 +77,11 @@ describe("the reference table of every reference form", () => {
 
     expect(
       [...counts].sort(([a], [b]) => (a < b ? -1 : 1)),
-      "a batch answers for most of the names and the two per-node paths for the rest",
+      "a batch answers for most of the names and every evaluated module, and the two " +
+        "per-node paths for the rest",
     ).toEqual([
       ["alias", 17],
-      ["batch", 17],
+      ["batch", 22],
       ["shorthand", 3],
     ]);
   });
@@ -243,8 +244,27 @@ describe("the reference table of every reference form", () => {
       REFERENCES.filter((reference) => reference.from === file?.id).map((reference) =>
         positionKey(reference.position),
       ),
-      "and a statement outside every declaration belongs to the file",
-    ).toEqual(["src/index.ts:6:1", "src/index.ts:6:6"]);
+      "and a statement outside every declaration belongs to the file, the two value " +
+        "imports included",
+    ).toEqual(["src/index.ts:1:35", "src/index.ts:3:36", "src/index.ts:6:1", "src/index.ts:6:6"]);
+  });
+
+  it("evaluates the module a value import or re-export names, and not one a type-only form names", () => {
+    const evaluated = REFERENCES.filter((reference) => reference.use === "evaluation").map(
+      (reference) => `${positionKey(reference.position)} ${reference.from} -> ${reference.to}`,
+    );
+
+    expect(
+      evaluated,
+      "each from the file writing the import, to the imported module's file; the " +
+        "`import type` at src/index.ts:2 and the `export type` at src/middle.ts:2 evaluate nothing",
+    ).toEqual([
+      "src/index.ts:1:35 src/index.ts:1:1 -> src/middle.ts:1:1",
+      "src/index.ts:3:36 src/index.ts:1:1 -> src/declarations.ts:1:1",
+      "src/middle.ts:1:35 src/middle.ts:1:1 -> src/declarations.ts:1:1",
+      "src/unit.test.ts:1:24 src/unit.test.ts:1:1 -> src/declarations.ts:1:1",
+      "src/unit.test.ts:2:21 src/unit.test.ts:1:1 -> src/index.ts:1:1",
+    ]);
   });
 
   it("marks every reference a test file makes, and no other", () => {

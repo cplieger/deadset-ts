@@ -72,6 +72,11 @@ export function namesACaller(kind: RootKind): boolean {
 export interface Edge {
   readonly to: number;
   readonly test: boolean;
+  /**
+   * Whether the reference evaluates the module whose file it names, which reaches the
+   * module's top level and none of what it exports.
+   */
+  readonly evaluation: boolean;
 }
 
 /** How many references one declaration carries, split by the classification of the file that made each. */
@@ -102,8 +107,8 @@ export interface Graph {
   readonly subject: readonly boolean[];
   /**
    * Per declaration, the declarations its export table names where it is a file, and
-   * nothing for any other declaration. A reference to a file is a reference to the
-   * module's namespace, which reaches everything the module exports.
+   * nothing for any other declaration. A reference that reads a file reads the module's
+   * namespace, which reaches everything the module exports.
    */
   readonly exportsOf: readonly (readonly number[])[];
   /** Every root naming a declaration the inventory holds, in the order the root set gives them. */
@@ -144,7 +149,11 @@ export function graphOf(
         counts.production += 1;
       }
     }
-    out[at(reference.from)]?.push({ to, test: reference.test });
+    out[at(reference.from)]?.push({
+      to,
+      test: reference.test,
+      evaluation: reference.use === "evaluation",
+    });
   }
 
   const parent = symbols.map((symbol) => at(symbol.parent));
