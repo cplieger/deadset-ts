@@ -11,6 +11,13 @@
 import type { Diagnostic } from "@typescript/native/unstable/sync";
 import type { Config, Provenance } from "./config.ts";
 import { diagnosticErrors, discoverProjects, DiscoveryError } from "./discover.ts";
+import {
+  computeExemptions,
+  disabledClasses,
+  exemptionsOf,
+  retainedIn,
+  type Detectors,
+} from "./exempt.ts";
 import type { Finding } from "./finding.ts";
 import type { Host } from "./host.ts";
 import { inventory, type Inventory } from "./inventory.ts";
@@ -22,7 +29,7 @@ import { references } from "./references.ts";
 import { roots, unmatchedEverywhere, unmatchedRoots, type RootKind, type Roots } from "./roots.ts";
 import type { Scope } from "./scope.ts";
 import { diagnosticsOf, runSession, type Engine, type ProjectView } from "./session.ts";
-import type { SweepInput } from "./sweep.ts";
+import type { Exemption, SweepInput } from "./sweep.ts";
 
 /** The setting whose source decides where a finding about a configured root sits. */
 const ROOTS_SETTING = "roots.patterns";
@@ -196,35 +203,55 @@ export function runRoots(
 export interface RunSweep {
   readonly matrix: Matrix;
   readonly sweep: SweepResult;
+  /**
+   * The exemption records that held back a declaration some configuration of the run
+   * would otherwise judge dead, in the declarations' site order.
+   */
+  readonly retained: readonly Exemption[];
 }
+
+/** The exemption classes this analyzer detects, each by its detector; any other retains nothing. */
+const DETECTORS: Detectors = new Map();
 
 /**
  * Sweeps the run the scope and the configuration describe. Each project's references
- * are read against its own inventory with the configured test-file patterns while its
- * view is open; the projects then merge into one matrix in discovery order, which is
- * swept under the input the caller decided once for the run. A project that carries
- * an error ends the run before any project is swept.
+ * and exemptions are read against its own inventory while its view is open; the
+ * projects then merge into one matrix in the run's order, which is swept under the
+ * caller's marks and mode with the exemptions every project found. A record found in
+ * one configuration holds in every configuration that holds its declaration, because
+ * an exemption is evidence of a use the analysis cannot see and a use in one
+ * configuration is a use. A project that carries an error ends the run before any
+ * project is swept.
  */
 export function runSweep(
   engine: Engine,
   host: Host,
   scope: Scope,
   config: Config,
-  input: SweepInput,
+  input: Pick<SweepInput, "marked" | "mode">,
+  detectors: Detectors = DETECTORS,
 ): RunSweep {
   const targetRoot = scope.target.path;
-  const configured = readProjects(engine, host, scope, config, (project, read): Configured => {
-    const resolved = references(project, read.held, targetRoot, {
+  const disabled = disabledClasses(config);
+  const read = readProjects(engine, host, scope, config, (project, projectRead) => {
+    const resolved = references(project, projectRead.held, targetRoot, {
       testFiles: config.ts.testFiles,
     });
-    return {
-      configuration: read.configuration,
-      symbols: read.held.symbols,
+    const configured: Configured = {
+      configuration: projectRead.configuration,
+      symbols: projectRead.held.symbols,
       references: resolved.references,
-      roots: read.rooted.liveUnderReachability,
+      roots: projectRead.rooted.liveUnderReachability,
       testFiles: resolved.testFilePaths,
     };
+    const exempt = computeExemptions({ project, held: projectRead.held, targetRoot }, detectors, {
+      disabled,
+      mode: input.mode,
+      testFiles: new Set(resolved.testFilePaths),
+    });
+    return { configured, exempt };
   });
-  const matrix = matrixOf(configured);
-  return { matrix, sweep: sweepMatrix(matrix, input) };
+  const matrix = matrixOf(read.map((one) => one.configured));
+  const swept: SweepInput = { ...input, exempt: exemptionsOf(read.flatMap((one) => one.exempt)) };
+  return { matrix, sweep: sweepMatrix(matrix, swept), retained: retainedIn(matrix, swept) };
 }
