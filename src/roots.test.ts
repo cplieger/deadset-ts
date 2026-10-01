@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
-import { fixture } from "../__test-helpers__/fixtures.ts";
+import { fixture, readFixture } from "../__test-helpers__/fixtures.ts";
 import { analyzeRoot, type Analyzed } from "../__test-helpers__/projects.ts";
 import { runRoots, type RunRoots } from "./analysis.ts";
 import { resolve } from "./resolve.ts";
@@ -187,26 +187,39 @@ describe("configured roots and patterns", () => {
   });
 });
 
+/** One case of the Contract's pattern corpus. */
+interface PatternCase {
+  readonly pattern: string;
+  readonly reference: string;
+  readonly matches: boolean;
+  readonly reason: string;
+}
+
+const PATTERN_CORPUS = JSON.parse(
+  readFixture("contract", "grammar", "pattern-corpus.json"),
+) as readonly PatternCase[];
+
 describe("the pattern rule", () => {
-  it.each([
-    ["go://example.com/app#Catalog.*", "go://example.com/app#Catalog.ResolveAlias", true],
-    ["go://example.com/app#Catalog.*", "go://example.com/app#Catalog", false],
-    ["go://example.com/app/internal/*#*", "go://example.com/app/internal/a/b#Roots", true],
-    [
-      "ts://@example/app/src/generated/*.ts#*",
-      "ts://@example/app/src/generated/deep/wire.ts#Event",
-      true,
-    ],
-    ["ts://@example/app/src/route-v?.ts#*", "ts://@example/app/src/route-v2.ts#handler", true],
-    ["ts://@example/app/src/route-v?.ts#*", "ts://@example/app/src/route-v12.ts#handler", false],
-    ["ts://./a.ts#?", "ts://./a.ts#🚀", true],
-    ["ts://./a.ts#??", "ts://./a.ts#🚀", false],
-    ["ts://./a.ts#A", "ts://./a.ts#AB", false],
-    ["ts://./a.ts#[Symbol.iterator]", "ts://./a.ts#[Symbol.iterator]", true],
-    ["ts://./a.ts#[Symbol.iterator]", "ts://./a.ts#[Symbol.iterator2]", false],
-    ["a*b*c", "abbbc", true],
-    ["a*b*c", "ac", false],
-  ])("matchRef(%j, %j) is %j", (pattern, ref, want) => {
-    expect(matchRef(pattern, ref)).toBe(want);
+  it.each(
+    PATTERN_CORPUS.map(
+      (entry) => [entry.pattern, entry.reference, entry.matches, entry.reason] as const,
+    ),
+  )(
+    "matchRef(%j, %j) is %j, as the Contract's corpus answers",
+    (pattern, reference, matches, reason) => {
+      expect(matchRef(pattern, reference), reason).toBe(matches);
+    },
+  );
+
+  it("knows every member a case of the corpus carries", () => {
+    const shapes = new Set(PATTERN_CORPUS.map((entry) => Object.keys(entry).sort().join(" ")));
+
+    expect([...shapes]).toEqual(["matches pattern reason reference"]);
+  });
+
+  it("lets a star between two spelled characters stand for no character", () => {
+    expect(
+      matchRef("ts://@example/app/src/route*.ts#handler", "ts://@example/app/src/route.ts#handler"),
+    ).toBe(true);
   });
 });
