@@ -1,5 +1,4 @@
-import { readFileSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { nodeHost } from "../bin/node-host.ts";
@@ -19,7 +18,8 @@ import { diagnosticsOf, openEngine, runSession, type Engine } from "../src/sessi
  * directory. Run it from a checkout:
  *
  * ```sh
- * node scripts/calibrate-batch-cap.ts --target ../reactive --caps 256,4096,uncapped
+ * node scripts/calibrate-batch-cap.ts \
+ *   --target ../reactive=@cplieger/reactive --caps 256,4096,uncapped
  * ```
  *
  * It writes one JSON document to standard output and its progress to standard
@@ -243,24 +243,20 @@ function reasonOf(error: unknown, dir: string): string {
   return (message.split("\n")[0] ?? message).replaceAll(`${dir}/`, "").replaceAll(dir, ".");
 }
 
-/** The name the record calls one target: its manifest's name, or its directory's. */
-function labelOf(dir: string): string {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
-  } catch {
-    return basename(dir);
-  }
-  if (typeof parsed !== "object" || parsed === null) {
-    return basename(dir);
-  }
-  const name = (parsed as Record<string, unknown>)["name"];
-  return typeof name === "string" && name.length > 0 ? name : basename(dir);
+/** One package to sweep: where it is, and the name the record calls it. */
+interface Target {
+  /** The package root, resolved against the working directory the run was started in. */
+  readonly dir: string;
+  /** The name every row of this package carries, which the caller states. */
+  readonly label: string;
 }
 
 /** Sweeps every cap over one package, `repeat` measurements each. */
-export function sweepPackage(dir: string, caps: readonly Cap[], repeat: number): PackageResult {
-  const label = labelOf(dir);
+export function sweepPackage(
+  { dir, label }: Target,
+  caps: readonly Cap[],
+  repeat: number,
+): PackageResult {
   const results: CapResult[] = [];
   let projects = 0;
   for (const cap of caps) {
@@ -315,9 +311,24 @@ function capOf(text: string): Cap {
   return value;
 }
 
+/**
+ * One target as the command line spells it, `<path>=<label>`, split at the first
+ * `=`. The label is required because a package with no manifest `name` has no name
+ * of its own that a run from another directory reproduces.
+ */
+function targetOf(text: string): Target {
+  const split = text.indexOf("=");
+  const path = split === -1 ? "" : text.slice(0, split);
+  const label = split === -1 ? "" : text.slice(split + 1);
+  if (path === "" || label === "") {
+    throw new Error(`--target: ${text} is not <path>=<label>`);
+  }
+  return { dir: resolve(process.cwd(), path), label };
+}
+
 /** What the command line asked for. */
 interface Options {
-  readonly targets: readonly string[];
+  readonly targets: readonly Target[];
   readonly caps: readonly Cap[];
   readonly repeat: number;
   readonly chosenDefault: number;
@@ -330,7 +341,7 @@ interface Options {
  * yet still writes a document the pin test can read.
  */
 export function readOptions(args: readonly string[]): Options {
-  const targets: string[] = [];
+  const targets: Target[] = [];
   let caps = DEFAULT_CAPS;
   let repeat = DEFAULT_REPEAT;
   let chosenDefault: number | undefined;
@@ -342,7 +353,7 @@ export function readOptions(args: readonly string[]): Options {
     }
     switch (name) {
       case "--target":
-        targets.push(resolve(process.cwd(), value));
+        targets.push(targetOf(value));
         break;
       case "--caps":
         caps = value.split(",").map(capOf);
@@ -368,7 +379,7 @@ export function readOptions(args: readonly string[]): Options {
     }
   }
   if (targets.length === 0) {
-    throw new Error("--target names a package to sweep and is required");
+    throw new Error("--target names a package to sweep as <path>=<label> and is required");
   }
   const numeric = caps.find((cap): cap is number => cap !== "uncapped");
   if (chosenDefault === undefined && numeric === undefined) {
@@ -386,7 +397,8 @@ const DESCRIPTION =
   "and serverTimeMs are the client's own totals for the same work. bound holds the three terms " +
   "that bound a run's round trips, of which pairAssignabilityCalls is zero in every row because " +
   "the calls are made by the interface-satisfaction pass, which this version does not run. " +
-  "chosenDefault is the cap these numbers chose, which is the reference pass option's default.";
+  "chosenDefault is the cap these numbers chose, which is the reference pass option's default. " +
+  "A package entry's package is the label the command line gave its target.";
 
 /** Sweeps what `args` names and writes the record to standard output. */
 export function main(args: readonly string[]): void {
@@ -396,7 +408,7 @@ export function main(args: readonly string[]): void {
     caps: options.caps,
     repeat: options.repeat,
     chosenDefault: options.chosenDefault,
-    packages: options.targets.map((dir) => sweepPackage(dir, options.caps, options.repeat)),
+    packages: options.targets.map((target) => sweepPackage(target, options.caps, options.repeat)),
   };
   process.stdout.write(`${JSON.stringify(record, null, 2)}\n`);
 }

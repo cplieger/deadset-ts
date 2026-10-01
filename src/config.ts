@@ -1,6 +1,13 @@
 import { CONTRACT_VERSION } from "./version.ts";
 
 /**
+ * The name of the repository configuration at the target root, which is also the
+ * document a finding about the configuration names where no document of the
+ * target supplied the setting it is about.
+ */
+export const REPOSITORY_DOCUMENT = "deadset.json";
+
+/**
  * Whether the target is an application, whose every caller is in the analyzed
  * graph, or a library, whose published API has callers outside it.
  */

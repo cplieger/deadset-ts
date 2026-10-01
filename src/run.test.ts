@@ -186,6 +186,50 @@ describe("print-projects", () => {
   });
 });
 
+describe("print-roots", () => {
+  it.each(["entry-points", "published-exports", "configured-roots", "entry-rules"])(
+    "prints the root set of %s as the committed golden",
+    async (name) => {
+      const got = invoke(["print-roots", `--target=${fixture("projects", name)}`]);
+
+      await expect(
+        got.out,
+        "the lines are produced by the production path; to record a reviewed change run " +
+          "`npx vitest --run -u src/run.test.ts` and read the diff as production code",
+      ).toMatchFileSnapshot(fixture("golden", `${name}.roots.txt`));
+    },
+  );
+
+  it("exits 0 with nothing on the error stream when every configured root names something", () => {
+    const got = invoke(["print-roots", `--target=${fixture("projects", "entry-rules")}`]);
+
+    expect(got.code, got.err).toBe(0);
+    expect(got.err).toBe("");
+  });
+
+  it("names each configured root that names nothing by its issue kind and exits 1", () => {
+    const got = invoke(["print-roots", `--target=${fixture("projects", "configured-roots")}`]);
+
+    expect(got.code).toBe(1);
+    expect(got.err).toBe(
+      "DS1704: roots.patterns names nothing: ts://@example/configured-roots/a/gone.ts#gone\n" +
+        "DS1704: roots.patterns names nothing: ts://@example/configured-roots/*#nothing?\n",
+    );
+  });
+
+  it("exits 3 printing the diagnostics and no root set for a project that fails to check", () => {
+    const got = invoke([
+      "print-roots",
+      `--target=${fixture("projects", "semantic-error")}`,
+      `--config=${fixture("projects", "entry-points", "deadset.json")}`,
+    ]);
+
+    expect(got.code).toBe(3);
+    expect(got.out).toBe("");
+    expect(got.err).toContain("TS2322");
+  });
+});
+
 describe("a run over a fixture", () => {
   it("leaves every file of the fixture byte-identical", () => {
     const tree = fixture("projects");

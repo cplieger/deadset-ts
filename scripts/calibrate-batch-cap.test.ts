@@ -1,3 +1,5 @@
+import { isAbsolute, sep } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import { median, medianSample, readOptions, type Sample } from "./calibrate-batch-cap.ts";
@@ -66,7 +68,12 @@ describe("medianSample", () => {
 
 describe("readOptions", () => {
   it("sweeps the caps named, uncapped among them, in the order they were written", () => {
-    const options = readOptions(["--target", ".", "--caps", "4096,256,uncapped"]);
+    const options = readOptions([
+      "--target",
+      ".=@cplieger/deadset-ts",
+      "--caps",
+      "4096,256,uncapped",
+    ]);
 
     expect(options.caps).toStrictEqual([4096, 256, "uncapped"]);
   });
@@ -74,7 +81,7 @@ describe("readOptions", () => {
   it("reports the cap the caller chose as the default, not the first one swept", () => {
     const options = readOptions([
       "--target",
-      ".",
+      ".=@cplieger/deadset-ts",
       "--caps",
       "256,4096",
       "--chosen-default",
@@ -84,17 +91,63 @@ describe("readOptions", () => {
     expect(options.chosenDefault).toBe(4096);
   });
 
+  it("takes each target's label from the caller, so no row is named after a directory", () => {
+    const options = readOptions([
+      "--target",
+      "/packages/fetch=@cplieger/fetch",
+      "--target",
+      "/packages/web-terminal-kiro/static-src=web-terminal-kiro-static-src",
+    ]);
+
+    expect(options.targets).toStrictEqual([
+      { dir: "/packages/fetch", label: "@cplieger/fetch" },
+      {
+        dir: "/packages/web-terminal-kiro/static-src",
+        label: "web-terminal-kiro-static-src",
+      },
+    ]);
+  });
+
+  it("resolves a relative path, so a target is read from where the run was started", () => {
+    const dir = readOptions(["--target", "../fetch=@cplieger/fetch"]).targets[0]?.dir ?? "";
+
+    expect(isAbsolute(dir)).toBe(true);
+    expect(dir.endsWith(`${sep}fetch`)).toBe(true);
+  });
+
+  it("keeps everything after the first equals sign, so a label may hold one", () => {
+    const options = readOptions(["--target", "../fetch=a=b"]);
+
+    expect(options.targets[0]?.label).toBe("a=b");
+  });
+
+  it("refuses a target with no label, naming the form it wanted", () => {
+    expect(() => readOptions(["--target", "../fetch"])).toThrow(
+      "--target: ../fetch is not <path>=<label>",
+    );
+  });
+
+  it("refuses a target whose label is empty", () => {
+    expect(() => readOptions(["--target", "../fetch="])).toThrow("is not <path>=<label>");
+  });
+
+  it("refuses a label with no path", () => {
+    expect(() => readOptions(["--target", "=@cplieger/fetch"])).toThrow("is not <path>=<label>");
+  });
+
   it("refuses a sweep with no package to measure", () => {
     expect(() => readOptions(["--caps", "256"])).toThrow("--target");
   });
 
   it("refuses a cap that is not a count of name nodes", () => {
-    expect(() => readOptions(["--target", ".", "--caps", "256,-1"])).toThrow("is not a cap");
+    expect(() => readOptions(["--target", ".=@cplieger/deadset-ts", "--caps", "256,-1"])).toThrow(
+      "is not a cap",
+    );
   });
 
   it("refuses a default the pass could not take", () => {
-    expect(() => readOptions(["--target", ".", "--chosen-default", "uncapped"])).toThrow(
-      "the pass option's default is a number",
-    );
+    expect(() =>
+      readOptions(["--target", ".=@cplieger/deadset-ts", "--chosen-default", "uncapped"]),
+    ).toThrow("the pass option's default is a number");
   });
 });

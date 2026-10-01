@@ -1,4 +1,4 @@
-import { API } from "@typescript/native/unstable/sync";
+import { API, SymbolFlags } from "@typescript/native/unstable/sync";
 import type {
   Checker,
   Diagnostic,
@@ -174,6 +174,11 @@ function viewOf<Brand>(project: Project): ProjectView<Brand> {
       isIdentifier(node) ? project.checker.getResolvedSymbol(node) : undefined,
     shorthandValueAt: ({ node }) => project.checker.getShorthandAssignmentValueSymbol(node),
     aliasStepOf: (symbol) => {
+      // The step is asked of an alias only: asked of any other symbol, the compiler
+      // fails an assertion and the session ends.
+      if ((symbol.flags & SymbolFlags.Alias) === 0) {
+        return undefined;
+      }
       const held = project.checker.getImmediateAliasedSymbol(symbol);
       // An alias that resolves to nothing answers with the checker's own unknown
       // symbol, which declares nothing; a symbol that is no alias answers with

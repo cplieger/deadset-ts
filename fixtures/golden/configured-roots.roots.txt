@@ -1,0 +1,3 @@
+ts://@example/configured-roots/a/one.ts#one	configured	ts://@example/configured-roots/a/one.ts#one	a/tsconfig.json
+ts://@example/configured-roots/a/one.ts#Keyed.🚀	pattern	ts://@example/configured-roots/a/one.ts#Keyed.?	a/tsconfig.json
+ts://@example/configured-roots/b/nested/deep.ts#deep	pattern	ts://@example/configured-roots/*#deep	b/tsconfig.json
