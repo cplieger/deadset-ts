@@ -1,4 +1,4 @@
-import { runRoots, type RunRoot } from "./analysis.ts";
+import { runRoots, runSweep, type RunRoot } from "./analysis.ts";
 import { ConfigError, REPOSITORY_DOCUMENT, type Inputs } from "./config.ts";
 import {
   diagnosticErrors,
@@ -6,6 +6,7 @@ import {
   DiscoveryError,
   renderDiagnostic,
 } from "./discover.ts";
+import { retainedLines } from "./exempt.ts";
 import type { Host } from "./host.ts";
 import { joinPath, resolvePath } from "./paths.ts";
 import { printConfig } from "./print.ts";
@@ -221,6 +222,9 @@ export function run(
   if (verb === "print-roots") {
     return printRootsVerb(args.slice(1), out, err, host, openClient);
   }
+  if (verb === "print-retained") {
+    return printRetainedVerb(args.slice(1), out, err, host, openClient);
+  }
   if (verb !== undefined && (VERBS as readonly string[]).includes(verb)) {
     err.write(`deadset-ts: ${verb} is not implemented\n`);
     return EXIT_USAGE;
@@ -331,6 +335,40 @@ function printRootsVerb(
       err.write(`${finding.code}: roots.patterns names nothing: ${finding.symbol.ref}\n`);
     }
     return answer.findings.length > 0 ? EXIT_FINDINGS : EXIT_CLEAN;
+  } catch (error: unknown) {
+    engine?.close();
+    return refuse(error, err);
+  }
+}
+
+/**
+ * Writes every declaration an exemption held back in the production sweep a report is
+ * built from, one per line, and nothing where no exemption held one back. One fact
+ * several configurations found is one record, so the line names no configuration. The
+ * line shape is this command's own rather than a Contract format, so that sort and cut
+ * read it.
+ */
+function printRetainedVerb(
+  args: readonly string[],
+  out: Writer,
+  err: Writer,
+  host: Host,
+  openClient: (collectTiming: boolean) => Engine,
+): number {
+  let engine: Engine | undefined;
+  try {
+    const options = readOptions(args);
+    const { config } = resolve(inputsOf(host, options));
+    const scope = scopeOf(host, options);
+    engine = openClient(false);
+    const swept = runSweep(engine, host, scope, config, {
+      marked: [],
+      mode: { production: true },
+    });
+    for (const line of retainedLines(swept.matrix.union.symbols, swept.retained)) {
+      out.write(`${line}\n`);
+    }
+    return EXIT_CLEAN;
   } catch (error: unknown) {
     engine?.close();
     return refuse(error, err);

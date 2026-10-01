@@ -6,10 +6,23 @@
  * declaration only unreachable ones reference is live under the first, dead under the second.
  */
 
+import type { TSExemptionClass } from "./exempt-classes.ts";
 import { namesACaller, OUTSIDE, type Graph } from "./graph.ts";
+import type { Position } from "./position.ts";
 
 /** The liveness relation that decided a declaration, as a finding spells it. */
 export type Relation = "reference-counting" | "reachability";
+
+/** One declaration an exemption class holds back, and the evidence it was found by. */
+export interface Exemption {
+  /** The identifier of the declaration held back. */
+  readonly id: string;
+  readonly class: TSExemptionClass;
+  /** One clause naming the relation, then the thing it relates to: `passed to JSON.stringify`. */
+  readonly detail: string;
+  /** Where the evidence is written. */
+  readonly site: Position;
+}
 
 /**
  * The run's reference mode, decided once by the composition and read by every stage
@@ -31,6 +44,13 @@ export interface SweepInput {
    * nothing only a marked declaration references is dead.
    */
   readonly marked: readonly string[];
+  /**
+   * The exemptions the run computed. An exempt declaration is never a candidate, and it
+   * seeds reachability as a mark does, so nothing it references is dead; it is live
+   * under reference counting only where something references it. Absent, the sweep
+   * holds nothing back.
+   */
+  readonly exempt?: readonly Exemption[];
   readonly mode: Mode;
 }
 
@@ -69,19 +89,19 @@ export interface Liveness {
  *
  * The order is the order the answers depend on: the callers and the marks are live
  * before either relation runs, the candidate set is every judged declaration at least
- * one relation does not hold live, and the tests of dead code join it.
+ * one relation does not hold live and no exemption holds back, and the tests of dead
+ * code join it.
  */
 export function sweep(graph: Graph, input: SweepInput): Liveness {
-  const marked = graph.symbols.map(() => false);
-  for (const id of input.marked) {
-    const at = graph.at(id);
-    if (at !== OUTSIDE) {
-      marked[at] = true;
-    }
-  }
-  // Every root and every mark seeds reachability. A root of a kind that names a caller,
-  // and a mark, are live under reference counting as well; a root that only supposes a
-  // caller is not.
+  const marked = flagged(graph, input.marked);
+  const exempt = flagged(
+    graph,
+    (input.exempt ?? []).map((record) => record.id),
+  );
+  const held = marked.map((mark, at) => mark || exempt[at] === true);
+  // Every root, every mark and every exemption seeds reachability. A root of a kind that
+  // names a caller, and a mark, are live under reference counting as well; a root that
+  // only supposes a caller is not, and neither is an exemption.
   const called = graph.symbols.map(() => false);
   for (const root of graph.rooted) {
     if (namesACaller(root.kind)) {
@@ -96,7 +116,7 @@ export function sweep(graph: Graph, input: SweepInput): Liveness {
     }
     return input.mode.production ? made.production : made.production + made.test;
   };
-  const reached = reachable(graph, marked, input.mode);
+  const reached = reachable(graph, held, input.mode);
   const liveUnder = graph.symbols.map((_symbol, at): readonly Relation[] => {
     const relations: Relation[] = [];
     if (marked[at] === true || called[at] === true || counted(at) > 0) {
@@ -109,9 +129,10 @@ export function sweep(graph: Graph, input: SweepInput): Liveness {
   });
 
   const dead = graph.symbols.map(
-    (_symbol, at) => graph.subject[at] === true && (liveUnder[at]?.length ?? 0) < 2,
+    (_symbol, at) =>
+      graph.subject[at] === true && exempt[at] !== true && (liveUnder[at]?.length ?? 0) < 2,
   );
-  const testOfDeadCode = admitTestsOfDeadCode(graph, dead, marked);
+  const testOfDeadCode = admitTestsOfDeadCode(graph, dead, held);
 
   const candidates: Candidate[] = [];
   const live = new Map<string, readonly Relation[]>();
@@ -135,13 +156,26 @@ export function sweep(graph: Graph, input: SweepInput): Liveness {
   return { liveUnder: live, candidates };
 }
 
+/** Per declaration of the graph, whether one of the identifiers names it. */
+function flagged(graph: Graph, ids: readonly string[]): boolean[] {
+  const flags = graph.symbols.map(() => false);
+  for (const id of ids) {
+    const at = graph.at(id);
+    if (at !== OUTSIDE) {
+      flags[at] = true;
+    }
+  }
+  return flags;
+}
+
 /**
  * Per declaration, whether a seed reaches it. The two seeds reach through different
- * reference sets: a marked declaration is live by a mechanism the analysis cannot see, so
- * no mode withholds a reference it makes, while a root reaches through the references the
- * mode counts. The marks run first, so what they reach is expanded under the wider rule.
+ * reference sets: a held declaration, marked or exempt, is live by a mechanism the
+ * analysis cannot see, so no mode withholds a reference it makes, a test declaration's
+ * included, while a root reaches through the references the mode counts. The held seed
+ * runs first, so what it reaches is expanded under the wider rule.
  */
-function reachable(graph: Graph, marked: readonly boolean[], mode: Mode): readonly boolean[] {
+function reachable(graph: Graph, held: readonly boolean[], mode: Mode): readonly boolean[] {
   const reached = graph.symbols.map(() => false);
   const expanded = graph.symbols.map(() => false);
   const queue: number[] = [];
@@ -164,10 +198,10 @@ function reachable(graph: Graph, marked: readonly boolean[], mode: Mode): readon
       enter(exported, false);
     }
   };
-  const walk = (held: boolean): void => {
+  const walk = (holding: boolean): void => {
     for (let at = queue.pop(); at !== undefined; at = queue.pop()) {
       for (const edge of graph.out[at] ?? []) {
-        if (!held && mode.production && edge.test) {
+        if (!holding && mode.production && edge.test) {
           continue;
         }
         enter(edge.to, !edge.evaluation);
@@ -175,8 +209,8 @@ function reachable(graph: Graph, marked: readonly boolean[], mode: Mode): readon
     }
   };
 
-  marked.forEach((mark, at) => {
-    if (mark) {
+  held.forEach((hold, at) => {
+    if (hold) {
       enter(at, false);
     }
   });
@@ -192,16 +226,17 @@ function reachable(graph: Graph, marked: readonly boolean[], mode: Mode): readon
  * Admits every test declaration whose set of referenced production declarations is
  * non-empty and wholly dead, and returns which it admitted. The set is read from every
  * reference the test makes, not the ones the mode counts: a production sweep counts none,
- * which is what makes the targets dead. A test referencing one live target is never admitted.
+ * which is what makes the targets dead. A test referencing one live target is never
+ * admitted, and neither is a marked or exempt test.
  */
 function admitTestsOfDeadCode(
   graph: Graph,
   dead: boolean[],
-  marked: readonly boolean[],
+  held: readonly boolean[],
 ): readonly boolean[] {
   const admitted = graph.symbols.map(() => false);
   graph.symbols.forEach((_symbol, at) => {
-    if (graph.test[at] !== true || graph.subject[at] !== true || marked[at] === true) {
+    if (graph.test[at] !== true || graph.subject[at] !== true || held[at] === true) {
       return;
     }
     let targets = 0;

@@ -1,0 +1,1 @@
+ts://@example/exemptions/src/held.ts#heldTwice	decorator	src/held.ts:4:17	named by @register	serialization-contract	src/held.ts:4:17	passed to JSON.stringify
