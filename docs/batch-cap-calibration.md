@@ -24,12 +24,12 @@ second being the time the server spent handling those requests. **Bytes sent** a
 discovery, the snapshot and both passes.
 
 Nine packages were swept and seven are in the numbers. Each is named by the label the
-command below gives its target. `vibekit-static-src` and `web-terminal-kiro-static-src`
+command below gives its target. `marotte-static-src` and `web-terminal-kiro-static-src`
 have no manifest `name`, so their labels join the repository's name to the directory
 the package sits in. Both packages not in the numbers are refused by the same rule,
 that a target the compiler reports an error for is not analyzed.
 `@cplieger/deadset-ts` holds a project whose sources carry a deliberate type error.
-`vibekit-static-src` holds a compiler configuration that names no input file, because
+`marotte-static-src` holds a compiler configuration that names no input file, because
 every path its `include` list names is also named by the `exclude` list it inherits
 from the configuration it extends.
 
@@ -170,7 +170,7 @@ node scripts/calibrate-batch-cap.ts \
   --target ../fetch=@cplieger/fetch \
   --target ../reactive=@cplieger/reactive \
   --target ../ui-primitives=@cplieger/ui-primitives \
-  --target ../vibekit/static-src=vibekit-static-src \
+  --target ../marotte/static-src=marotte-static-src \
   --target ../web-terminal-engine/web=@cplieger/web-terminal-engine \
   --target ../web-terminal-kiro/static-src=web-terminal-kiro-static-src \
   --target ../web-terminal-ui=@cplieger/web-terminal-ui \
