@@ -1,0 +1,16 @@
+ts://@example/entry-rules/e2e/home.spec.ts#	browser-tests	**/*.{spec,test}.{js,ts,jsx,tsx,cjs,cts,cjsx,ctsx,mjs,mts,mjsx,mtsx}
+ts://@example/entry-rules/eslint.config.mjs#	lint-configuration	eslint.config.*
+ts://@example/entry-rules/eslint.config.mjs#default:alias	lint-configuration	eslint.config.*
+ts://@example/entry-rules/playwright.config.ts#	browser-tests	playwright.config.*
+ts://@example/entry-rules/playwright.config.ts#default:alias	browser-tests	playwright.config.*
+ts://@example/entry-rules/setup.ts#	test-runner	./setup.ts
+ts://@example/entry-rules/src/app.ts#	manifest-entry	main
+ts://@example/entry-rules/src/app.ts#worker	manifest-entry	main
+ts://@example/entry-rules/src/app.ts#computedWorker	manifest-entry	main
+ts://@example/entry-rules/src/sw.ts#	worker	./sw.ts
+ts://@example/entry-rules/src/unit.test.ts#	test-runner	**/*.test.{ts,tsx,mts,cts}
+ts://@example/entry-rules/src/worker.ts#	worker	./worker.ts
+ts://@example/entry-rules/vitest.config.ts#	test-runner	vitest.config.*
+ts://@example/entry-rules/vitest.config.ts#default:alias	test-runner	vitest.config.*
+ts://@example/entry-rules/vitest.stryker.config.ts#	mutation-testing	vitest.stryker.config.*
+ts://@example/entry-rules/vitest.stryker.config.ts#default:alias	mutation-testing	vitest.stryker.config.*

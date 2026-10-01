@@ -23,8 +23,11 @@ second being the time the server spent handling those requests. **Bytes sent** a
 **bytes received** are the request and response payloads. **Median wall clock** covers
 discovery, the snapshot and both passes.
 
-Nine packages were swept and seven are in the numbers. Both of the others are refused
-by the same rule, that a target the compiler reports an error for is not analyzed.
+Nine packages were swept and seven are in the numbers. Each is named by the label the
+command below gives its target. `vibekit-static-src` and `web-terminal-kiro-static-src`
+have no manifest `name`, so their labels join the repository's name to the directory
+the package sits in. Both packages not in the numbers are refused by the same rule,
+that a target the compiler reports an error for is not analyzed.
 `@cplieger/deadset-ts` holds a project whose sources carry a deliberate type error.
 `vibekit-static-src` holds a compiler configuration that names no input file, because
 every path its `include` list names is also named by the `exclude` list it inherits
@@ -138,8 +141,8 @@ everywhere.
 
 The wall clock does not rank the caps and is not what chose the default. Its spread
 across the five repeats of one row reaches 114 per cent, and two independent runs of
-the whole sweep reproduced every round-trip count, byte total and file-batch count
-exactly while their wall-clock medians differed by between 0.59 and 2.34 times. A
+the whole sweep reproduced every round-trip count and file-batch count exactly while
+their wall-clock medians differed by between 0.59 and 2.34 times. A
 difference of two round trips in 2913 is far below that noise, so the wall clock can
 neither confirm nor refuse a cap in this range.
 
@@ -153,18 +156,47 @@ nothing this sweep can see.
 
 ## Regenerating this page
 
-The numbers come from one run of the harness, and the document it wrote is committed
-beside this page as `batch-cap-calibration.json`. It holds every sample, not only the
-medians, and the tables above are its medians:
+The numbers come from one run of the harness over the nine targets this command names,
+and the document it wrote is committed beside this page as `batch-cap-calibration.json`.
+It holds every sample, not only the medians, and the tables above are its medians. The
+command runs from this checkout, with each of the other repositories cloned beside it
+under one parent directory, so every path is relative to this checkout. Each target has
+its dependencies installed, because the analysis resolves the types its sources import:
 
 ```sh
 node scripts/calibrate-batch-cap.ts \
-  --target ../actions --target ../fetch --target ../reactive \
+  --target ../actions=@cplieger/actions \
+  --target .=@cplieger/deadset-ts \
+  --target ../fetch=@cplieger/fetch \
+  --target ../reactive=@cplieger/reactive \
+  --target ../ui-primitives=@cplieger/ui-primitives \
+  --target ../vibekit/static-src=vibekit-static-src \
+  --target ../web-terminal-engine/web=@cplieger/web-terminal-engine \
+  --target ../web-terminal-kiro/static-src=web-terminal-kiro-static-src \
+  --target ../web-terminal-ui=@cplieger/web-terminal-ui \
   --caps 256,1024,4096,16384,uncapped --repeat 5 --chosen-default 4096 \
   > docs/batch-cap-calibration.json
 npx prettier --write docs/batch-cap-calibration.json
 ```
 
-`--target` is repeatable and names one package root each. `--chosen-default` is the cap
-the record reports as chosen, and a test refuses a record whose chosen default is not
-`DEFAULT_BATCH_CAP`, so the two cannot drift apart.
+`--target` is repeatable and takes a package root and the name every row of that package
+carries, spelled `<path>=<label>`. A target with no label is refused. `--chosen-default`
+is the cap the record reports as chosen, and a test refuses a record whose chosen
+default is not `DEFAULT_BATCH_CAP`, so the two cannot drift apart.
+
+The samples were measured on 2026-09-20. How closely a run of the command over the same
+sources reproduces a number depends on what the number measures:
+
+- File batches, residue fallbacks and round trips reproduce exactly.
+- Bytes sent and bytes received also count the path of every file the run asks about,
+  in the requests and in the answers, so a target read from a longer path transfers
+  more bytes. From a path of the same length, both reproduce to within two parts in ten
+  thousand.
+- Round-trip latency, server time and the wall clock follow the load on the machine,
+  and no bound holds for them.
+
+A run on 2026-10-01 over `@cplieger/fetch` and `web-terminal-kiro-static-src`, from the
+same sources at paths as long as the record's, reproduced every file batch, residue
+fallback, round trip and median of bytes sent in their ten rows exactly. Its medians of
+bytes received were within 46 bytes of the record's, and its wall-clock medians read
+between 0.35 and 1.07 times the record's.

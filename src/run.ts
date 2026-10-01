@@ -1,4 +1,5 @@
-import { ConfigError, type Inputs } from "./config.ts";
+import { runRoots, type RunRoot } from "./analysis.ts";
+import { ConfigError, REPOSITORY_DOCUMENT, type Inputs } from "./config.ts";
 import {
   diagnosticErrors,
   discoverProjects,
@@ -18,11 +19,9 @@ export interface Writer {
   write(text: string): void;
 }
 
-/** The repository configuration's name at the target root. */
-const REPOSITORY_DOCUMENT = "deadset.json";
-
 /** The exit codes the Contract's exit-code table names. */
 const EXIT_CLEAN = 0;
+const EXIT_FINDINGS = 1;
 const EXIT_USAGE = 2;
 const EXIT_FAILURE = 3;
 
@@ -219,6 +218,9 @@ export function run(
   if (verb === "print-projects") {
     return printProjectsVerb(args.slice(1), out, err, host, openClient);
   }
+  if (verb === "print-roots") {
+    return printRootsVerb(args.slice(1), out, err, host, openClient);
+  }
   if (verb !== undefined && (VERBS as readonly string[]).includes(verb)) {
     err.write(`deadset-ts: ${verb} is not implemented\n`);
     return EXIT_USAGE;
@@ -276,6 +278,55 @@ function printProjectsVerb(
       out.write(`${configFile}\n`);
     }
     return EXIT_CLEAN;
+  } catch (error: unknown) {
+    engine?.close();
+    return refuse(error, err);
+  }
+}
+
+/**
+ * One root as a line: the declaration's reference, why it is a root, and the string
+ * that named it, separated by tabs. A run of several configurations adds the ones
+ * whose project holds the root as a fourth field, and writes the third present and
+ * empty where no string named the root, so every line of one run holds the same
+ * fields.
+ */
+function rootLine(root: RunRoot, several: boolean): string {
+  const line = `${root.ref}\t${root.kind}`;
+  if (several) {
+    return `${line}\t${root.source}\t${root.configurations.join(" ")}`;
+  }
+  return root.source === "" ? line : `${line}\t${root.source}`;
+}
+
+/**
+ * Writes the root set of the run, one root per line, and then names on the error
+ * stream, by its issue kind, every configured root or pattern that named nothing;
+ * one such string fails the run. The line shape is this command's own rather than a
+ * Contract format, so that sort and cut read it.
+ */
+function printRootsVerb(
+  args: readonly string[],
+  out: Writer,
+  err: Writer,
+  host: Host,
+  openClient: (collectTiming: boolean) => Engine,
+): number {
+  let engine: Engine | undefined;
+  try {
+    const options = readOptions(args);
+    const { config, provenance } = resolve(inputsOf(host, options));
+    const scope = scopeOf(host, options);
+    engine = openClient(false);
+    const answer = runRoots(engine, host, scope, config, provenance);
+    const several = answer.configurations.length > 1;
+    for (const root of answer.roots) {
+      out.write(`${rootLine(root, several)}\n`);
+    }
+    for (const finding of answer.findings) {
+      err.write(`${finding.code}: roots.patterns names nothing: ${finding.symbol.ref}\n`);
+    }
+    return answer.findings.length > 0 ? EXIT_FINDINGS : EXIT_CLEAN;
   } catch (error: unknown) {
     engine?.close();
     return refuse(error, err);

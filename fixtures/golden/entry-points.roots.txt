@@ -1,0 +1,9 @@
+ts://@example/entry-points/src/command.ts#	manifest-binary	bin["entry-points"]
+ts://@example/entry-points/src/command.ts#runCommand	manifest-binary	bin["entry-points"]
+ts://@example/entry-points/src/main.ts#	manifest-entry	main
+ts://@example/entry-points/src/main.ts#runMain	manifest-entry	main
+ts://@example/entry-points/src/main.ts#mainCount	manifest-entry	main
+ts://@example/entry-points/src/module.ts#	manifest-entry	module
+ts://@example/entry-points/src/module.ts#moduleEntry	manifest-entry	module
+ts://@example/entry-points/src/types.ts#	manifest-entry	types
+ts://@example/entry-points/src/types.ts#Entry	manifest-entry	types

@@ -5,7 +5,9 @@ import type { Symbol as TSSymbol } from "@typescript/native/unstable/sync";
 import { nodeHost } from "../bin/node-host.ts";
 import { discoverProjects } from "../src/discover.ts";
 import { inventory, type Inventory } from "../src/inventory.ts";
+import { readManifest } from "../src/manifest.ts";
 import { references, type ReferenceOptions, type References } from "../src/references.ts";
+import { roots, type RootOptions, type Roots } from "../src/roots.ts";
 import { scopeForDir } from "../src/scope.ts";
 import { openEngine, runSession, type ProjectView } from "../src/session.ts";
 
@@ -118,6 +120,8 @@ export interface Analyzed {
   readonly tableReads: TableReads;
   /** One entry per project, and none where no reference pass was asked for. */
   readonly references: readonly References[];
+  /** One entry per project, and none where no root set was asked for. */
+  readonly roots: readonly Roots[];
   /**
    * The client requests the reference pass made, summed over the projects, measured
    * at the client's own timing counter rather than counted by the pass. It is zero
@@ -134,6 +138,12 @@ export interface AnalyzeOptions {
    * pays nothing for it.
    */
   readonly references?: ReferenceOptions;
+  /**
+   * Resolve the root set too, under these options and the manifest at the root.
+   * Absent leaves it unresolved, so a case that reads declarations alone pays nothing
+   * for it.
+   */
+  readonly roots?: Omit<RootOptions, "manifest">;
 }
 
 /** Enumerates one project under `root`, in one client and one snapshot. */
@@ -145,6 +155,8 @@ export function analyzeRoot(root: string, options: AnalyzeOptions = {}): Analyze
   const programFiles: string[] = [];
   const tally: Tally = { members: [], exports: [] };
   const resolved: References[] = [];
+  const rooted: Roots[] = [];
+  const manifest = readManifest(host, root);
   let requests = 0;
   const { projects } = runSession(engine, configFiles, (project) => {
     programFiles.push(...project.program.getSourceFileNames());
@@ -154,6 +166,9 @@ export function analyzeRoot(root: string, options: AnalyzeOptions = {}): Analyze
       resolved.push(references(project, held, root, wanted));
       requests += engine.getTimingInfo().totals.requestCount - before;
     }
+    if (options.roots !== undefined) {
+      rooted.push(roots(project, held, root, { ...options.roots, manifest }));
+    }
     return held;
   });
   return {
@@ -161,6 +176,7 @@ export function analyzeRoot(root: string, options: AnalyzeOptions = {}): Analyze
     programFiles,
     tableReads: tally,
     references: resolved,
+    roots: rooted,
     referenceRequests: requests,
   };
 }

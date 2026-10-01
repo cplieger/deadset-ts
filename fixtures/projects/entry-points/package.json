@@ -1,0 +1,12 @@
+{
+  "name": "@example/entry-points",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./dist/main.js",
+  "module": "./src/module.ts",
+  "types": "./dist/types.d.ts",
+  "bin": {
+    "entry-points": "./src/command.ts"
+  }
+}

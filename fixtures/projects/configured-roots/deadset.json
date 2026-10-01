@@ -1,0 +1,12 @@
+{
+  "target": { "kind": "application" },
+  "roots": {
+    "patterns": [
+      "ts://@example/configured-roots/a/one.ts#one",
+      "ts://@example/configured-roots/*#deep",
+      "ts://@example/configured-roots/a/one.ts#Keyed.?",
+      "ts://@example/configured-roots/a/gone.ts#gone",
+      "ts://@example/configured-roots/*#nothing?"
+    ]
+  }
+}

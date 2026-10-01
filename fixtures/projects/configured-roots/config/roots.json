@@ -1,0 +1,6 @@
+{
+  "target": { "kind": "application" },
+  "roots": {
+    "patterns": ["ts://@example/configured-roots/a/one.ts#one", "ts://@example/configured-roots/none.ts#*"]
+  }
+}

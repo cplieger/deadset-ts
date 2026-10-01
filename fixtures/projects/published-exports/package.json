@@ -1,0 +1,15 @@
+{
+  "name": "@example/published-exports",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./src/legacy.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./helper": "./src/helper.ts",
+    "./features/*": "./src/features/*.ts"
+  }
+}
