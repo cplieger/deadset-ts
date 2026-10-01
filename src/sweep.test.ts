@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
 import { fixture } from "../__test-helpers__/fixtures.ts";
-import { runSweeps, type ConfigurationSweep } from "./analysis.ts";
+import { runSweep, type RunSweep } from "./analysis.ts";
 import { graphOf } from "./graph.ts";
 import type { InventorySymbol } from "./inventory.ts";
 import type { Reference } from "./references.ts";
@@ -11,13 +11,14 @@ import { resolve } from "./resolve.ts";
 import type { Root } from "./roots.ts";
 import { scopeForDir } from "./scope.ts";
 import { openEngine } from "./session.ts";
-import { sweep, type Mode, type SweepResult } from "./sweep.ts";
+import type { SweepResult } from "./matrix.ts";
+import { sweep, type Liveness, type Mode } from "./sweep.ts";
 
 const PRODUCTION: Mode = { production: true };
 const PLAIN: Mode = { production: false };
 
-/** The one configuration of a fixture, swept under its own configuration document. */
-function sweepFixture(name: string, mode: Mode): ConfigurationSweep {
+/** One fixture, swept under its own configuration document. */
+function sweepFixture(name: string, mode: Mode): RunSweep {
   const target = fixture("projects", name);
   const document = join(target, "deadset.json");
   const { config } = resolve({
@@ -25,17 +26,10 @@ function sweepFixture(name: string, mode: Mode): ConfigurationSweep {
     repositoryLabel: document,
   });
   const host = nodeHost();
-  const [only] = runSweeps(
-    openEngine({ collectTiming: false }),
-    host,
-    scopeForDir(host, target),
-    config,
-    { marked: [], mode },
-  );
-  if (only === undefined) {
-    throw new Error(`${name} discovered no configuration`);
-  }
-  return only;
+  return runSweep(openEngine({ collectTiming: false }), host, scopeForDir(host, target), config, {
+    marked: [],
+    mode,
+  });
 }
 
 /**
@@ -46,7 +40,9 @@ const RELATIONS = sweepFixture("relations", PRODUCTION);
 
 /** The verdict on the declaration one stable reference names: the relations holding it live, and its candidacy. */
 function verdict(ref: string): string {
-  const symbol = RELATIONS.symbols.find((held) => held.ref === `ts://@example/relations/${ref}`);
+  const symbol = RELATIONS.matrix.union.symbols.find(
+    (held) => held.ref === `ts://@example/relations/${ref}`,
+  );
   if (symbol === undefined) {
     return `no declaration ${ref}`;
   }
@@ -64,8 +60,8 @@ function verdictOf(result: SweepResult, symbol: InventorySymbol): string {
 }
 
 /** The golden table: one line per declaration the sweep judges, so a diff names the verdict that moved. */
-function goldenText(swept: ConfigurationSweep): string {
-  return swept.symbols
+function goldenText(swept: RunSweep): string {
+  return swept.matrix.union.symbols
     .filter((symbol) => symbol.kind !== "file")
     .map((symbol) => `${symbol.ref}\t${verdictOf(swept.sweep, symbol)}\n`)
     .join("");
@@ -145,7 +141,9 @@ const EVALUATION = sweepFixture("evaluation", PRODUCTION);
 
 /** The verdict on one declaration of the evaluation fixture. */
 function evaluated(ref: string): string {
-  const symbol = EVALUATION.symbols.find((held) => held.ref === `ts://@example/evaluation/${ref}`);
+  const symbol = EVALUATION.matrix.union.symbols.find(
+    (held) => held.ref === `ts://@example/evaluation/${ref}`,
+  );
   return symbol === undefined ? `no declaration ${ref}` : verdictOf(EVALUATION.sweep, symbol);
 }
 
@@ -227,7 +225,7 @@ function reference(from: InventorySymbol, to: InventorySymbol, test = false): Re
 }
 
 /** The candidates of one sweep, by name, each with the relation that found it. */
-function candidates(result: SweepResult, symbols: readonly InventorySymbol[]): string[] {
+function candidates(result: Liveness, symbols: readonly InventorySymbol[]): string[] {
   return result.candidates.map(
     (candidate) =>
       `${symbols.find((symbol) => symbol.id === candidate.id)?.name ?? candidate.id} ${candidate.relation}`,

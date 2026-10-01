@@ -1,0 +1,9 @@
+{
+  "target": { "kind": "application" },
+  "analysis": {
+    "configurations": [
+      { "id": "scripts", "project": "tsconfig.scripts.json" },
+      { "id": "app", "project": "tsconfig.json" }
+    ]
+  }
+}
