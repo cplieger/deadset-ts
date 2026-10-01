@@ -15,11 +15,18 @@ import {
  * Every key the Contract's configuration schema declares, as a dotted path, read
  * from the schema rather than from the analyzer's own list. A list's entry members
  * are spelled under the list's own path followed by empty brackets, the way a
- * refusal names the member of one entry.
+ * refusal names the member of one entry, and an entry the schema admits in several
+ * shapes declares the members of every shape.
  */
 function schemaKeys(): string[] {
-  const keys: string[] = [];
+  const keys = new Set<string>();
   const walk = (node: Record<string, unknown>, at: string): void => {
+    const shapes = node["oneOf"];
+    if (Array.isArray(shapes)) {
+      for (const shape of shapes as unknown[]) {
+        walk(shape as Record<string, unknown>, at);
+      }
+    }
     const properties = node["properties"];
     if (typeof properties !== "object" || properties === null) {
       return;
@@ -30,7 +37,7 @@ function schemaKeys(): string[] {
       }
       const record = child as Record<string, unknown>;
       const path = at === "" ? name : `${at}.${name}`;
-      keys.push(path);
+      keys.add(path);
       const items = record["items"];
       if (typeof items === "object" && items !== null) {
         walk(items as Record<string, unknown>, `${path}[]`);
@@ -40,7 +47,7 @@ function schemaKeys(): string[] {
     }
   };
   walk(contractDocument("config.schema.json"), "");
-  return keys.sort();
+  return [...keys].sort();
 }
 
 describe("the closed key list", () => {
@@ -57,6 +64,16 @@ describe("the closed key list", () => {
         if (typeof patterns !== "object" || patterns === null) {
           open.push(at);
         }
+      }
+      const items = node["items"];
+      if (typeof items === "object" && items !== null) {
+        walk(items as Record<string, unknown>, `${at}[]`);
+      }
+      const shapes = node["oneOf"];
+      if (Array.isArray(shapes)) {
+        (shapes as unknown[]).forEach((shape, index) => {
+          walk(shape as Record<string, unknown>, `${at}<${String(index)}>`);
+        });
       }
       if (typeof properties !== "object" || properties === null) {
         return;

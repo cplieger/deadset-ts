@@ -1,0 +1,56 @@
+{
+  "contract_version": "2.2.0",
+  "target": { "kind": "application" },
+  "analysis": {
+    "languages": ["ts"],
+    "min_confidence": "possible",
+    "generated_files": "exclude",
+    "consumer_tests": "test",
+    "configurations": [
+      { "id": "tsconfig.json", "project": "tsconfig.json" },
+      { "id": "packages/app/tsconfig.json", "project": "packages/app/tsconfig.json" }
+    ],
+    "matrix": { "complete": true },
+    "template_dirs": [],
+    "template_delimiters": { "left": "{{", "right": "}}" }
+  },
+  "consumers": { "complete": false },
+  "roots": { "patterns": [] },
+  "severity": {},
+  "exemptions": { "disabled": [] },
+  "reporters": {
+    "formats": ["text"],
+    "sort": "position",
+    "cascade": "roots",
+    "max_findings": 0,
+    "fail_on": "deny"
+  },
+  "go": {},
+  "ts": {
+    "test_files": ["**/*.test.{ts,tsx,mts,cts}"],
+    "entry_files": []
+  },
+  "provenance": {
+    "contract_version": "default",
+    "target.kind": "repository: repository.json",
+    "analysis.languages": "repository: repository.json",
+    "analysis.min_confidence": "default",
+    "analysis.generated_files": "default",
+    "analysis.consumer_tests": "default",
+    "analysis.configurations": "repository: repository.json",
+    "analysis.matrix.complete": "repository: repository.json",
+    "analysis.template_dirs": "default",
+    "analysis.template_delimiters": "default",
+    "consumers.complete": "default",
+    "roots.patterns": "default",
+    "severity": "default",
+    "exemptions.disabled": "default",
+    "reporters.formats": "default",
+    "reporters.sort": "default",
+    "reporters.cascade": "default",
+    "reporters.max_findings": "default",
+    "reporters.fail_on": "default",
+    "ts.test_files": "default",
+    "ts.entry_files": "default"
+  }
+}

@@ -79,16 +79,16 @@ describe("the reference table of every reference form", () => {
       [...counts].sort(([a], [b]) => (a < b ? -1 : 1)),
       "a batch answers for most of the names and the two per-node paths for the rest",
     ).toEqual([
-      ["alias", 14],
+      ["alias", 17],
       ["batch", 17],
       ["shorthand", 3],
     ]);
   });
 
   it("spends one batch per file that carries a name to resolve, and no more", () => {
-    // Three of the fixture's four files carry a name that is a use; the fourth writes
-    // nothing but re-exports, whose names are where its own declarations are written.
-    expect(RESOLVED?.cost.fileBatches, "one batch per such file, at the default cap").toBe(3);
+    // Every file of the fixture carries a node to resolve: three a name that is a use,
+    // and the fourth its re-exports, each of which is asked what it carries forward.
+    expect(RESOLVED?.cost.fileBatches, "one batch per such file, at the default cap").toBe(4);
     expect(REFERENCES.length, "and every name of the fixture is far below the cap").toBeLessThan(
       DEFAULT_BATCH_CAP,
     );
@@ -100,7 +100,8 @@ describe("the reference table of every reference form", () => {
     expect(
       RESOLVED?.cost.aliasSteps,
       "one step per link of each chain, resolved once per alias whatever the number of " +
-        "uses it has: the collection two statements reach through one import costs one",
+        "uses it has: the collection two statements reach through one import costs one, " +
+        "and a re-export a use already stepped through costs nothing more",
     ).toBe(11);
     expect(
       RESOLVED?.cost.residueFallbacks,
@@ -112,7 +113,7 @@ describe("the reference table of every reference form", () => {
       "the requests the client measured are the ones the pass accounts for: a declaration " +
         "outside the project's own files is never fetched to find out that the inventory " +
         "does not hold it",
-    ).toBe(3 + 0 + 4 + 11);
+    ).toBe(4 + 0 + 4 + 11);
   });
 
   it("accounts for every request over a tree of more than one project", () => {
@@ -159,9 +160,10 @@ describe("the reference table of every reference form", () => {
     expect(named?.kind, "the declaration behind the type-only re-export is the type").toBe(
       "interface",
     );
-    expect(to("Named"), "named once, in the return type the using module writes").toEqual([
-      "src/index.ts:9:37 read",
-    ]);
+    expect(
+      to("Named"),
+      "named in the return type the using module writes, and by the re-export carrying it",
+    ).toEqual(["src/index.ts:9:37 read", "src/middle.ts:2:15 read"]);
   });
 
   it("records a self-reference and nothing at a declaration's own name", () => {

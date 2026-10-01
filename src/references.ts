@@ -3,8 +3,10 @@ import {
   isBinaryExpression,
   isDeleteExpression,
   isElementAccessExpression,
+  isExportDeclaration,
   isForInStatement,
   isForOfStatement,
+  isNamespaceExport,
   isObjectLiteralExpression,
   isParenthesizedExpression,
   isPostfixUnaryExpression,
@@ -110,6 +112,12 @@ export interface References {
   readonly references: readonly Reference[];
   /** The rules that classified files as test files, ordered by rule. */
   readonly testFileRules: readonly TestFileRule[];
+  /**
+   * Every file the rules classified as a test file, by its path below the target root,
+   * ascending. A declaration such a file holds is a test declaration, by the same
+   * classification that marks the references the file makes.
+   */
+  readonly testFilePaths: readonly string[];
   readonly cost: ReferenceCost;
 }
 
@@ -274,21 +282,87 @@ interface Site {
 }
 
 /**
+ * One re-export the walk found, which names what it carries forward without a name
+ * that is a use: an export specifier, a namespace export, or a bare star re-export.
+ */
+interface Link {
+  /**
+   * The node whose symbol says what the re-export carries: the alias a specifier or a
+   * namespace export declares, or the module a bare star re-export names.
+   */
+  readonly node: Node;
+  /** Where the reference is written: the name a specifier re-exports, or the module specifier. */
+  readonly at: Node;
+  /** The re-export's own declaration, or for a bare star the declaration enclosing it. */
+  readonly from: string;
+  /** Whether the node's symbol is an alias, which is followed one link along. */
+  readonly alias: boolean;
+}
+
+/** Everything one file's walk found to resolve. */
+interface FileSites {
+  readonly uses: readonly Site[];
+  readonly links: readonly Link[];
+}
+
+/**
+ * The re-exports one node writes, if it is an export declaration. A specifier and a
+ * namespace export are declarations whose names are where they are written, so no use is
+ * read from them; each references what it carries forward instead. A bare star declares
+ * nothing, so the declaration enclosing it, at the top level the file, references the
+ * module it names.
+ */
+function linksOf(
+  file: SourceFile,
+  node: Node,
+  declarations: ReadonlyMap<string, string>,
+  enclosing: string,
+): Link[] {
+  if (!isExportDeclaration(node)) {
+    return [];
+  }
+  const clause = node.exportClause;
+  const specifier = node.moduleSpecifier;
+  if (clause === undefined) {
+    return specifier === undefined
+      ? []
+      : [{ node: specifier, at: specifier, from: enclosing, alias: false }];
+  }
+  if (isNamespaceExport(clause)) {
+    const from = declarations.get(nodeKey(file, clause));
+    return from === undefined
+      ? []
+      : [{ node: clause.name, at: specifier ?? clause.name, from, alias: true }];
+  }
+  const found: Link[] = [];
+  for (const element of clause.elements) {
+    const from = declarations.get(nodeKey(file, element));
+    if (from !== undefined) {
+      found.push({
+        node: element.name,
+        at: element.propertyName ?? element.name,
+        from,
+        alias: true,
+      });
+    }
+  }
+  return found;
+}
+
+/**
  * Every name node one file holds that is a use rather than a declaration, in source
- * order, each with the declaration that encloses it and the use it makes.
- *
- * One walk answers all three, because the three facts are positional and a second walk
- * would have to agree with this one about which nodes are names. A name that is the
- * declared name of the declaration it belongs to is left out: it is where that
- * declaration is written rather than a use of it, which is what makes a declaration
- * referenced only from its own site an unreferenced declaration.
+ * order, each with its enclosing declaration and its use, and every re-export the file
+ * writes. One walk answers all of it, because a second would have to agree with this one
+ * about which nodes are names. A declaration's own declared name is left out, which is
+ * what makes a declaration referenced only from its own site an unreferenced one.
  */
 function sitesOf(
   file: SourceFile,
   declarations: ReadonlyMap<string, string>,
   fileId: string,
-): Site[] {
+): FileSites {
   const found: Site[] = [];
+  const links: Link[] = [];
   const writes = new Set<number>();
   const declared = new Set<number>();
   const shorthands = new Map<number, Node>();
@@ -326,6 +400,7 @@ function sitesOf(
     }
     markNames(node);
     markStores(node, writes);
+    links.push(...linksOf(file, node, declarations, enclosing));
     const held = declarations.get(nodeKey(file, node));
     const outer = enclosing;
     if (held !== undefined) {
@@ -336,7 +411,7 @@ function sitesOf(
   };
 
   file.forEachChild(visit);
-  return found;
+  return { uses: found, links };
 }
 
 /**
@@ -386,7 +461,9 @@ export function references<Brand>(
   const patterns = options.testFiles.map(globExpression);
   const matched = options.testFiles.map(() => 0);
   const found: Reference[] = [];
+  const tests: string[] = [];
   const reached = new Map<number, readonly Target[]>();
+  const steps = new Map<number, TSSymbol | undefined>();
   let batched = 0;
   let fileBatches = 0;
   let residueFallbacks = 0;
@@ -401,22 +478,52 @@ export function references<Brand>(
     declarations.get(nodeKey(node.getSourceFile(), node));
 
   /**
+   * The declarations of the inventory one symbol is.
+   *
+   * A declaration handle carries the file it is in, so the question is answered before
+   * the handle is resolved: a declaration outside the project's own files belongs to
+   * another program and is never read, which is what keeps the pass from fetching a
+   * library file to discover that the inventory does not hold what is in it.
+   */
+  const declarationsOf = (symbol: TSSymbol): string[] => {
+    const ids: string[] = [];
+    for (const handle of symbol.declarations) {
+      if (!ownFiles.has(handle.path)) {
+        continue;
+      }
+      const node = project.declarationAt(handle)?.node;
+      const id = node === undefined ? undefined : declaredAt(node);
+      if (id !== undefined && !ids.includes(id)) {
+        ids.push(id);
+      }
+    }
+    return ids;
+  };
+
+  /**
+   * What one alias names, one link along, asked once per alias whatever the number of
+   * chains it is a link of. Only a symbol the binder flagged an alias is asked, which is
+   * the condition the step asserts on: a default export of an expression is written in
+   * an alias form and names nothing declared elsewhere, so its chain ends at itself.
+   */
+  const stepOf = (symbol: TSSymbol): TSSymbol | undefined => {
+    if ((symbol.flags & SymbolFlags.Alias) === 0) {
+      return undefined;
+    }
+    if (steps.has(symbol.id)) {
+      return steps.get(symbol.id);
+    }
+    const next = project.aliasStepOf(symbol);
+    aliasSteps += 1;
+    steps.set(symbol.id, next);
+    return next;
+  };
+
+  /**
    * The declarations one symbol names: the declaration it is, and every link of the
    * alias chain it stands at the head of. A re-export something imports is used and so
    * is the declaration behind it, so both are named; a link this project does not
    * declare is stepped over rather than recorded.
-   *
-   * A symbol is asked to step only where the binder flagged it an alias, which is the
-   * same condition the step itself asserts on. The declaration's syntax is not that
-   * condition and does not stand in for it: a default export of an expression is
-   * written as one of the alias forms and names nothing declared elsewhere, so it is
-   * recorded as the declaration it is and the chain ends there.
-   *
-   * A declaration handle carries the file it is in, so the question the walk asks of a
-   * declaration is answered before it is resolved: a declaration outside the project's
-   * own files belongs to another program and is never read, which is what keeps the
-   * pass from fetching a library file to discover that the inventory does not hold what
-   * is in it.
    */
   const targetsOf = (symbol: TSSymbol): readonly Target[] => {
     const cached = reached.get(symbol.id);
@@ -429,35 +536,49 @@ export function references<Brand>(
     let stepped = false;
     while (at !== undefined && !walked.has(at.id)) {
       walked.add(at.id);
-      const alias = (at.flags & SymbolFlags.Alias) !== 0;
-      for (const handle of at.declarations) {
-        if (!ownFiles.has(handle.path)) {
-          continue;
-        }
-        const node = project.declarationAt(handle)?.node;
-        const id = node === undefined ? undefined : declaredAt(node);
-        if (id !== undefined && !targets.some((target) => target.id === id)) {
+      for (const id of declarationsOf(at)) {
+        if (!targets.some((target) => target.id === id)) {
           targets.push({ id, stepped });
         }
       }
-      if (!alias) {
-        break;
-      }
-      at = project.aliasStepOf(at);
-      aliasSteps += 1;
+      at = stepOf(at);
       stepped = true;
     }
     reached.set(symbol.id, targets);
     return targets;
   };
 
+  /**
+   * The declarations one re-export carries forward: for an alias, the first link along
+   * its chain that the inventory declares, stepping over the links it does not, such as
+   * an import the re-export is written against; for a bare star, the module it names.
+   * Each later link is a declaration of its own that references the next, so one link
+   * per re-export is what lets a chain be followed one declaration at a time.
+   */
+  const carriedBy = (link: Link, symbol: TSSymbol): readonly string[] => {
+    if (!link.alias) {
+      return declarationsOf(symbol);
+    }
+    const walked = new Set<number>([symbol.id]);
+    let at = stepOf(symbol);
+    while (at !== undefined && !walked.has(at.id)) {
+      walked.add(at.id);
+      const ids = declarationsOf(at);
+      if (ids.length > 0) {
+        return ids;
+      }
+      at = stepOf(at);
+    }
+    return [];
+  };
+
   /** The symbol one site resolves to, asking only the accessor the site's form names. */
-  const symbolFor = (site: Site, answered: ReadonlyMap<number, TSSymbol>): TSSymbol | undefined => {
+  const symbolFor = (site: Site, answered: ReadonlyMap<Node, TSSymbol>): TSSymbol | undefined => {
     if (site.shorthand !== undefined) {
       shorthandLookups += 1;
       return project.shorthandValueAt(project.handle(site.shorthand));
     }
-    const batched = answered.get(site.node.pos);
+    const batched = answered.get(site.node);
     if (batched !== undefined) {
       return batched;
     }
@@ -467,38 +588,63 @@ export function references<Brand>(
 
   for (const file of files) {
     const path = renderPosition(file, targetRoot, 0).path;
-    let test = false;
-    patterns.forEach((pattern, index) => {
-      if (pattern.test(path)) {
+    const hits = patterns.map((pattern) => pattern.test(path));
+    hits.forEach((hit, index) => {
+      if (hit) {
         matched[index] = (matched[index] ?? 0) + 1;
-        test = true;
       }
     });
-    const sites = sitesOf(file, declarations, declaredAt(file) ?? "");
+    const test = hits.includes(true);
+    if (test) {
+      tests.push(path);
+    }
+    const { uses, links } = sitesOf(file, declarations, declaredAt(file) ?? "");
 
-    // One batch per capped run of the file's name nodes. A shorthand is left out of
-    // the batch: its name resolves to the property the literal declares, so the batch's
-    // answer for it would name something this project's inventory never holds.
-    const batching = sites.filter((site) => site.shorthand === undefined);
-    const answered = new Map<number, TSSymbol>();
+    // One batch per capped run of the file's name nodes, the re-exports' nodes after
+    // the uses. A shorthand is left out of the batch: its name resolves to the property
+    // the literal declares, so the batch's answer for it would name something this
+    // project's inventory never holds.
+    const batching = [
+      ...uses.filter((site) => site.shorthand === undefined).map((site) => site.node),
+      ...links.map((link) => link.node),
+    ];
+    const answered = new Map<Node, TSSymbol>();
     batched += batching.length;
     for (let from = 0; from < batching.length; from += cap) {
       const run = batching.slice(from, from + cap);
-      const answers = project.symbolsAt(run.map((site) => project.handle(site.node)));
+      const answers = project.symbolsAt(run.map((node) => project.handle(node)));
       fileBatches += 1;
-      run.forEach((site, index) => {
+      run.forEach((node, index) => {
         const symbol = answers[index];
         if (symbol !== undefined) {
-          answered.set(site.node.pos, symbol);
+          answered.set(node, symbol);
         }
       });
     }
 
-    for (const site of sites) {
+    for (const link of links) {
+      const symbol = answered.get(link.node);
+      if (symbol === undefined) {
+        continue;
+      }
+      const position = renderPosition(file, targetRoot, link.at.getStart());
+      for (const id of carriedBy(link, symbol)) {
+        found.push({
+          from: link.from,
+          to: id,
+          position,
+          use: "read",
+          resolution: link.alias ? "alias" : "batch",
+          test,
+        });
+      }
+    }
+
+    for (const site of uses) {
       const direct: Resolution =
         site.shorthand !== undefined
           ? "shorthand"
-          : answered.has(site.node.pos)
+          : answered.has(site.node)
             ? "batch"
             : "resolved-symbol";
       const symbol = symbolFor(site, answered);
@@ -533,6 +679,7 @@ export function references<Brand>(
     testFileRules: options.testFiles
       .map((_pattern, index) => ({ rule: patternRule(index), matched: matched[index] ?? 0 }))
       .sort((a, b) => compare(a.rule, b.rule)),
+    testFilePaths: tests.sort(compare),
     cost: { batched, fileBatches, residueFallbacks, shorthandLookups, aliasSteps },
   };
 }

@@ -38,6 +38,24 @@ const SEVERITY_KEY = /^DS[0-9]{2}([0-9]{2})?$/u;
 const EXEMPTION_CLASS = /^[a-z][a-z0-9-]*$/u;
 const CONTRACT_VERSION_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+$/u;
 
+/** The members only a platform build configuration carries. */
+const PLATFORM_MEMBERS = ["os", "arch", "tags"] as const;
+
+/** The member only a project build configuration carries. */
+const PROJECT_MEMBER = "project";
+
+/**
+ * One segment of a project path: not empty, not `.` or `..`, and holding no
+ * solidus, backslash or line break.
+ */
+const PROJECT_SEGMENT = String.raw`(?:[^/\\.\r\n][^/\\\r\n]*|\.[^/\\.\r\n][^/\\\r\n]*|\.\.[^/\\\r\n]+)`;
+
+/**
+ * A project path: segments joined by a solidus, so the path is relative, below
+ * the root it is read against, and spelled one way on every machine.
+ */
+const PROJECT_PATH = new RegExp(`^${PROJECT_SEGMENT}(?:/${PROJECT_SEGMENT})*$`, "u");
+
 const TARGET_KINDS: readonly TargetKind[] = ["application", "library"];
 const CONFIDENCES: readonly Confidence[] = ["certain", "probable", "possible"];
 const GENERATED_FILES: readonly GeneratedFiles[] = ["exclude", "include"];
@@ -252,10 +270,75 @@ function requireMember(value: string | undefined, path: string, label: string): 
   return value;
 }
 
+/** One build configuration entry as a platform: an identifier, an operating system and an architecture. */
+function readPlatform(
+  entry: Record<string, unknown>,
+  at: string,
+  label: string,
+): BuildConfiguration {
+  return {
+    shape: "platform",
+    id: requireMember(readString(entry, "id", `${at}.id`, label), `${at}.id`, label),
+    os: requireMember(readString(entry, "os", `${at}.os`, label), `${at}.os`, label),
+    arch: requireMember(readString(entry, "arch", `${at}.arch`, label), `${at}.arch`, label),
+    tags: readStrings(entry, "tags", `${at}.tags`, label, 0) ?? [],
+  };
+}
+
+/** One build configuration entry as a project: an identifier and a configuration file below the target root. */
+function readProject(
+  entry: Record<string, unknown>,
+  at: string,
+  label: string,
+): BuildConfiguration {
+  const id = requireMember(readString(entry, "id", `${at}.id`, label), `${at}.id`, label);
+  const path = `${at}.${PROJECT_MEMBER}`;
+  const project = requireMember(readString(entry, PROJECT_MEMBER, path, label), path, label);
+  if (!PROJECT_PATH.test(project)) {
+    throw malformed(
+      label,
+      path,
+      `${JSON.stringify(project)} is not a path below the target root: segments joined by /, ` +
+        "none empty, . or .., and no backslash or line break",
+    );
+  }
+  return { shape: "project", id, project };
+}
+
 /**
- * The build matrix: every entry names an identifier, an operating system and an
- * architecture.
+ * One build configuration entry, read as the one shape its members name: a member
+ * only a platform carries makes it a platform, the member only a project carries
+ * makes it a project, and an entry naming members of both, or of neither, is
+ * refused at the entry, because the two shapes are exclusive.
  */
+function readConfiguration(entry: unknown, at: string, label: string): BuildConfiguration {
+  if (!isRecord(entry)) {
+    throw malformed(label, at, "is not an object");
+  }
+  const platform = PLATFORM_MEMBERS.filter((name) => Object.hasOwn(entry, name));
+  const project = Object.hasOwn(entry, PROJECT_MEMBER);
+  if (platform.length > 0 && project) {
+    throw malformed(
+      label,
+      at,
+      `carries ${spell(platform)} of a platform and ${JSON.stringify(PROJECT_MEMBER)} of a ` +
+        "project, and an entry is one shape or the other",
+    );
+  }
+  if (project) {
+    return readProject(entry, at, label);
+  }
+  if (platform.length === 0) {
+    throw malformed(
+      label,
+      at,
+      `names neither a platform's "os" and "arch" nor a project's ${JSON.stringify(PROJECT_MEMBER)}`,
+    );
+  }
+  return readPlatform(entry, at, label);
+}
+
+/** The build matrix, one entry in one shape at a time. */
 function readConfigurations(
   analysis: Record<string, unknown> | undefined,
   label: string,
@@ -267,18 +350,9 @@ function readConfigurations(
   if (!Array.isArray(value)) {
     throw malformed(label, "analysis.configurations", "is not an array");
   }
-  return (value as unknown[]).map((entry, index) => {
-    const at = `analysis.configurations[${String(index)}]`;
-    if (!isRecord(entry)) {
-      throw malformed(label, at, "is not an object");
-    }
-    return {
-      id: requireMember(readString(entry, "id", `${at}.id`, label), `${at}.id`, label),
-      os: requireMember(readString(entry, "os", `${at}.os`, label), `${at}.os`, label),
-      arch: requireMember(readString(entry, "arch", `${at}.arch`, label), `${at}.arch`, label),
-      tags: readStrings(entry, "tags", `${at}.tags`, label, 0) ?? [],
-    };
-  });
+  return (value as unknown[]).map((entry, index) =>
+    readConfiguration(entry, `analysis.configurations[${String(index)}]`, label),
+  );
 }
 
 /**
@@ -642,6 +716,35 @@ function checkLabels(provenance: ReadonlyMap<string, Origin>): void {
  * the usage exit code.
  */
 export function resolve(inputs: Inputs): { config: Config; provenance: Provenance } {
+  const { config, provenance } = settleAll(inputs);
+  if (config.targetKind === "") {
+    throw new ConfigError(
+      "missing-target-kind",
+      "target.kind",
+      "target.kind is not set, it has no default and is never inferred: searched " +
+        `${describeSource("the repository configuration", inputs.repository, inputs.repositoryLabel)} and ` +
+        describeSource("the central configuration", inputs.central, inputs.centralLabel),
+    );
+  }
+  checkLabels(provenance);
+  return { config, provenance };
+}
+
+/**
+ * The build matrix the configuration documents resolve to, every document read and
+ * refused as {@link resolve} refuses it, and nothing else required of them: which
+ * projects a run analyzes depends on the matrix alone, so a question about the
+ * projects asks no target kind.
+ */
+export function resolveMatrix(inputs: Inputs): readonly BuildConfiguration[] {
+  return settleAll(inputs).config.analysis.configurations;
+}
+
+/**
+ * Every setting the documents supply, each from the highest-ranked source carrying
+ * it, with the origin of each. The target kind is empty where no source names one.
+ */
+function settleAll(inputs: Inputs): { config: Config; provenance: Map<string, Origin> } {
   const sources = readSources(inputs);
   const defaults = defaultConfig();
   const provenance = new Map<string, Origin>();
@@ -718,15 +821,5 @@ export function resolve(inputs: Inputs): { config: Config; provenance: Provenanc
     },
   };
 
-  if (config.targetKind === "") {
-    throw new ConfigError(
-      "missing-target-kind",
-      "target.kind",
-      "target.kind is not set, it has no default and is never inferred: searched " +
-        `${describeSource("the repository configuration", inputs.repository, inputs.repositoryLabel)} and ` +
-        describeSource("the central configuration", inputs.central, inputs.centralLabel),
-    );
-  }
-  checkLabels(provenance);
   return { config, provenance };
 }

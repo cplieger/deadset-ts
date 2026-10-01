@@ -12,14 +12,17 @@ import type { Diagnostic } from "@typescript/native/unstable/sync";
 import type { Config, Provenance } from "./config.ts";
 import { diagnosticErrors, discoverProjects, DiscoveryError } from "./discover.ts";
 import type { Finding } from "./finding.ts";
+import { graphOf } from "./graph.ts";
 import type { Host } from "./host.ts";
-import { inventory } from "./inventory.ts";
+import { inventory, type Inventory, type InventorySymbol } from "./inventory.ts";
 import { readManifest } from "./manifest.ts";
 import { relativePath, resolvePath } from "./paths.ts";
 import { byPosition, type Position } from "./position.ts";
-import { roots, unmatchedEverywhere, unmatchedRoots, type RootKind } from "./roots.ts";
+import { references } from "./references.ts";
+import { roots, unmatchedEverywhere, unmatchedRoots, type RootKind, type Roots } from "./roots.ts";
 import type { Scope } from "./scope.ts";
-import { diagnosticsOf, runSession, type Engine } from "./session.ts";
+import { diagnosticsOf, runSession, type Engine, type ProjectView } from "./session.ts";
+import { sweep, type SweepInput, type SweepResult } from "./sweep.ts";
 
 /** The setting whose source decides where a finding about a configured root sits. */
 const ROOTS_SETTING = "roots.patterns";
@@ -39,8 +42,8 @@ export interface RunRoot {
 /** The root set of one run, and the findings about the roots the configuration names. */
 export interface RunRoots {
   /**
-   * The configurations the run analyzed: each compiler configuration file, by its
-   * path below the target root, in discovery order.
+   * The configurations the run analyzed, each by the name discovery gives its
+   * project, in discovery order.
    */
   readonly configurations: readonly string[];
   /**
@@ -80,26 +83,31 @@ function compare(a: string, b: string): number {
   return a < b ? -1 : 1;
 }
 
+/** What every stage after the root set reads of one project. */
+interface ProjectRead {
+  readonly configuration: string;
+  readonly held: Inventory;
+  readonly rooted: Roots;
+}
+
 /**
- * The root set of the run the scope and the configuration describe.
- *
- * Every project is read for errors before anything else, and a project carrying one
- * fails the run with no root set, as every verb that reads declarations does. A
- * configured string is a finding when it names nothing in every project, and the
- * finding sits in the document that declared the roots.
+ * Reads every project the scope discovers, in one snapshot: each is checked for errors
+ * first, then enumerated, then rooted, and `stage` reads the rest of what it needs from
+ * the project while its view is open. A project carrying an error fails the run with no
+ * answer, as every verb that reads declarations does.
  */
-export function runRoots(
+function readProjects<Answer>(
   engine: Engine,
   host: Host,
   scope: Scope,
   config: Config,
-  provenance: Provenance,
-): RunRoots {
+  stage: <Brand>(project: ProjectView<Brand>, read: ProjectRead) => Answer,
+): readonly Answer[] {
   const targetRoot = scope.target.path;
-  const discovered = discoverProjects(engine, host, scope);
-  const manifest = readManifest(host, targetRoot);
+  const discovered = discoverProjects(engine, host, scope, config.analysis.configurations);
+  const ids = new Map(discovered.projects.map((project) => [project.configFile, project.id]));
   const options = {
-    manifest,
+    manifest: readManifest(host, targetRoot),
     patterns: config.rootPatterns,
     entryFiles: config.ts.entryFiles,
     testFiles: config.ts.testFiles,
@@ -113,7 +121,12 @@ export function runRoots(
       return undefined;
     }
     const held = inventory(project, host, targetRoot);
-    return { held, rooted: roots(project, held, targetRoot, options) };
+    const rooted = roots(project, held, targetRoot, options);
+    const configuration =
+      ids.get(project.configFile) ??
+      relativePath(targetRoot, project.configFile) ??
+      project.configFile;
+    return stage(project, { configuration, held, rooted });
   });
   if (failures.length > 0) {
     throw new DiscoveryError(
@@ -121,15 +134,29 @@ export function runRoots(
       failures,
     );
   }
+  return projects.filter((answer): answer is Answer => answer !== undefined);
+}
+
+/**
+ * The root set of the run the scope and the configuration describe.
+ *
+ * A configured string is a finding when it names nothing in every project, and the
+ * finding sits in the document that declared the roots.
+ */
+export function runRoots(
+  engine: Engine,
+  host: Host,
+  scope: Scope,
+  config: Config,
+  provenance: Provenance,
+): RunRoots {
+  const targetRoot = scope.target.path;
+  const projects = readProjects(engine, host, scope, config, (_project, read) => read);
 
   const configurations: string[] = [];
   const merged = new Map<string, Omit<RunRoot, "configurations"> & { configurations: string[] }>();
   for (const answer of projects) {
-    if (answer === undefined) {
-      continue;
-    }
-    const configuration =
-      relativePath(targetRoot, answer.rooted.configFile) ?? answer.rooted.configFile;
+    const configuration = answer.configuration;
     configurations.push(configuration);
     const symbols = new Map(answer.held.symbols.map((symbol) => [symbol.id, symbol]));
     for (const root of answer.rooted.liveUnderReachability) {
@@ -159,11 +186,51 @@ export function runRoots(
   );
   const unmatched = unmatchedEverywhere(
     config.rootPatterns,
-    projects.flatMap((answer) => (answer === undefined ? [] : [answer.rooted])),
+    projects.map((answer) => answer.rooted),
   );
   return {
     configurations,
     roots: ordered,
     findings: unmatchedRoots(unmatched, documentOf(host, provenance, ROOTS_SETTING, targetRoot)),
   };
+}
+
+/** One configuration's sweep, beside the declarations it judged. */
+export interface ConfigurationSweep {
+  /** The name discovery gives the configuration's project. */
+  readonly configuration: string;
+  readonly symbols: readonly InventorySymbol[];
+  readonly sweep: SweepResult;
+}
+
+/**
+ * Sweeps every project of the run the scope and the configuration describe, one
+ * configuration at a time, in discovery order. Each project's references are read
+ * against its own inventory with the configured test-file patterns, and its graph is
+ * swept under the input the caller decided once for the run.
+ */
+export function runSweeps(
+  engine: Engine,
+  host: Host,
+  scope: Scope,
+  config: Config,
+  input: SweepInput,
+): readonly ConfigurationSweep[] {
+  const targetRoot = scope.target.path;
+  return readProjects(engine, host, scope, config, (project, read) => {
+    const resolved = references(project, read.held, targetRoot, {
+      testFiles: config.ts.testFiles,
+    });
+    const graph = graphOf(
+      read.held.symbols,
+      resolved.references,
+      read.rooted.liveUnderReachability,
+      resolved.testFilePaths,
+    );
+    return {
+      configuration: read.configuration,
+      symbols: read.held.symbols,
+      sweep: sweep(graph, input),
+    };
+  });
 }

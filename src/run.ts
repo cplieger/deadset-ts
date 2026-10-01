@@ -9,7 +9,7 @@ import {
 import type { Host } from "./host.ts";
 import { joinPath, resolvePath } from "./paths.ts";
 import { printConfig } from "./print.ts";
-import { resolve } from "./resolve.ts";
+import { resolve, resolveMatrix } from "./resolve.ts";
 import { readScope, ScopeError, scopeForDir, type Scope } from "./scope.ts";
 import { diagnosticsOf, openEngine, runSession, type Engine } from "./session.ts";
 import { CONTRACT_VERSION } from "./version.ts";
@@ -245,8 +245,10 @@ function printConfigVerb(args: readonly string[], out: Writer, err: Writer, host
 }
 
 /**
- * Writes the compiler configuration of every project one run analyzes, one per
- * line, in discovery order, having read each project's diagnostics first.
+ * Writes the name of every project one run analyzes, one per line, having read each
+ * project's diagnostics first: the identifier the build matrix declares for it, or,
+ * where discovery derived the project, its configuration file's path below the
+ * target root.
  */
 function printProjectsVerb(
   args: readonly string[],
@@ -258,14 +260,16 @@ function printProjectsVerb(
   let engine: Engine | undefined;
   try {
     const options = readOptions(args);
+    const matrix = resolveMatrix(inputsOf(host, options));
     const scope = scopeOf(host, options);
     engine = openClient(false);
-    const discovered = discoverProjects(engine, host, scope);
+    const discovered = discoverProjects(engine, host, scope, matrix);
+    const ids = new Map(discovered.projects.map((project) => [project.configFile, project.id]));
     const failures: string[] = [];
     const { projects } = runSession(engine, discovered.configFiles, (project) => {
       const errors = diagnosticErrors(diagnosticsOf(project));
       failures.push(...errors.map(renderDiagnostic));
-      return project.configFile;
+      return ids.get(project.configFile) ?? project.configFile;
     });
     if (failures.length > 0) {
       for (const line of failures) {
@@ -274,8 +278,8 @@ function printProjectsVerb(
       err.write(`deadset-ts: ${String(failures.length)} error(s); no answer was produced\n`);
       return EXIT_FAILURE;
     }
-    for (const configFile of projects) {
-      out.write(`${configFile}\n`);
+    for (const id of projects) {
+      out.write(`${id}\n`);
     }
     return EXIT_CLEAN;
   } catch (error: unknown) {

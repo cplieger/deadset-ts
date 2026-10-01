@@ -1,7 +1,8 @@
 import { DiagnosticCategory } from "@typescript/native/unstable/sync";
 import type { Diagnostic } from "@typescript/native/unstable/sync";
+import type { BuildConfiguration, ProjectConfiguration } from "./config.ts";
 import type { Host } from "./host.ts";
-import { dirnamePath, isAbsolutePath, joinPath, resolvePath } from "./paths.ts";
+import { dirnamePath, isAbsolutePath, joinPath, relativePath, resolvePath } from "./paths.ts";
 import type { Scope } from "./scope.ts";
 import type { Engine } from "./session.ts";
 
@@ -54,11 +55,29 @@ export function diagnosticErrors(sets: {
   return [...sets.configParsing, ...sets.syntactic, ...sets.semantic].filter(isError);
 }
 
-/** Every compiler configuration file discovery found, and where each came from. */
+/** One project a run analyzes. */
+export interface DiscoveredProject {
+  /**
+   * The name a run gives the project: the identifier the build matrix declares for
+   * it, or, for a project discovery derived, its configuration file's path below the
+   * target root. A derived project whose file is not below the target root is named
+   * by the file's absolute path, the one spelling it has.
+   */
+  readonly id: string;
+  /** The compiler configuration file the project is opened from, absolute. */
+  readonly configFile: string;
+}
+
+/** Every project discovery found, and where each came from. */
 export interface Discovery {
-  /** The configuration files, in discovery order, each once. */
+  /** The projects, in discovery order, each once. */
+  readonly projects: readonly DiscoveredProject[];
+  /** The configuration file of each project, in the same order. */
   readonly configFiles: readonly string[];
-  /** The files the scope named, which are the ones discovery read first. */
+  /**
+   * The files the scope named, which are the ones a derivation reads first. A
+   * declared matrix reads none of them.
+   */
   readonly fromScope: readonly string[];
 }
 
@@ -153,24 +172,93 @@ function scopeConfigFiles(host: Host, scope: Scope): string[] {
 }
 
 /**
- * Every project one run analyzes, in the order discovery reads them: the paths the
- * scope names, then every compiler configuration under the target root that is not
- * inside an ignored directory, then the configurations each of those references,
- * transitively. Each configuration appears once.
- *
- * A configuration file the compiler cannot read ends the run with the failure code,
- * so a project that would have been analyzed with no type information is never
- * analyzed at all. What a configuration's own contents say is refused once its
- * project is open, by {@link diagnosticErrors} over the three sets a program
- * reports, because a resolution carries no diagnostics.
- *
- * Nothing reads a build output: a project is the files its configuration names, so a
- * package whose sources ship as TypeScript is analyzed as it stands.
+ * The name a derived project carries: its configuration file's path below the target
+ * root, or the absolute path of a file outside it.
  */
-export function discoverProjects(engine: Engine, host: Host, scope: Scope): Discovery {
+function derivedId(targetRoot: string, configFile: string): string {
+  return relativePath(targetRoot, configFile) ?? configFile;
+}
+
+/**
+ * Resolves one compiler configuration file, or ends the run naming it: a project
+ * opened from a configuration the compiler cannot read would be analyzed with no
+ * type information.
+ */
+function parseOrRefuse(engine: Engine, configFile: string, named: string): void {
+  try {
+    engine.parseConfigFile(configFile);
+  } catch (error: unknown) {
+    throw new DiscoveryError(
+      `${named} cannot be read as a compiler configuration: ` +
+        (error instanceof Error ? error.message : String(error)),
+      [],
+    );
+  }
+}
+
+/**
+ * The projects a build matrix declares, in the order it lists them. Each entry
+ * names a file below the target root, and an entry naming a file that is absent,
+ * that is a directory, or that the compiler cannot read ends the run naming it.
+ *
+ * A declared project's `references` are not followed, because the entries are the
+ * matrix, and a reference to a configuration the matrix does not name ends the run
+ * naming both: the compiler builds a referenced project's sources into the program
+ * that references it without reporting their diagnostics, so the project the matrix
+ * left out would be analyzed with its errors unread. An entry naming a file an
+ * earlier entry named adds nothing, so the earlier identifier stands.
+ */
+function declaredProjects(
+  engine: Engine,
+  host: Host,
+  targetRoot: string,
+  entries: readonly ProjectConfiguration[],
+): Discovery {
+  const seen = new Set<string>();
+  const projects: DiscoveredProject[] = [];
+  for (const entry of entries) {
+    const configFile = joinPath(targetRoot, entry.project);
+    const named = `the project ${JSON.stringify(entry.id)} (${configFile})`;
+    const kind = host.kindOf(configFile);
+    if (kind !== "file") {
+      throw new DiscoveryError(
+        kind === "absent"
+          ? `${named} does not exist`
+          : `${named} is a directory, and a project names its compiler configuration file`,
+        [],
+      );
+    }
+    if (seen.has(configFile)) {
+      continue;
+    }
+    seen.add(configFile);
+    parseOrRefuse(engine, configFile, named);
+    projects.push({ id: entry.id, configFile });
+  }
+  for (const project of projects) {
+    const unnamed = referencesOf(host, project.configFile).find((path) => !seen.has(path));
+    if (unnamed !== undefined) {
+      throw new DiscoveryError(
+        `the project ${JSON.stringify(project.id)} (${project.configFile}) references ` +
+          `${unnamed}, which the build matrix does not name; a referenced project is built ` +
+          "into the program that references it, so the matrix names it too",
+        [],
+      );
+    }
+  }
+  return { projects, configFiles: projects.map((project) => project.configFile), fromScope: [] };
+}
+
+/**
+ * The projects a run derives where the matrix declares none, in the order discovery
+ * reads them: the paths the scope names, then every compiler configuration under
+ * the target root that is not inside an ignored directory, then the configurations
+ * each of those references, transitively. Each configuration appears once.
+ */
+function derivedProjects(engine: Engine, host: Host, scope: Scope): Discovery {
   const fromScope = scopeConfigFiles(host, scope);
   const seen = new Set<string>();
-  const configFiles: string[] = [];
+  const projects: DiscoveredProject[] = [];
   const pending = [...fromScope, ...configFilesUnder(host, scope.target.path)];
   while (pending.length > 0) {
     const configFile = pending.shift();
@@ -182,17 +270,44 @@ export function discoverProjects(engine: Engine, host: Host, scope: Scope): Disc
       continue;
     }
     seen.add(path);
-    try {
-      engine.parseConfigFile(path);
-    } catch (error: unknown) {
-      throw new DiscoveryError(
-        `${path} cannot be read as a compiler configuration: ` +
-          (error instanceof Error ? error.message : String(error)),
-        [],
-      );
-    }
-    configFiles.push(path);
+    parseOrRefuse(engine, path, path);
+    projects.push({ id: derivedId(scope.target.path, path), configFile: path });
     pending.push(...referencesOf(host, path));
   }
-  return { configFiles, fromScope };
+  return { projects, configFiles: projects.map((project) => project.configFile), fromScope };
+}
+
+/**
+ * Every project one run analyzes.
+ *
+ * The project entries of the build matrix, where it holds any, are the projects:
+ * exactly those, in the order the matrix lists them, each named by its declared
+ * identifier, as {@link declaredProjects} reads them. A matrix holding no project
+ * entry, the empty one included, leaves discovery to derive the projects from the
+ * scope and the target tree. A platform entry names a configuration of another
+ * language and plays no part here.
+ *
+ * A configuration file the compiler cannot read ends the run with the failure code,
+ * so a project that would have been analyzed with no type information is never
+ * analyzed at all, whether the matrix declared it or discovery derived it. What a
+ * configuration's own contents say is refused once its project is open, by
+ * {@link diagnosticErrors} over the three sets a program reports, because a
+ * resolution carries no diagnostics.
+ *
+ * Nothing reads a build output: a project is the files its configuration names, so a
+ * package whose sources ship as TypeScript is analyzed as it stands.
+ */
+export function discoverProjects(
+  engine: Engine,
+  host: Host,
+  scope: Scope,
+  configurations: readonly BuildConfiguration[] = [],
+): Discovery {
+  const declared = configurations.filter(
+    (entry): entry is ProjectConfiguration => entry.shape === "project",
+  );
+  if (declared.length > 0) {
+    return declaredProjects(engine, host, scope.target.path, declared);
+  }
+  return derivedProjects(engine, host, scope);
 }

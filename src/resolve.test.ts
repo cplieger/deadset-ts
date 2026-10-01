@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { contractDocument } from "../__test-helpers__/fixtures.ts";
 import { ConfigError, type Inputs } from "./config.ts";
-import { resolve } from "./resolve.ts";
+import { resolve, resolveMatrix } from "./resolve.ts";
 
 function refuse(inputs: Inputs): ConfigError {
   try {
@@ -172,6 +173,42 @@ describe("a value the closed key list constrains", () => {
       setting: "analysis.configurations[0].arch",
       detail: "is required and names nothing",
     },
+    {
+      name: "a build configuration carrying the members of a platform and of a project",
+      text:
+        '{"target":{"kind":"application"},"analysis":{"configurations":' +
+        '[{"id":"tsconfig.json","os":"linux","arch":"amd64","project":"tsconfig.json"}]}}',
+      setting: "analysis.configurations[0]",
+      detail:
+        'carries "os", "arch" of a platform and "project" of a project, ' +
+        "and an entry is one shape or the other",
+    },
+    {
+      name: "a build configuration carrying the members of neither shape",
+      text:
+        '{"target":{"kind":"application"},"analysis":{"configurations":' +
+        '[{"id":"a","os":"linux","arch":"amd64"},{"id":"b"}]}}',
+      setting: "analysis.configurations[1]",
+      detail: 'names neither a platform\'s "os" and "arch" nor a project\'s "project"',
+    },
+    {
+      name: "a project naming a file outside the target root",
+      text:
+        '{"target":{"kind":"application"},"analysis":{"configurations":' +
+        '[{"id":"up","project":"../tsconfig.json"}]}}',
+      setting: "analysis.configurations[0].project",
+      detail:
+        '"../tsconfig.json" is not a path below the target root: segments joined by /, ' +
+        "none empty, . or .., and no backslash or line break",
+    },
+    {
+      name: "a project naming no file",
+      text:
+        '{"target":{"kind":"application"},"analysis":{"configurations":' +
+        '[{"id":"none","project":""}]}}',
+      setting: "analysis.configurations[0].project",
+      detail: "is required and names nothing",
+    },
   ])("is refused when it is $name", ({ text, setting, detail }) => {
     const got = refuse(repository(text));
 
@@ -224,5 +261,99 @@ describe("a flag", () => {
     });
 
     expect(got.message).toContain("names no file or flag");
+  });
+});
+
+/** The pattern the Contract's configuration schema gives a project entry's path. */
+function projectPattern(): string {
+  const analysis = (
+    contractDocument("config.schema.json")["properties"] as Record<string, unknown>
+  )["analysis"] as { properties: Record<string, { items: { oneOf: readonly unknown[] } }> };
+  const project = analysis.properties["configurations"]?.items.oneOf.find((shape) =>
+    (shape as { required: readonly string[] }).required.includes("project"),
+  ) as { properties: { project: { pattern: string } } } | undefined;
+  return project?.properties.project.pattern ?? "";
+}
+
+describe("the build matrix", () => {
+  it("reads each entry as the shape its members name, in the order the document lists them", () => {
+    const { config } = resolve(
+      repository(
+        '{"target":{"kind":"application"},"analysis":{"configurations":[' +
+          '{"id":"linux-amd64","os":"linux","arch":"amd64"},' +
+          '{"id":"app","project":"packages/app/tsconfig.json"}]}}',
+      ),
+    );
+
+    expect(config.analysis.configurations).toEqual([
+      { shape: "platform", id: "linux-amd64", os: "linux", arch: "amd64", tags: [] },
+      { shape: "project", id: "app", project: "packages/app/tsconfig.json" },
+    ]);
+  });
+
+  it.each([
+    "tsconfig.json",
+    "packages/app/tsconfig.json",
+    ".config/tsconfig.json",
+    "..hidden/tsconfig.json",
+    "a/..b/tsconfig.json",
+    "C:/tsconfig.json",
+    "./tsconfig.json",
+    "../tsconfig.json",
+    "/abs/tsconfig.json",
+    "a//tsconfig.json",
+    "packages/app/",
+    "a/./tsconfig.json",
+    "a/../tsconfig.json",
+    "a\\tsconfig.json",
+    "a\ntsconfig.json",
+    "tsconfig.json\r",
+    ".",
+    "..",
+    "a/..",
+  ])("admits the project path %j exactly when the Contract's pattern does", (project) => {
+    const admitted = new RegExp(projectPattern(), "u").test(project);
+    const document = JSON.stringify({
+      target: { kind: "application" },
+      analysis: { configurations: [{ id: "p", project }] },
+    });
+
+    let accepted = true;
+    try {
+      resolve(repository(document));
+    } catch (error: unknown) {
+      if (!(error instanceof ConfigError)) {
+        throw error;
+      }
+      accepted = false;
+    }
+
+    expect(accepted, `resolve over the project ${JSON.stringify(project)}`).toBe(admitted);
+  });
+});
+
+describe("the build matrix on its own", () => {
+  it("resolves from documents that name no target kind", () => {
+    expect(
+      resolveMatrix(
+        repository('{"analysis":{"configurations":[{"id":"app","project":"tsconfig.json"}]}}'),
+      ),
+    ).toEqual([{ shape: "project", id: "app", project: "tsconfig.json" }]);
+  });
+
+  it("is the empty default where no document names one", () => {
+    expect(resolveMatrix({})).toEqual([]);
+  });
+
+  it("refuses a document resolution refuses, naming the same key", () => {
+    let thrown: unknown;
+    try {
+      resolveMatrix(repository('{"analysis":{"configurations":[{"id":"x"}]}}'));
+    } catch (error: unknown) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(ConfigError);
+    expect(thrown instanceof ConfigError ? thrown.key : "").toBe("analysis.configurations[0]");
   });
 });
