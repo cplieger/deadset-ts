@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { contractDocument } from "../__test-helpers__/fixtures.ts";
+import {
+  contractDocument,
+  negativeDocument,
+  negatives,
+  type Negative,
+} from "../__test-helpers__/fixtures.ts";
 import { ConfigError, type Inputs } from "./config.ts";
 import { resolve, resolveMatrix } from "./resolve.ts";
 
@@ -83,6 +88,24 @@ describe("a severity key", () => {
       setting: "severity.DS1",
       names: "one issue-kind code or one two-digit family prefix",
     },
+    {
+      name: "a code no kind was ever assigned",
+      text: '{"target":{"kind":"library"},"severity":{"DS1999":"warn"}}',
+      setting: "severity.DS1999",
+      names: "the code names no live issue kind",
+    },
+    {
+      name: "a retired code",
+      text: '{"target":{"kind":"library"},"severity":{"DS1202":"warn"}}',
+      setting: "severity.DS1202",
+      names: "the code names no live issue kind",
+    },
+    {
+      name: "a family prefix whose range holds no live kind",
+      text: '{"target":{"kind":"library"},"severity":{"DS14":"allow"}}',
+      setting: "severity.DS14",
+      names: "the family this prefix names holds no live issue kind",
+    },
   ])("is refused when it names $name", ({ text, setting, names }) => {
     const got = refuse(repository(text));
 
@@ -105,6 +128,17 @@ describe("a severity key", () => {
     ]);
     expect(provenance.get("severity.DS1101")?.source).toBe("repository");
     expect(provenance.get("severity.DS1201")?.source).toBe("central");
+  });
+
+  it("accepts a live kind of another language and a family prefix holding a live kind", () => {
+    const { config } = resolve(
+      repository('{"target":{"kind":"library"},"severity":{"DS1605":"warn","DS18":"allow"}}'),
+    );
+
+    expect([...config.severity]).toEqual([
+      ["DS1605", "warn"],
+      ["DS18", "allow"],
+    ]);
   });
 
   it("carries one provenance entry for the object when it resolves empty", () => {
@@ -134,6 +168,69 @@ describe("a value the closed key list constrains", () => {
       text: '{"target":{"kind":"library"},"reporters":{"max_findings":-1}}',
       setting: "reporters.max_findings",
       detail: "-1 is below the minimum of 0",
+    },
+    {
+      name: "a count written with a fraction",
+      text: '{"target":{"kind":"library"},"reporters":{"max_findings":100.0}}',
+      setting: "reporters.max_findings",
+      detail: "100.0 is written with a fraction or an exponent, and an integer is digits alone",
+    },
+    {
+      name: "a count written with an exponent",
+      text: '{"target":{"kind":"library"},"reporters":{"max_findings":1e2}}',
+      setting: "reporters.max_findings",
+      detail: "1e2 is written with a fraction or an exponent, and an integer is digits alone",
+    },
+    {
+      name: "a provider list naming one analyzer name twice",
+      text:
+        '{"target":{"kind":"library"},"providers":{"analyzers":[' +
+        '{"name":"deadset-ts","languages":["ts"],"command":"deadset-ts"},' +
+        '{"name":"deadset-go","languages":["go"],"command":"deadset-go"},' +
+        '{"name":"deadset-ts","languages":["ts"],"command":"/opt/deadset-ts"}]}}',
+      setting: "providers.analyzers[2].name",
+      detail:
+        '"deadset-ts" is already the name of providers.analyzers[0], ' +
+        "and every entry's name keys the files a run writes for it",
+    },
+    {
+      name: "a provider claiming no language",
+      text:
+        '{"target":{"kind":"library"},"providers":{"analyzers":[' +
+        '{"name":"deadset-ts","languages":[],"command":"deadset-ts"}]}}',
+      setting: "providers.analyzers[0].languages",
+      detail: "holds 0 entries, want at least 1",
+    },
+    {
+      name: "a provider claiming a language outside the vocabulary",
+      text:
+        '{"target":{"kind":"library"},"providers":{"analyzers":[' +
+        '{"name":"deadset-py","languages":["py"],"command":"deadset-py"}]}}',
+      setting: "providers.analyzers[0].languages",
+      detail: '"py" is not one of "go", "ts"',
+    },
+    {
+      name: "a provider naming no command",
+      text:
+        '{"target":{"kind":"library"},"providers":{"analyzers":[' +
+        '{"name":"deadset-ts","languages":["ts"]}]}}',
+      setting: "providers.analyzers[0].command",
+      detail: "is required and names nothing",
+    },
+    {
+      name: "an acquirable provider leaving its digest out",
+      text:
+        '{"target":{"kind":"library"},"providers":{"analyzers":[' +
+        '{"name":"deadset-ts","languages":["ts"],"command":"deadset-ts",' +
+        '"source":"npm:@example/deadset-ts","version":"1.0.0"}]}}',
+      setting: "providers.analyzers[0].digest",
+      detail: "is required and names nothing",
+    },
+    {
+      name: "a provider entry that is null",
+      text: '{"target":{"kind":"library"},"providers":{"analyzers":[null]}}',
+      setting: "providers.analyzers[0]",
+      detail: "is not an object",
     },
     {
       name: "an array below its minimum length",
@@ -478,39 +575,69 @@ describe("a declaration the ts section names", () => {
     expect(got.key).toBe(setting);
     expect(got.message).toBe(`deadset.json: ${setting}: ${detail}`);
   });
+});
 
-  it.each([
-    {
-      file: "ts-injection-registration-unknown-member.json",
-      text: '{"contract_version":"3.1.0","target":{"kind":"application"},"ts":{"injection_registrations":[{"module":"@example/container","name":"Container.bind","argument":0}]}}',
-      kind: "unimplemented-key",
-      key: "ts.injection_registrations[0].argument",
-    },
-    {
-      file: "ts-lifecycle-contract-framework-name.json",
-      text: '{"contract_version":"3.1.0","target":{"kind":"application"},"ts":{"lifecycle_contracts":[{"framework":"elements","components":[{"global":"CustomElementRegistry.define"}],"members":["connectedCallback"]}]}}',
-      kind: "unimplemented-key",
-      key: "ts.lifecycle_contracts[0].framework",
-    },
-    {
-      file: "ts-lifecycle-contract-no-component-route.json",
-      text: '{"contract_version":"3.1.0","target":{"kind":"application"},"ts":{"lifecycle_contracts":[{"members":["connectedCallback"]}]}}',
-      kind: "malformed",
-      key: "ts.lifecycle_contracts[0]",
-    },
-    {
-      file: "ts-serializer-unknown-member.json",
-      text: '{"contract_version":"3.1.0","target":{"kind":"application"},"ts":{"serializers":[{"global":"structuredClone","returns":"string"}]}}',
-      kind: "unimplemented-key",
-      key: "ts.serializers[0].returns",
-    },
-  ])(
-    "refuses the Contract's refused document $file at the entry it names",
-    ({ text, kind, key }) => {
-      const got = refuse(repository(text));
+type Json = Record<string, unknown>;
 
-      expect(got.kind).toBe(kind);
-      expect(got.key).toBe(key);
+/** The member names a schema node declares, across every shape it admits. */
+function declaredMembers(node: Json): Set<string> {
+  const shapes = [node, ...((node["oneOf"] ?? []) as Json[]), ...((node["anyOf"] ?? []) as Json[])];
+  return new Set(shapes.flatMap((shape) => Object.keys((shape["properties"] ?? {}) as Json)));
+}
+
+/** The schema node one member name or array index leads to. */
+function childNode(node: Json, segment: string): Json {
+  if (/^[0-9]+$/u.test(segment)) {
+    return node["items"] as Json;
+  }
+  const shapes = [node, ...((node["oneOf"] ?? []) as Json[]), ...((node["anyOf"] ?? []) as Json[])];
+  const holder = shapes.find((shape) =>
+    Object.hasOwn((shape["properties"] ?? {}) as Json, segment),
+  );
+  return ((holder?.["properties"] ?? {}) as Json)[segment] as Json;
+}
+
+/**
+ * The refusal a refused configuration document carries, derived from the schema and
+ * the index row: the key the row's instance path spells, extended by the one member
+ * of that object no shape of the schema declares, which is then an unimplemented key.
+ */
+function refusalOf(row: Negative): { kind: string; key: string } {
+  const segments = row.instance_path.split("/").slice(1);
+  let node = contractDocument("config.schema.json");
+  let value: unknown = JSON.parse(negativeDocument(row.file));
+  let key = "";
+  for (const segment of segments) {
+    node = childNode(node, segment);
+    value = (value as Json)[segment];
+    key = /^[0-9]+$/u.test(segment)
+      ? `${key}[${segment}]`
+      : key === ""
+        ? segment
+        : `${key}.${segment}`;
+  }
+  const declared = declaredMembers(node);
+  const undeclared = Object.keys(value as Json).filter((name) => !declared.has(name));
+  if (undeclared.length === 1) {
+    return { kind: "unimplemented-key", key: `${key}.${String(undeclared[0])}` };
+  }
+  return { kind: "malformed", key };
+}
+
+describe("the Contract's refused configuration documents", () => {
+  it("holds a refused document for this suite to run", () => {
+    expect(negatives("contract/config.schema.json").map((row) => row.file)).toContain(
+      "ts-serializer-unknown-member.json",
+    );
+  });
+
+  it.each(negatives("contract/config.schema.json"))(
+    "refuses $file at the entry its index row names",
+    (row) => {
+      const want = refusalOf(row);
+      const got = refuse(repository(negativeDocument(row.file)));
+
+      expect({ kind: got.kind, key: got.key }).toEqual(want);
     },
   );
 });

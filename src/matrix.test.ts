@@ -111,14 +111,12 @@ describe("a run over two compiler configurations", () => {
     expect(components.map((component) => named(component.members))).toEqual([
       ["src/main.ts#appOnlyDead"],
       ["src/shared.ts#deadEverywhere"],
-      ["src/shared.ts#deadCaller"],
-      ["src/shared.ts#deadCallee"],
+      ["src/shared.ts#deadCaller", "src/shared.ts#deadCallee"],
     ]);
     expect(components.map((component) => component.id)).toEqual([
       "deadset-ts/c-0001",
       "deadset-ts/c-0002",
       "deadset-ts/c-0003",
-      "deadset-ts/c-0004",
     ]);
   });
 

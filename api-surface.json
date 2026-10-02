@@ -92,6 +92,7 @@
         "ObjectType",
         "Program",
         "Project",
+        "SignatureKind",
         "Snapshot",
         "Symbol",
         "SymbolFlags",

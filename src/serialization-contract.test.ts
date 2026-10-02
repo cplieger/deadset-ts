@@ -60,49 +60,73 @@ describe("serialization-contract", () => {
 
   it("retains the properties of a class whose values reach a serializer, and those its properties carry", () => {
     expect(serialized(swept, "Order", "Item", "Payload", "Frame")).toEqual([
-      "Order.id src/main.ts:28:16 passed to JSON.stringify",
-      "Order.items src/main.ts:28:16 passed to JSON.stringify",
-      "Item.sku src/main.ts:28:16 passed to JSON.stringify",
-      "Payload.body src/main.ts:30:28 passed to Schema.parse",
-      "Frame.bytes src/main.ts:31:8 passed to encode",
+      "Order.id src/main.ts:45:16 passed to JSON.stringify",
+      "Order.items src/main.ts:45:16 passed to JSON.stringify",
+      "Item.sku src/main.ts:45:16 passed to JSON.stringify",
+      "Payload.body src/main.ts:47:28 passed to Schema.parse",
+      "Frame.bytes src/main.ts:48:8 passed to encode",
     ]);
   });
 
   it("retains the conversion methods as well where the value leaves the analysis", () => {
     expect(serialized(swept, "Event")).toEqual([
-      "Event.kind src/main.ts:29:13 passed to console.log",
-      "Event.toString src/main.ts:29:13 passed to console.log",
-      "Event.toJSON src/main.ts:29:13 passed to console.log",
+      "Event.kind src/main.ts:46:13 passed to console.log",
+      "Event.toString src/main.ts:46:13 passed to console.log",
+      "Event.toJSON src/main.ts:46:13 passed to console.log",
     ]);
   });
 
   it("holds a function that hands its own unknown parameter on to what it hands it to", () => {
     expect(serialized(swept, "Message", "Relayed", "Traced")).toEqual([
-      "Message.text src/main.ts:32:6 passed to send",
-      "Relayed.text src/main.ts:33:7 passed to relay",
-      "Traced.step src/main.ts:34:7 passed to trace",
-      "Traced.toString src/main.ts:34:7 passed to trace",
+      "Message.text src/main.ts:49:6 passed to send",
+      "Relayed.text src/main.ts:50:7 passed to relay",
+      "Traced.step src/main.ts:51:7 passed to trace",
+      "Traced.toString src/main.ts:51:7 passed to trace",
     ]);
   });
 
   it("binds a function's arguments past its `this` parameter, which binds none", () => {
-    expect(serialized(swept, "Bound")).toEqual(["Bound.id src/main.ts:43:11 passed to sendBound"]);
+    expect(serialized(swept, "Bound")).toEqual(["Bound.id src/main.ts:60:11 passed to sendBound"]);
     expect(deadMembers(swept)).not.toContain("Bound.id");
   });
 
   it("binds every argument from a rest parameter's position on, past a `this` parameter", () => {
     expect(serialized(swept, "Leading", "Trailing")).toEqual([
-      "Leading.id src/main.ts:44:9 passed to sendAll",
-      "Trailing.id src/main.ts:44:24 passed to sendAll",
+      "Leading.id src/main.ts:61:9 passed to sendAll",
+      "Trailing.id src/main.ts:61:24 passed to sendAll",
     ]);
     expect(deadMembers(swept)).not.toContain("Leading.id");
   });
 
   it("binds a method's arguments past its `this` parameter, which binds none", () => {
     expect(serialized(swept, "Posted")).toEqual([
-      "Posted.id src/main.ts:45:20 passed to Courier.post",
+      "Posted.id src/main.ts:62:20 passed to Courier.post",
     ]);
     expect(deadMembers(swept)).not.toContain("Posted.id");
+  });
+
+  it("binds a function expression's arguments past its `this` parameter where a variable holds it", () => {
+    expect(serialized(swept, "VarBound")).toEqual([
+      "VarBound.id src/main.ts:69:9 passed to sendVar",
+    ]);
+    expect(deadMembers(swept)).not.toContain("VarBound.id");
+  });
+
+  it("reads a call through Function.prototype.call, apply or bind as a call of the function", () => {
+    expect(serialized(swept, "Called", "Applied", "Rebound", "Prebound")).toEqual([
+      "Called.id src/main.ts:63:27 passed to JSON.stringify",
+      "Applied.id src/main.ts:64:29 passed to JSON.stringify",
+      "Rebound.id src/main.ts:65:27 passed to JSON.stringify",
+      "Prebound.id src/main.ts:66:27 passed to JSON.stringify",
+    ]);
+  });
+
+  it("reads the arguments of a call through Function.prototype.call against the callee's own parameters", () => {
+    expect(serialized(swept, "Logged", "Dispatched")).toEqual([
+      "Logged.kind src/main.ts:67:27 passed to console.log",
+      "Logged.toString src/main.ts:67:27 passed to console.log",
+      "Dispatched.text src/main.ts:68:22 passed to send",
+    ]);
   });
 
   it("reads `this` in an instance member as a value of its class", () => {
@@ -163,8 +187,8 @@ describe("serialization-contract", () => {
     const unconfigured = sweepFixture(JSON.stringify({ target: { kind: "application" } }));
 
     expect(serialized(unconfigured, "Order", "Payload", "Frame")).toEqual([
-      "Order.id src/main.ts:28:16 passed to JSON.stringify",
-      "Order.items src/main.ts:28:16 passed to JSON.stringify",
+      "Order.id src/main.ts:45:16 passed to JSON.stringify",
+      "Order.items src/main.ts:45:16 passed to JSON.stringify",
     ]);
     expect(deadMembers(unconfigured)).toContain("Payload.body");
     expect(deadMembers(unconfigured)).toContain("Frame.bytes");

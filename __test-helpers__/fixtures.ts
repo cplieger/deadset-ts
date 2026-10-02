@@ -57,6 +57,35 @@ export function vectorFile(name: string, file: string): string | undefined {
   }
 }
 
+/** One row of the Contract's index of refused documents. */
+export interface Negative {
+  readonly file: string;
+  readonly schema: string;
+  readonly constraint: string;
+  readonly instance_path: string;
+  readonly violates: string;
+}
+
+/** The rows of the Contract's index of refused documents whose schema is `schema`. */
+export function negatives(schema: string): Negative[] {
+  const index = JSON.parse(readFixture("examples", "negatives", "index.json")) as {
+    negatives: Negative[];
+  };
+  return index.negatives.filter((row) => row.schema === schema);
+}
+
+/** The text of one refused document. */
+export function negativeDocument(file: string): string {
+  return readFixture("examples", "negatives", file);
+}
+
+/** The Contract's accepted scope documents, each by its file name, in ascending order. */
+export function scopeExamples(): { file: string; text: string }[] {
+  return readdirSync(fixture("examples", "scope"))
+    .sort()
+    .map((file) => ({ file, text: readFixture("examples", "scope", file) }));
+}
+
 /** Every file below one directory, as paths relative to it, in ascending order. */
 function filesUnder(dir: string): string[] {
   const found: string[] = [];

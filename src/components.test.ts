@@ -57,8 +57,7 @@ function goldenText(swept: RunSweep): string {
       (component) =>
         `${component.id}\tlines=${String(component.deletableLines)}\n` +
         `\troots\t${spelled(component.roots)}\n` +
-        `\tmembers\t${spelled(component.members)}\n` +
-        `\tfalls\t${spelled(component.falls)}\n`,
+        `\tmembers\t${spelled(component.members)}\n`,
     )
     .join("");
 }
@@ -102,9 +101,24 @@ describe("the dead components of one project", () => {
       "src/cycle.ts#second",
       "src/cycle.ts#third",
     ]);
-    expect(named(held?.roots ?? []), "no dead component outside the ring references one").toEqual(
+    expect(named(held?.roots ?? []), "no dead declaration outside the ring references one").toEqual(
       named(held?.members ?? []),
     );
+  });
+
+  it("names no member of a cycle a root when a dead declaration outside the cycle references one", () => {
+    const held = componentOf("src/catalog.test.ts#testDeadOnly");
+
+    expect(named(held?.roots ?? []), "the test referencing a live declaration as well").toEqual([
+      "src/catalog.test.ts#testMixed",
+    ]);
+    expect(named(held?.members ?? [])).toEqual([
+      "src/catalog.test.ts#testDeadOnly",
+      "src/catalog.test.ts#testMixed",
+      "src/catalog.test.ts#assertSum",
+      "src/catalog.ts#deadOne",
+      "src/catalog.ts#deadTwo",
+    ]);
   });
 
   it("puts a test of dead code in the component of the declarations it exercises", () => {
@@ -115,31 +129,41 @@ describe("the dead components of one project", () => {
     expect(admitted, "the test referencing only dead declarations, and not the other").toEqual([
       "src/catalog.test.ts#testDeadOnly",
     ]);
-    expect(named(componentOf("src/catalog.test.ts#testDeadOnly")?.members ?? [])).toEqual([
-      "src/catalog.test.ts#testDeadOnly",
-      "src/catalog.ts#deadOne",
-      "src/catalog.ts#deadTwo",
-    ]);
+    expect(componentOf("src/catalog.test.ts#testDeadOnly")).toBe(
+      componentOf("src/catalog.ts#deadTwo"),
+    );
   });
 
-  it("counts what only a root's component reaches, and not what two roots share", () => {
-    expect(named(componentOf("src/shared.ts#left")?.falls ?? [])).toEqual([
+  it("places what falls with a root in the root's component", () => {
+    const held = componentOf("src/shared.ts#onlyLeft");
+
+    expect(named(held?.roots ?? [])).toContain("src/shared.ts#left");
+    expect(
+      named(held?.roots ?? []),
+      "a declaration that falls with a root is never one",
+    ).not.toContain("src/shared.ts#onlyLeft");
+  });
+
+  it("joins two roots and what both reach into one component, rooted at both", () => {
+    const held = componentOf("src/shared.ts#sharedHelper");
+
+    expect(named(held?.members ?? [])).toEqual([
       "src/shared.ts#left",
+      "src/shared.ts#right",
+      "src/shared.ts#sharedHelper",
       "src/shared.ts#onlyLeft",
     ]);
-    expect(named(componentOf("src/shared.ts#right")?.falls ?? [])).toEqual(["src/shared.ts#right"]);
-    expect(
-      named(componentOf("src/shared.ts#sharedHelper")?.falls ?? []),
-      "the shared helper falls with neither, and is counted by its own component",
-    ).toEqual(["src/shared.ts#sharedHelper"]);
+    expect(named(held?.roots ?? [])).toEqual(["src/shared.ts#left", "src/shared.ts#right"]);
   });
 
-  it("orders each component before every component it reaches", () => {
-    const place = (name: string): number =>
-      COMPONENTS.sweep.components.findIndex((component) => named(component.members).includes(name));
+  it("gives every component a root and every dead declaration one component", () => {
+    const members = COMPONENTS.sweep.components.flatMap((component) => component.members);
 
-    expect(place("src/shared.ts#left")).toBeLessThan(place("src/shared.ts#onlyLeft"));
-    expect(place("src/shared.ts#right")).toBeLessThan(place("src/shared.ts#sharedHelper"));
+    expect(COMPONENTS.sweep.components.filter((component) => component.roots.length === 0)).toEqual(
+      [],
+    );
+    expect(new Set(members).size).toBe(members.length);
+    expect(members.length).toBe(COMPONENTS.sweep.candidates.length);
   });
 
   it("mints identifiers of the form the finding schema declares, prefixed with this analyzer", () => {
@@ -183,7 +207,7 @@ describe("the cascade modes", () => {
 describe("a chain of dead declarations far longer than any call stack", () => {
   const LINKS = 100_000;
 
-  it("is walked without growing the call stack, one component per link", () => {
+  it("is walked without growing the call stack, as one component rooted at its head", () => {
     const path = "src/chain.ts";
     const symbols: InventorySymbol[] = Array.from({ length: LINKS }, (_unused, index) => ({
       id: `${path}:${String(index + 1)}:1`,
@@ -210,10 +234,10 @@ describe("a chain of dead declarations far longer than any call stack", () => {
       { marked: [], mode: { production: true } },
     );
 
-    expect(result.components.length, "a chain has no cycle").toBe(LINKS);
+    expect(result.components.length, "every link falls with the head").toBe(1);
     expect(result.components[0]?.roots, "the head is where the deletion starts").toEqual([
       symbols[0]?.id,
     ]);
-    expect(result.components[0]?.falls.length, "and the whole chain falls with it").toBe(LINKS);
+    expect(result.components[0]?.members.length, "and the whole chain falls with it").toBe(LINKS);
   });
 });

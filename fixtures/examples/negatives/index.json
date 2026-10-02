@@ -1,0 +1,222 @@
+{
+  "description": "One row per document under examples/negatives/. Each document is a refused instance: it violates exactly one constraint of the schema the row names, and every other constraint of that schema holds, so a validator that reports a violation at a second instance location is reporting a defect in the document rather than in the constraint under test. file is the document's name in this directory; schema is the path of the schema the document is validated against, relative to the root of this repository; constraint is the JSON Schema keyword that refuses the document; instance_path is the JSON Pointer (RFC 6901) of the value the constraint refuses, which is the empty string when the value is the whole document; violates says in one sentence what the document does wrong. Every document in this directory has exactly one row here, and every row names a document that is present.",
+  "negatives": [
+    {
+      "file": "analyzer-conformance-absent.json",
+      "schema": "contract/report.schema.json",
+      "constraint": "required",
+      "instance_path": "/analyzer",
+      "violates": "the analyzer object omits conformance, so the report records no conformance pass"
+    },
+    {
+      "file": "component-id-unprefixed.json",
+      "schema": "contract/report.schema.json",
+      "constraint": "pattern",
+      "instance_path": "/findings/0/component/id",
+      "violates": "the component identifier omits the prefix that keeps two analyzers from colliding"
+    },
+    {
+      "file": "configuration-mixed-shape.json",
+      "schema": "contract/config.schema.json",
+      "constraint": "oneOf",
+      "instance_path": "/analysis/configurations/0",
+      "violates": "a declared configuration carries the members of both shapes, a platform and a project, and an entry is one shape or the other"
+    },
+    {
+      "file": "configurations-empty.json",
+      "schema": "contract/report.schema.json",
+      "constraint": "minItems",
+      "instance_path": "/configurations",
+      "violates": "the report names no configuration, so no finding could name one it holds in"
+    },
+    {
+      "file": "edge-evaluation-dead-without-finding.json",
+      "schema": "contract/report.schema.json",
+      "constraint": "required",
+      "instance_path": "/edge_evaluations/0",
+      "violates": "the evaluation reports the dead state and carries no pending finding"
+    },
+    {
+      "file": "edge-evaluation-live-with-finding.json",
+      "schema": "contract/report.schema.json",
+      "constraint": "not",
+      "instance_path": "/edge_evaluations/0",
+      "violates": "the evaluation reports the live state and still carries a pending finding"
+    },
+    {
+      "file": "finding-details-missing-for-code.json",
+      "schema": "contract/report.schema.json",
+      "constraint": "required",
+      "instance_path": "/findings/0/details",
+      "violates": "DS1101 carries an empty details and states no narrower visibility"
+    },
+    {
+      "file": "finding-details-under-wrong-code.json",
+      "schema": "contract/report.schema.json",
+      "constraint": "not",
+      "instance_path": "/findings/0/details",
+      "violates": "DS1001 carries narrower_visibility, which only the visibility-narrowing codes carry"
+    },
+    {
+      "file": "finding-retained-by-populated.json",
+      "schema": "contract/report.schema.json",
+      "constraint": "maxItems",
+      "instance_path": "/findings/0/retained_by",
+      "violates": "a reported finding names an exemption class, which only a retained-symbol listing does"
+    },
+    {
+      "file": "finding-symbol-kind-outside-vocabulary.json",
+      "schema": "contract/finding.schema.json",
+      "constraint": "enum",
+      "instance_path": "/symbol/kind",
+      "violates": "the symbol kind is a word the closed vocabulary does not carry"
+    },
+    {
+      "file": "liveness-relation-on-a-configured-root.json",
+      "schema": "contract/finding.schema.json",
+      "constraint": "not",
+      "instance_path": "",
+      "violates": "a finding about a configured root carries a liveness relation, which only a finding about a declaration carries"
+    },
+    {
+      "file": "liveness-relation-on-a-stale-edge.json",
+      "schema": "contract/finding.schema.json",
+      "constraint": "not",
+      "instance_path": "",
+      "violates": "a finding about a declared cross-language edge carries a liveness relation, which only a finding about a declaration carries"
+    },
+    {
+      "file": "liveness-relation-on-an-unused-parameter.json",
+      "schema": "contract/finding.schema.json",
+      "constraint": "not",
+      "instance_path": "",
+      "violates": "a finding about a parameter carries a liveness relation, which only a finding about a declaration carries"
+    },
+    {
+      "file": "message-ends-with-full-stop.json",
+      "schema": "contract/report.schema.json",
+      "constraint": "pattern",
+      "instance_path": "/findings/0/message",
+      "violates": "the message ends with a full stop, so a consumer cannot append a clause to it"
+    },
+    {
+      "file": "position-column-zero.json",
+      "schema": "contract/report.schema.json",
+      "constraint": "minimum",
+      "instance_path": "/findings/0/position/column",
+      "violates": "a position column is zero, and a column is counted from one"
+    },
+    {
+      "file": "report-configuration-mixed-shape.json",
+      "schema": "contract/report.schema.json",
+      "constraint": "oneOf",
+      "instance_path": "/configurations/0",
+      "violates": "a configuration the analysis ran carries the members of both shapes, a platform and a project, and an entry is one shape or the other"
+    },
+    {
+      "file": "report-unknown-member.json",
+      "schema": "contract/report.schema.json",
+      "constraint": "additionalProperties",
+      "instance_path": "",
+      "violates": "the envelope carries a member the schema does not declare"
+    },
+    {
+      "file": "scope-consumer-role-target.json",
+      "schema": "contract/scope.schema.json",
+      "constraint": "enum",
+      "instance_path": "/consumers/0/role",
+      "violates": "a module the document places among the consumers declares the target's role, so the document contradicts itself about which module the analysis reports on"
+    },
+    {
+      "file": "scope-key-case-variant.json",
+      "schema": "contract/scope.schema.json",
+      "constraint": "additionalProperties",
+      "instance_path": "",
+      "violates": "the scope spells a declared key in another case, and the closed key list compares keys as bytes, so the spelling names no declared key"
+    },
+    {
+      "file": "scope-target-absent.json",
+      "schema": "contract/scope.schema.json",
+      "constraint": "required",
+      "instance_path": "",
+      "violates": "the scope names consumers and no target, so the analysis has nothing to report on"
+    },
+    {
+      "file": "scope-target-id-empty.json",
+      "schema": "contract/scope.schema.json",
+      "constraint": "minLength",
+      "instance_path": "/target/id",
+      "violates": "the target's name is empty, which names no module; a document that leaves the name to the load omits the member"
+    },
+    {
+      "file": "scope-target-id-null.json",
+      "schema": "contract/scope.schema.json",
+      "constraint": "type",
+      "instance_path": "/target/id",
+      "violates": "the target's name is null rather than a string; a document that leaves the name to the load omits the member"
+    },
+    {
+      "file": "scope-target-path-empty.json",
+      "schema": "contract/scope.schema.json",
+      "constraint": "minLength",
+      "instance_path": "/target/path",
+      "violates": "the target's path is empty, so it names no directory to load"
+    },
+    {
+      "file": "scope-unknown-member.json",
+      "schema": "contract/scope.schema.json",
+      "constraint": "additionalProperties",
+      "instance_path": "",
+      "violates": "the scope carries a member the closed key list does not declare"
+    },
+    {
+      "file": "scope-workspace-not-a-string.json",
+      "schema": "contract/scope.schema.json",
+      "constraint": "type",
+      "instance_path": "/workspace",
+      "violates": "the workspace member is a Boolean rather than the path of a workspace file"
+    },
+    {
+      "file": "stale-suppression-code-not-ds1703.json",
+      "schema": "contract/report.schema.json",
+      "constraint": "const",
+      "instance_path": "/stale_suppressions/0/code",
+      "violates": "a stale-suppression record names another code, and the kind is fixed"
+    },
+    {
+      "file": "target-root-absolute.json",
+      "schema": "contract/report.schema.json",
+      "constraint": "pattern",
+      "instance_path": "/target/root",
+      "violates": "the target root is an absolute path, which two machines would not write alike"
+    },
+    {
+      "file": "ts-injection-registration-unknown-member.json",
+      "schema": "contract/config.schema.json",
+      "constraint": "oneOf",
+      "instance_path": "/ts/injection_registrations/0",
+      "violates": "a registration entry carries a member none of the three declaration shapes declares, so it names no declaration"
+    },
+    {
+      "file": "ts-lifecycle-contract-framework-name.json",
+      "schema": "contract/config.schema.json",
+      "constraint": "additionalProperties",
+      "instance_path": "/ts/lifecycle_contracts/0",
+      "violates": "a lifecycle contract names its framework by a name, and a contract states its framework by the declarations that make a class a component"
+    },
+    {
+      "file": "ts-lifecycle-contract-no-component-route.json",
+      "schema": "contract/config.schema.json",
+      "constraint": "anyOf",
+      "instance_path": "/ts/lifecycle_contracts/0",
+      "violates": "a lifecycle contract names no declaration and no base class that makes a class a component, so it retains nothing"
+    },
+    {
+      "file": "ts-serializer-unknown-member.json",
+      "schema": "contract/config.schema.json",
+      "constraint": "oneOf",
+      "instance_path": "/ts/serializers/0",
+      "violates": "a serializer entry carries a member none of the three declaration shapes declares, so it names no declaration"
+    }
+  ]
+}
