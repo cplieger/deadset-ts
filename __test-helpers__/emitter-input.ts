@@ -2,6 +2,7 @@ import { nodeHost } from "../bin/node-host.ts";
 import { runEmitterInput, type RunSweep } from "../src/analysis.ts";
 import type { Config } from "../src/config.ts";
 import type { EmitterInput } from "../src/findings/emitter.ts";
+import { NO_SELF_CHECK } from "../src/findings/self-check.ts";
 import { scopeForDir } from "../src/scope.ts";
 import { openEngine, type Engine } from "../src/session.ts";
 import type { Mode } from "../src/sweep.ts";
@@ -45,5 +46,6 @@ export function sweepOnly(config: Config, swept: RunSweep): EmitterInput {
     implementations: { classes: new Map(), bodies: new Map() },
     files: { tree: [], heldByInclusion: new Set() },
     boundary: { consumers: { declared: [], loaded: [] }, encapsulated: false, edges: [] },
+    selfCheck: NO_SELF_CHECK,
   };
 }

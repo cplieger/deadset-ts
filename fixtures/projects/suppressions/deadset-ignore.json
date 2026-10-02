@@ -1,0 +1,28 @@
+{
+  "description": "Adjudications for the suppression fixture.",
+  "ignore": [
+    {
+      "code": "DS1002",
+      "symbol": "ts://@example/suppressions/src/lib.ts#entryNamed",
+      "path": "src/lib.ts",
+      "reason": "Reached through the dispatcher's name table."
+    },
+    {
+      "code": "DS1002",
+      "symbol": "ts://@example/suppressions/src/lib.ts#removedLongAgo",
+      "path": "src/lib.ts",
+      "reason": "The declaration this named has been deleted."
+    },
+    {
+      "code": "DS1002",
+      "symbol": "ts://@example/suppressions/src/lib.ts#inBlock",
+      "reason": "Names no path, so it is scoped to nothing."
+    },
+    {
+      "code": "DS1002",
+      "symbol": "ts://@example/suppressions/src/lib.ts#entryNamed",
+      "path": "src/lib.ts",
+      "reason": "The same adjudication written a second time."
+    }
+  ]
+}

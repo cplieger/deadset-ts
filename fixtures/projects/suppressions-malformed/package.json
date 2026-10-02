@@ -1,0 +1,7 @@
+{
+  "name": "@example/suppressions-malformed",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./src/main.ts"
+}

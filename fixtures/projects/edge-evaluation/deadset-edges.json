@@ -1,0 +1,21 @@
+{
+  "description": "Each edge pairs a declaration of the package with the code in another language that uses it.",
+  "edges": [
+    {
+      "id": "wire/server-event",
+      "because": "generated",
+      "provides": "go://example.com/app/wire#ServerEvent",
+      "used_by": "ts://@example/edge-evaluation/src/wire.ts#ServerEvent"
+    },
+    {
+      "id": "wire/live-helper",
+      "provides": "ts://@example/edge-evaluation/src/wire.ts#liveHelper",
+      "used_by": "go://example.com/app/wire#Caller"
+    },
+    {
+      "id": "wire/renamed",
+      "provides": "ts://@example/edge-evaluation/src/wire.ts#RenamedAway",
+      "used_by": "go://example.com/app/wire#Renamed"
+    }
+  ]
+}

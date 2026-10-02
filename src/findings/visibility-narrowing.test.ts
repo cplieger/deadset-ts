@@ -8,7 +8,8 @@ import type { InventorySymbol } from "../inventory.ts";
 import { matrixOf, sweepMatrix } from "../matrix.ts";
 import type { Reference } from "../references.ts";
 import { resolve } from "../resolve.ts";
-import type { Boundary, EdgeSide, PendingFinding } from "./boundary.ts";
+import { evaluateEdges, type EdgeEvaluation } from "../edges.ts";
+import type { Boundary, EdgeSide } from "./boundary.ts";
 import type { EmitterInput } from "./emitter.ts";
 import { EMITTERS, findingsOf } from "./emitters.ts";
 import { narrowings } from "./visibility-narrowing.ts";
@@ -68,9 +69,14 @@ function inputOf(root: string, given: Case = {}): EmitterInput {
   };
 }
 
+/** The family's findings over one input, each side of a declared edge evaluated over them. */
+function evaluated(input: EmitterInput): ReturnType<typeof evaluateEdges> {
+  return evaluateEdges(narrowings(input), input.boundary.edges, input.swept.matrix.union.symbols);
+}
+
 /** The findings the family reports over one input, those a declared edge holds left out. */
 function emitted(input: EmitterInput): readonly Finding[] {
-  return narrowings(input).findings;
+  return evaluated(input).findings;
 }
 
 /** The table's visibility-narrowing emitter. */
@@ -93,10 +99,12 @@ function named(findings: readonly Finding[]): string[] {
   return findings.map((finding) => `${finding.code} ${finding.symbol.name}`);
 }
 
-/** Each pending finding as the edge side holding it, its code and its subject. */
-function held(pending: readonly PendingFinding[]): string[] {
-  return pending.map(
-    (one) => `${one.edge} ${one.side} ${one.finding.code} ${one.finding.symbol.name}`,
+/** Each evaluation holding a finding, as the edge side, its code and its subject. */
+function held(evaluations: readonly EdgeEvaluation[]): string[] {
+  return evaluations.flatMap((one) =>
+    one.finding === undefined
+      ? []
+      : [`${one.edge} ${one.side} ${one.finding.code} ${one.finding.symbol.name}`],
   );
 }
 
@@ -269,9 +277,9 @@ describe("the references a narrowing reads", () => {
 
 describe("a declared cross-language edge", () => {
   it("holds a finding about the symbol one side names pending in that side, in edge order, and reports it nowhere else", () => {
-    const found = narrowings(inputOf(NARROWING));
+    const found = evaluated(inputOf(NARROWING));
 
-    expect(held(found.pending)).toEqual([
+    expect(held(found.evaluations)).toEqual([
       "wire/provided-to-generated provides DS1103 wiredUnused",
       "wire/used-by-generated used_by DS1104 wired",
     ]);
@@ -307,13 +315,16 @@ describe("the table's visibility-narrowing emitter", () => {
   it("reports what the family reports over a run no declared edge holds a finding of", () => {
     const input = inputOf(NARROWING, { edges: false });
 
-    expect(tableEmitter()(input)).toEqual(narrowings(input).findings);
+    expect(tableEmitter()(input)).toEqual(narrowings(input));
   });
 
-  it("refuses a run in which a declared edge holds a finding, which no edge evaluation publishes", () => {
-    expect(() => tableEmitter()(inputOf(NARROWING))).toThrow(
-      "2 finding(s) a declared edge holds pending, and no edge evaluation is published",
-    );
+  it("reports a finding a declared edge names, which the edge's evaluation then holds", () => {
+    const input = inputOf(NARROWING);
+
+    expect(named(tableEmitter()(input)).filter((entry) => / wired/u.test(entry))).toEqual([
+      "DS1104 wired",
+      "DS1103 wiredUnused",
+    ]);
   });
 });
 

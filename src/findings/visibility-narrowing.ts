@@ -3,7 +3,6 @@ import { OUTSIDE, type Graph } from "../graph.ts";
 import type { InventorySymbol, SymbolKind } from "../inventory.ts";
 import type { MatrixCandidate } from "../matrix.ts";
 import type { RootKind } from "../roots.ts";
-import type { PendingFinding } from "./boundary.ts";
 import type { Emitter, EmitterInput } from "./emitter.ts";
 import { writeOnlyDeclarations } from "./reads-and-writes.ts";
 
@@ -32,13 +31,6 @@ const WORDS: Partial<Readonly<Record<SymbolKind, string>>> = {
   variable: "variable",
   "export-alias": "re-export",
 };
-
-/** What the family found: the findings it reports, and those a declared edge holds pending. */
-export interface Narrowings {
-  readonly findings: readonly Finding[];
-  /** Ordered by edge, then by side. */
-  readonly pending: readonly PendingFinding[];
-}
 
 /** Per declaration of the run, the facts both rules read. */
 interface Facts {
@@ -236,26 +228,15 @@ function unreachable(
   );
 }
 
-/** Two strings ordered bytewise. */
-function compare(a: string, b: string): number {
-  if (a === b) {
-    return 0;
-  }
-  return a < b ? -1 : 1;
-}
-
 /**
- * The visibility-narrowing family over one run: `DS1101`, `DS1103` and `DS1104`.
- *
- * A finding about a symbol a declared cross-language edge names is pending instead of
- * reported, once per side naming it: the edge counts as a reference from outside the
- * file and the package, and whether it is a use is decided on the side in the other
- * language.
+ * The visibility-narrowing family over one run: `DS1101`, `DS1103` and `DS1104`. A finding
+ * about a symbol a declared cross-language edge names is reported here like any other, and
+ * the edge's evaluation then holds it pending, because the edge stands for a reference from
+ * outside the file and the package whose use is decided in the other language.
  */
-export function narrowings(input: EmitterInput): Narrowings {
-  const { boundary } = input;
+export function narrowings(input: EmitterInput): readonly Finding[] {
   const facts = factsOf(input.swept.matrix.union);
-  const { declared, loaded } = boundary.consumers;
+  const { declared, loaded } = input.boundary.consumers;
   const closed = input.config.consumersComplete && declared.every((id) => loaded.includes(id));
   const world = { closed, writeOnly: writeOnlyDeclarations(input) };
   const candidates = new Map(
@@ -263,27 +244,17 @@ export function narrowings(input: EmitterInput): Narrowings {
   );
 
   const findings: Finding[] = [];
-  const pending: PendingFinding[] = [];
   facts.graph.symbols.forEach((symbol, at) => {
     const candidate = candidates.get(symbol.id);
     const found =
       candidate === undefined
         ? narrowing(facts, at, symbol, world)
         : unreachable(facts, at, symbol, candidate, input);
-    if (found === undefined) {
-      return;
-    }
-    const named = boundary.edges.filter((side) => side.symbol === symbol.ref);
-    if (named.length === 0) {
+    if (found !== undefined) {
       findings.push(found);
-      return;
-    }
-    for (const side of named) {
-      pending.push({ ...side, finding: found });
     }
   });
-  pending.sort((a, b) => compare(a.edge, b.edge) || compare(a.side, b.side));
-  return { findings, pending };
+  return findings;
 }
 
 /**
@@ -303,18 +274,5 @@ export function unreachableExports(input: EmitterInput): ReadonlySet<string> {
   return found;
 }
 
-/**
- * The findings of the visibility-narrowing family, `DS1100` to `DS1199`. A finding a
- * declared edge holds pending belongs in that edge's evaluation, which this analyzer
- * does not publish yet, so a run that holds one is refused rather than reported
- * without it.
- */
-export const visibilityNarrowing: Emitter = (input) => {
-  const { findings, pending } = narrowings(input);
-  if (pending.length > 0) {
-    throw new Error(
-      `${String(pending.length)} finding(s) a declared edge holds pending, and no edge evaluation is published`,
-    );
-  }
-  return findings;
-};
+/** The findings of the visibility-narrowing family, `DS1100` to `DS1199`. */
+export const visibilityNarrowing: Emitter = narrowings;

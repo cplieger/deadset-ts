@@ -11,6 +11,7 @@ import type { CompletedFinding, Finding, FindingComponent } from "../finding.ts"
 import { OUTSIDE } from "../graph.ts";
 import { KINDS } from "../kinds.ts";
 import { FAMILY_KEY_LENGTH } from "../resolve.ts";
+import type { Dials } from "../suppress.ts";
 import type { EmitterInput } from "./emitter.ts";
 
 /** The classes ranked by the claim each makes, the strongest highest. */
@@ -141,23 +142,56 @@ export function completed(
   });
 }
 
-/**
- * The findings no dial withholds. A finding at `allow` or below the minimum confidence
- * is withheld, and so is every finding of the component of a root the dials withhold,
- * because a symbol that falls with a root is dead only through it and its deletion
- * does not compile while the root stays. A withheld finding that is no root withholds
- * itself alone.
- */
-export function reportable(
-  findings: readonly CompletedFinding[],
+/** Whether the dials withhold a finding by its own severity or confidence. */
+function dialed(
+  finding: Pick<CompletedFinding, "severity" | "confidence">,
   minConfidence: Confidence,
-): readonly CompletedFinding[] {
-  const dialed = (finding: CompletedFinding): boolean =>
-    finding.severity === "allow" || RANK[finding.confidence] < RANK[minConfidence];
+): boolean {
+  return finding.severity === "allow" || RANK[finding.confidence] < RANK[minConfidence];
+}
+
+/**
+ * The configuration's dials over one run's completed findings. A finding at `allow` or
+ * below the minimum confidence is withheld, and so is every finding of the component of a
+ * root the dials withhold, because a symbol that falls with a root is dead only through it
+ * and its deletion does not compile while the root stays. A withheld finding that is no
+ * root withholds itself alone. A code is withheld from a declaration when the finding it
+ * would report there, completed, is withheld by its own severity or confidence.
+ */
+export function dialsOf(
+  input: EmitterInput,
+  findings: readonly CompletedFinding[],
+): Dials<CompletedFinding> {
+  const minConfidence = input.config.analysis.minConfidence;
+  const classOf = reachabilityClasses(input.swept);
   const components = new Set(
     findings
-      .filter((finding) => finding.component.root && dialed(finding))
+      .filter((finding) => finding.component.root && dialed(finding, minConfidence))
       .map((finding) => finding.component.id),
   );
-  return findings.filter((finding) => !dialed(finding) && !components.has(finding.component.id));
+  return {
+    withholdsCode: (code, id) => {
+      const row = KINDS.get(code);
+      return (
+        row !== undefined &&
+        dialed(
+          {
+            severity: severityOf(input.config, code, row.defaultSeverity),
+            confidence: capped(classOf(id), row.maxClass),
+          },
+          minConfidence,
+        )
+      );
+    },
+    withholds: (finding) => dialed(finding, minConfidence) || components.has(finding.component.id),
+  };
+}
+
+/** The findings of one run's completed findings that no dial withholds, in the order given. */
+export function reportable(
+  input: EmitterInput,
+  findings: readonly CompletedFinding[],
+): readonly CompletedFinding[] {
+  const dials = dialsOf(input, findings);
+  return findings.filter((finding) => !dials.withholds(finding));
 }

@@ -6,6 +6,7 @@ import type { Finding } from "../finding.ts";
 import type { Implementations } from "../implementations.ts";
 import type { Stores } from "../stores.ts";
 import type { Boundary } from "./boundary.ts";
+import type { SelfCheckFacts } from "./self-check.ts";
 
 /**
  * What every emitter reads: the configuration the run resolved, the run's sweep, and
@@ -27,6 +28,8 @@ export interface EmitterInput {
   readonly files: FileFacts;
   /** What can reach the target from outside it: consumers, declared edges, and `exports`. */
   readonly boundary: Boundary;
+  /** The run's suppression outcomes and configured roots, which the self-check family reports. */
+  readonly selfCheck: SelfCheckFacts;
 }
 
 /**
