@@ -7,11 +7,15 @@ import { scopeForDir } from "../src/scope.ts";
 import { openEngine, type Engine } from "../src/session.ts";
 import type { Mode } from "../src/sweep.ts";
 
-/** How one target is swept: by which client, in which mode, production by default, and under which marks. */
+/**
+ * How one target is swept: by which client, in which mode, production by default, under
+ * which marks, and beside which consumer directories, none by default.
+ */
 export interface SweptBy {
   readonly engine?: Engine;
   readonly mode?: Mode;
   readonly marked?: readonly string[];
+  readonly consumers?: readonly string[];
 }
 
 /** What every emitter reads of one target, swept under one configuration. */
@@ -20,7 +24,10 @@ export function emitterInputOf(target: string, config: Config, by: SweptBy = {})
   return runEmitterInput(
     by.engine ?? openEngine({ collectTiming: false }),
     host,
-    scopeForDir(host, target),
+    {
+      ...scopeForDir(host, target),
+      consumers: (by.consumers ?? []).map((path) => ({ id: "", path })),
+    },
     config,
     { marked: by.marked ?? [], mode: by.mode ?? { production: true } },
   );

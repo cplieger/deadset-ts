@@ -5,7 +5,7 @@ import { ConfigError } from "../config.ts";
 import type { CompletedFinding } from "../finding.ts";
 import { OUTSIDE, swept as judged } from "../graph.ts";
 import type { InventorySymbol } from "../inventory.ts";
-import type { Configured } from "../matrix.ts";
+import { referenceKey, type Configured } from "../matrix.ts";
 import { positionKey } from "../position.ts";
 import type { Reference } from "../references.ts";
 import { resolve } from "../resolve.ts";
@@ -108,9 +108,7 @@ function referencesOf(configured: readonly Configured[]): readonly Reference[] {
   const seen = new Set<string>();
   const held: Reference[] = [];
   for (const reference of configured.flatMap((one) => one.references)) {
-    const key = [reference.from, reference.to, positionKey(reference.position), reference.use].join(
-      "\u0000",
-    );
+    const key = referenceKey(reference);
     if (!seen.has(key)) {
       seen.add(key);
       held.push(reference);
@@ -142,9 +140,15 @@ type Hop =
   | { readonly k: "reference"; readonly reference: Reference }
   | { readonly k: "export"; readonly reference: Reference; readonly to: string };
 
+/** Where a path starts: a root of the run, or a reference a loaded consumer makes. */
+type Origin =
+  | { readonly k: "root"; readonly root: Root }
+  | { readonly k: "consumer"; readonly consumer: string };
+
 /**
- * The shortest path from a root to one declaration, walked breadth first from every root at
- * once in the order the run names them, following the references the sweep follows: a
+ * The shortest path from a root or a loaded consumer to one declaration, walked breadth first
+ * from every root at once in the order the run names them, a consumer's reference being the
+ * first hop of a path of its own, and following the references the sweep follows: a
  * reference that reads a module reaches what the module exports, and an evaluation or a root
  * reaches the module alone. Under `production` no reference a test file made is followed,
  * which is the set the report's sweep counts.
@@ -153,11 +157,17 @@ function shortestPath(
   analysis: RunAnalysis,
   to: string,
   production: boolean,
-): { readonly root: Root; readonly path: readonly Hop[] } | undefined {
+): { readonly origin: Origin; readonly path: readonly Hop[] } | undefined {
   const graph = analysis.swept.matrix.union;
   const out = new Map<string, Reference[]>();
+  const consumed: (Reference & { readonly consumer: string })[] = [];
   for (const reference of referencesOf(analysis.configured)) {
     if (production && reference.test) {
+      continue;
+    }
+    const { consumer } = reference;
+    if (consumer !== undefined) {
+      consumed.push({ ...reference, consumer });
       continue;
     }
     const held = out.get(reference.from);
@@ -171,7 +181,7 @@ function shortestPath(
     readonly at: string;
     readonly hop: Hop | undefined;
     readonly previous: number;
-    readonly root: Root;
+    readonly origin: Origin;
   }
   const steps: Step[] = [];
   const seen = new Set<string>();
@@ -182,10 +192,32 @@ function shortestPath(
       steps.push(step);
     }
   };
+  const follow = (reference: Reference, previous: number, origin: Origin): void => {
+    enter({ at: reference.to, hop: { k: "reference", reference }, previous, origin });
+    const target = graph.at(reference.to);
+    if (reference.use === "evaluation" || target === OUTSIDE || expanded.has(reference.to)) {
+      return;
+    }
+    expanded.add(reference.to);
+    for (const exported of graph.exportsOf[target] ?? []) {
+      const id = graph.symbols[exported]?.id;
+      if (id !== undefined) {
+        enter({ at: id, hop: { k: "export", reference, to: id }, previous, origin });
+      }
+    }
+  };
   for (const root of rootsOf(analysis.configured)) {
-    enter({ at: root.id, hop: undefined, previous: -1, root });
+    enter({ at: root.id, hop: undefined, previous: -1, origin: { k: "root", root } });
   }
-  for (let head = 0; head < steps.length; head += 1) {
+  // A consumer's reference is one hop long, so it joins the walk where the roots' first
+  // hops do.
+  const firstHops = steps.length;
+  for (let head = 0; ; head += 1) {
+    if (head === firstHops) {
+      for (const reference of consumed) {
+        follow(reference, -1, { k: "consumer", consumer: reference.consumer });
+      }
+    }
     const step = steps[head];
     if (step === undefined) {
       break;
@@ -195,34 +227,18 @@ function shortestPath(
       for (let at: Step | undefined = step; at?.hop !== undefined; at = steps[at.previous]) {
         path.unshift(at.hop);
       }
-      return { root: step.root, path };
+      return { origin: step.origin, path };
     }
     for (const reference of out.get(step.at) ?? []) {
-      enter({
-        at: reference.to,
-        hop: { k: "reference", reference },
-        previous: head,
-        root: step.root,
-      });
-      const target = graph.at(reference.to);
-      if (reference.use === "evaluation" || target === OUTSIDE || expanded.has(reference.to)) {
-        continue;
-      }
-      expanded.add(reference.to);
-      for (const exported of graph.exportsOf[target] ?? []) {
-        const id = graph.symbols[exported]?.id;
-        if (id !== undefined) {
-          enter({
-            at: id,
-            hop: { k: "export", reference, to: id },
-            previous: head,
-            root: step.root,
-          });
-        }
-      }
+      follow(reference, head, step.origin);
     }
   }
   return undefined;
+}
+
+/** What made a reference: a declaration of the target, or a loaded consumer. */
+function madeBy(reference: Reference): string {
+  return reference.consumer === undefined ? reference.from : `consumer ${reference.consumer}`;
 }
 
 function referenceLine(reference: Reference, tail: string): string {
@@ -244,19 +260,20 @@ function liveness(analysis: RunAnalysis, subject: InventorySymbol, cascade: Casc
   const found =
     shortestPath(analysis, subject.id, true) ?? shortestPath(analysis, subject.id, false);
   if (found !== undefined && found.path.length > 0) {
-    text += `  reached from: root ${found.root.kind} ${found.root.id}\n`;
+    const { origin } = found;
+    text += `  reached from: ${origin.k === "root" ? `root ${origin.root.kind} ${origin.root.id}` : `consumer ${origin.consumer}`}\n`;
     for (const hop of found.path) {
-      text += referenceLine(hop.reference, `${hop.reference.from} -> ${hop.reference.to}`);
+      text += referenceLine(hop.reference, `${madeBy(hop.reference)} -> ${hop.reference.to}`);
       if (hop.k === "export") {
         text += `  export: ${hop.reference.to} -> ${hop.to}\n`;
       }
     }
   } else if (found === undefined) {
     const references = referencesOf(analysis.configured).filter((one) => one.to === subject.id);
-    text += "  unreachable: no path of references reaches it from a root\n";
+    text += "  unreachable: no path of references reaches it from a root or a loaded consumer\n";
     text += `  references: ${String(references.length)}\n`;
     for (const reference of references) {
-      text += referenceLine(reference, `from ${reference.from}`);
+      text += referenceLine(reference, `from ${madeBy(reference)}`);
     }
   }
   if (candidate !== undefined) {
@@ -337,9 +354,9 @@ function explanation(analysis: RunAnalysis, subject: InventorySymbol, cascade: C
  * Explains one symbol from the analysis the report is built from, so an explanation cannot
  * disagree with a finding: why a reported symbol is reported, which exemption classes held a
  * retained one back, and for any other declaration the relations that hold it live and the
- * shortest path of references from a root, or the references it has where no path reaches it.
- * A request naming no one declaration exits with the usage code and names what partially
- * matches it.
+ * shortest path of references from a root or a loaded consumer, or the references it has where
+ * no path reaches it. A request naming no one declaration exits with the usage code and names
+ * what partially matches it.
  */
 export const explainVerb: Verb = ({ out, err, host, inputs, scope, openClient, option }) => {
   const named = namedSymbol(option);

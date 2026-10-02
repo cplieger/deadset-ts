@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { nodeHost } from "../../bin/node-host.ts";
 import { fixture } from "../../__test-helpers__/fixtures.ts";
-import { writeProject } from "../../__test-helpers__/projects.ts";
+import { TSCONFIG, writeProject } from "../../__test-helpers__/projects.ts";
 import { run, type Writer } from "../run.ts";
 
 /** The bound on one case, each of which loads a whole target. */
@@ -47,6 +47,42 @@ function withheld(): string {
 }
 
 const CATALOG = fixture("projects", "unused-declarations");
+
+/**
+ * Explains one symbol of a library at `target/`, run from the directory holding it, with
+ * the consumers the scope names beside it; `consumer/` carries its compiler configuration
+ * and manifest.
+ */
+function explainWithConsumers(
+  files: Readonly<Record<string, string>>,
+  consumers: readonly string[],
+  ...args: readonly string[]
+): { code: number; out: string } {
+  const root = writeProject({
+    "target/tsconfig.json": TSCONFIG,
+    "target/package.json":
+      '{ "name": "@example/target", "private": true, "type": "module", "main": "./lib.ts" }\n',
+    "target/deadset.json": '{ "target": { "kind": "library" } }\n',
+    "consumer/tsconfig.json": TSCONFIG,
+    "consumer/package.json": '{ "name": "@example/consumer", "private": true, "type": "module" }\n',
+    "scope.json": JSON.stringify({
+      target: { path: "target" },
+      consumers: consumers.map((path) => ({ path })),
+    }),
+    ...files,
+  });
+  onTestFinished(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+  const out = new MemoryWriter();
+  const code = run(
+    ["explain", "--target=target", "--scope=scope.json", ...args],
+    out,
+    new MemoryWriter(),
+    { ...nodeHost(), workingDirectory: () => root },
+  );
+  return { code, out: out.text };
+}
 
 describe("explain", () => {
   it(
@@ -137,7 +173,7 @@ describe("explain", () => {
         [
           "answer: dead",
           "  live under: reference-counting",
-          "  unreachable: no path of references reaches it from a root",
+          "  unreachable: no path of references reaches it from a root or a loaded consumer",
           "  references: 1",
           "  reference: src/lib.ts:6:10\tread\tfrom src/lib.ts:5:17",
           "  component: deadset-ts/c-0001, 2 symbols and 6 deletable lines fall with it, listed at cascade roots",
@@ -177,6 +213,60 @@ describe("explain", () => {
           "  export: src/lib.ts:1:1 -> src/lib.ts:1:17",
           "",
         ].join("\n"),
+      );
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "answers why a symbol only a consumer reaches is live with the path from that consumer",
+    () => {
+      const got = explainWithConsumers(
+        {
+          "target/lib.ts": "export const version = 1;\n",
+          "target/extra.ts":
+            "export function entry(): number {\n  return helper();\n}\n\nfunction helper(): number {\n  return 1;\n}\n",
+          "consumer/main.ts": 'import { entry } from "../target/extra.js";\n\nentry();\n',
+        },
+        ["consumer"],
+        "--why-live=helper",
+      );
+
+      expect(got.code).toBe(0);
+      expect(got.out).toContain(
+        [
+          "answer: live",
+          "  live under: reference-counting reachability",
+          "  reached from: consumer @example/consumer",
+          "  reference: main.ts:3:1\tread\tconsumer @example/consumer -> extra.ts:1:17",
+          "  reference: extra.ts:2:10\tread\textra.ts:1:17 -> extra.ts:5:10",
+          "",
+        ].join("\n"),
+      );
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "counts the references two consumers make at the same position in their own files as two",
+    () => {
+      const test = 'import { onlyTested } from "../target/lib.js";\n\nonlyTested();\n';
+      const got = explainWithConsumers(
+        {
+          "target/deadset.json":
+            '{ "target": { "kind": "library" }, "severity": { "DS1004": "allow" } }\n',
+          "target/lib.ts": "export function onlyTested(): number {\n  return 1;\n}\n",
+          "consumer/lib.test.ts": test,
+          "other/tsconfig.json": TSCONFIG,
+          "other/package.json": '{ "name": "@example/other", "private": true, "type": "module" }\n',
+          "other/lib.test.ts": test,
+        },
+        ["consumer", "other"],
+        "--why-not=onlyTested",
+      );
+
+      expect(got.out).toContain(
+        "  candidate: dead under reference-counting, with 0 production and 2 test references\n",
       );
     },
     LOAD_TIMEOUT,

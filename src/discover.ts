@@ -160,15 +160,68 @@ function referencesOf(host: Host, configFile: string): string[] {
 }
 
 /**
- * The configuration files the scope names directly: one per module the scope
- * declares whose path names a configuration file rather than a directory. A module
- * naming a directory is reached by the walk over that directory instead.
+ * The configuration file the scope names for the target directly, where its path
+ * names one rather than a directory. A target naming a directory is reached by the
+ * walk over that directory instead. A consumer's projects are a consumer's, never the
+ * target's, so no consumer path is read here.
  */
 function scopeConfigFiles(host: Host, scope: Scope): string[] {
-  return [scope.target, ...scope.consumers]
-    .map((module) => module.path)
+  return [scope.target.path]
     .filter((path) => path.endsWith(".json"))
     .map((path) => resolvePath(host.workingDirectory(), path));
+}
+
+/**
+ * Every configuration file reached from `pending`, in the order discovery reads them:
+ * each once, each followed by the configurations it references, transitively. A
+ * configuration the compiler cannot read ends the run naming it.
+ */
+function derivedFrom(engine: Engine, host: Host, pending: string[]): string[] {
+  const seen = new Set<string>();
+  const found: string[] = [];
+  while (pending.length > 0) {
+    const configFile = pending.shift();
+    if (configFile === undefined) {
+      break;
+    }
+    const path = resolvePath(host.workingDirectory(), configFile);
+    if (seen.has(path)) {
+      continue;
+    }
+    seen.add(path);
+    parseOrRefuse(engine, path, path);
+    found.push(path);
+    pending.push(...referencesOf(host, path));
+  }
+  return found;
+}
+
+/**
+ * The compiler configurations one consumer is loaded through: every one under its
+ * root that is not inside an ignored directory, and the configurations each of those
+ * references, transitively, in that order. A root that is absent, that is no
+ * directory, or that holds no configuration ends the run naming it, because a
+ * finding computed without a declared consumer would claim a reference set the run
+ * never read.
+ */
+export function consumerProjects(engine: Engine, host: Host, root: string): readonly string[] {
+  const kind = host.kindOf(root);
+  if (kind !== "directory") {
+    throw new DiscoveryError(
+      kind === "absent"
+        ? `the consumer ${root} does not exist`
+        : `the consumer ${root} is not a directory`,
+      [],
+    );
+  }
+  const found = derivedFrom(engine, host, configFilesUnder(host, root));
+  if (found.length === 0) {
+    throw new DiscoveryError(
+      `the consumer ${root} holds no compiler configuration, so none of its references can be read`,
+      [],
+    );
+  }
+  return found;
 }
 
 /**
@@ -257,24 +310,15 @@ function declaredProjects(
  */
 function derivedProjects(engine: Engine, host: Host, scope: Scope): Discovery {
   const fromScope = scopeConfigFiles(host, scope);
-  const seen = new Set<string>();
-  const projects: DiscoveredProject[] = [];
-  const pending = [...fromScope, ...configFilesUnder(host, scope.target.path)];
-  while (pending.length > 0) {
-    const configFile = pending.shift();
-    if (configFile === undefined) {
-      break;
-    }
-    const path = resolvePath(host.workingDirectory(), configFile);
-    if (seen.has(path)) {
-      continue;
-    }
-    seen.add(path);
-    parseOrRefuse(engine, path, path);
-    projects.push({ id: derivedId(scope.target.path, path), configFile: path });
-    pending.push(...referencesOf(host, path));
-  }
-  return { projects, configFiles: projects.map((project) => project.configFile), fromScope };
+  const configFiles = derivedFrom(engine, host, [
+    ...fromScope,
+    ...configFilesUnder(host, scope.target.path),
+  ]);
+  const projects = configFiles.map((configFile) => ({
+    id: derivedId(scope.target.path, configFile),
+    configFile,
+  }));
+  return { projects, configFiles, fromScope };
 }
 
 /**

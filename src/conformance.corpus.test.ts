@@ -85,15 +85,9 @@ describe("the conformance corpus, answered through the analyze verb", () => {
     expect(results.totals.fixtures).toBe(results.fixtures.length);
   });
 
-  // A row waiting on a consumer the run cannot load reports nothing and names no class,
-  // so it exercises no capability and no declared gap can cover it: these rows fail the
-  // corpus until a consumer is loaded beside the target, and the list goes when they pass.
-  it("fails only the expectations that need a consumer loaded beside the target", () => {
-    expect(failures(results).map((line) => line.replace(/:.*$/su, ""))).toEqual([
-      "redundant-export-keyword Caller",
-      "redundant-export-keyword Published",
-      "unused-exported-consumer UsedByConsumer",
-    ]);
+  it("fails no expectation and no fixture, so the corpus passes", () => {
+    expect(failures(results)).toEqual([]);
+    expect(results.result).toBe("pass");
   });
 
   it("declares no gap over an expectation the analyzer answers as written", () => {

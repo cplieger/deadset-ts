@@ -1,8 +1,8 @@
 {
   "corpus_version": "1.9.0",
   "product": { "name": "deadset-ts", "version": "0.1.0", "language": "ts" },
-  "result": "fail",
-  "totals": { "fixtures": 9, "pass": 6, "gap": 1, "fail": 2 },
+  "result": "pass",
+  "totals": { "fixtures": 9, "pass": 8, "gap": 1, "fail": 0 },
   "fixtures": [
     {
       "fixture": "deprecated-and-unused",
@@ -132,27 +132,22 @@
     },
     {
       "fixture": "redundant-export-keyword",
-      "result": "fail",
+      "result": "pass",
       "expectations": [
-        {
-          "symbol": "Caller",
-          "result": "fail",
-          "actual": { "report": "DS1001", "confidence": "possible" },
-          "message": "want no finding at target/lib.ts:15, got DS1001"
-        },
+        { "symbol": "Caller", "result": "pass", "actual": { "report": "none" } },
         {
           "symbol": "LocalOnly",
-          "result": "gap",
-          "capability": "DS1104",
-          "actual": { "report": "none" },
-          "message": "want DS1104 as the finding at target/lib.ts:9, got none"
+          "result": "pass",
+          "actual": {
+            "report": "DS1104",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "details": { "narrower_visibility": "file" }
+          },
+          "suppression": { "suppressed": true, "stale": false }
         },
-        {
-          "symbol": "Published",
-          "result": "fail",
-          "actual": { "report": "DS1001", "confidence": "possible" },
-          "message": "want no finding at target/lib.ts:3, got DS1001"
-        }
+        { "symbol": "Published", "result": "pass", "actual": { "report": "none" } }
       ],
       "unexpected": []
     },
@@ -282,27 +277,20 @@
     },
     {
       "fixture": "unused-exported-consumer",
-      "result": "fail",
+      "result": "pass",
       "expectations": [
         {
           "symbol": "DeadExport",
-          "result": "gap",
-          "capability": "DS1001",
+          "result": "pass",
           "actual": {
             "report": "DS1001",
-            "confidence": "possible",
-            "reachability_class": "possible",
+            "confidence": "certain",
+            "reachability_class": "certain",
             "liveness_relation": "reference-counting"
           },
-          "suppression": { "suppressed": true, "stale": false },
-          "message": "confidence want \"certain\" got \"possible\"; reachability_class want \"certain\" got \"possible\""
+          "suppression": { "suppressed": true, "stale": false }
         },
-        {
-          "symbol": "UsedByConsumer",
-          "result": "fail",
-          "actual": { "report": "DS1001", "confidence": "possible" },
-          "message": "want no finding at target/lib.ts:7, got DS1001"
-        }
+        { "symbol": "UsedByConsumer", "result": "pass", "actual": { "report": "none" } }
       ],
       "unexpected": []
     }

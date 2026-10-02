@@ -7,7 +7,7 @@
  */
 
 import type { TSExemptionClass } from "./exempt-classes.ts";
-import { namesACaller, OUTSIDE, type Graph } from "./graph.ts";
+import { namesACaller, OUTSIDE, type Edge, type Graph } from "./graph.ts";
 import type { Position } from "./position.ts";
 
 /** The liveness relation that decided a declaration, as a finding spells it. */
@@ -156,6 +156,14 @@ export function sweep(graph: Graph, input: SweepInput): Liveness {
   return { liveUnder: live, candidates };
 }
 
+/**
+ * The references a loaded consumer makes that the mode counts. A production mode counts
+ * none a consumer's test file made, as it counts none of the target's.
+ */
+function callsOf(graph: Graph, mode: Mode): readonly Edge[] {
+  return graph.consumed.filter((edge) => !mode.production || !edge.test);
+}
+
 /** Per declaration of the graph, whether one of the identifiers names it. */
 function flagged(graph: Graph, ids: readonly string[]): boolean[] {
   const flags = graph.symbols.map(() => false);
@@ -217,6 +225,10 @@ function reachable(graph: Graph, held: readonly boolean[], mode: Mode): readonly
   walk(true);
   for (const root of graph.rooted) {
     enter(root.at, false);
+  }
+  // A consumer's reference reaches what it names as one of the target's own does.
+  for (const edge of callsOf(graph, mode)) {
+    enter(edge.to, !edge.evaluation);
   }
   walk(false);
   return reached;

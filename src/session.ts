@@ -193,6 +193,25 @@ function viewOf<Brand>(project: Project): ProjectView<Brand> {
   };
 }
 
+/**
+ * The same project, its own source files narrowed to the ones `keep` admits. A consumer's
+ * program holds the target's files it imports beside its own, and a pass that enumerates
+ * the target's declarations in that program reads those files alone.
+ */
+export function narrowedTo<Brand>(
+  project: ProjectView<Brand>,
+  keep: (file: SourceFile) => boolean,
+): ProjectView<Brand> {
+  let kept: readonly SourceFile[] | undefined;
+  return {
+    ...project,
+    ownSourceFiles: () => {
+      kept ??= project.ownSourceFiles().filter(keep);
+      return kept;
+    },
+  };
+}
+
 /** Every diagnostic set a project is refused for carrying an error in. */
 export interface ProjectDiagnostics {
   readonly configFile: string;

@@ -300,6 +300,24 @@ describe("the exit code", () => {
     expect(readdirSync(got.dir)).toEqual([]);
   });
 
+  it.each([
+    ["the stale-suppression code", '"DS1703": "warn"'],
+    ["the family that holds it", '"DS17": "allow"'],
+  ])("is 2 for a severity key naming %s, and writes no report", (_what, key) => {
+    const got = analyze(
+      project({
+        ...CLEAN_APPLICATION,
+        "deadset.json": `{ "target": { "kind": "application" }, "severity": { ${key} } }\n`,
+      }),
+      [],
+      tmpdir(),
+    );
+
+    expect(got.code).toBe(2);
+    expect(got.err).toContain("severity.DS17");
+    expect(readdirSync(got.dir)).toEqual([]);
+  });
+
   it(
     "is 3 for a target that does not type-check, and writes no report",
     () => {

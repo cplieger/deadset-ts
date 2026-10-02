@@ -32,6 +32,7 @@ import { aliasChains } from "./alias-chain.ts";
 import { destructuring, propertyReadsOf, type PropertyRead } from "./destructuring.ts";
 import { globExpression } from "./glob.ts";
 import { nodeKey, type Inventory } from "./inventory.ts";
+import { relativePath } from "./paths.ts";
 import { byPosition, renderPosition, type Position } from "./position.ts";
 import type { ProjectView } from "./session.ts";
 
@@ -95,6 +96,21 @@ export interface Reference {
   readonly resolution: Resolution;
   /** Whether the file that made the reference is classified as a test file. */
   readonly test: boolean;
+  /**
+   * The identifier of the consumer whose file made the reference, absent for one the
+   * target made. A consumer's declarations are no declarations of the run, so such a
+   * reference comes from outside the inventory, and its position is rendered against
+   * the consumer's root.
+   */
+  readonly consumer?: string;
+}
+
+/** The consumer one reference pass reads the files of, beside the target it names. */
+export interface ConsumerSide {
+  /** The name the consumer publishes itself under. */
+  readonly id: string;
+  /** The consumer's directory, absolute: the files below it are its own. */
+  readonly root: string;
 }
 
 /** One rule that classified files as test files, and how many files it matched. */
@@ -162,6 +178,13 @@ export interface ReferenceOptions {
    * Each pattern is a rule of its own, which {@link testFileRulesOf} counts.
    */
   readonly testFiles: readonly string[];
+  /**
+   * The consumer whose files the pass walks instead of the target's. Its files are the
+   * program's own files below its root and not below the target root, each position is
+   * rendered against its root and the test patterns read the path below it, and only a
+   * reference to a declaration of `held`, the target's, is recorded.
+   */
+  readonly consumer?: ConsumerSide;
 }
 
 /**
@@ -555,7 +578,9 @@ function compare(a: string, b: string): number {
  *
  * `held` is the inventory of the same project, whose declaration map is what a resolved
  * symbol is looked up in; `targetRoot` is the absolute path every position is rendered
- * against, which is the root the inventory was read against.
+ * against, which is the root the inventory was read against. A pass over a consumer
+ * walks the consumer's files instead and renders against its root, as
+ * {@link ReferenceOptions.consumer} states.
  *
  * The order is by the referencing position, then by the declaration named, the
  * declaration referencing it and the use. That is a total order because one name
@@ -581,7 +606,18 @@ export function references<Brand>(
   let residueFallbacks = 0;
   let shorthandLookups = 0;
 
-  const files = project.ownSourceFiles();
+  const consumer = options.consumer;
+  const root = consumer?.root ?? targetRoot;
+  const files =
+    consumer === undefined
+      ? project.ownSourceFiles()
+      : project
+          .ownSourceFiles()
+          .filter(
+            (file) =>
+              relativePath(consumer.root, file.fileName) !== undefined &&
+              relativePath(targetRoot, file.fileName) === undefined,
+          );
   const fileIds = new Set(
     held.symbols.filter((symbol) => symbol.kind === "file").map((symbol) => symbol.id),
   );
@@ -615,7 +651,7 @@ export function references<Brand>(
   };
 
   for (const file of files) {
-    const path = renderPosition(file, targetRoot, 0).path;
+    const path = renderPosition(file, root, 0).path;
     const test = patterns.some((pattern) => pattern.test(path));
     if (test) {
       tests.push(path);
@@ -633,7 +669,7 @@ export function references<Brand>(
       found.push({
         from: declaration,
         to: declaration,
-        position: renderPosition(file, targetRoot, decorator.getStart()),
+        position: renderPosition(file, root, decorator.getStart()),
         use: "decorator",
         resolution: "syntax",
         test,
@@ -671,7 +707,7 @@ export function references<Brand>(
       if (symbol === undefined) {
         continue;
       }
-      const position = renderPosition(file, targetRoot, link.at.getStart());
+      const position = renderPosition(file, root, link.at.getStart());
       for (const id of carriedBy(link, symbol)) {
         found.push({
           from: link.from,
@@ -689,7 +725,7 @@ export function references<Brand>(
       if (module === undefined) {
         continue;
       }
-      const position = renderPosition(file, targetRoot, evaluation.node.getStart());
+      const position = renderPosition(file, root, evaluation.node.getStart());
       for (const id of chains.declarationsOf(module)) {
         if (fileIds.has(id)) {
           found.push({
@@ -711,7 +747,7 @@ export function references<Brand>(
       if (symbol === undefined || read === undefined) {
         return;
       }
-      const position = renderPosition(file, targetRoot, read.key.getStart());
+      const position = renderPosition(file, root, read.key.getStart());
       for (const target of chains.chainOf(symbol)) {
         found.push({
           from: read.from,
@@ -735,7 +771,7 @@ export function references<Brand>(
       if (symbol === undefined) {
         continue;
       }
-      const position = renderPosition(file, targetRoot, site.node.getStart());
+      const position = renderPosition(file, root, site.node.getStart());
       // A re-export something imports is used and so is the declaration behind it, so
       // the use names every link of the chain its name stands at the head of.
       for (const target of chains.chainOf(symbol)) {
@@ -761,7 +797,10 @@ export function references<Brand>(
 
   return {
     configFile: project.configFile,
-    references: found,
+    references:
+      consumer === undefined
+        ? found
+        : found.map((reference) => ({ ...reference, consumer: consumer.id })),
     testFilePaths: tests.sort(compare),
     cost: {
       batched,

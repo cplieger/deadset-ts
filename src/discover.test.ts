@@ -113,6 +113,17 @@ describe("project discovery", () => {
     ]);
   });
 
+  it("reads no configuration a consumer's path names, which is the consumer's own", () => {
+    const root = fixture("projects", "two-projects");
+
+    const found = discoverProjects(engine(), HOST, {
+      target: { id: "", path: join(root, "core", "tsconfig.json") },
+      consumers: [{ id: "", path: join(root, "app", "tsconfig.json") }],
+    });
+
+    expect(found.configFiles).toEqual([join(root, "core", "tsconfig.json")]);
+  });
+
   it("does not descend into an ignored directory", () => {
     const root = scratch();
     mkdirSync(join(root, "node_modules", "dep"), { recursive: true });

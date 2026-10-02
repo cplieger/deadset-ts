@@ -1,8 +1,8 @@
 import { runAnalysis, type RunProject } from "../analysis.ts";
 import { ConfigError, type Format } from "../config.ts";
 import { CONFORMANCE, DECLARED_GAPS } from "../conformance.ts";
+import { moduleIdentity } from "../consumers.ts";
 import { analyzerProvenance, recordedFindings, verdictOf } from "../findings-pass.ts";
-import { packageScope } from "../inventory.ts";
 import { joinPath, normalizePath, relativePath, resolvePath } from "../paths.ts";
 import type { Host } from "../host.ts";
 import {
@@ -16,7 +16,6 @@ import { json } from "../reporters/json.ts";
 import { RENDERINGS } from "../reporters/reporters.ts";
 import { parseTemplate, TemplateError, type Template } from "../reporters/template.ts";
 import { resolve } from "../resolve.ts";
-import type { Module } from "../scope.ts";
 import { writeBaseline, type Recorded } from "../suppress-file.ts";
 import { CONTRACT_VERSION } from "../version.ts";
 import { EXIT_CLEAN, EXIT_FAILURE, type Verb, type VerbOptions } from "./verb.ts";
@@ -30,9 +29,6 @@ export const ANALYZE_OPTIONS: VerbOptions = {
 /** The two values `--exit-code` takes; on, the default, puts the run's verdict in the exit code. */
 const EXIT_CODE_ON = "on";
 const EXIT_CODE_OFF = "off";
-
-/** Why a declared consumer is not loaded, which every report names it with. */
-const NOT_LOADED = "this analyzer loads no consumer beside the target";
 
 /** A path of the run no report can name, which ends the run with the failure code. */
 class ReportPathError extends Error {
@@ -99,11 +95,6 @@ function configurationsOf(
     }
     return { id: one.id, project };
   });
-}
-
-/** The name one module publishes itself under: the scope's, else its manifest's. */
-function identityOf(module: Module, host: Host): string {
-  return module.id === "" ? packageScope(host, module.path)("index.ts").package : module.id;
 }
 
 /** A count with its noun, so a message reads for one record as well as for several. */
@@ -221,12 +212,13 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
       version,
       conformance: CONFORMANCE,
       declaredGaps: DECLARED_GAPS,
-      target: { kind, root, identity: identityOf(scoped.target, host) },
+      target: { kind, root, identity: moduleIdentity(host, scoped.target) },
       configurations: configurationsOf(run.projects, targetRoot),
-      unavailable: scoped.consumers.map((consumer) => ({
-        id: identityOf(consumer, host),
-        reason: NOT_LOADED,
+      loaded: run.consumers.map((consumer) => ({
+        id: consumer.id,
+        path: runRelative(invoked, consumer.path),
       })),
+      unavailable: [],
       result,
       testFileRules: run.testFileRules,
     });

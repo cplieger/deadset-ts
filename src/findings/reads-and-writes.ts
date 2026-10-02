@@ -94,7 +94,9 @@ function writeOnlySymbols(run: Run): readonly Finding[] {
       held = { writes: [], reads: 0 };
       uses.set(reference.to, held);
     }
-    if (reference.use !== "write") {
+    // A consumer's store is written at a position no report of the target can name, so
+    // it counts as a use that keeps the declaration from this kind.
+    if (reference.use !== "write" || reference.consumer !== undefined) {
       held.reads += 1;
       continue;
     }

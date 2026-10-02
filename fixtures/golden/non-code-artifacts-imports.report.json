@@ -12,8 +12,8 @@
     ],
     "conformance": {
       "corpus_version": "1.9.0",
-      "result": "fail",
-      "digest": "sha256:8c29f19fc189f4f5d9ea210d556b62d12c3701c221eb7a8adde499b7060bec0d"
+      "result": "pass",
+      "digest": "sha256:3e9e40876551faa2c196311bf06d47d220ab5127a9fb8921969aae552c42e824"
     }
   },
   "target": {
@@ -522,16 +522,6 @@
       "fixture": "private-member-unread",
       "capability": "reflective-lookup",
       "reason": "The reference pass resolves a string-literal element access to the member it names, so the member is live by that reference and the retained listing names no class for it."
-    },
-    {
-      "fixture": "redundant-export-keyword",
-      "capability": "DS1104",
-      "reason": "No consumer is loaded beside the target, so the published surface is unknown and no export is narrowed; review an export only the target uses by hand."
-    },
-    {
-      "fixture": "unused-exported-consumer",
-      "capability": "DS1001",
-      "reason": "No consumer is loaded beside the target, so an export nothing in the target references is reported at the possible class rather than the certain one."
     }
   ],
   "excluded_by_cgo": [],

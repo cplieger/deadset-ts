@@ -22,6 +22,7 @@ interface ExpectRow {
 /** One corpus fixture's expectation file. */
 interface Expectation {
   readonly target_kind: string;
+  readonly consumers?: readonly string[];
   readonly closed_world?: readonly string[];
   readonly expect: readonly ExpectRow[];
 }
@@ -72,7 +73,9 @@ function answer(name: string): Answered {
       : {}),
   };
   const { config } = resolve({ repository: JSON.stringify(document), repositoryLabel: name });
-  const input = emitterInputOf(join(dir, "ts", "target"), config);
+  const input = emitterInputOf(join(dir, "ts", "target"), config, {
+    consumers: (expected.consumers ?? []).map((consumer) => join(dir, "ts", consumer)),
+  });
   const findings = findingsOf(input);
   const union = input.swept.matrix.union;
 
@@ -132,6 +135,11 @@ describe("every corpus fixture with a TypeScript rendering, answered by every fa
       ],
     ],
     ["entry-file-declaring-nothing", ["Entry none: pass"]],
+    ["unused-exported-consumer", ["DeadExport DS1001: pass", "UsedByConsumer none: pass"]],
+    [
+      "redundant-export-keyword",
+      ["Published none: pass", "LocalOnly DS1104: pass", "Caller none: pass"],
+    ],
     [
       "enum-group-conversion",
       ["TierMid none: pass", "TierHigh none: pass", "ModeWrite DS1302: pass"],
@@ -175,27 +183,6 @@ describe("every corpus fixture with a TypeScript rendering, answered by every fa
         // Declared gap: the reference pass resolves a string-literal element access to
         // the member it names, so the member is live rather than held back by a class.
         "ReachedByStringIndex none: not retained by reflective-lookup",
-      ],
-      unnamed: [],
-    });
-  });
-
-  it("declares unused-exported-consumer a gap: no consumer is loaded beside the target", () => {
-    expect(answer("unused-exported-consumer")).toEqual({
-      rows: [
-        "DeadExport DS1001: confidence possible, reachability_class possible",
-        "UsedByConsumer none: reported DS1001",
-      ],
-      unnamed: [],
-    });
-  });
-
-  it("declares redundant-export-keyword a gap: no consumer is loaded beside the target", () => {
-    expect(answer("redundant-export-keyword")).toEqual({
-      rows: [
-        "Published none: reported DS1001",
-        "LocalOnly DS1104: confidence possible, reachability_class possible",
-        "Caller none: reported DS1001",
       ],
       unnamed: [],
     });
