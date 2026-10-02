@@ -1,6 +1,7 @@
 import type { Confidence, Severity } from "./config.ts";
 import type { Fixability } from "./kinds.ts";
 import type { DependencySection } from "./ref.ts";
+import type { Mechanism } from "./suppress.ts";
 import type { Relation } from "./sweep.ts";
 
 /**
@@ -58,6 +59,18 @@ export interface FindingDetails {
   readonly writePositions?: readonly FindingPosition[];
   /** On `DS1601`: the manifest section that declares the dependency. */
   readonly dependencyClass?: DependencySection;
+  /** On `DS1701` and `DS1702`: the document that holds the refused suppression. */
+  readonly mechanism?: Mechanism;
+  /** On `DS1701` and `DS1702`: the refused suppression as written, a member absent where it lacks one. */
+  readonly entry?: SuppressionEntry;
+}
+
+/** One suppression in the four-member form the ignore file and the baseline share. */
+export interface SuppressionEntry {
+  readonly code: string;
+  readonly symbol?: string;
+  readonly path?: string;
+  readonly reason?: string;
 }
 
 /** One finding as its emitter states it. */

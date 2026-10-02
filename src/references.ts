@@ -126,8 +126,6 @@ export interface References {
   /** The compiler configuration the project was opened from. */
   readonly configFile: string;
   readonly references: readonly Reference[];
-  /** The rules that classified files as test files, ordered by rule. */
-  readonly testFileRules: readonly TestFileRule[];
   /**
    * Every file the rules classified as a test file, by its path below the target root,
    * ascending. A declaration such a file holds is a test declaration, by the same
@@ -147,7 +145,7 @@ export interface ReferenceOptions {
   readonly batchCap?: number;
   /**
    * Glob patterns, relative to the target root, naming the files that are test files.
-   * Each pattern is a rule of its own and reports the files it matched.
+   * Each pattern is a rule of its own, which {@link testFileRulesOf} counts.
    */
   readonly testFiles: readonly string[];
 }
@@ -499,6 +497,26 @@ function patternRule(index: number): string {
   return `test-file-pattern-${String(index + 1)}`;
 }
 
+/**
+ * The rules over the test files of several projects at once, ordered by rule: a file two
+ * projects hold is one file, so each rule counts the distinct paths it matches.
+ */
+export function testFileRulesOf(
+  testFiles: readonly string[],
+  paths: readonly string[],
+): readonly TestFileRule[] {
+  const distinct = [...new Set(paths)];
+  return testFiles
+    .map((pattern, index) => {
+      const expression = globExpression(pattern);
+      return {
+        rule: patternRule(index),
+        matched: distinct.filter((path) => expression.test(path)).length,
+      };
+    })
+    .sort((a, b) => compare(a.rule, b.rule));
+}
+
 /** Two strings ordered bytewise, which is the order every set of a run is read in. */
 function compare(a: string, b: string): number {
   if (a === b) {
@@ -509,7 +527,7 @@ function compare(a: string, b: string): number {
 
 /**
  * Every reference one project's own files make to the project's own declarations, in
- * position order, and the test-file rules that classified those files.
+ * position order, and the files the test-file rules classified.
  *
  * `held` is the inventory of the same project, whose declaration map is what a resolved
  * symbol is looked up in; `targetRoot` is the absolute path every position is rendered
@@ -530,7 +548,6 @@ export function references<Brand>(
   const cap = options.batchCap ?? DEFAULT_BATCH_CAP;
   const declarations = held.declarations;
   const patterns = options.testFiles.map(globExpression);
-  const matched = options.testFiles.map(() => 0);
   const found: Reference[] = [];
   const tests: string[] = [];
   const chains = aliasChains(project, held);
@@ -574,13 +591,7 @@ export function references<Brand>(
 
   for (const file of files) {
     const path = renderPosition(file, targetRoot, 0).path;
-    const hits = patterns.map((pattern) => pattern.test(path));
-    hits.forEach((hit, index) => {
-      if (hit) {
-        matched[index] = (matched[index] ?? 0) + 1;
-      }
-    });
-    const test = hits.includes(true);
+    const test = patterns.some((pattern) => pattern.test(path));
     if (test) {
       tests.push(path);
     }
@@ -706,9 +717,6 @@ export function references<Brand>(
   return {
     configFile: project.configFile,
     references: found,
-    testFileRules: options.testFiles
-      .map((_pattern, index) => ({ rule: patternRule(index), matched: matched[index] ?? 0 }))
-      .sort((a, b) => compare(a.rule, b.rule)),
     testFilePaths: tests.sort(compare),
     cost: { batched, fileBatches, residueFallbacks, shorthandLookups, aliasSteps: chains.steps },
   };

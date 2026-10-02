@@ -1,0 +1,381 @@
+{
+  "schema_version": "6.0.0",
+  "contract_version": "3.2.0",
+  "analyzer": {
+    "name": "deadset-ts",
+    "version": "0.0.0",
+    "languages": [
+      "ts"
+    ],
+    "schema_versions_accepted": [
+      "6.0.0"
+    ],
+    "conformance": {
+      "corpus_version": "1.9.0",
+      "result": "fail",
+      "digest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "target": {
+    "kind": "application",
+    "root": "fixtures/projects/suppressions",
+    "identity": "@example/suppressions"
+  },
+  "configurations": [
+    {
+      "id": "tsconfig.json",
+      "project": "tsconfig.json"
+    }
+  ],
+  "configurations_not_built": [],
+  "consumers": {
+    "declared": 0,
+    "loaded": [],
+    "unavailable": []
+  },
+  "findings": [
+    {
+      "code": "DS1702",
+      "kind": "unscoped-ignore-entry",
+      "language": "ts",
+      "position": {
+        "path": "deadset-ignore.json",
+        "line": 16,
+        "column": 5,
+        "end_line": 16
+      },
+      "symbol": {
+        "ref": "ts://@example/suppressions/src/lib.ts#inBlock",
+        "kind": "suppression",
+        "name": "ts://@example/suppressions/src/lib.ts#inBlock",
+        "size_lines": 1
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0006",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 0
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "none",
+      "severity": "deny",
+      "message": "ignore entry for DS1002 names a symbol and no path",
+      "details": {
+        "mechanism": "ignore",
+        "entry": {
+          "code": "DS1002",
+          "symbol": "ts://@example/suppressions/src/lib.ts#inBlock",
+          "reason": "Names no path, so it is scoped to nothing."
+        }
+      }
+    },
+    {
+      "code": "DS1104",
+      "kind": "redundant-export-keyword",
+      "language": "ts",
+      "position": {
+        "path": "src/lib.ts",
+        "line": 15,
+        "column": 17,
+        "end_line": 15
+      },
+      "symbol": {
+        "ref": "ts://@example/suppressions/src/lib.ts#stillUsed",
+        "kind": "function",
+        "name": "stillUsed",
+        "size_lines": 1
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0004",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 0
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "narrowable",
+      "severity": "warn",
+      "message": "exported function is referenced only inside the file that declares it",
+      "details": {
+        "narrower_visibility": "file"
+      }
+    },
+    {
+      "code": "DS1002",
+      "kind": "unused-unexported",
+      "language": "ts",
+      "position": {
+        "path": "src/lib.ts",
+        "line": 22,
+        "column": 10,
+        "end_line": 22
+      },
+      "symbol": {
+        "ref": "ts://@example/suppressions/src/lib.ts#separated",
+        "kind": "function",
+        "name": "separated",
+        "size_lines": 1
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0001",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 1
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "unexported function has no reference in the target",
+      "details": {}
+    },
+    {
+      "code": "DS1701",
+      "kind": "suppression-without-reason",
+      "language": "ts",
+      "position": {
+        "path": "src/lib.ts",
+        "line": 24,
+        "column": 1,
+        "end_line": 24
+      },
+      "symbol": {
+        "ref": "ts://@example/suppressions/src/lib.ts#",
+        "kind": "suppression",
+        "name": "ts://@example/suppressions/src/lib.ts#",
+        "size_lines": 1
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0005",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 0
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "none",
+      "severity": "deny",
+      "message": "inline directive for DS1002 carries no reason",
+      "details": {
+        "mechanism": "inline",
+        "entry": {
+          "code": "DS1002",
+          "path": "src/lib.ts"
+        }
+      }
+    },
+    {
+      "code": "DS1002",
+      "kind": "unused-unexported",
+      "language": "ts",
+      "position": {
+        "path": "src/lib.ts",
+        "line": 25,
+        "column": 10,
+        "end_line": 25
+      },
+      "symbol": {
+        "ref": "ts://@example/suppressions/src/lib.ts#reasonless",
+        "kind": "function",
+        "name": "reasonless",
+        "size_lines": 1
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0002",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 1
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "unexported function has no reference in the target",
+      "details": {}
+    },
+    {
+      "code": "DS1002",
+      "kind": "unused-unexported",
+      "language": "ts",
+      "position": {
+        "path": "src/lib.ts",
+        "line": 28,
+        "column": 10,
+        "end_line": 28
+      },
+      "symbol": {
+        "ref": "ts://@example/suppressions/src/lib.ts#inBlock",
+        "kind": "function",
+        "name": "inBlock",
+        "size_lines": 1
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0003",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 1
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "unexported function has no reference in the target",
+      "details": {}
+    }
+  ],
+  "edge_evaluations": [],
+  "stale_suppressions": [
+    {
+      "code": "DS1703",
+      "mechanism": "ignore",
+      "entry": {
+        "code": "DS1002",
+        "symbol": "ts://@example/suppressions/src/lib.ts#removedLongAgo",
+        "path": "src/lib.ts",
+        "reason": "The declaration this named has been deleted."
+      },
+      "position": {
+        "path": "deadset-ignore.json",
+        "line": 10,
+        "column": 5
+      },
+      "symbol": "ts://@example/suppressions/src/lib.ts#removedLongAgo",
+      "message": "ignore entry for DS1002 matches no current finding"
+    },
+    {
+      "code": "DS1703",
+      "mechanism": "ignore",
+      "entry": {
+        "code": "DS1002",
+        "symbol": "ts://@example/suppressions/src/lib.ts#entryNamed",
+        "path": "src/lib.ts",
+        "reason": "The same adjudication written a second time."
+      },
+      "position": {
+        "path": "deadset-ignore.json",
+        "line": 21,
+        "column": 5
+      },
+      "symbol": "ts://@example/suppressions/src/lib.ts#entryNamed",
+      "message": "ignore entry for DS1002 matches no current finding"
+    },
+    {
+      "code": "DS1703",
+      "mechanism": "inline",
+      "entry": {
+        "code": "DS1002",
+        "symbol": "ts://@example/suppressions/src/lib.ts#stillUsed",
+        "path": "src/lib.ts",
+        "reason": "Kept for the next release."
+      },
+      "position": {
+        "path": "src/lib.ts",
+        "line": 14,
+        "column": 1
+      },
+      "symbol": "ts://@example/suppressions/src/lib.ts#stillUsed",
+      "message": "inline directive for DS1002 matches no current finding, and its declaration reports DS1104"
+    },
+    {
+      "code": "DS1703",
+      "mechanism": "inline",
+      "entry": {
+        "code": "DS1001",
+        "symbol": "ts://@example/suppressions/src/lib.ts#wrongCode",
+        "path": "src/lib.ts",
+        "reason": "Kept for the next release."
+      },
+      "position": {
+        "path": "src/lib.ts",
+        "line": 17,
+        "column": 1
+      },
+      "symbol": "ts://@example/suppressions/src/lib.ts#wrongCode",
+      "message": "inline directive for DS1001 matches no current finding, and its declaration reports DS1002"
+    },
+    {
+      "code": "DS1703",
+      "mechanism": "inline",
+      "entry": {
+        "code": "DS1002",
+        "path": "src/lib.ts",
+        "reason": "A blank line separates it from the declaration."
+      },
+      "position": {
+        "path": "src/lib.ts",
+        "line": 20,
+        "column": 1
+      },
+      "symbol": "ts://@example/suppressions/src/lib.ts#",
+      "message": "inline directive for DS1002 matches no current finding"
+    }
+  ],
+  "declared_gaps": [],
+  "excluded_by_cgo": [],
+  "test_file_rules": [
+    {
+      "rule": "test-file-pattern-1",
+      "matched": 0
+    }
+  ],
+  "totals": {
+    "findings": 6,
+    "by_severity": {
+      "allow": 0,
+      "warn": 1,
+      "deny": 5
+    },
+    "deletable_lines": 3,
+    "suppressions_in_effect": 2,
+    "reasons_recorded": 7,
+    "stale_suppressions": 5,
+    "pending": 0,
+    "omitted": 0
+  }
+}

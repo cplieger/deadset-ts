@@ -24,18 +24,18 @@ function placements(findings: readonly CompletedFinding[]): string[] {
 }
 
 describe("the placement of every family's findings in their components", () => {
-  it("keeps a dead subject's computed component and numbers a live subject's own past them, across families", () => {
+  it("keeps a dead subject's computed component and numbers a live subject's own past them, deleting no line, across families", () => {
     const target = fixture("projects", "reads-and-writes");
     const input = emitterInputOf(target, configOf(target));
 
     expect(input.swept.sweep.components).toHaveLength(5);
     expect(placements(findingsOf(input))).toEqual([
       "DS1002 Unused deadset-ts/c-0005 root 3 4",
-      "DS1104 Flag deadset-ts/c-0006 root 1 4",
-      "DS1301 written deadset-ts/c-0007 root 1 1",
-      "DS1301 shared deadset-ts/c-0008 root 1 1",
-      "DS1301 Gauge.#samples deadset-ts/c-0009 root 1 1",
-      "DS1301 slots deadset-ts/c-0010 root 1 1",
+      "DS1104 Flag deadset-ts/c-0006 root 1 0",
+      "DS1301 written deadset-ts/c-0007 root 1 0",
+      "DS1301 shared deadset-ts/c-0008 root 1 0",
+      "DS1301 Gauge.#samples deadset-ts/c-0009 root 1 0",
+      "DS1301 slots deadset-ts/c-0010 root 1 0",
       "DS1302 Mode.Write deadset-ts/c-0004 root 1 1",
       "DS1303 first<T> deadset-ts/c-0001 root 1 1",
       "DS1303 Box.open<V> deadset-ts/c-0002 root 1 1",
@@ -58,17 +58,17 @@ describe("the placement of every family's findings in their components", () => {
       rmSync(root, { recursive: true, force: true });
     });
 
-    it("gives each unused dependency a component of its own, as the finding schema requires", () => {
+    it("gives each unused dependency a component of its own that deletes no declaration line", () => {
       const input = emitterInputOf(root, configOf(root));
       const rows = findingsOf(input).filter((finding) => finding.code === "DS1601");
 
       expect(input.swept.sweep.components).toHaveLength(2);
       expect(placements(rows)).toEqual([
-        "DS1601 unused-runtime deadset-ts/c-0003 root 1 1",
-        "DS1601 @types/bundled deadset-ts/c-0004 root 1 1",
-        "DS1601 optional-peer deadset-ts/c-0005 root 1 1",
-        "DS1601 unused-dev deadset-ts/c-0006 root 1 1",
-        "DS1601 peer-unused deadset-ts/c-0007 root 1 1",
+        "DS1601 unused-runtime deadset-ts/c-0003 root 1 0",
+        "DS1601 @types/bundled deadset-ts/c-0004 root 1 0",
+        "DS1601 optional-peer deadset-ts/c-0005 root 1 0",
+        "DS1601 unused-dev deadset-ts/c-0006 root 1 0",
+        "DS1601 peer-unused deadset-ts/c-0007 root 1 0",
       ]);
     });
   });

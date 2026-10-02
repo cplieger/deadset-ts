@@ -11,7 +11,7 @@ import type { CompletedFinding, Finding, FindingComponent } from "../finding.ts"
 import { OUTSIDE } from "../graph.ts";
 import { KINDS } from "../kinds.ts";
 import { FAMILY_KEY_LENGTH } from "../resolve.ts";
-import type { Dials } from "../suppress.ts";
+import { isRowSubject, type Dials } from "../suppress.ts";
 import type { EmitterInput } from "./emitter.ts";
 
 /** The classes ranked by the claim each makes, the strongest highest. */
@@ -75,7 +75,8 @@ function findingComponents(swept: RunSweep): (id: string) => FindingComponent | 
  * candidate's relation, counts, configurations and component; a live one carries no
  * relation and holds where it is declared; a file or a manifest row is `certain` and
  * holds in every configuration. A subject in no dead component gets one of its own,
- * numbered past the computed ones in finding order, so no two families mint one.
+ * numbered past the computed ones in finding order, so no two families mint one; nothing
+ * falls with it, so its deletion removes no line.
  */
 export function completed(
   input: EmitterInput,
@@ -94,7 +95,11 @@ export function completed(
     if (row === undefined) {
       throw new Error(`${finding.code} names no live row of the issue-kind vocabulary`);
     }
-    const at = positions.get(finding.symbol.ref) ?? OUTSIDE;
+    // A row's reference may spell a declaration's, as an ignore entry naming one does, and
+    // a row is still never the declaration.
+    const at = isRowSubject(finding.symbol.kind)
+      ? OUTSIDE
+      : (positions.get(finding.symbol.ref) ?? OUTSIDE);
     const symbol = union.symbols[at];
     const judged = union.subject[at] === true ? symbol : undefined;
     const candidate = judged === undefined ? undefined : candidates.get(judged.id);
@@ -109,7 +114,7 @@ export function completed(
         id: componentId(minted),
         root: true,
         symbolCount: 1,
-        deletableLines: finding.symbol.sizeLines,
+        deletableLines: 0,
       };
     }
     const counts =

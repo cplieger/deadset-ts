@@ -1,0 +1,1098 @@
+{
+  "schema_version": "6.0.0",
+  "contract_version": "3.2.0",
+  "analyzer": {
+    "name": "deadset-ts",
+    "version": "0.0.0",
+    "languages": [
+      "ts"
+    ],
+    "schema_versions_accepted": [
+      "6.0.0"
+    ],
+    "conformance": {
+      "corpus_version": "1.9.0",
+      "result": "fail",
+      "digest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "target": {
+    "kind": "application",
+    "root": "fixtures/projects/unused-declarations",
+    "identity": "@example/unused-declarations"
+  },
+  "configurations": [
+    {
+      "id": "tsconfig.json",
+      "project": "tsconfig.json"
+    }
+  ],
+  "configurations_not_built": [],
+  "consumers": {
+    "declared": 0,
+    "loaded": [],
+    "unavailable": []
+  },
+  "findings": [
+    {
+      "code": "DS1005",
+      "kind": "test-of-dead-code",
+      "language": "ts",
+      "position": {
+        "path": "src/catalog.test.ts",
+        "line": 12,
+        "column": 17,
+        "end_line": 14
+      },
+      "symbol": {
+        "ref": "ts://@example/unused-declarations/src/catalog.test.ts#testOfDeadCode",
+        "kind": "function",
+        "name": "testOfDeadCode",
+        "size_lines": 3
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0001",
+        "root": true,
+        "symbol_count": 10,
+        "deletable_lines": 27
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "every target symbol this test references is reported dead",
+      "details": {}
+    },
+    {
+      "code": "DS1001",
+      "kind": "unused-exported",
+      "language": "ts",
+      "position": {
+        "path": "src/catalog.ts",
+        "line": 12,
+        "column": 17,
+        "end_line": 14
+      },
+      "symbol": {
+        "ref": "ts://@example/unused-declarations/src/catalog.ts#unusedExported",
+        "kind": "function",
+        "name": "unusedExported",
+        "size_lines": 3
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0002",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 3
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "exported function has no reference in the target and none from any loaded consumer",
+      "details": {}
+    },
+    {
+      "code": "DS1002",
+      "kind": "unused-unexported",
+      "language": "ts",
+      "position": {
+        "path": "src/catalog.ts",
+        "line": 17,
+        "column": 10,
+        "end_line": 19
+      },
+      "symbol": {
+        "ref": "ts://@example/unused-declarations/src/catalog.ts#unusedUnexported",
+        "kind": "function",
+        "name": "unusedUnexported",
+        "size_lines": 3
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0003",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 3
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "unexported function has no reference in the target",
+      "details": {}
+    },
+    {
+      "code": "DS1001",
+      "kind": "unused-exported",
+      "language": "ts",
+      "position": {
+        "path": "src/catalog.ts",
+        "line": 22,
+        "column": 17,
+        "end_line": 24
+      },
+      "symbol": {
+        "ref": "ts://@example/unused-declarations/src/catalog.ts#recurse",
+        "kind": "function",
+        "name": "recurse",
+        "size_lines": 3
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reachability",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0004",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 3
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "exported function is referenced only from declarations that are themselves dead",
+      "details": {}
+    },
+    {
+      "code": "DS1001",
+      "kind": "unused-exported",
+      "language": "ts",
+      "position": {
+        "path": "src/catalog.ts",
+        "line": 27,
+        "column": 17,
+        "end_line": 29
+      },
+      "symbol": {
+        "ref": "ts://@example/unused-declarations/src/catalog.ts#deadCaller",
+        "kind": "function",
+        "name": "deadCaller",
+        "size_lines": 3
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0005",
+        "root": true,
+        "symbol_count": 2,
+        "deletable_lines": 6
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "exported function has no reference in the target and none from any loaded consumer",
+      "details": {}
+    },
+    {
+      "code": "DS1002",
+      "kind": "unused-unexported",
+      "language": "ts",
+      "position": {
+        "path": "src/catalog.ts",
+        "line": 31,
+        "column": 10,
+        "end_line": 33
+      },
+      "symbol": {
+        "ref": "ts://@example/unused-declarations/src/catalog.ts#calledOnlyByDead",
+        "kind": "function",
+        "name": "calledOnlyByDead",
+        "size_lines": 3
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reachability",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0005",
+        "root": false,
+        "symbol_count": 2,
+        "deletable_lines": 6
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "unexported function is referenced only from declarations that are themselves dead",
+      "details": {}
+    },
+    {
+      "code": "DS1001",
+      "kind": "unused-exported",
+      "language": "ts",
+      "position": {
+        "path": "src/catalog.ts",
+        "line": 36,
+        "column": 14,
+        "end_line": 42
+      },
+      "symbol": {
+        "ref": "ts://@example/unused-declarations/src/catalog.ts#Obsolete",
+        "kind": "class",
+        "name": "Obsolete",
+        "size_lines": 7
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0006",
+        "root": true,
+        "symbol_count": 3,
+        "deletable_lines": 7
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "exported class has no reference in the target and none from any loaded consumer",
+      "details": {}
+    },
+    {
+      "code": "DS1003",
+      "kind": "unused-member",
+      "language": "ts",
+      "position": {
+        "path": "src/catalog.ts",
+        "line": 47,
+        "column": 11,
+        "end_line": 47
+      },
+      "symbol": {
+        "ref": "ts://@example/unused-declarations/src/catalog.ts#Counter.stale",
+        "kind": "class-member",
+        "name": "Counter.stale",
+        "size_lines": 1
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0007",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 1
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "private class member has no reference in the target",
+      "details": {}
+    },
+    {
+      "code": "DS1003",
+      "kind": "unused-member",
+      "language": "ts",
+      "position": {
+        "path": "src/catalog.ts",
+        "line": 49,
+        "column": 3,
+        "end_line": 49
+      },
+      "symbol": {
+        "ref": "ts://@example/unused-declarations/src/catalog.ts#Counter.#origin",
+        "kind": "class-member",
+        "name": "Counter.#origin",
+        "size_lines": 1
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0008",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 1
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "private class member has no reference in the target",
+      "details": {}
+    },
+    {
+      "code": "DS1003",
+      "kind": "unused-member",
+      "language": "ts",
+      "position": {
+        "path": "src/catalog.ts",
+        "line": 51,
+        "column": 13,
+        "end_line": 51
+      },
+      "symbol": {
+        "ref": "ts://@example/unused-declarations/src/catalog.ts#Counter.guarded",
+        "kind": "class-member",
+        "name": "Counter.guarded",
+        "size_lines": 1
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0009",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 1
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "protected class member has no reference in the target",
+      "details": {}
+    },
+    {
+      "code": "DS1003",
+      "kind": "unused-member",
+      "language": "ts",
+      "position": {
+        "path": "src/catalog.ts",
+        "line": 53,
+        "column": 10,
+        "end_line": 53
+      },
+      "symbol": {
+        "ref": "ts://@example/unused-declarations/src/catalog.ts#Counter.created:static",
+        "kind": "class-member",
+        "name": "Counter.created",
+        "size_lines": 1
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0010",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 1
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "class member has no reference in the target",
+      "details": {}
+    },
+    {
+      "code": "DS1006",
+      "kind": "deprecated-unused",
+      "language": "ts",
+      "position": {
+        "path": "src/catalog.ts",
+        "line": 60,
+        "column": 3,
+        "end_line": 60
+      },
+      "symbol": {
+        "ref": "ts://@example/unused-declarations/src/catalog.ts#Counter.legacy",
+        "kind": "class-member",
+        "name": "Counter.legacy",
+        "size_lines": 1
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0011",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 1
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "deprecated class member has no production reference",
+      "details": {}
+    },
+    {
+      "code": "DS1003",
+      "kind": "unused-member",
+      "language": "ts",
+      "position": {
+        "path": "src/catalog.ts",
+        "line": 70,
+        "column": 3,
+        "end_line": 72
+      },
+      "symbol": {
+        "ref": "ts://@example/unused-declarations/src/catalog.ts#Counter.unusedMethod",
+        "kind": "method",
+        "name": "Counter.unusedMethod",
+        "size_lines": 3
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0012",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 3
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "method has no reference in the target",
+      "details": {}
+    },
+    {
+      "code": "DS1003",
+      "kind": "unused-member",
+      "language": "ts",
+      "position": {
+        "path": "src/catalog.ts",
+        "line": 78,
+        "column": 3,
+        "end_line": 78
+      },
+      "symbol": {
+        "ref": "ts://@example/unused-declarations/src/catalog.ts#Labelled.note",
+        "kind": "type-member",
+        "name": "Labelled.note",
+        "size_lines": 1
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0013",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 1
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "type member has no reference in the target",
+      "details": {}
+    },
+    {
+      "code": "DS1001",
+      "kind": "unused-exported",
+      "language": "ts",
+      "position": {
+        "path": "src/catalog.ts",
+        "line": 81,
+        "column": 13,
+        "end_line": 84
+      },
+      "symbol": {
+        "ref": "ts://@example/unused-declarations/src/catalog.ts#Measured",
+        "kind": "type",
+        "name": "Measured",
+        "size_lines": 4
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reachability",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0001",
+        "root": false,
+        "symbol_count": 10,
+        "deletable_lines": 27
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "exported type alias is referenced only from declarations that are themselves dead",
+      "details": {}
+    },
+    {
+      "code": "DS1003",
+      "kind": "unused-member",
+      "language": "ts",
+      "position": {
+        "path": "src/catalog.ts",
+        "line": 88,
+        "column": 3,
+        "end_line": 88
+      },
+      "symbol": {
+        "ref": "ts://@example/unused-declarations/src/catalog.ts#Color.Green",
+        "kind": "enum-member",
+        "name": "Color.Green",
+        "size_lines": 1
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reachability",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0014",
+        "root": false,
+        "symbol_count": 2,
+        "deletable_lines": 4
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "enum member is referenced only from declarations that are themselves dead",
+      "details": {}
+    },
+    {
+      "code": "DS1302",
+      "kind": "unused-enum-member",
+      "language": "ts",
+      "position": {
+        "path": "src/catalog.ts",
+        "line": 89,
+        "column": 3,
+        "end_line": 89
+      },
+      "symbol": {
+        "ref": "ts://@example/unused-declarations/src/catalog.ts#Color.Blue",
+        "kind": "enum-member",
+        "name": "Color.Blue",
+        "size_lines": 1
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0015",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 1
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "enum member Color.Blue is named nowhere",
+      "details": {}
+    },
+    {
+      "code": "DS1001",
+      "kind": "unused-exported",
+      "language": "ts",
+      "position": {
+        "path": "src/catalog.ts",
+        "line": 93,
+        "column": 17,
+        "end_line": 95
+      },
+      "symbol": {
+        "ref": "ts://@example/unused-declarations/src/catalog.ts#deadColorReader",
+        "kind": "function",
+        "name": "deadColorReader",
+        "size_lines": 3
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0014",
+        "root": true,
+        "symbol_count": 2,
+        "deletable_lines": 4
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "exported function has no reference in the target and none from any loaded consumer",
+      "details": {}
+    },
+    {
+      "code": "DS1001",
+      "kind": "unused-exported",
+      "language": "ts",
+      "position": {
+        "path": "src/catalog.ts",
+        "line": 99,
+        "column": 16,
+        "end_line": 99
+      },
+      "symbol": {
+        "ref": "ts://@example/unused-declarations/src/catalog.ts#Shapes.unusedArea",
+        "kind": "variable",
+        "name": "Shapes.unusedArea",
+        "size_lines": 1
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0016",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 1
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "exported variable has no reference in the target and none from any loaded consumer",
+      "details": {}
+    },
+    {
+      "code": "DS1002",
+      "kind": "unused-unexported",
+      "language": "ts",
+      "position": {
+        "path": "src/catalog.ts",
+        "line": 100,
+        "column": 9,
+        "end_line": 100
+      },
+      "symbol": {
+        "ref": "ts://@example/unused-declarations/src/catalog.ts#Shapes.hidden",
+        "kind": "variable",
+        "name": "Shapes.hidden",
+        "size_lines": 1
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0017",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 1
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "unexported variable has no reference in the target",
+      "details": {}
+    },
+    {
+      "code": "DS1001",
+      "kind": "unused-exported",
+      "language": "ts",
+      "position": {
+        "path": "src/catalog.ts",
+        "line": 106,
+        "column": 18,
+        "end_line": 106
+      },
+      "symbol": {
+        "ref": "ts://@example/unused-declarations/src/catalog.ts#alias:alias",
+        "kind": "export-alias",
+        "name": "alias",
+        "size_lines": 1
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0018",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 1
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "re-export has no reference in the target and none from any loaded consumer",
+      "details": {}
+    },
+    {
+      "code": "DS1006",
+      "kind": "deprecated-unused",
+      "language": "ts",
+      "position": {
+        "path": "src/catalog.ts",
+        "line": 113,
+        "column": 17,
+        "end_line": 115
+      },
+      "symbol": {
+        "ref": "ts://@example/unused-declarations/src/catalog.ts#deprecatedUnused",
+        "kind": "function",
+        "name": "deprecatedUnused",
+        "size_lines": 3
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0019",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 3
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "deprecated function has no production reference",
+      "details": {}
+    },
+    {
+      "code": "DS1006",
+      "kind": "deprecated-unused",
+      "language": "ts",
+      "position": {
+        "path": "src/catalog.ts",
+        "line": 122,
+        "column": 14,
+        "end_line": 122
+      },
+      "symbol": {
+        "ref": "ts://@example/unused-declarations/src/catalog.ts#staleFirst",
+        "kind": "variable",
+        "name": "staleFirst",
+        "size_lines": 1
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0020",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 1
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "deprecated variable has no production reference",
+      "details": {}
+    },
+    {
+      "code": "DS1006",
+      "kind": "deprecated-unused",
+      "language": "ts",
+      "position": {
+        "path": "src/catalog.ts",
+        "line": 123,
+        "column": 3,
+        "end_line": 123
+      },
+      "symbol": {
+        "ref": "ts://@example/unused-declarations/src/catalog.ts#staleSecond",
+        "kind": "variable",
+        "name": "staleSecond",
+        "size_lines": 1
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0021",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 1
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "deprecated variable has no production reference",
+      "details": {}
+    },
+    {
+      "code": "DS1006",
+      "kind": "deprecated-unused",
+      "language": "ts",
+      "position": {
+        "path": "src/catalog.ts",
+        "line": 139,
+        "column": 17,
+        "end_line": 141
+      },
+      "symbol": {
+        "ref": "ts://@example/unused-declarations/src/catalog.ts#deprecatedTestedOnly",
+        "kind": "function",
+        "name": "deprecatedTestedOnly",
+        "size_lines": 3
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": true,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0001",
+        "root": false,
+        "symbol_count": 10,
+        "deletable_lines": 27
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "deprecated function has no production reference",
+      "details": {}
+    },
+    {
+      "code": "DS1004",
+      "kind": "test-only-use",
+      "language": "ts",
+      "position": {
+        "path": "src/catalog.ts",
+        "line": 144,
+        "column": 17,
+        "end_line": 146
+      },
+      "symbol": {
+        "ref": "ts://@example/unused-declarations/src/catalog.ts#onlyTested",
+        "kind": "function",
+        "name": "onlyTested",
+        "size_lines": 3
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": true,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0001",
+        "root": true,
+        "symbol_count": 10,
+        "deletable_lines": 27
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "function is referenced only from test files and never from production code",
+      "details": {}
+    },
+    {
+      "code": "DS1004",
+      "kind": "test-only-use",
+      "language": "ts",
+      "position": {
+        "path": "src/catalog.ts",
+        "line": 150,
+        "column": 17,
+        "end_line": 152
+      },
+      "symbol": {
+        "ref": "ts://@example/unused-declarations/src/catalog.ts#testedByDeadTest",
+        "kind": "function",
+        "name": "testedByDeadTest",
+        "size_lines": 3
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": true,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0001",
+        "root": true,
+        "symbol_count": 10,
+        "deletable_lines": 27
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "function is referenced only from test files and never from production code",
+      "details": {}
+    },
+    {
+      "code": "DS1004",
+      "kind": "test-only-use",
+      "language": "ts",
+      "position": {
+        "path": "src/catalog.ts",
+        "line": 154,
+        "column": 17,
+        "end_line": 156
+      },
+      "symbol": {
+        "ref": "ts://@example/unused-declarations/src/catalog.ts#measure",
+        "kind": "function",
+        "name": "measure",
+        "size_lines": 3
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": true,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0001",
+        "root": false,
+        "symbol_count": 10,
+        "deletable_lines": 27
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "function is referenced only from test files and never from production code",
+      "details": {}
+    }
+  ],
+  "edge_evaluations": [],
+  "stale_suppressions": [],
+  "declared_gaps": [],
+  "excluded_by_cgo": [],
+  "test_file_rules": [
+    {
+      "rule": "test-file-pattern-1",
+      "matched": 1
+    }
+  ],
+  "totals": {
+    "findings": 28,
+    "by_severity": {
+      "allow": 0,
+      "warn": 0,
+      "deny": 28
+    },
+    "deletable_lines": 71,
+    "suppressions_in_effect": 0,
+    "reasons_recorded": 0,
+    "stale_suppressions": 0,
+    "pending": 0,
+    "omitted": 0
+  }
+}

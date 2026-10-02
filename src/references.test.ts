@@ -5,7 +5,7 @@ import { fixture, ROOT } from "../__test-helpers__/fixtures.ts";
 import { analyzeRoot } from "../__test-helpers__/projects.ts";
 import type { InventorySymbol } from "./inventory.ts";
 import { positionKey } from "./position.ts";
-import { DEFAULT_BATCH_CAP, type Reference } from "./references.ts";
+import { DEFAULT_BATCH_CAP, testFileRulesOf, type Reference } from "./references.ts";
 
 /**
  * The fixture holding one instance of every reference form, resolved once for every
@@ -295,7 +295,7 @@ describe("the reference table of every reference form", () => {
       [...new Set(test.map((reference) => reference.position.path))],
       "one file of the fixture matches the pattern",
     ).toEqual(["src/unit.test.ts"]);
-    expect(RESOLVED?.testFileRules).toEqual([{ rule: "test-file-pattern-1", matched: 1 }]);
+    expect(RESOLVED?.testFilePaths).toEqual(["src/unit.test.ts"]);
   });
 });
 
@@ -349,7 +349,10 @@ describe("the test-file pattern", () => {
     });
     const held = under.references[0];
 
-    expect(held?.testFileRules, "each pattern is a rule of its own and reports its count").toEqual([
+    expect(
+      testFileRulesOf(["src/unit.*.ts", "**/*.spec.ts"], held?.testFilePaths ?? []),
+      "each pattern is a rule of its own and reports its count",
+    ).toEqual([
       { rule: "test-file-pattern-1", matched: 1 },
       { rule: "test-file-pattern-2", matched: 0 },
     ]);
@@ -371,7 +374,10 @@ describe("the test-file pattern", () => {
     });
     const held = under.references[0];
 
-    expect(held?.testFileRules, "the second pattern is the one this tree answers").toEqual([
+    expect(
+      testFileRulesOf(["src/unit-?.ts", "**/*.test.?s"], held?.testFilePaths ?? []),
+      "the second pattern is the one this tree answers",
+    ).toEqual([
       { rule: "test-file-pattern-1", matched: 0 },
       { rule: "test-file-pattern-2", matched: 1 },
     ]);
@@ -383,8 +389,23 @@ describe("the test-file pattern", () => {
     });
     const held = under.references[0];
 
-    expect(held?.testFileRules).toEqual([{ rule: "test-file-pattern-1", matched: 0 }]);
+    expect(testFileRulesOf(["**/*.spec.ts"], held?.testFilePaths ?? [])).toEqual([
+      { rule: "test-file-pattern-1", matched: 0 },
+    ]);
     expect((held?.references ?? []).filter((reference) => reference.test)).toEqual([]);
+  });
+
+  it("counts a file several projects hold once, under every pattern that matches it", () => {
+    expect(
+      testFileRulesOf(
+        ["**/*.test.ts", "src/**", "**/*.spec.ts"],
+        ["src/a.test.ts", "src/b.ts", "src/a.test.ts", "lib/c.test.ts"],
+      ),
+    ).toEqual([
+      { rule: "test-file-pattern-1", matched: 2 },
+      { rule: "test-file-pattern-2", matched: 2 },
+      { rule: "test-file-pattern-3", matched: 0 },
+    ]);
   });
 });
 

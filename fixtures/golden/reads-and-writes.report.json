@@ -1,0 +1,446 @@
+{
+  "schema_version": "6.0.0",
+  "contract_version": "3.2.0",
+  "analyzer": {
+    "name": "deadset-ts",
+    "version": "0.0.0",
+    "languages": [
+      "ts"
+    ],
+    "schema_versions_accepted": [
+      "6.0.0"
+    ],
+    "conformance": {
+      "corpus_version": "1.9.0",
+      "result": "fail",
+      "digest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "target": {
+    "kind": "application",
+    "root": "fixtures/projects/reads-and-writes",
+    "identity": "@example/reads-and-writes"
+  },
+  "configurations": [
+    {
+      "id": "tsconfig.json",
+      "project": "tsconfig.json"
+    }
+  ],
+  "configurations_not_built": [],
+  "consumers": {
+    "declared": 0,
+    "loaded": [],
+    "unavailable": []
+  },
+  "findings": [
+    {
+      "code": "DS1303",
+      "kind": "unused-type-parameter",
+      "language": "ts",
+      "position": {
+        "path": "src/generics.ts",
+        "line": 2,
+        "column": 23,
+        "end_line": 2
+      },
+      "symbol": {
+        "ref": "ts://@example/reads-and-writes/src/generics.ts#first<T>",
+        "kind": "type-parameter",
+        "name": "first<T>",
+        "size_lines": 1
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0001",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 1
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "type parameter first<T> is named in neither its signature nor its body",
+      "details": {}
+    },
+    {
+      "code": "DS1303",
+      "kind": "unused-type-parameter",
+      "language": "ts",
+      "position": {
+        "path": "src/generics.ts",
+        "line": 19,
+        "column": 8,
+        "end_line": 19
+      },
+      "symbol": {
+        "ref": "ts://@example/reads-and-writes/src/generics.ts#Box.open<V>",
+        "kind": "type-parameter",
+        "name": "Box.open<V>",
+        "size_lines": 1
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0002",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 1
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "type parameter Box.open<V> is named in neither its signature nor its body",
+      "details": {}
+    },
+    {
+      "code": "DS1104",
+      "kind": "redundant-export-keyword",
+      "language": "ts",
+      "position": {
+        "path": "src/levels.ts",
+        "line": 9,
+        "column": 13,
+        "end_line": 12
+      },
+      "symbol": {
+        "ref": "ts://@example/reads-and-writes/src/levels.ts#Flag",
+        "kind": "enum",
+        "name": "Flag",
+        "size_lines": 4
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0006",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 0
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "narrowable",
+      "severity": "warn",
+      "message": "exported enum is referenced only inside the file that declares it",
+      "details": {
+        "narrower_visibility": "file"
+      }
+    },
+    {
+      "code": "DS1302",
+      "kind": "unused-enum-member",
+      "language": "ts",
+      "position": {
+        "path": "src/levels.ts",
+        "line": 23,
+        "column": 3,
+        "end_line": 23
+      },
+      "symbol": {
+        "ref": "ts://@example/reads-and-writes/src/levels.ts#Mode.Write",
+        "kind": "enum-member",
+        "name": "Mode.Write",
+        "size_lines": 1
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0004",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 1
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "enum member Mode.Write is named nowhere",
+      "details": {}
+    },
+    {
+      "code": "DS1002",
+      "kind": "unused-unexported",
+      "language": "ts",
+      "position": {
+        "path": "src/levels.ts",
+        "line": 27,
+        "column": 6,
+        "end_line": 30
+      },
+      "symbol": {
+        "ref": "ts://@example/reads-and-writes/src/levels.ts#Unused",
+        "kind": "enum",
+        "name": "Unused",
+        "size_lines": 4
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0005",
+        "root": true,
+        "symbol_count": 3,
+        "deletable_lines": 4
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "unexported enum has no reference in the target",
+      "details": {}
+    },
+    {
+      "code": "DS1301",
+      "kind": "write-only-symbol",
+      "language": "ts",
+      "position": {
+        "path": "src/state.ts",
+        "line": 2,
+        "column": 5,
+        "end_line": 2
+      },
+      "symbol": {
+        "ref": "ts://@example/reads-and-writes/src/state.ts#written",
+        "kind": "variable",
+        "name": "written",
+        "size_lines": 1
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0007",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 0
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "variable written is written at 2 positions and never read",
+      "details": {
+        "write_positions": [
+          {
+            "path": "src/state.ts",
+            "line": 15,
+            "column": 3,
+            "end_line": 15
+          },
+          {
+            "path": "src/state.ts",
+            "line": 16,
+            "column": 3,
+            "end_line": 16
+          }
+        ]
+      }
+    },
+    {
+      "code": "DS1301",
+      "kind": "write-only-symbol",
+      "language": "ts",
+      "position": {
+        "path": "src/state.ts",
+        "line": 8,
+        "column": 12,
+        "end_line": 8
+      },
+      "symbol": {
+        "ref": "ts://@example/reads-and-writes/src/state.ts#shared",
+        "kind": "variable",
+        "name": "shared",
+        "size_lines": 1
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0008",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 0
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "variable shared is written once and never read",
+      "details": {
+        "write_positions": [
+          {
+            "path": "src/state.ts",
+            "line": 11,
+            "column": 3,
+            "end_line": 11
+          }
+        ]
+      }
+    },
+    {
+      "code": "DS1301",
+      "kind": "write-only-symbol",
+      "language": "ts",
+      "position": {
+        "path": "src/state.ts",
+        "line": 23,
+        "column": 3,
+        "end_line": 23
+      },
+      "symbol": {
+        "ref": "ts://@example/reads-and-writes/src/state.ts#Gauge.#samples",
+        "kind": "class-member",
+        "name": "Gauge.#samples",
+        "size_lines": 1
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0009",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 0
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "member Gauge.#samples is written at 3 positions and never read",
+      "details": {
+        "write_positions": [
+          {
+            "path": "src/state.ts",
+            "line": 30,
+            "column": 10,
+            "end_line": 30
+          },
+          {
+            "path": "src/state.ts",
+            "line": 38,
+            "column": 10,
+            "end_line": 38
+          },
+          {
+            "path": "src/state.ts",
+            "line": 43,
+            "column": 10,
+            "end_line": 43
+          }
+        ]
+      }
+    },
+    {
+      "code": "DS1301",
+      "kind": "write-only-symbol",
+      "language": "ts",
+      "position": {
+        "path": "src/state.ts",
+        "line": 52,
+        "column": 7,
+        "end_line": 52
+      },
+      "symbol": {
+        "ref": "ts://@example/reads-and-writes/src/state.ts#slots",
+        "kind": "variable",
+        "name": "slots",
+        "size_lines": 1
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0010",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 0
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "variable slots is written once and never read",
+      "details": {
+        "write_positions": [
+          {
+            "path": "src/state.ts",
+            "line": 55,
+            "column": 3,
+            "end_line": 55
+          }
+        ]
+      }
+    }
+  ],
+  "edge_evaluations": [],
+  "stale_suppressions": [],
+  "declared_gaps": [],
+  "excluded_by_cgo": [],
+  "test_file_rules": [
+    {
+      "rule": "test-file-pattern-1",
+      "matched": 1
+    }
+  ],
+  "totals": {
+    "findings": 9,
+    "by_severity": {
+      "allow": 0,
+      "warn": 1,
+      "deny": 8
+    },
+    "deletable_lines": 7,
+    "suppressions_in_effect": 0,
+    "reasons_recorded": 0,
+    "stale_suppressions": 0,
+    "pending": 0,
+    "omitted": 0
+  }
+}

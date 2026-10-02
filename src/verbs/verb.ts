@@ -28,6 +28,19 @@ export interface Invocation {
   readonly openClient: (collectTiming: boolean) => Engine;
   /** The emitter of every kind family, which a verb that reports findings runs. */
   readonly emitters: Emitters;
+  /** The arguments after the verb's name, as written. */
+  readonly args: readonly string[];
+  /** The last value one of the verb's own options was given, undefined where none was. */
+  readonly option: (name: string) => string | undefined;
+  /** Every value a repeatable option of the verb was given, in the order they were written. */
+  readonly repeated: (name: string) => readonly string[];
+}
+
+/** The options one verb takes beside the ones every verb takes, each taking a value. */
+export interface VerbOptions {
+  readonly plain: readonly string[];
+  /** The options that may be written more than once, each occurrence one value. */
+  readonly repeatable: readonly string[];
 }
 
 /**

@@ -108,10 +108,10 @@ describe("the command line", () => {
   });
 
   it("names a verb it does not implement and exits 2", () => {
-    const got = invoke(["analyze"]);
+    const got = invoke(["explain"]);
 
     expect(got.code).toBe(2);
-    expect(got.err).toBe("deadset-ts: analyze is not implemented\n");
+    expect(got.err).toBe("deadset-ts: explain is not implemented\n");
   });
 });
 

@@ -34,4 +34,9 @@ export interface Host {
    * says so at the one moment the value is asked for.
    */
   analyzerVersion(): string;
+  /**
+   * Writes one document whole, or a throw naming why it cannot. The write is atomic: a
+   * reader of the path sees the previous document or this one and never a part of it.
+   */
+  writeFile(path: string, text: string): void;
 }

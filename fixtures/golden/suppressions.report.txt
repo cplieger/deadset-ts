@@ -1,0 +1,12 @@
+deadset-ignore.json:16:5: suppression ts://@example/suppressions/src/lib.ts#inBlock: ignore entry for DS1002 names a symbol and no path [certain] (DS1702)
+src/lib.ts:15:17: function stillUsed: exported function is referenced only inside the file that declares it [certain] (DS1104)
+src/lib.ts:22:10: function separated: unexported function has no reference in the target [certain] (DS1002)
+src/lib.ts:24:1: suppression ts://@example/suppressions/src/lib.ts#: inline directive for DS1002 carries no reason [certain] (DS1701)
+src/lib.ts:25:10: function reasonless: unexported function has no reference in the target [certain] (DS1002)
+src/lib.ts:28:10: function inBlock: unexported function has no reference in the target [certain] (DS1002)
+deadset-ignore.json:10:5: suppression ts://@example/suppressions/src/lib.ts#removedLongAgo: ignore entry for DS1002 matches no current finding [certain] (DS1703)
+deadset-ignore.json:21:5: suppression ts://@example/suppressions/src/lib.ts#entryNamed: ignore entry for DS1002 matches no current finding [certain] (DS1703)
+src/lib.ts:14:1: suppression ts://@example/suppressions/src/lib.ts#stillUsed: inline directive for DS1002 matches no current finding, and its declaration reports DS1104 [certain] (DS1703)
+src/lib.ts:17:1: suppression ts://@example/suppressions/src/lib.ts#wrongCode: inline directive for DS1001 matches no current finding, and its declaration reports DS1002 [certain] (DS1703)
+src/lib.ts:20:1: suppression ts://@example/suppressions/src/lib.ts#: inline directive for DS1002 matches no current finding [certain] (DS1703)
+summary: 6 findings (0 allow, 1 warn, 5 deny), 3 deletable lines, 2 suppressions in effect, 7 reasons recorded, 5 stale suppressions, 0 pending, 0 omitted
