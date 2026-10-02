@@ -6,10 +6,14 @@ import { FIXED_SEVERITY_CODES, KINDS, LIVE_CODES } from "./kinds.ts";
 interface ContractRow {
   readonly code: string;
   readonly name: string;
+  readonly languages: readonly string[];
+  readonly rule: string;
+  readonly precondition?: string;
   readonly default_severity: string;
   readonly max_class: string;
   readonly fixability: string;
   readonly fixed: boolean;
+  readonly overlap?: { readonly ts: readonly string[] };
 }
 
 function contractRows(): ContractRow[] {
@@ -22,10 +26,14 @@ describe("the issue-kind vocabulary table", () => {
       .map((kind) => ({
         code: kind.code,
         name: kind.name,
+        languages: kind.languages,
+        rule: kind.rule,
+        ...(kind.precondition === undefined ? {} : { precondition: kind.precondition }),
         defaultSeverity: kind.default_severity,
         maxClass: kind.max_class,
         fixability: kind.fixability,
         fixed: kind.fixed,
+        ...(kind.overlap === undefined ? {} : { overlap: kind.overlap.ts }),
       }))
       .sort((a, b) => (a.code < b.code ? -1 : 1));
 

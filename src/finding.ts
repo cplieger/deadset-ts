@@ -55,7 +55,7 @@ export interface FindingDetails {
   readonly narrowerVisibility?: "file" | "package";
   /** On `DS1201` and `DS1203`: the classes implementing the interface, in site order. */
   readonly implementations?: readonly PositionedSymbol[];
-  /** On `DS1301`: every position the subject is written at, in site order. */
+  /** On `DS1301` and `DS1807`: every position the subject is written at, in site order. */
   readonly writePositions?: readonly FindingPosition[];
   /** On `DS1601`: the manifest section that declares the dependency. */
   readonly dependencyClass?: DependencySection;
@@ -63,6 +63,8 @@ export interface FindingDetails {
   readonly mechanism?: Mechanism;
   /** On `DS1701` and `DS1702`: the refused suppression as written, a member absent where it lacks one. */
   readonly entry?: SuppressionEntry;
+  /** On the intra-function kinds: the external rules that report the same kind, as the vocabulary lists them. */
+  readonly overlap?: readonly string[];
 }
 
 /** One suppression in the four-member form the ignore file and the baseline share. */
@@ -91,6 +93,8 @@ export interface FindingComponent {
   /** The number of the component's members. */
   readonly symbolCount: number;
   readonly deletableLines: number;
+  /** Every member, the subject included, where the run lists a component in full. */
+  readonly members?: readonly PositionedSymbol[];
 }
 
 /** One finding with every member the finding schema requires. */

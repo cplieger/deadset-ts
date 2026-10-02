@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { nodeHost } from "../../bin/node-host.ts";
 import { contractDocument } from "../../__test-helpers__/fixtures.ts";
+import { schemaValidator } from "../../__test-helpers__/json-schema.ts";
 import type { Host } from "../host.ts";
 import { run, type Writer } from "../run.ts";
 import { CONFORMANCE } from "../conformance.ts";
@@ -20,6 +21,11 @@ function invoke(args: readonly string[], host: Host): { code: number; out: strin
   return { code, out: out.text, err: err.text };
 }
 
+const validateDescribe = schemaValidator(
+  { "describe.schema.json": contractDocument("describe.schema.json") },
+  "describe.schema.json",
+);
+
 const VERSIONED: Host = { ...nodeHost(), analyzerVersion: () => "1.2.3" };
 
 describe("describe", () => {
@@ -32,8 +38,8 @@ describe("describe", () => {
         "{\n" +
         '  "name": "deadset-ts",\n' +
         '  "version": "1.2.3",\n' +
-        '  "contract_version": "3.2.0",\n' +
-        '  "schema_versions_accepted": [\n    "6.0.0"\n  ],\n' +
+        '  "contract_version": "4.0.0",\n' +
+        '  "schema_versions_accepted": [\n    "6.0.0",\n    "6.1.0"\n  ],\n' +
         '  "languages": [\n    "ts"\n  ],\n' +
         '  "conformance": {\n' +
         `    "corpus_version": "${CONFORMANCE.corpusVersion}",\n` +
@@ -63,6 +69,23 @@ describe("describe", () => {
     expect(JSON.parse(describeDocument("1.2.3", recorded))).toMatchObject({
       conformance: { corpus_version: "1.9.0", result: "pass", digest: `sha256:${"a".repeat(64)}` },
     });
+  });
+
+  it("omits the conformance member where no run is recorded, as the describe schema admits", () => {
+    const written = JSON.parse(describeDocument("1.2.3", undefined)) as Record<string, unknown>;
+
+    expect(Object.keys(written)).toEqual([
+      "name",
+      "version",
+      "contract_version",
+      "schema_versions_accepted",
+      "languages",
+    ]);
+    expect(validateDescribe(written)).toEqual([]);
+  });
+
+  it("meets the describe schema with its own record", () => {
+    expect(validateDescribe(JSON.parse(invoke(["describe"], VERSIONED).out))).toEqual([]);
   });
 
   it("exits 2 for an argument, and writes nothing to the output stream", () => {

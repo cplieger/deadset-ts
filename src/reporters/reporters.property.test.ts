@@ -7,7 +7,7 @@ import { resolve } from "../resolve.ts";
 import { writeBaseline } from "../suppress-file.ts";
 import type { RenderOptions } from "./reporter.ts";
 import { RENDERINGS } from "./reporters.ts";
-import { RULE_TEXTS } from "./rules.ts";
+import { KINDS } from "../kinds.ts";
 import { parseTemplate } from "./template.ts";
 
 /** The text line's defining expression, read from the Contract's page. */
@@ -30,7 +30,11 @@ const MAX_LINE = 30;
 
 const findingArb: fc.Arbitrary<WireFinding> = fc
   .record({
-    code: fc.constantFrom(...RULE_TEXTS.keys()),
+    code: fc.constantFrom(
+      ...[...KINDS.values()]
+        .filter((kind) => kind.languages.includes("ts"))
+        .map((kind) => kind.code),
+    ),
     path: fc.constantFrom(...PATHS),
     line: fc.integer({ min: 1, max: MAX_LINE }),
     column: fc.integer({ min: 1, max: 40 }),

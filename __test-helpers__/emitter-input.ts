@@ -54,5 +54,6 @@ export function sweepOnly(config: Config, swept: RunSweep): EmitterInput {
     files: { tree: [], heldByInclusion: new Set() },
     boundary: { consumers: { declared: [], loaded: [] }, encapsulated: false, edges: [] },
     selfCheck: NO_SELF_CHECK,
+    intraFunction: { parts: [], free: new Set(), discardedEverywhere: new Set() },
   };
 }

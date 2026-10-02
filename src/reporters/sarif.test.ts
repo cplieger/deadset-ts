@@ -1,4 +1,6 @@
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { fixture } from "../../__test-helpers__/fixtures.ts";
 import type { Report, WireFinding, WireStaleSuppression } from "../report.ts";
 import { RenderError, type RenderOptions } from "./reporter.ts";
 import { sarif } from "./sarif.ts";
@@ -126,9 +128,10 @@ describe("the SARIF rendering", () => {
   it("lists one rule per live TypeScript kind in code order, whatever the results name", () => {
     const rules = onlyRun(rendered(report([], []))).tool.driver.rules;
 
-    expect(rules.map((rule) => rule.id)).toHaveLength(27);
+    expect(rules.map((rule) => rule.id)).toHaveLength(28);
     expect(rules.map((rule) => rule.id)).toEqual(rules.map((rule) => rule.id).sort());
     expect(rules.map((rule) => rule.id)).not.toContain("DS1102");
+    expect(rules.map((rule) => rule.id)).toContain("DS1706");
     expect(rules[0]).toEqual({
       id: "DS1001",
       name: "unused-exported",
@@ -283,4 +286,66 @@ describe("the SARIF rendering", () => {
     expect(sarif(one, options())).toBe(sarif(structuredClone(one), options()));
     expect(sarif(one, options()).endsWith("}\n")).toBe(true);
   });
+});
+
+/** The published SARIF vector cases, each by its directory name, in ascending order. */
+function sarifCases(): string[] {
+  return readdirSync(fixture("vectors", "sarif"), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+}
+
+/** One file of one SARIF vector case, decoded, or undefined where the case holds none. */
+function caseDocument(name: string, file: string): unknown {
+  const path = fixture("vectors", "sarif", name, file);
+  return existsSync(path) ? (JSON.parse(readFileSync(path, "utf8")) as unknown) : undefined;
+}
+
+/** The cases a merged report states: a run per input report, which the orchestrator renders. */
+function isMerged(name: string): boolean {
+  return existsSync(fixture("vectors", "sarif", name, "inputs"));
+}
+
+describe("the published SARIF vectors", () => {
+  it("are the case set this suite runs, the merged ones being the orchestrator's", () => {
+    expect(sarifCases().filter((name) => !isMerged(name))).toEqual([
+      "findings-and-a-stale-suppression",
+      "implementations-and-component-members",
+      "line-fingerprints",
+      "line-past-the-end",
+      "message-with-line-separators",
+      "path-segments-encoded",
+      "related-locations-capped",
+    ]);
+  });
+
+  it.each(sarifCases().filter((name) => !isMerged(name)))(
+    "renders %s as the case states, compared as decoded values",
+    (name) => {
+      const report = caseDocument(name, "report.json") as Report;
+      const sources = (caseDocument(name, "sources.json") as { files: Record<string, string> })
+        .files;
+      const render = (): string =>
+        sarif(
+          report,
+          options((path) => {
+            if (!Object.hasOwn(sources, path)) {
+              throw new Error(`${path} is not a file of the case`);
+            }
+            return sources[path] ?? "";
+          }),
+        );
+      const exit = existsSync(fixture("vectors", "sarif", name, "expected_exit"))
+        ? readFileSync(fixture("vectors", "sarif", name, "expected_exit"), "utf8").trim()
+        : undefined;
+
+      if (exit !== undefined) {
+        expect(exit, "the one exit code a failed rendering ends with").toBe("3");
+        expect(render).toThrow(RenderError);
+        return;
+      }
+      expect(JSON.parse(render())).toEqual(caseDocument(name, "expected.json"));
+    },
+  );
 });

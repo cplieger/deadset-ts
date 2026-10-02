@@ -1,5 +1,14 @@
 import { createHash } from "node:crypto";
-import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { nodeHost } from "../bin/node-host.ts";
@@ -32,12 +41,23 @@ const GAPS_FILE = "conformance.json";
 /** The directory of a rendering holding the target; every other one is a consumer. */
 const TARGET = "target";
 
+/** The directory of a rendering holding its installed packages, and the name the run gives it. */
+const INSTALLED = "installed";
+const NODE_MODULES = "node_modules";
+
 /** The ignore file's name and location, which the suppression grammar fixes. */
 const IGNORE_FILE = "deadset-ignore.json";
 
 const NONE = "none";
 const STALE_SUPPRESSION = "DS1703";
 const UNMATCHED_ROOT = "DS1704";
+const UNMATCHED_DECLARATION = "DS1706";
+
+/** The two configuration keys under a lifecycle contract a configured declaration is written into. */
+const LIFECYCLE_KEYS = {
+  "ts.lifecycle_contracts.components": "components",
+  "ts.lifecycle_contracts.bases": "bases",
+} as const;
 
 /** The confidence and subject kind the report schema fixes for a stale-suppression record. */
 const RECORD_CONFIDENCE = "certain";
@@ -65,6 +85,25 @@ interface Row {
   readonly component?: Component;
 }
 
+/** One entry of a key that names a declaration, in one of its three shapes. */
+type DeclarationEntry = Readonly<Partial<Record<"symbol" | "module" | "name" | "global", string>>>;
+
+/** One configured declaration: the key it is written into, the entry, and a contract's members. */
+interface ConfiguredDeclaration {
+  readonly key: "ts.injection_registrations" | "ts.serializers" | keyof typeof LIFECYCLE_KEYS;
+  readonly entry: DeclarationEntry;
+  readonly members?: readonly string[];
+}
+
+/** One edge evaluation the report must publish. */
+interface EdgeExpectation {
+  readonly edge: string;
+  readonly side: string;
+  readonly state: string;
+  readonly symbol?: string;
+  readonly report?: string;
+}
+
 interface ExpectationFile {
   readonly name: string;
   readonly languages: readonly string[];
@@ -72,6 +111,8 @@ interface ExpectationFile {
   readonly consumers?: readonly string[];
   readonly closed_world?: readonly string[];
   readonly configured_roots?: Readonly<Record<string, string>>;
+  readonly configured_declarations?: Readonly<Record<string, ConfiguredDeclaration>>;
+  readonly edge_evaluations?: readonly EdgeExpectation[];
   readonly expect: readonly Row[];
 }
 
@@ -246,15 +287,60 @@ function siteOf(path: string, line: number): string {
   return `${TARGET}/${path}:${String(line)}`;
 }
 
+/**
+ * The subject reference a finding about a configured declaration carries: a symbol
+ * entry's reference, a module entry's module and name joined by a number sign, and a
+ * global entry's path after one.
+ */
+export function declarationRef(entry: DeclarationEntry): string {
+  if (entry.symbol !== undefined) {
+    return entry.symbol;
+  }
+  if (entry.module !== undefined) {
+    return `${entry.module}#${entry.name ?? ""}`;
+  }
+  return `#${entry.global ?? ""}`;
+}
+
+/**
+ * The finding a configured entry is answered by, where a logical name names one: the
+ * code that reports it unmatched and the subject reference that finding carries.
+ */
+function configuredEntryOf(
+  file: ExpectationFile,
+  name: string,
+): { readonly code: string; readonly ref: string } | undefined {
+  const root = file.configured_roots?.[name];
+  if (root !== undefined) {
+    return { code: UNMATCHED_ROOT, ref: root };
+  }
+  const declaration = file.configured_declarations?.[name];
+  return declaration === undefined
+    ? undefined
+    : { code: UNMATCHED_DECLARATION, ref: declarationRef(declaration.entry) };
+}
+
 /** Each logical name of the fixture bound to its site, or to the configured entry it names. */
 function sitesOf(file: ExpectationFile, manifest: Manifest): Map<string, string> {
   const sites = new Map<string, string>();
+  const roots = new Set(Object.keys(file.configured_roots ?? {}));
+  for (const name of Object.keys(file.configured_declarations ?? {})) {
+    if (roots.has(name) || manifest.symbols[name] !== undefined) {
+      throw new FixtureError(`${name} is a configured declaration and is named elsewhere too`);
+    }
+  }
+  for (const edge of file.edge_evaluations ?? []) {
+    const bound = edge.symbol === undefined ? undefined : manifest.symbols[edge.symbol];
+    if (edge.symbol !== undefined && (bound?.file === undefined || bound.line === undefined)) {
+      throw new FixtureError(`the manifest binds no file and line for ${edge.symbol}`);
+    }
+  }
   for (const row of file.expect) {
-    const configured = file.configured_roots?.[row.symbol];
+    const configured = configuredEntryOf(file, row.symbol);
     const bound = manifest.symbols[row.symbol];
     if (configured !== undefined) {
       if (bound !== undefined) {
-        throw new FixtureError(`${row.symbol} is both a configured root and a manifest symbol`);
+        throw new FixtureError(`${row.symbol} is both a configured entry and a manifest symbol`);
       }
       continue;
     }
@@ -277,11 +363,41 @@ function configOf(file: ExpectationFile): string {
   const patterns = Object.keys(file.configured_roots ?? {})
     .sort(compare)
     .map((name) => file.configured_roots?.[name] ?? "");
+  const ts = tsSectionOf(file.configured_declarations ?? {});
   return `${JSON.stringify({
     target: { kind: file.target_kind },
     ...(world.includes("consumers") ? { consumers: { complete: true } } : {}),
     ...(patterns.length > 0 ? { roots: { patterns } } : {}),
+    ...(Object.keys(ts).length > 0 ? { ts } : {}),
   })}\n`;
+}
+
+/**
+ * The ts section the configured declarations are written into, in ascending order of
+ * logical name: an entry of a lifecycle contract's list as one contract of its own,
+ * every other entry under its key.
+ */
+function tsSectionOf(
+  declared: Readonly<Record<string, ConfiguredDeclaration>>,
+): Record<string, unknown[]> {
+  const section: Record<string, unknown[]> = {};
+  for (const name of Object.keys(declared).sort(compare)) {
+    const one = declared[name];
+    if (one === undefined) {
+      continue;
+    }
+    const lifecycle =
+      one.key in LIFECYCLE_KEYS
+        ? LIFECYCLE_KEYS[one.key as keyof typeof LIFECYCLE_KEYS]
+        : undefined;
+    const key = lifecycle === undefined ? one.key.slice("ts.".length) : "lifecycle_contracts";
+    const value =
+      lifecycle === undefined
+        ? one.entry
+        : { [lifecycle]: [one.entry], members: one.members ?? [] };
+    (section[key] ??= []).push(value);
+  }
+  return section;
 }
 
 /** The scope document naming each consumer of the fixture beside the target, or none. */
@@ -464,12 +580,12 @@ function differences(row: Row, actual: Actual): string {
 function answerOf(
   row: Row,
   site: string | undefined,
-  entry: string | undefined,
+  entry: { readonly code: string; readonly ref: string } | undefined,
   held: Answered,
 ): { actual: Actual; message: string } {
   if (entry !== undefined) {
     const found = held.report.findings.filter(
-      (one) => one.code === UNMATCHED_ROOT && one.symbol.ref === entry,
+      (one) => one.code === entry.code && one.symbol.ref === entry.ref,
     );
     if (row.report === NONE) {
       const named = found[0];
@@ -477,10 +593,10 @@ function answerOf(
         ? { actual: { report: NONE }, message: "" }
         : {
             actual: answerFrom(row, named),
-            message: `want no ${UNMATCHED_ROOT} naming ${entry}, got one`,
+            message: `want no ${entry.code} naming ${entry.ref}, got one`,
           };
     }
-    return answered(row, found, `${UNMATCHED_ROOT} naming ${entry}`);
+    return answered(row, found, `${entry.code} naming ${entry.ref}`);
   }
   if (row.report === STALE_SUPPRESSION) {
     const records = held.report.stale_suppressions.filter(
@@ -537,13 +653,18 @@ function answered(
   return { actual, message: differences(row, actual) };
 }
 
-/** Every finding and record at a position no row resolves to, ordered by file, line and code. */
+/**
+ * Every finding and record no row names, by its position and its code, ordered by file,
+ * line and code: a finding about a configured entry is named by a row naming that entry
+ * under that code, and any other by a row whose position it is at naming its code.
+ * `expected` holds each row's site and code joined by a space, and `entries` each
+ * configured entry's code and reference joined the same way.
+ */
 export function unexpectedOf(
   report: Report,
-  sites: ReadonlyMap<string, string>,
+  expected: ReadonlySet<string>,
   entries: ReadonlySet<string>,
 ): Unexpected[] {
-  const expected = new Set(sites.values());
   const reported = [
     ...report.findings.map((one) => ({
       code: one.code,
@@ -560,9 +681,9 @@ export function unexpectedOf(
   ];
   return reported
     .filter((one) =>
-      one.code === UNMATCHED_ROOT
-        ? !entries.has(one.ref)
-        : !expected.has(siteOf(one.path, one.line)),
+      one.code === UNMATCHED_ROOT || one.code === UNMATCHED_DECLARATION
+        ? !entries.has(`${one.code} ${one.ref}`)
+        : !expected.has(`${siteOf(one.path, one.line)} ${one.code}`),
     )
     .map((one) => ({ file: `${TARGET}/${one.path}`, line: one.line, report: one.code }))
     .sort((a, b) => compare(a.file, b.file) || a.line - b.line || compare(a.report, b.report));
@@ -628,6 +749,84 @@ function suppressionPhase(
     };
   }
   return createHash("sha256").update(body).digest("hex");
+}
+
+/** Each row's site and the code it names there, joined by a space. */
+function namedByRows(file: ExpectationFile, sites: ReadonlyMap<string, string>): Set<string> {
+  const named = new Set<string>();
+  for (const row of file.expect) {
+    const site = sites.get(row.symbol);
+    if (site !== undefined && row.report !== NONE) {
+      named.add(`${site} ${row.report}`);
+    }
+  }
+  return named;
+}
+
+/** Each configured entry a row names under a code, by that code and its subject reference. */
+function entriesOf(file: ExpectationFile): Set<string> {
+  const named = new Set<string>();
+  for (const row of file.expect) {
+    const entry = configuredEntryOf(file, row.symbol);
+    if (row.report === entry?.code) {
+      named.add(`${entry.code} ${entry.ref}`);
+    }
+  }
+  return named;
+}
+
+/**
+ * Every way the report's edge evaluations differ from the fixture's, in one line, or
+ * empty: each entry names exactly one record by edge and side carrying its state, a dead
+ * side's record carries a finding under the entry's code at the entry's symbol, and no
+ * record is left that no entry names.
+ */
+export function edgeDifferences(
+  file: Pick<ExpectationFile, "edge_evaluations">,
+  manifest: Manifest,
+  report: Pick<Report, "edge_evaluations">,
+): string {
+  const held: string[] = [];
+  const wanted = file.edge_evaluations ?? [];
+  for (const want of wanted) {
+    const records = report.edge_evaluations.filter(
+      (one) => one.edge === want.edge && one.side === want.side,
+    );
+    const record = records[0];
+    const named = `${want.edge} ${want.side}`;
+    if (record === undefined || records.length > 1) {
+      held.push(`want exactly one evaluation of ${named}, got ${String(records.length)}`);
+      continue;
+    }
+    if (record.state !== want.state) {
+      held.push(`${named} state want ${want.state} got ${record.state}`);
+      continue;
+    }
+    if (want.state !== "dead") {
+      continue;
+    }
+    const bound = manifest.symbols[want.symbol ?? ""];
+    const site =
+      bound?.file === undefined || bound.line === undefined
+        ? ""
+        : `${bound.file}:${String(bound.line)}`;
+    const found = record.finding;
+    if (
+      found === undefined ||
+      found.code !== want.report ||
+      siteOf(found.position.path, found.position.line) !== site
+    ) {
+      held.push(
+        `${named} want ${want.report ?? ""} at ${site}, got ${found === undefined ? "none" : `${found.code} at ${siteOf(found.position.path, found.position.line)}`}`,
+      );
+    }
+  }
+  for (const record of report.edge_evaluations) {
+    if (!wanted.some((one) => one.edge === record.edge && one.side === record.side)) {
+      held.push(`evaluation of ${record.edge} ${record.side}, which no entry names`);
+    }
+  }
+  return held.join("; ");
 }
 
 /** The capabilities one row exercises: its code, else the classes it names. */
@@ -706,6 +905,9 @@ function answerFixture(
     const sites = sitesOf(file, manifest);
     const rendering = join(dir, "rendering");
     cpSync(fixture("corpus", name, "ts"), rendering, { recursive: true });
+    if (existsSync(join(rendering, INSTALLED))) {
+      renameSync(join(rendering, INSTALLED), join(rendering, NODE_MODULES));
+    }
     const before = filesUnder(rendering);
     const at: CorpusRun = {
       dir,
@@ -719,12 +921,11 @@ function answerFixture(
     }
 
     const first = analyzeRendering(at, "first");
-    const entries = new Set(Object.values(file.configured_roots ?? {}));
     const answers = rows.map((row) => {
       const { actual, message } = answerOf(
         row,
         sites.get(row.symbol),
-        file.configured_roots?.[row.symbol],
+        configuredEntryOf(file, row.symbol),
         first,
       );
       const held: ExpectationResult = {
@@ -752,15 +953,22 @@ function answerFixture(
     }
 
     const decided = answers.map(({ row, held }) => decide(row, held, gaps, name));
-    const unexpected = unexpectedOf(first.report, sites, entries);
+    const unexpected = unexpectedOf(first.report, namedByRows(file, sites), entriesOf(file));
+    const edges = edgeDifferences(file, manifest, first.report);
     const outcomes = decided.map((one) => one.result);
     let result: Outcome = "pass";
-    if (unexpected.length > 0 || outcomes.includes("fail")) {
+    if (unexpected.length > 0 || edges !== "" || outcomes.includes("fail")) {
       result = "fail";
     } else if (outcomes.includes("gap")) {
       result = "gap";
     }
-    return { fixture: name, result, expectations: decided, unexpected };
+    return {
+      fixture: name,
+      result,
+      expectations: decided,
+      unexpected,
+      ...(edges === "" ? {} : { message: edges }),
+    };
   } catch (error: unknown) {
     if (!(error instanceof FixtureError)) {
       throw error;

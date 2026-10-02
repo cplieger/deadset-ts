@@ -215,6 +215,23 @@ describe("the evaluation of declared sides", () => {
     expect(evaluated.findings).toEqual([deadFinding]);
   });
 
+  it("holds no part finding pending, though the part sits at its declaration's position", () => {
+    const discarded: Finding = {
+      ...findingAbout(live, "DS1803"),
+      symbol: { ref: live.ref, kind: "result", name: "result", sizeLines: 1 },
+    };
+    const evaluated = evaluateEdges(
+      [discarded],
+      [{ edge: "p", side: "provides", symbol: live.ref }],
+      symbols,
+    );
+
+    expect(evaluated.evaluations).toEqual([
+      { edge: "p", side: "provides", symbol: live.ref, state: "live" },
+    ]);
+    expect(evaluated.findings).toEqual([discarded]);
+  });
+
   it("finds a side absent when only a file of the run carries its reference", () => {
     const file: InventorySymbol = {
       ...declaration("", 1),

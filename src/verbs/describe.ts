@@ -1,25 +1,29 @@
 import { CONFORMANCE, type Conformance } from "../conformance.ts";
-import { ANALYZER_NAME, LANGUAGE, SCHEMA_VERSION } from "../report.ts";
+import { ANALYZER_NAME, LANGUAGE, SCHEMA_VERSIONS_ACCEPTED } from "../report.ts";
 import { CONTRACT_VERSION } from "../version.ts";
 import { EXIT_CLEAN, EXIT_FAILURE, EXIT_USAGE, type Verb } from "./verb.ts";
 
 /**
  * The document `describe` writes: the analyzer, the Contract version it implements, the
  * report schema versions it reads, the languages it claims, and its recorded result over
- * the conformance corpus.
+ * the conformance corpus, a member the document omits where no run is recorded.
  */
-export function describeDocument(version: string, recorded: Conformance): string {
+export function describeDocument(version: string, recorded: Conformance | undefined): string {
   const document = {
     name: ANALYZER_NAME,
     version,
     contract_version: CONTRACT_VERSION,
-    schema_versions_accepted: [SCHEMA_VERSION],
+    schema_versions_accepted: SCHEMA_VERSIONS_ACCEPTED,
     languages: [LANGUAGE],
-    conformance: {
-      corpus_version: recorded.corpusVersion,
-      result: recorded.result,
-      digest: recorded.digest,
-    },
+    ...(recorded === undefined
+      ? {}
+      : {
+          conformance: {
+            corpus_version: recorded.corpusVersion,
+            result: recorded.result,
+            digest: recorded.digest,
+          },
+        }),
   };
   return `${JSON.stringify(document, null, 2)}\n`;
 }

@@ -154,6 +154,15 @@ function readRecord(value: unknown, site: Position, byReference: ByReference, sh
   return { records: named.map((one) => ({ ...written, bound: one.id })), refusals: [] };
 }
 
+function byReferenceOf(symbols: readonly InventorySymbol[]): ByReference {
+  const byReference = new Map<string, InventorySymbol[]>();
+  for (const symbol of symbols) {
+    const key = referenceKey(symbol.ref, symbol.position.path);
+    byReference.set(key, [...(byReference.get(key) ?? []), symbol]);
+  }
+  return byReference;
+}
+
 /** Reads one document at the target root, binding each record against the run's declarations. */
 function readDocument(
   host: Host,
@@ -196,11 +205,7 @@ function readDocument(
     return malformed(shape.file);
   }
 
-  const byReference = new Map<string, InventorySymbol[]>();
-  for (const symbol of symbols) {
-    const key = referenceKey(symbol.ref, symbol.position.path);
-    byReference.set(key, [...(byReference.get(key) ?? []), symbol]);
-  }
+  const byReference = byReferenceOf(symbols);
   const records: SuppressionRecord[] = [];
   const refusals: Refusal[] = [];
   (held as readonly unknown[]).forEach((value, index) => {
@@ -247,6 +252,24 @@ export interface Recorded {
   readonly path: string;
 }
 
+/**
+ * Rows a baseline write holds in memory, bound against the run's declarations as the same
+ * rows read back from the document would be, each carrying the reason given.
+ */
+export function bindRows(
+  rows: readonly Recorded[],
+  reason: string,
+  symbols: readonly InventorySymbol[],
+): Suppressions {
+  const byReference = byReferenceOf(symbols);
+  const site = documentSite(BASELINE_SHAPE);
+  const read = rows.map((row) => readRecord({ ...row, reason }, site, byReference, BASELINE_SHAPE));
+  return {
+    records: read.flatMap((one) => one.records),
+    refusals: read.flatMap((one) => one.refusals),
+  };
+}
+
 /** The analyzer a written row names as its provenance, as the same run's report names it. */
 export interface Provenance {
   readonly analyzer: string;
@@ -257,6 +280,11 @@ export interface Provenance {
 const BASELINE_DESCRIPTION =
   "Recorded findings: a run fails only on a finding this document does not hold. " +
   "Every reason is the analyzer that recorded the row, never an adjudication.";
+
+/** The reason every row a baseline write records carries. */
+export function rowReason(provenance: Provenance): string {
+  return `recorded by ${provenance.analyzer} ${provenance.version}`;
+}
 
 /**
  * A baseline holding one row per finding, in the order given, which is the report's. Every
@@ -270,7 +298,7 @@ export function writeBaseline(findings: readonly Recorded[], provenance: Provena
       `a baseline row would carry no reason: the analyzer identity names ${JSON.stringify(provenance.analyzer)} at version ${JSON.stringify(provenance.version)}`,
     );
   }
-  const reason = `recorded by ${provenance.analyzer} ${provenance.version}`;
+  const reason = rowReason(provenance);
   const baseline = findings.map((found) => {
     if (found.code === "" || found.symbol === "" || found.path === "") {
       throw new Error(

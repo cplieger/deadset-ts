@@ -115,7 +115,11 @@ const ESCAPES: Readonly<Record<string, string>> = {
 const ESCAPE_WIDTHS: Readonly<Record<string, number>> = { x: 2, u: 4, U: 8 };
 
 const IDENTIFIER = /[A-Za-z_][A-Za-z0-9_]*/uy;
-const NUMBER = /[+-]?[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/uy;
+/** A number as the lexer reads one, before the subset decides whether it is a decimal integer. */
+const NUMBER = /[+-]?[0-9][0-9A-Za-z_.]*/uy;
+
+/** The one number form the subset admits: a decimal integer with no leading zero. */
+const DECIMAL_INTEGER = /^[+-]?(?:0|[1-9][0-9]*)$/u;
 
 function lineOf(source: string, at: number): number {
   let line = 1;
@@ -224,6 +228,11 @@ function lexAction(
     NUMBER.lastIndex = i;
     const number = NUMBER.exec(source)?.[0];
     if (number !== undefined) {
+      if (!DECIMAL_INTEGER.test(number)) {
+        throw new TemplateError(
+          `line ${String(line)}: ${JSON.stringify(number)} is not a decimal integer`,
+        );
+      }
       tokens.push({ t: "lit", value: Number(number) });
       i += number.length;
       continue;
@@ -636,7 +645,61 @@ function compareBasic(name: string, a: Value, b: Value): number {
   if (kind === "boolean") {
     return Number.NaN;
   }
-  return (a as number | string) < (b as number | string) ? -1 : 1;
+  if (kind === "string") {
+    return byCodePoints(a as string, b as string);
+  }
+  return (a as number) < (b as number) ? -1 : 1;
+}
+
+/**
+ * Two strings ordered by the bytes of their UTF-8 encodings, which is the order of their
+ * code points: the order of their UTF-16 code units differs above U+FFFF.
+ */
+function byCodePoints(a: string, b: string): number {
+  let at = 0;
+  while (at < a.length && at < b.length) {
+    const x = a.codePointAt(at) ?? 0;
+    const y = b.codePointAt(at) ?? 0;
+    if (x !== y) {
+      return x < y ? -1 : 1;
+    }
+    at += x > 0xffff ? 2 : 1;
+  }
+  return a.length - b.length;
+}
+
+/** The escapes `%q` writes for the control characters that have one of their own. */
+const QUOTED_ESCAPES: Readonly<Record<string, string>> = {
+  '"': '\\"',
+  "\\": "\\\\",
+  "\u0007": "\\a",
+  "\b": "\\b",
+  "\f": "\\f",
+  "\n": "\\n",
+  "\r": "\\r",
+  "\t": "\\t",
+  "\v": "\\v",
+};
+
+/**
+ * The text `%q` writes: double quotes around the text, a quote and a backslash escaped,
+ * each control character with an escape of its own written as it, every other character
+ * below U+0020 and U+007F written as `\x` and two lowercase hexadecimal digits, and every
+ * other character as itself.
+ */
+function goQuoted(text: string): string {
+  let out = '"';
+  for (const char of text) {
+    const code = char.codePointAt(0) ?? 0;
+    if (Object.hasOwn(QUOTED_ESCAPES, char)) {
+      out += QUOTED_ESCAPES[char] ?? "";
+    } else if (code < 0x20 || code === 0x7f) {
+      out += `\\x${code.toString(16).padStart(2, "0")}`;
+    } else {
+      out += char;
+    }
+  }
+  return `${out}"`;
 }
 
 /** `printf`'s verbs, each over one operand. */
@@ -663,10 +726,10 @@ function printf(format: string, args: readonly Value[]): string {
     switch (verb) {
       case "v":
       case "s":
-        out += formatted(arg, false);
+        out += formatted(arg, true);
         break;
       case "q":
-        out += JSON.stringify(formatted(arg, false));
+        out += goQuoted(formatted(arg, true));
         break;
       case "d":
         if (typeof arg !== "number" || !Number.isInteger(arg)) {
@@ -768,11 +831,11 @@ function call(name: string, args: readonly Value[]): Value {
       return args
         .map((arg, i) => {
           const spaced = i > 0 && typeof arg !== "string" && typeof args[i - 1] !== "string";
-          return `${spaced ? " " : ""}${formatted(arg, false)}`;
+          return `${spaced ? " " : ""}${formatted(arg, true)}`;
         })
         .join("");
     case "println":
-      return `${args.map((arg) => formatted(arg, false)).join(" ")}\n`;
+      return `${args.map((arg) => formatted(arg, true)).join(" ")}\n`;
     case "printf":
       if (typeof first !== "string") {
         throw new RenderError("printf takes a format string first");

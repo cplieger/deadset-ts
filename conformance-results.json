@@ -1,9 +1,65 @@
 {
-  "corpus_version": "1.9.0",
+  "corpus_version": "2.0.0",
   "product": { "name": "deadset-ts", "version": "0.1.0", "language": "ts" },
   "result": "pass",
-  "totals": { "fixtures": 9, "pass": 8, "gap": 1, "fail": 0 },
+  "totals": { "fixtures": 20, "pass": 19, "gap": 1, "fail": 0 },
   "fixtures": [
+    {
+      "fixture": "dependency-commands-and-peers",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "Command", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "OptionalPeer",
+          "result": "pass",
+          "actual": {
+            "report": "DS1601",
+            "symbol_kind": "dependency",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "details": { "dependency_class": "dev-dependency" }
+          }
+        },
+        { "symbol": "PeerHost", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "RequiredPeer", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "UnusedDev",
+          "result": "pass",
+          "actual": {
+            "report": "DS1601",
+            "symbol_kind": "dependency",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "details": { "dependency_class": "dev-dependency" }
+          }
+        },
+        {
+          "symbol": "UnusedPeer",
+          "result": "pass",
+          "actual": {
+            "report": "DS1601",
+            "symbol_kind": "dependency",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "details": { "dependency_class": "peer-dependency" }
+          }
+        },
+        {
+          "symbol": "UnusedRuntime",
+          "result": "pass",
+          "actual": {
+            "report": "DS1601",
+            "symbol_kind": "dependency",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "details": { "dependency_class": "dependency" }
+          }
+        },
+        { "symbol": "UsedPeer", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "UsedRuntime", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
     {
       "fixture": "deprecated-and-unused",
       "result": "pass",
@@ -96,6 +152,107 @@
       "unexpected": []
     },
     {
+      "fixture": "file-only-a-consumer-imports",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "Extra", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Greet", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Orphan",
+          "result": "pass",
+          "actual": {
+            "report": "DS1502",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        {
+          "symbol": "width",
+          "result": "pass",
+          "actual": {
+            "report": "DS1002",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "member-withheld-with-its-root",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "Live", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Reported",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting",
+            "component": { "root": true }
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "Withheld", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "audit",
+          "result": "pass",
+          "actual": {
+            "report": "DS1002",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reachability",
+            "component": { "root": false }
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "balance", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "part-suppression-marks-nothing",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "FirstLineSignature",
+          "result": "pass",
+          "actual": {
+            "report": "DS1002",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting",
+            "component": { "root": true }
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "WrappedSignature",
+          "result": "pass",
+          "actual": {
+            "report": "DS1002",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting",
+            "component": { "root": true }
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "WrappedSignature.chunk", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "private-member-unread",
       "result": "gap",
       "expectations": [
@@ -152,6 +309,197 @@
       "unexpected": []
     },
     {
+      "fixture": "serialization-contract-object-types",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "Inner", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Inner.label",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "Logged.line",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "Lookup.flush",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["reflective-lookup"] }
+        },
+        {
+          "symbol": "Lookup.refresh",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "method",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "Meta", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Meta.at",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "Payload.id",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "Payload.inner",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "Payload.meta",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "Stamp.at",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "Stamp.describe",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "method",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "Stamp.toJSON",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "Unsent.title",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "type-member",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "test-file-declarations-outside-components",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "Decode",
+          "result": "pass",
+          "actual": {
+            "report": "DS1004",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting",
+            "component": { "root": true }
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "Encode",
+          "result": "pass",
+          "actual": {
+            "report": "DS1004",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting",
+            "component": { "root": true }
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "Format",
+          "result": "pass",
+          "actual": {
+            "report": "DS1004",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting",
+            "component": { "root": true }
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "Live", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Parse",
+          "result": "pass",
+          "actual": {
+            "report": "DS1004",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting",
+            "component": { "root": true }
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "TestDecode",
+          "result": "pass",
+          "actual": {
+            "report": "DS1005",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting",
+            "component": { "root": true }
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "TestRoundTrip", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "encodeAll",
+          "result": "pass",
+          "actual": {
+            "report": "DS1005",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting",
+            "component": { "root": true }
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "formatBoth", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "mustParse",
+          "result": "pass",
+          "actual": {
+            "report": "DS1005",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting",
+            "component": { "root": true }
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "test-of-dead-code",
       "result": "pass",
       "expectations": [
@@ -163,7 +511,8 @@
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
-            "liveness_relation": "reference-counting"
+            "liveness_relation": "reference-counting",
+            "component": { "root": true }
           },
           "suppression": { "suppressed": true, "stale": false }
         },
@@ -175,7 +524,8 @@
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
-            "liveness_relation": "reference-counting"
+            "liveness_relation": "reference-counting",
+            "component": { "root": true }
           },
           "suppression": { "suppressed": true, "stale": false }
         },
@@ -188,7 +538,8 @@
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
-            "liveness_relation": "reference-counting"
+            "liveness_relation": "reference-counting",
+            "component": { "root": true }
           },
           "suppression": { "suppressed": true, "stale": false }
         },
@@ -214,6 +565,134 @@
           "suppression": { "suppressed": true, "stale": false }
         },
         { "symbol": "Production", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "type-parameter-of-a-dead-function",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "keep", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "keep.T",
+          "result": "pass",
+          "actual": {
+            "report": "DS1303",
+            "symbol_kind": "type-parameter",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "pick",
+          "result": "pass",
+          "actual": {
+            "report": "DS1002",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "pick.U", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "type-parameter-of-a-method-signature",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "Maker.build.T", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "shape.U",
+          "result": "pass",
+          "actual": {
+            "report": "DS1303",
+            "symbol_kind": "type-parameter",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "unmatched-configured-declaration",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "AbsentGlobal",
+          "result": "pass",
+          "actual": {
+            "report": "DS1706",
+            "symbol_kind": "configured-declaration",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        {
+          "symbol": "AbsentModule",
+          "result": "pass",
+          "actual": {
+            "report": "DS1706",
+            "symbol_kind": "configured-declaration",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        {
+          "symbol": "AbsentSymbol",
+          "result": "pass",
+          "actual": {
+            "report": "DS1706",
+            "symbol_kind": "configured-declaration",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        { "symbol": "Encoder", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Envelope.body",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        { "symbol": "UncalledGlobal", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "unmatched-lifecycle-declaration",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "AbsentBase",
+          "result": "pass",
+          "actual": {
+            "report": "DS1706",
+            "symbol_kind": "configured-declaration",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        {
+          "symbol": "AbsentComponent",
+          "result": "pass",
+          "actual": {
+            "report": "DS1706",
+            "symbol_kind": "configured-declaration",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        { "symbol": "ProgramBase", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Widget.attach",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        }
       ],
       "unexpected": []
     },
@@ -291,6 +770,25 @@
           "suppression": { "suppressed": true, "stale": false }
         },
         { "symbol": "UsedByConsumer", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "write-only-yields-narrowing",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "Bump", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Hits",
+          "result": "pass",
+          "actual": {
+            "report": "DS1301",
+            "symbol_kind": "variable",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
       ],
       "unexpected": []
     }

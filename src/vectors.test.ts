@@ -70,6 +70,7 @@ describe("the published configuration vectors", () => {
       "array-spanning-lines",
       "duplicated-key",
       "integer-written-with-a-fraction",
+      "member-written-as-null",
       "missing-target-kind",
       "provenance-on-input",
       "provider-name-duplicated",

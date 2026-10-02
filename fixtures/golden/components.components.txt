@@ -1,6 +1,6 @@
-deadset-ts/c-0001	lines=17
-	roots	ts://@example/components/src/catalog.test.ts#testMixed
-	members	ts://@example/components/src/catalog.test.ts#testDeadOnly ts://@example/components/src/catalog.test.ts#testMixed ts://@example/components/src/catalog.test.ts#assertSum ts://@example/components/src/catalog.ts#deadOne ts://@example/components/src/catalog.ts#deadTwo
+deadset-ts/c-0001	lines=9
+	roots	ts://@example/components/src/catalog.test.ts#testDeadOnly ts://@example/components/src/catalog.ts#deadOne ts://@example/components/src/catalog.ts#deadTwo
+	members	ts://@example/components/src/catalog.test.ts#testDeadOnly ts://@example/components/src/catalog.ts#deadOne ts://@example/components/src/catalog.ts#deadTwo
 deadset-ts/c-0002	lines=9
 	roots	ts://@example/components/src/cycle.ts#first ts://@example/components/src/cycle.ts#second ts://@example/components/src/cycle.ts#third
 	members	ts://@example/components/src/cycle.ts#first ts://@example/components/src/cycle.ts#second ts://@example/components/src/cycle.ts#third

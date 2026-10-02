@@ -1,8 +1,8 @@
-import { runAnalysis, type RunProject } from "../analysis.ts";
+import { runAnalysis, runBaselineWrite, type RunAnalysis, type RunProject } from "../analysis.ts";
 import { ConfigError, type Format } from "../config.ts";
 import { CONFORMANCE, DECLARED_GAPS } from "../conformance.ts";
 import { moduleIdentity } from "../consumers.ts";
-import { analyzerProvenance, recordedFindings, verdictOf } from "../findings-pass.ts";
+import { analyzerProvenance, verdictOf } from "../findings-pass.ts";
 import { joinPath, normalizePath, relativePath, resolvePath } from "../paths.ts";
 import type { Host } from "../host.ts";
 import {
@@ -16,7 +16,7 @@ import { json } from "../reporters/json.ts";
 import { RENDERINGS } from "../reporters/reporters.ts";
 import { parseTemplate, TemplateError, type Template } from "../reporters/template.ts";
 import { resolve } from "../resolve.ts";
-import { writeBaseline, type Recorded } from "../suppress-file.ts";
+import { rowReason, writeBaseline, type Recorded } from "../suppress-file.ts";
 import { CONTRACT_VERSION } from "../version.ts";
 import { EXIT_CLEAN, EXIT_FAILURE, type Verb, type VerbOptions } from "./verb.ts";
 
@@ -153,8 +153,9 @@ interface Documents {
 /**
  * Analyzes the scope under the configuration and writes the JSON report to the path
  * `--report` names, each rendering `--format` names beside it at the report's path with the
- * format's suffix appended, and a baseline of every finding where `--baseline-write` names a
- * path. The template format renders the template `--template` names. Nothing is written to
+ * format's suffix appended, and where `--baseline-write` names a path the baseline a fixpoint
+ * over the analysis records, the report then being its first round, which reads no
+ * baseline. The template format renders the template `--template` names. Nothing is written to
  * the output stream; diagnostics go to the error stream and the verdict is the exit code, or 0
  * under `--exit-code=off`, and a rendering that cannot be written ends the run with 3.
  */
@@ -204,9 +205,26 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
   let verdict: number;
   try {
     const root = runRelative(invoked, targetRoot);
-    const { result, run } = runAnalysis(openClient(false), host, scoped, config, provenance, {
-      production: true,
-    });
+    const mode = { production: true };
+    let analysis: RunAnalysis;
+    if (documents.baseline === undefined) {
+      analysis = runAnalysis(openClient(false), host, scoped, config, provenance, mode);
+      recorded = [];
+    } else {
+      const reason = rowReason(analyzerProvenance(version));
+      const write = runBaselineWrite(
+        openClient(false),
+        host,
+        scoped,
+        config,
+        provenance,
+        mode,
+        reason,
+      );
+      analysis = write.first;
+      recorded = write.rows;
+    }
+    const { result, run } = analysis;
     const built = buildReport({
       contractVersion: CONTRACT_VERSION,
       version,
@@ -222,9 +240,6 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
       result,
       testFileRules: run.testFileRules,
     });
-    // The baseline records every finding, so its rows are taken before the cap bounds what
-    // a rendering prints: a baseline missing a reported finding fails the next run on it.
-    recorded = recordedFindings(result);
     report = capFindings(sortFindings(built, config.reporters.sort), config.reporters.maxFindings);
     verdict = verdictOf(result, config);
   } catch (error: unknown) {

@@ -23,7 +23,7 @@ import {
 } from "@typescript/native/unstable/sync";
 import type { AliasChains } from "./alias-chain.ts";
 import { resolvedTargets } from "./calls.ts";
-import type { DeclarationEntry } from "./config.ts";
+import type { Config, DeclarationEntry } from "./config.ts";
 import type { Inventory } from "./inventory.ts";
 import { nameComponent } from "./ref.ts";
 import type { ProjectView } from "./session.ts";
@@ -304,5 +304,61 @@ export function spelledEntry(entry: DeclarationEntry, held: Inventory): string {
       return entry.name;
     case "global":
       return entry.global;
+  }
+}
+
+/** One entry of a configuration key that names a declaration, and the key's dotted path. */
+interface ConfiguredDeclaration {
+  readonly key: string;
+  readonly entry: DeclarationEntry;
+}
+
+/** The key under which a lifecycle contract's declarations are configured. */
+const LIFECYCLE_KEY = "ts.lifecycle_contracts";
+
+/**
+ * Every entry of the three keys that name declarations, in the configuration's order:
+ * the injection registrations, each lifecycle contract's components and then its bases,
+ * and the serializers.
+ */
+export function configuredDeclarations(config: Config): readonly ConfiguredDeclaration[] {
+  return [
+    ...config.ts.injectionRegistrations.map((entry) => ({
+      key: "ts.injection_registrations",
+      entry,
+    })),
+    ...config.ts.lifecycleContracts.flatMap((contract) =>
+      [...contract.components, ...contract.bases].map((entry) => ({ key: LIFECYCLE_KEY, entry })),
+    ),
+    ...config.ts.serializers.map((entry) => ({ key: "ts.serializers", entry })),
+  ];
+}
+
+/** Whether each configured entry names a declaration in one project, in the entries' order. */
+export function declarationsNamed<Brand>(
+  project: ProjectView<Brand>,
+  held: Inventory,
+  configured: readonly ConfiguredDeclaration[],
+): readonly boolean[] {
+  return resolveEntries(
+    project,
+    held,
+    configured.map((one) => one.entry),
+  ).map(namesADeclaration);
+}
+
+/**
+ * The reference a finding about a configured entry names it by, the entry as the
+ * configuration spells it: a symbol entry's reference, a module entry's module, a number
+ * sign and its name, and a global entry's path after a number sign.
+ */
+export function configuredRef(entry: DeclarationEntry): string {
+  switch (entry.shape) {
+    case "symbol":
+      return entry.symbol;
+    case "module":
+      return `${entry.module}#${entry.name}`;
+    case "global":
+      return `#${entry.global}`;
   }
 }

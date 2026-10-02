@@ -1,6 +1,6 @@
 {
-  "schema_version": "6.0.0",
-  "contract_version": "3.2.0",
+  "schema_version": "6.1.0",
+  "contract_version": "4.0.0",
   "analyzer": {
     "name": "deadset-ts",
     "version": "0.0.0",
@@ -8,12 +8,13 @@
       "ts"
     ],
     "schema_versions_accepted": [
-      "6.0.0"
+      "6.0.0",
+      "6.1.0"
     ],
     "conformance": {
-      "corpus_version": "1.9.0",
+      "corpus_version": "2.0.0",
       "result": "pass",
-      "digest": "sha256:3e9e40876551faa2c196311bf06d47d220ab5127a9fb8921969aae552c42e824"
+      "digest": "sha256:1274315595d7b944d22eb0126081e24cf293c9fe53a236f4d263c714644f32ee"
     }
   },
   "target": {

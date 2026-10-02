@@ -6,12 +6,13 @@
 
 import type { RunSweep } from "../analysis.ts";
 import { componentId, type Component } from "../components.ts";
-import type { Confidence, Severity } from "../config.ts";
-import type { CompletedFinding, Finding, FindingComponent } from "../finding.ts";
+import type { Cascade, Confidence, Severity } from "../config.ts";
+import type { CompletedFinding, Finding, FindingComponent, PositionedSymbol } from "../finding.ts";
 import { OUTSIDE } from "../graph.ts";
 import { KINDS, type KindRow } from "../kinds.ts";
+import { byPosition } from "../position.ts";
 import { FAMILY_KEY_LENGTH } from "../resolve.ts";
-import { isRowSubject, type Dials } from "../suppress.ts";
+import { isPartSubject, isRowSubject, type Dials } from "../suppress.ts";
 import type { Boundary } from "./boundary.ts";
 import type { EmitterInput } from "./emitter.ts";
 
@@ -83,14 +84,42 @@ function reachabilityClasses(input: EmitterInput): (id: string) => Confidence {
   return (id) => (published.has(id) ? outside : "certain");
 }
 
-/** The component each dead declaration of the run falls in, and none for a live one. */
-function findingComponents(swept: RunSweep): (id: string) => FindingComponent | undefined {
+/**
+ * The component each dead declaration of the run falls in, and none for a live one, with
+ * its members listed in the canonical order where the run lists a component in full.
+ */
+function findingComponents(
+  swept: RunSweep,
+  cascade: Cascade,
+): (id: string) => FindingComponent | undefined {
   const held = new Map<string, Component>();
   for (const component of swept.sweep.components) {
     for (const member of component.members) {
       held.set(member, component);
     }
   }
+  const symbols = new Map(swept.matrix.union.symbols.map((symbol) => [symbol.id, symbol]));
+  const listed = (component: Component): readonly PositionedSymbol[] =>
+    component.members
+      .flatMap((member) => {
+        const symbol = symbols.get(member);
+        return symbol === undefined
+          ? []
+          : [
+              {
+                ref: symbol.ref,
+                name: symbol.name,
+                position: {
+                  ...symbol.position,
+                  endLine: Math.max(symbol.position.line, symbol.endLine),
+                },
+              },
+            ];
+      })
+      .sort(
+        (a, b) =>
+          byPosition(a.position, b.position) || (a.ref === b.ref ? 0 : a.ref < b.ref ? -1 : 1),
+      );
   return (id) => {
     const component = held.get(id);
     return component === undefined
@@ -100,6 +129,7 @@ function findingComponents(swept: RunSweep): (id: string) => FindingComponent | 
           root: component.roots.includes(id),
           symbolCount: component.members.length,
           deletableLines: component.deletableLines,
+          ...(cascade === "full" ? { members: listed(component) } : {}),
         };
   };
 }
@@ -123,7 +153,7 @@ export function completed(
   const positions = new Map(union.symbols.map((symbol, at) => [symbol.ref, at]));
   const candidates = new Map(swept.sweep.candidates.map((candidate) => [candidate.id, candidate]));
   const classOf = reachabilityClasses(input);
-  const componentOf = findingComponents(swept);
+  const componentOf = findingComponents(swept, input.config.reporters.cascade);
   let minted = swept.sweep.components.length;
 
   return findings.map((finding): CompletedFinding => {
@@ -136,11 +166,15 @@ export function completed(
     const at = isRowSubject(finding.symbol.kind)
       ? OUTSIDE
       : (positions.get(finding.symbol.ref) ?? OUTSIDE);
+    // A part names the declaration that holds it, and is decided inside it rather than by
+    // the declaration's liveness, so it carries none of the declaration's sweep facts.
+    const part = isPartSubject(finding.symbol.kind);
     const symbol = union.symbols[at];
-    const judged = union.subject[at] === true ? symbol : undefined;
+    const judged = !part && union.subject[at] === true ? symbol : undefined;
     const candidate = judged === undefined ? undefined : candidates.get(judged.id);
-    const found = symbol === undefined ? undefined : componentOf(symbol.id);
-    if (candidate !== undefined && found === undefined) {
+    const found = symbol === undefined || part ? undefined : componentOf(symbol.id);
+    // A test file's declaration is a component member only as a test of dead code.
+    if (candidate !== undefined && found === undefined && union.test[at] !== true) {
       throw new Error(`${candidate.id} is judged dead and falls in no dead component`);
     }
     let component = found;
@@ -173,7 +207,9 @@ export function completed(
       retainedBy: [],
       configurations:
         candidate?.configurations ??
-        (judged === undefined ? swept.matrix.configurations : (swept.matrix.heldIn[at] ?? [])),
+        (judged === undefined && !part
+          ? swept.matrix.configurations
+          : (swept.matrix.heldIn[at] ?? swept.matrix.configurations)),
       consumersLoaded: input.boundary.consumers.loaded,
       fixability: row.fixability,
       severity: severityOf(input, finding.code, row.defaultSeverity),

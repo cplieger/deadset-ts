@@ -132,7 +132,8 @@ function linesSpanned(symbols: readonly (InventorySymbol | undefined)[]): number
 }
 
 /**
- * The dead declarations by their place in the subgraph, and the edges between them: each
+ * The dead declarations by their place in the subgraph, a test file's declaration only
+ * where it is a test of dead code, and the edges between them: each
  * reference one makes to another, an edge each way between a dead member and its dead
  * container (one direction alone leaves the member a component the container reaches),
  * and an edge back from each production target of an admitted test, which puts the test in
@@ -145,7 +146,8 @@ function deadSubgraph(
 ): { readonly at: readonly number[]; readonly adjacent: readonly (readonly number[])[] } {
   const at: number[] = [];
   const position = graph.symbols.map((_symbol, index) => {
-    if (dead[index] !== true) {
+    // A test file's declaration belongs to a component only as a test of dead code.
+    if (dead[index] !== true || (graph.test[index] === true && testOfDeadCode[index] !== true)) {
       return UNVISITED;
     }
     at.push(index);

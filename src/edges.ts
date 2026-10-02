@@ -13,6 +13,7 @@ import type { InventorySymbol } from "./inventory.ts";
 import { positionAt, walkDocument } from "./json-document.ts";
 import { joinPath } from "./paths.ts";
 import { positionKey } from "./position.ts";
+import { isPartSubject } from "./suppress.ts";
 
 /** The name and the location the Contract fixes for the edges document. */
 export const EDGES_FILE = "deadset-edges.json";
@@ -219,7 +220,9 @@ export function evaluateEdges<F extends Finding>(
   }
   const held = new Map<string, number>();
   findings.forEach((finding, at) => {
-    held.set(positionKey(finding.position), at);
+    if (!isPartSubject(finding.symbol.kind)) {
+      held.set(positionKey(finding.position), at);
+    }
   });
 
   const pending = new Set<number>();

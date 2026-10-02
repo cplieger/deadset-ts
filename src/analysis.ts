@@ -16,6 +16,11 @@ import {
   moduleIdentity,
   type LoadedConsumer,
 } from "./consumers.ts";
+import {
+  configuredDeclarations,
+  configuredRef,
+  declarationsNamed,
+} from "./configured-declarations.ts";
 import { decorator } from "./decorator.ts";
 import { dependenciesOf, projectNeeds } from "./dependencies.ts";
 import { deprecatedDeclarations } from "./deprecation.ts";
@@ -33,7 +38,7 @@ import {
 import type { TSExemptionClass } from "./exempt-classes.ts";
 import { heldByInclusion, sourceTree } from "./file-facts.ts";
 import type { Finding } from "./finding.ts";
-import { findingsPass, type PassResult } from "./findings-pass.ts";
+import { findingsPass, recordedFindings, rowKey, type PassResult } from "./findings-pass.ts";
 import type { EmitterInput } from "./findings/emitter.ts";
 import {
   NO_SELF_CHECK,
@@ -45,7 +50,8 @@ import type { Host } from "./host.ts";
 import { implementations, mergeImplementations } from "./implementations.ts";
 import { injectionContainer } from "./injection-container.ts";
 import { interfaceSatisfaction } from "./interface-satisfaction.ts";
-import { inventory, type Inventory } from "./inventory.ts";
+import { intraFunctionFacts, projectParts, type ProjectParts } from "./intra-function-parts.ts";
+import { inventory, type Inventory, type InventorySymbol } from "./inventory.ts";
 import { readManifest } from "./manifest.ts";
 import {
   matrixOf,
@@ -64,8 +70,8 @@ import type { Scope } from "./scope.ts";
 import { serializationContract } from "./serialization-contract.ts";
 import { diagnosticsOf, runSession, type Engine, type ProjectView } from "./session.ts";
 import { accessorsOf, storesOf } from "./stores.ts";
-import type { Suppressions } from "./suppress.ts";
-import { readBaseline, readIgnoreFile } from "./suppress-file.ts";
+import { isPartKind, type SuppressionRecord, type Suppressions, type Verdict } from "./suppress.ts";
+import { bindRows, readBaseline, readIgnoreFile, type Recorded } from "./suppress-file.ts";
 import { inlineDirectives, inlineSuppressions, type InlineDirective } from "./suppress-inline.ts";
 import type { Exemption, Mode, SweepInput } from "./sweep.ts";
 import { readTemplates, templateField } from "./template-field.ts";
@@ -345,7 +351,11 @@ function readRun<Extra>(
   config: Config,
   mode: Mode,
   detectors: Detectors,
-  extra: <Brand>(project: ProjectView<Brand>, read: ProjectRead) => Extra,
+  extra: <Brand>(
+    project: ProjectView<Brand>,
+    read: ProjectRead,
+    references: readonly Reference[],
+  ) => Extra,
 ): ReadRun<Extra> {
   const targetRoot = scope.target.path;
   const disabled = disabledClasses(config);
@@ -377,7 +387,7 @@ function readRun<Extra>(
       configFile: projectRead.configFile,
       configured,
       exempt,
-      extra: extra(project, projectRead),
+      extra: extra(project, projectRead, resolved.references),
     };
   });
   const consumed = read.consumers.references;
@@ -446,6 +456,8 @@ interface EmitterExtra {
   readonly heldByInclusion: readonly string[];
   readonly rooted: Roots;
   readonly directives: readonly InlineDirective[];
+  readonly declarationsNamed: readonly boolean[];
+  readonly parts: ProjectParts;
 }
 
 /** Reads a run's projects with every per-project fact an emitter reads. */
@@ -458,7 +470,7 @@ function readEmitterRun(
   detectors: Detectors,
 ): ReadRun<EmitterExtra> {
   const targetRoot = scope.target.path;
-  return readRun(engine, host, scope, config, mode, detectors, (project, read) => ({
+  return readRun(engine, host, scope, config, mode, detectors, (project, read, references) => ({
     deprecated: deprecatedDeclarations(project, read.held),
     accessors: accessorsOf(project, read.held),
     needs: projectNeeds(project, read.held, host),
@@ -466,6 +478,8 @@ function readEmitterRun(
     heldByInclusion: heldByInclusion(project, targetRoot),
     rooted: read.rooted,
     directives: inlineDirectives(project, read.held, targetRoot),
+    declarationsNamed: declarationsNamed(project, read.held, configuredDeclarations(config)),
+    parts: projectParts(project, read.held, references, targetRoot),
   }));
 }
 
@@ -516,6 +530,11 @@ function emitterInputOver(
       edges: readEdgeSides(host, targetRoot),
     },
     selfCheck,
+    intraFunction: intraFunctionFacts(
+      projects.map((one) => one.extra.parts),
+      projects.flatMap((one) => one.configured.references),
+      new Set(read.exempt.map((one) => one.id)),
+    ),
   };
 }
 
@@ -548,15 +567,25 @@ export interface AnalysisInputs {
   readonly suppressions: Suppressions;
 }
 
+/** One run read once, and analyzed under any set of baseline rows without reading it again. */
+interface AnalysisReader {
+  readonly run: RunFacts;
+  readonly configured: readonly Configured[];
+  /** The declarations of the run, which a baseline row binds against. */
+  readonly symbols: readonly InventorySymbol[];
+  /** The inputs of the run under the directives, the ignore file and the baseline given. */
+  readonly inputsUnder: (baseline: Suppressions) => AnalysisInputs;
+}
+
 /**
  * Reads the run the scope and the configuration describe for its findings. The inline
- * directives, the ignore file's entries and the baseline's rows are read and bound before
- * any sweep, and the run is swept once under every bound record's mark and once under
- * none, so a record is decided against the finding its code would have produced. The
+ * directives, the ignore file's entries and the baseline's rows are bound before any
+ * sweep, and the run is swept once under every bound record's mark and once under none,
+ * so a record is decided against the finding its code would have produced. The
  * self-check family reports the refused suppressions and the roots that named nothing.
  * Beside the inputs it answers the projects and test-file rules a report names.
  */
-function runAnalysisInputs(
+function readAnalysis(
   engine: Engine,
   host: Host,
   scope: Scope,
@@ -564,40 +593,17 @@ function runAnalysisInputs(
   provenance: Provenance,
   mode: Mode,
   detectors: Detectors,
-): {
-  readonly inputs: AnalysisInputs;
-  readonly run: RunFacts;
-  readonly configured: readonly Configured[];
-} {
+): AnalysisReader {
   const targetRoot = scope.target.path;
   const read = readEmitterRun(engine, host, scope, config, mode, detectors);
   const symbols = read.matrix.union.symbols;
-  const documents = [
+  const fixed = [
     inlineSuppressions(read.projects.map((one) => one.extra.directives)),
     readIgnoreFile(host, targetRoot, symbols),
-    readBaseline(host, targetRoot, symbols),
   ];
-  const suppressions: Suppressions = {
-    records: documents.flatMap((one) => one.records),
-    refusals: documents.flatMap((one) => one.refusals),
-  };
-  const facts: SelfCheckFacts = {
-    refusals: suppressions.refusals,
-    unmatchedRoots: unmatchedEverywhere(
-      config.rootPatterns,
-      read.projects.map((one) => one.extra.rooted),
-    ),
-    rootsDocument: documentOf(host, provenance, ROOTS_SETTING, targetRoot),
-  };
-  const marked = [...new Set(suppressions.records.map((record) => record.bound))].filter(
-    (id) => id !== "",
-  );
+  const inputsUnder = (baseline: Suppressions): AnalysisInputs =>
+    inputsOver(host, scope, config, provenance, mode, read, [...fixed, baseline]);
   return {
-    inputs: {
-      marked: emitterInputOver(host, scope, config, read, { marked, mode }, facts),
-      unmarked: emitterInputOver(host, scope, config, read, { marked: [], mode }, facts),
-      suppressions,
-    },
     run: {
       projects: read.projects.map((one) => ({
         id: one.configured.configuration,
@@ -610,6 +616,52 @@ function runAnalysisInputs(
       consumers: read.consumers,
     },
     configured: read.projects.map((one) => one.configured),
+    symbols,
+    inputsUnder,
+  };
+}
+
+/** The inputs of one read run under the suppression documents given, in reading order. */
+function inputsOver(
+  host: Host,
+  scope: Scope,
+  config: Config,
+  provenance: Provenance,
+  mode: Mode,
+  read: ReadRun<EmitterExtra>,
+  documents: readonly Suppressions[],
+): AnalysisInputs {
+  const targetRoot = scope.target.path;
+  const suppressions: Suppressions = {
+    records: documents.flatMap((one) => one.records),
+    refusals: documents.flatMap((one) => one.refusals),
+  };
+  const facts: SelfCheckFacts = {
+    refusals: suppressions.refusals,
+    unmatchedRoots: unmatchedEverywhere(
+      config.rootPatterns,
+      read.projects.map((one) => one.extra.rooted),
+    ),
+    rootsDocument: documentOf(host, provenance, ROOTS_SETTING, targetRoot),
+    unmatchedDeclarations: configuredDeclarations(config)
+      .filter((_, at) => !read.projects.some((one) => one.extra.declarationsNamed[at] === true))
+      .map((one) => ({
+        ref: configuredRef(one.entry),
+        key: one.key,
+        document: documentOf(host, provenance, one.key, targetRoot),
+      })),
+  };
+  const marked = [
+    ...new Set(
+      suppressions.records
+        .filter((record) => !isPartKind(record.code))
+        .map((record) => record.bound),
+    ),
+  ].filter((id) => id !== "");
+  return {
+    marked: emitterInputOver(host, scope, config, read, { marked, mode }, facts),
+    unmarked: emitterInputOver(host, scope, config, read, { marked: [], mode }, facts),
+    suppressions,
   };
 }
 
@@ -655,14 +707,81 @@ export function runAnalysis(
   mode: Mode,
   detectors: Detectors = DETECTORS,
 ): RunAnalysis {
-  const { inputs, run, configured } = runAnalysisInputs(
-    engine,
-    host,
-    scope,
-    config,
-    provenance,
-    mode,
-    detectors,
-  );
-  return { result: findingsPass(inputs), run, swept: inputs.marked.swept, configured };
+  const reader = readAnalysis(engine, host, scope, config, provenance, mode, detectors);
+  const inputs = reader.inputsUnder(readBaseline(host, scope.target.path, reader.symbols));
+  return analysisOf(reader, inputs);
+}
+
+function analysisOf(reader: AnalysisReader, inputs: AnalysisInputs): RunAnalysis {
+  return {
+    result: findingsPass(inputs),
+    run: reader.run,
+    swept: inputs.marked.swept,
+    configured: reader.configured,
+  };
+}
+
+/** A baseline write: the analysis of its first round, and the rows its fixpoint holds. */
+interface BaselineWrite {
+  /** The first round, which reads no baseline. */
+  readonly first: RunAnalysis;
+  /** The rows that remain when a round records no row and removes none, in recording order. */
+  readonly rows: readonly Recorded[];
+}
+
+/**
+ * The fixpoint a baseline write records. The first round reads no baseline; each later
+ * round reads the rows recorded so far, records a row for each recordable finding no row
+ * already names, and removes every row it reports stale. A removed row is not recorded
+ * again, so the write ends.
+ */
+export function runBaselineWrite(
+  engine: Engine,
+  host: Host,
+  scope: Scope,
+  config: Config,
+  provenance: Provenance,
+  mode: Mode,
+  reason: string,
+  detectors: Detectors = DETECTORS,
+): BaselineWrite {
+  const reader = readAnalysis(engine, host, scope, config, provenance, mode, detectors);
+  const first = analysisOf(reader, reader.inputsUnder({ records: [], refusals: [] }));
+  let rows: readonly Recorded[] = [];
+  const removed = new Set<string>();
+  let result = first.result;
+  let stale: ReadonlySet<string> = new Set<string>();
+  for (;;) {
+    const held = new Set(rows.map(rowKey));
+    const added = recordedFindings(result.findings).filter(
+      (row) => !held.has(rowKey(row)) && !removed.has(rowKey(row)),
+    );
+    if (added.length === 0 && stale.size === 0) {
+      return { first, rows };
+    }
+    for (const key of stale) {
+      removed.add(key);
+    }
+    rows = [...rows.filter((row) => !stale.has(rowKey(row))), ...added];
+    const inputs = reader.inputsUnder(bindRows(rows, reason, reader.symbols));
+    result = findingsPass(inputs);
+    stale = staleRows(inputs.suppressions.records, result.ledger.verdicts);
+  }
+}
+
+/** The baseline rows a round reports stale: every record a row binds to matched nothing. */
+function staleRows(
+  records: readonly SuppressionRecord[],
+  verdicts: readonly Verdict[],
+): ReadonlySet<string> {
+  const live = new Set<string>();
+  const stale = new Set<string>();
+  records.forEach((record, at) => {
+    if (record.mechanism !== "baseline") {
+      return;
+    }
+    const key = rowKey(record);
+    (verdicts[at] === "stale" ? stale : live).add(key);
+  });
+  return new Set([...stale].filter((key) => !live.has(key)));
 }

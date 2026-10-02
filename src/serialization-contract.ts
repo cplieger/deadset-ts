@@ -1,11 +1,12 @@
 /**
- * The serialization-contract class: the properties of a class whose values reach
- * `JSON.stringify` or a call `ts.serializers` names, and those and `toJSON` and
- * `toString` where a value is passed to an `unknown` or `any` parameter of a function
- * outside the analysis. A function of the project handing such a parameter of its own
- * to a destination is one, holding back what that destination does, to a fixpoint. A
- * function invoked through `Function.prototype.call`, `apply` or `bind` is the callee,
- * given the arguments those methods pass it.
+ * The serialization-contract class: the data members and `toJSON` of every class,
+ * interface and object type a value's static type names, and of every such type its
+ * data members' types reach, where the value reaches `JSON.stringify` or a call
+ * `ts.serializers` names, and those and `toString` where it is passed to an `unknown`
+ * or `any` parameter of a function outside the analysis. A function of the project
+ * handing such a parameter of its own to a destination is one, holding back what that
+ * destination does, to a fixpoint. A function invoked through `Function.prototype.call`,
+ * `apply` or `bind` is the callee, given the arguments those methods pass it.
  */
 
 import {
@@ -57,13 +58,16 @@ import type { DetectorInput, Evidence } from "./exempt.ts";
 import { nodeKey, type Inventory } from "./inventory.ts";
 import { renderPosition } from "./position.ts";
 import type { ProjectView } from "./session.ts";
-import { valueReach } from "./value-reach.ts";
+import { valueReach, type Reached } from "./value-reach.ts";
 
 /** The serializer every run reads, whatever the configuration names. */
 const JSON_STRINGIFY: DeclarationEntry = { shape: "global", global: "JSON.stringify" };
 
 /** The methods a serializer and a formatter resolve by name on a value that left the analysis. */
 const CONVERSIONS: ReadonlySet<string> = new Set(["toJSON", "toString"]);
+
+/** The method a serializer calls on a value that carries one, wherever the value goes. */
+const SERIALIZED_CONVERSION = "toJSON";
 
 /** The parameter types that keep nothing of the value they are given. */
 const ERASED = TypeFlags.Any | TypeFlags.Unknown;
@@ -521,10 +525,12 @@ function destinations<Brand>(
   return { invocation, at, mayReceive };
 }
 
-/** One argument whose value carries classes of the target into a destination. */
+/** One argument whose value carries classes and object types of the target into a destination. */
 interface Flow {
   readonly site: Node;
   readonly classes: ReadonlySet<string>;
+  /** The members of the interfaces and object types the value carries. */
+  readonly members: readonly TSSymbol[];
   readonly to: Destination;
 }
 
@@ -554,31 +560,34 @@ function flowsOf<Brand>(
   );
   return arguments_.flatMap((one) => {
     const type = typeOf.get(one.value);
-    let classes: ReadonlySet<string> = new Set<string>();
+    let reached: Reached = { classes: new Set<string>(), members: [] };
     if (one.value.kind === SyntaxKind.ThisKeyword) {
-      classes = new Set(one.site.self === undefined ? [] : [one.site.self]);
+      reached = {
+        classes: new Set(one.site.self === undefined ? [] : [one.site.self]),
+        members: [],
+      };
     } else if (type !== undefined) {
-      classes = reach.classesOf(type);
+      reached = reach.reachedFrom(type);
     }
-    const destination = classes.size === 0 ? undefined : to.at(one.site.call, one.argument);
-    return destination === undefined ? [] : [{ site: one.value, classes, to: destination }];
+    const carries = reached.classes.size > 0 || reached.members.length > 0;
+    const destination = carries ? to.at(one.site.call, one.argument) : undefined;
+    return destination === undefined
+      ? []
+      : [{ site: one.value, classes: reached.classes, members: reached.members, to: destination }];
   });
 }
 
 /**
- * The serialization-contract detector: each property of each class whose values reach
- * a destination, and the two conversion methods where the destination is outside the
- * analysis, recorded at the argument with the callee named.
+ * The serialization-contract detector: each data member and `toJSON` of each class,
+ * interface and object type a value that reaches a destination carries, and `toString`
+ * as well where the destination is outside the analysis, recorded at the argument with
+ * the callee named.
  */
 export function serializationContract<Brand>(input: DetectorInput<Brand>): readonly Evidence[] {
   const { project, held, targetRoot } = input;
   const walked = walkProject(project, held);
-  const flows = flowsOf(
-    project,
-    held,
-    walked.sites,
-    destinations(input, aliasChains(project, held), walked),
-  );
+  const chains = aliasChains(project, held);
+  const flows = flowsOf(project, held, walked.sites, destinations(input, chains, walked));
   if (flows.length === 0) {
     return [];
   }
@@ -589,20 +598,28 @@ export function serializationContract<Brand>(input: DetectorInput<Brand>): reado
     "instance",
   );
   const byId = new Map(held.symbols.map((symbol) => [symbol.id, symbol]));
+  // A destination holds back a data member and `toJSON`, and `toString` as well where
+  // the value left the analysis.
+  const holdsBack = (flags: SymbolFlags, name: string, to: Destination): boolean =>
+    (flags & SymbolFlags.Property) !== 0 ||
+    ((flags & SymbolFlags.Method) !== 0 &&
+      (name === SERIALIZED_CONVERSION || (to.reach === "conversions" && CONVERSIONS.has(name))));
   const found: Evidence[] = [];
   for (const flow of flows) {
     const site = renderPosition(flow.site.getSourceFile(), targetRoot, flow.site.getStart());
     const detail = `passed to ${flow.to.callee}`;
     for (const member of [...flow.classes].flatMap((id) => members.get(id) ?? [])) {
       const symbol = byId.get(member.id);
-      const isProperty = (member.flags & SymbolFlags.Property) !== 0;
-      const converts =
-        flow.to.reach === "conversions" &&
-        (member.flags & SymbolFlags.Method) !== 0 &&
-        symbol !== undefined &&
-        CONVERSIONS.has(memberComponent(symbol, byId) ?? "");
-      if (isProperty || converts) {
+      const name = symbol === undefined ? "" : (memberComponent(symbol, byId) ?? "");
+      if (holdsBack(member.flags, name, flow.to)) {
         found.push({ id: member.id, detail, site });
+      }
+    }
+    for (const member of flow.members) {
+      if (holdsBack(member.flags, member.name, flow.to)) {
+        for (const id of chains.declarationsOf(member)) {
+          found.push({ id, detail, site });
+        }
       }
     }
   }
