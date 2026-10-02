@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "main": "./src/main.ts",
+  "description": "Its module src/main.ts is imported by a test alone",
   "bin": {
     "dependencies-cli": "./src/cli.ts"
   },

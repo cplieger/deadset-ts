@@ -1,0 +1,13 @@
+{
+  "name": "@example/caller-roots",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./src/main.ts",
+  "exports": {
+    ".": "./src/main.ts"
+  },
+  "bin": {
+    "caller-roots": "./src/command.ts"
+  }
+}

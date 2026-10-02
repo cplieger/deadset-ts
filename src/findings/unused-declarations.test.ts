@@ -247,6 +247,37 @@ describe("the unused-declarations emitter over a library", () => {
   });
 });
 
+describe("an export a root names that nothing references", () => {
+  const target = fixture("projects", "caller-roots");
+
+  it("is never reported where a manifest entry, a command or an entry file roots it", () => {
+    const input = emitterInputOf(
+      target,
+      configOf(readFileSync(join(target, "deadset.json"), "utf8")),
+    );
+
+    expect(
+      named(findingsOf(input)),
+      "the member of a rooted interface and the export no root names are still reported",
+    ).toEqual(["DS1003 MainShape.name", "DS1103 unused"]);
+  });
+
+  it("stays a candidate in a library where the published API roots it, and nowhere else", () => {
+    const input = emitterInputOf(
+      target,
+      configOf(
+        `{ "target": { "kind": "library" }, "consumers": { "complete": true }, "ts": { "entry_files": ["src/route.ts"] } }`,
+      ),
+    );
+
+    expect(named(findingsOf(input))).toEqual([
+      "DS1001 fromMain",
+      "DS1103 unused",
+      "DS1201 MainShape",
+    ]);
+  });
+});
+
 /** One row of a corpus fixture's expectation file, as far as this family reads it. */
 interface ExpectRow {
   readonly symbol: string;

@@ -93,11 +93,11 @@ describe("the two relations over one project", () => {
     expect(verdict("src/recursive.ts#recurse")).toBe("reference-counting\treachability");
   });
 
-  it("keeps an entry's export reachable and still a candidate when nothing references it", () => {
+  it("holds an entry's export live under both relations when nothing references it", () => {
     expect(
       verdict("src/main.ts#entryExport"),
-      "a manifest entry supposes a consumer, so its root feeds reachability alone",
-    ).toBe("reachability\treference-counting");
+      "a manifest entry names a caller, so its root counts under reference counting too",
+    ).toBe("reference-counting,reachability\tlive");
     expect(verdict("src/main.ts#keptByTheEntryExport"), "and what it references is live").toBe(
       "reference-counting,reachability\tlive",
     );

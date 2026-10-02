@@ -1,34 +1,18 @@
 ts://@example/published-exports/src/features/one.ts#	manifest-entry	exports["./features/*"]
-ts://@example/published-exports/src/features/one.ts#featureOne	manifest-entry	exports["./features/*"]
 ts://@example/published-exports/src/features/one.ts#featureOne	published-api
 ts://@example/published-exports/src/helper.ts#	manifest-entry	exports["./helper"]
-ts://@example/published-exports/src/helper.ts#helper	manifest-entry	exports["./helper"]
 ts://@example/published-exports/src/helper.ts#helper	published-api
 ts://@example/published-exports/src/index.ts#	manifest-entry	exports["."]["default"]
 ts://@example/published-exports/src/index.ts#	manifest-entry	exports["."]["types"]
-ts://@example/published-exports/src/index.ts#Published	manifest-entry	exports["."]["default"]
-ts://@example/published-exports/src/index.ts#Published	manifest-entry	exports["."]["types"]
 ts://@example/published-exports/src/index.ts#Published	published-api
 ts://@example/published-exports/src/index.ts#Published.open	published-api
-ts://@example/published-exports/src/index.ts#value	manifest-entry	exports["."]["default"]
-ts://@example/published-exports/src/index.ts#value	manifest-entry	exports["."]["types"]
 ts://@example/published-exports/src/index.ts#value	published-api
-ts://@example/published-exports/src/index.ts#built	manifest-entry	exports["."]["default"]
-ts://@example/published-exports/src/index.ts#built	manifest-entry	exports["."]["types"]
 ts://@example/published-exports/src/index.ts#built	published-api
-ts://@example/published-exports/src/index.ts#Reexported:alias	manifest-entry	exports["."]["default"]
-ts://@example/published-exports/src/index.ts#Reexported:alias	manifest-entry	exports["."]["types"]
 ts://@example/published-exports/src/index.ts#Reexported:alias	published-api
 ts://@example/published-exports/src/legacy.ts#	manifest-entry	main
 ts://@example/published-exports/src/legacy.ts#legacy	manifest-entry	main
-ts://@example/published-exports/src/reexported.ts#Reexported	manifest-entry	exports["."]["default"]
-ts://@example/published-exports/src/reexported.ts#Reexported	manifest-entry	exports["."]["types"]
 ts://@example/published-exports/src/reexported.ts#Reexported	published-api
 ts://@example/published-exports/src/reexported.ts#Reexported.open	published-api
 ts://@example/published-exports/src/reexported.ts#Reexported.guarded	published-api
-ts://@example/published-exports/src/starred.ts#starred	manifest-entry	exports["."]["default"]
-ts://@example/published-exports/src/starred.ts#starred	manifest-entry	exports["."]["types"]
 ts://@example/published-exports/src/starred.ts#starred	published-api
-ts://@example/published-exports/src/starred.ts#alsoStarred	manifest-entry	exports["."]["default"]
-ts://@example/published-exports/src/starred.ts#alsoStarred	manifest-entry	exports["."]["types"]
 ts://@example/published-exports/src/starred.ts#alsoStarred	published-api

@@ -4,9 +4,8 @@
  *
  * Every root seeds REACHABILITY, and no root counts as a reference. A root of a kind
  * that names a caller is live under reference counting as well, which the sweep
- * decides; a root that only supposes a consumer is not, so an exported declaration
- * something outside the program reaches is live under reachability and still a
- * candidate under reference counting.
+ * decides; the published API only supposes a consumer, so a published export is live
+ * under reachability and still a candidate under reference counting.
  */
 
 import type { SourceFile } from "@typescript/native/unstable/ast";
@@ -23,9 +22,9 @@ import { sourceFilesOf } from "./source-files.ts";
 export type RootKind =
   /** A file `ts.entry_files` names, and what it exports. */
   | "entry-file"
-  /** A file the manifest names as an importable entry point, and what it exports. */
+  /** A file the manifest names as an importable entry point, and what it exports outside the published API. */
   | "manifest-entry"
-  /** A file the manifest names as a command, and what it exports. */
+  /** A file the manifest names as a command, and what it exports outside the published API. */
   | "manifest-binary"
   /** A declaration a consumer of a library target can name. */
   | "published-api"
@@ -168,6 +167,7 @@ function childrenOf(held: Inventory): ReadonlyMap<string, readonly InventorySymb
  * is a root with everything its module exports: each name of the module's export
  * table, and where a name is a re-export, every link of the chain to the declaration
  * it carries, so a re-exported declaration is a root of the file that publishes it.
+ * In a library, what a published file exports is rooted by the published API alone.
  * A file a runtime executes without reading its exports, a test file or a worker, is
  * a root by itself.
  */
@@ -198,14 +198,19 @@ export function roots<Brand>(
 
   const published: SourceFile[] = [];
   const publishes = (entry: ManifestEntry): boolean =>
+    options.publishedAPI &&
     entry.published &&
     (options.manifest.declaresExports ? entry.member.startsWith("exports") : true);
   for (const entry of options.manifest.entries) {
+    if (publishes(entry)) {
+      published.push(...files.named(entry.path));
+    }
+  }
+  const publishedNames = new Set(published.map((file) => file.fileName));
+  for (const entry of options.manifest.entries) {
     for (const file of files.named(entry.path)) {
-      enter(file, entry.role === "run" ? "manifest-binary" : "manifest-entry", entry.member, true);
-      if (options.publishedAPI && publishes(entry)) {
-        published.push(file);
-      }
+      const kind = entry.role === "run" ? "manifest-binary" : "manifest-entry";
+      enter(file, kind, entry.member, !publishedNames.has(file.fileName));
     }
   }
   for (const pattern of options.entryFiles) {
