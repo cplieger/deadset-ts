@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { contractDocument } from "../__test-helpers__/fixtures.ts";
 import { schemaValidator } from "../__test-helpers__/json-schema.ts";
-import { reportedConformance } from "./conformance.ts";
 import type { CompletedFinding } from "./finding.ts";
 import type { PassResult } from "./findings-pass.ts";
 import type { StaleSuppression } from "./findings/self-check.ts";
@@ -87,7 +86,8 @@ function input(pass: PassResult, overrides: Partial<ReportInput> = {}): ReportIn
   return {
     contractVersion: "3.2.0",
     version: "0.0.0",
-    conformance: reportedConformance(undefined),
+    conformance: { corpusVersion: "1.9.0", result: "pass", digest: `sha256:${"a".repeat(64)}` },
+    declaredGaps: [],
     target: { kind: "application", root: ".", identity: "@example/app" },
     configurations: [{ id: "tsconfig.json", project: "tsconfig.json" }],
     unavailable: [],
@@ -238,12 +238,37 @@ describe("the report", () => {
     });
   });
 
-  it("states a failed conformance result over an empty results document when it records no run", () => {
+  it("states the conformance result it records as the analyzer object spells it", () => {
     expect(buildReport(input(result([]))).analyzer.conformance).toEqual({
       corpus_version: "1.9.0",
-      result: "fail",
-      digest: "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      result: "pass",
+      digest: `sha256:${"a".repeat(64)}`,
     });
+  });
+
+  it("carries every declared gap, ordered by its compact encoding, a symbol only where one is declared", () => {
+    const report = buildReport(
+      input(result([]), {
+        declaredGaps: [
+          { fixture: "zeta", capability: "DS1001", reason: "Not loaded." },
+          { fixture: "alpha", symbol: "Row", capability: "reflective-lookup", reason: "Resolved." },
+          { fixture: "alpha", capability: "DS1104", reason: "Not narrowed." },
+        ],
+      }),
+    );
+
+    expect(report.declared_gaps).toEqual([
+      { fixture: "alpha", capability: "DS1104", reason: "Not narrowed." },
+      { fixture: "alpha", symbol: "Row", capability: "reflective-lookup", reason: "Resolved." },
+      { fixture: "zeta", capability: "DS1001", reason: "Not loaded." },
+    ]);
+    expect(Object.keys(report.declared_gaps[1] ?? {})).toEqual([
+      "fixture",
+      "symbol",
+      "capability",
+      "reason",
+    ]);
+    expect(validate(report)).toEqual([]);
   });
 });
 
