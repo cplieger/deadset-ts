@@ -1,1 +1,1 @@
-{ "name": "dev-tool", "version": "1.0.0", "bin": { "dev-tool": "./cli.js" } }
+{"name": "dev-tool", "private": true, "version": "1.0.0", "bin": {"dev-tool": "./cli.js"}}

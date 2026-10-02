@@ -1,1 +1,1 @@
-{ "name": "unused-runtime", "version": "1.0.0", "types": "./index.d.ts" }
+{"name": "unused-runtime", "private": true, "version": "1.0.0", "types": "./index.d.ts"}

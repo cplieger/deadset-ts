@@ -1,1 +1,1 @@
-{ "name": "peer-used", "version": "1.0.0", "types": "./index.d.ts" }
+{"name": "peer-used", "private": true, "version": "1.0.0", "types": "./index.d.ts"}

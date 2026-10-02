@@ -1,1 +1,1 @@
-{ "name": "host-peer", "version": "1.0.0", "types": "./index.d.ts" }
+{"name": "host-peer", "private": true, "version": "1.0.0", "types": "./index.d.ts"}
