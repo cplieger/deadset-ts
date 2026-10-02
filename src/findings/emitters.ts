@@ -1,5 +1,6 @@
 import { dependenciesAndModuleMachinery } from "./dependencies-and-module-machinery.ts";
-import { placed, type PlacedFinding } from "./completion.ts";
+import type { CompletedFinding } from "../finding.ts";
+import { completed, reportable } from "./completion.ts";
 import type { Emitter, EmitterInput, Emitters } from "./emitter.ts";
 import { interfaces } from "./interfaces.ts";
 import { intraFunction } from "./intra-function.ts";
@@ -22,12 +23,11 @@ export const EMITTERS: Emitters = new Map<string, Emitter>([
 ]);
 
 /**
- * Every finding of the run, each family's in table order, each placed in its component
- * by the one step that numbers the components minted for subjects that fall with none.
+ * Every finding of the run the dials do not withhold, each family's in table order: every
+ * family's findings completed by one step, then withheld by one step, so a root one
+ * family reports withholds what another family reports in its component.
  */
-export function findingsOf(input: EmitterInput): readonly PlacedFinding[] {
-  return placed(
-    input.swept,
-    [...EMITTERS.values()].flatMap((emit) => emit(input)),
-  );
+export function findingsOf(input: EmitterInput): readonly CompletedFinding[] {
+  const found = [...EMITTERS.values()].flatMap((emit) => emit(input));
+  return reportable(completed(input, found), input.config.analysis.minConfidence);
 }

@@ -1,25 +1,15 @@
-import type { Config, Severity } from "../config.ts";
 import type { Dependencies } from "../dependencies.ts";
 import type { Finding } from "../finding.ts";
 import { renderRef, type DependencySection } from "../ref.ts";
-import { severityOf } from "./completion.ts";
 import type { Emitter } from "./emitter.ts";
 
 const UNUSED_DEPENDENCY = "DS1601";
-
-/** The severity the kind ships at, which the configuration's keys override. */
-const UNUSED_DEPENDENCY_SEVERITY: Severity = "deny";
 
 const MESSAGES: Readonly<Record<DependencySection, string>> = {
   dependency: "no import in the target needs the declared dependency",
   "dev-dependency": "no import in the target needs the declared development dependency",
   "peer-dependency": "no import in the target needs the declared peer dependency",
 };
-
-/** An unused-dependency finding, with the section that declares the dependency. */
-export interface UnusedDependencyFinding extends Finding {
-  readonly details: { readonly dependencyClass: DependencySection };
-}
 
 /**
  * The dependencies the target needs: every package the projects' uses name, every
@@ -48,14 +38,9 @@ function neededBy(dependencies: Dependencies): ReadonlySet<string> {
 
 /**
  * A dependency, development dependency or peer dependency of the target's manifest
- * that the target does not need, at the position of its key. Nothing is reported at
- * `allow`. Every subject is a manifest entry, which is `certain` whatever the
- * consumers, so no minimum confidence withholds one.
+ * that the target does not need, at the position of its key.
  */
-function unusedDependencies(config: Config, dependencies: Dependencies): UnusedDependencyFinding[] {
-  if (severityOf(config, UNUSED_DEPENDENCY, UNUSED_DEPENDENCY_SEVERITY) === "allow") {
-    return [];
-  }
+function unusedDependencies(dependencies: Dependencies): Finding[] {
   const needed = neededBy(dependencies);
   return dependencies.declared
     .filter((dependency) => !needed.has(dependency.name))
@@ -78,5 +63,5 @@ function unusedDependencies(config: Config, dependencies: Dependencies): UnusedD
 }
 
 /** The findings of the dependencies-and-module-machinery family, `DS1600` to `DS1699`. */
-export const dependenciesAndModuleMachinery: Emitter = ({ config, dependencies }) =>
-  unusedDependencies(config, dependencies);
+export const dependenciesAndModuleMachinery: Emitter = ({ dependencies }) =>
+  unusedDependencies(dependencies);

@@ -1,32 +1,8 @@
-import type { Confidence, Severity } from "../config.ts";
+import type { Finding } from "../finding.ts";
 import type { InventorySymbol, SymbolKind } from "../inventory.ts";
 import type { MatrixCandidate } from "../matrix.ts";
-import {
-  capped,
-  findingComponents,
-  reachabilityClasses,
-  reportable,
-  severityOf,
-  type CompletedFinding,
-} from "./completion.ts";
-import type { Emitter, EmitterInput } from "./emitter.ts";
+import type { Emitter } from "./emitter.ts";
 import { unreachableExports } from "./visibility-narrowing.ts";
-
-/** What the issue-kind vocabulary states about one code of the family. */
-interface KindRow {
-  readonly defaultSeverity: Severity;
-  readonly maxClass: Confidence;
-}
-
-/** The codes of the unused-declarations family, each by its row of the vocabulary. */
-export const UNUSED_DECLARATION_KINDS: ReadonlyMap<string, KindRow> = new Map([
-  ["DS1001", { defaultSeverity: "deny", maxClass: "certain" }],
-  ["DS1002", { defaultSeverity: "deny", maxClass: "certain" }],
-  ["DS1003", { defaultSeverity: "deny", maxClass: "certain" }],
-  ["DS1004", { defaultSeverity: "deny", maxClass: "certain" }],
-  ["DS1005", { defaultSeverity: "deny", maxClass: "certain" }],
-  ["DS1006", { defaultSeverity: "deny", maxClass: "certain" }],
-]);
 
 /** The kinds of declaration that are members of a class, an interface, a type or an enum. */
 const MEMBERS: ReadonlySet<SymbolKind> = new Set([
@@ -160,20 +136,14 @@ function messageOf(code: string, judged: Judged): string {
   return `${subject} has no reference in the target`;
 }
 
-/**
- * The findings of the unused-declarations family, `DS1000` to `DS1099`, completed and
- * with what the dials withhold left out.
- */
-export function unusedDeclarationFindings(input: EmitterInput): readonly CompletedFinding[] {
-  const { config, swept } = input;
-  const union = swept.matrix.union;
-  const dead = new Set(swept.sweep.candidates.map((candidate) => candidate.id));
-  const classOf = reachabilityClasses(swept);
-  const componentOf = findingComponents(swept);
+/** The findings of the unused-declarations family, `DS1000` to `DS1099`. */
+export const unusedDeclarations: Emitter = (input) => {
+  const union = input.swept.matrix.union;
+  const dead = new Set(input.swept.sweep.candidates.map((candidate) => candidate.id));
   const unreachable = unreachableExports(input);
 
-  const found: CompletedFinding[] = [];
-  for (const candidate of swept.sweep.candidates) {
+  const found: Finding[] = [];
+  for (const candidate of input.swept.sweep.candidates) {
     const at = union.at(candidate.id);
     const symbol = union.symbols[at];
     if (symbol === undefined) {
@@ -188,16 +158,10 @@ export function unusedDeclarationFindings(input: EmitterInput): readonly Complet
       unreachable: unreachable.has(symbol.id),
     };
     const code = codeOf(judged);
-    const row = code === undefined ? undefined : UNUSED_DECLARATION_KINDS.get(code);
-    if (code === undefined || row === undefined) {
+    if (code === undefined) {
       continue;
     }
-    const component = componentOf(symbol.id);
-    if (component === undefined) {
-      throw new Error(`${symbol.id} is reported dead and falls in no dead component`);
-    }
     const endLine = Math.max(symbol.position.line, symbol.endLine);
-    const reachabilityClass = classOf(symbol.id);
     found.push({
       code,
       position: { ...symbol.position, endLine },
@@ -208,18 +172,7 @@ export function unusedDeclarationFindings(input: EmitterInput): readonly Complet
         sizeLines: endLine - symbol.position.line + 1,
       },
       message: messageOf(code, judged),
-      reachabilityClass,
-      confidence: capped(reachabilityClass, row.maxClass),
-      livenessRelation: candidate.relation,
-      testOnly: candidate.productionRefs === 0 && candidate.testRefs > 0,
-      component,
-      configurations: candidate.configurations,
-      severity: severityOf(config, code, row.defaultSeverity),
-      details: {},
     });
   }
-  return reportable(found, config.analysis.minConfidence);
-}
-
-/** The findings of the unused-declarations family, `DS1000` to `DS1099`. */
-export const unusedDeclarations: Emitter = unusedDeclarationFindings;
+  return found;
+};

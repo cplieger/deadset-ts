@@ -1,4 +1,4 @@
-import type { Finding, FindingPosition } from "../finding.ts";
+import type { Finding, FindingPosition, PositionedSymbol } from "../finding.ts";
 import type { InventorySymbol } from "../inventory.ts";
 import { byPosition } from "../position.ts";
 import type { Candidate } from "../sweep.ts";
@@ -13,18 +13,6 @@ const UNUSED_DEAD_MESSAGE =
   "the interface is named as a type only from declarations that are themselves dead";
 const UNUSED_TEST_MESSAGE = "the interface is named as a type only from test files";
 const UNCALLED_MESSAGE = "no call site invokes or selects the method through the interface";
-
-/** One class a finding names as an implementation of its interface. */
-interface Implementation {
-  readonly ref: string;
-  readonly name: string;
-  readonly position: FindingPosition;
-}
-
-/** A finding of this family, with the implementations its details carry. */
-interface InterfaceFinding extends Finding {
-  readonly details: { readonly implementations: readonly Implementation[] };
-}
 
 /** Where one declaration is written, as a finding carries it. */
 function positionOf(symbol: InventorySymbol): FindingPosition {
@@ -44,7 +32,7 @@ function indexed(input: EmitterInput): {
   readonly symbolOf: (id: string) => InventorySymbol | undefined;
   readonly inTest: (id: string) => boolean;
   readonly candidateOf: (id: string) => Candidate | undefined;
-  readonly implementationsOf: (id: string) => readonly Implementation[];
+  readonly implementationsOf: (id: string) => readonly PositionedSymbol[];
 } {
   const union = input.swept.matrix.union;
   const symbols = new Map(union.symbols.map((symbol) => [symbol.id, symbol]));
@@ -70,8 +58,8 @@ function findingOf(
   code: string,
   symbol: InventorySymbol,
   message: string,
-  implementations: readonly Implementation[],
-): InterfaceFinding {
+  implementations: readonly PositionedSymbol[],
+): Finding {
   const position = positionOf(symbol);
   return {
     code,
@@ -96,7 +84,7 @@ function findingOf(
  */
 export const interfaces: Emitter = (input) => {
   const run = indexed(input);
-  const found: InterfaceFinding[] = [];
+  const found: Finding[] = [];
   for (const candidate of input.swept.sweep.candidates) {
     const symbol = run.symbolOf(candidate.id);
     if (symbol === undefined || run.inTest(candidate.id)) {

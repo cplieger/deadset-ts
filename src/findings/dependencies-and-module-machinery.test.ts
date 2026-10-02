@@ -11,7 +11,7 @@ import { isRef } from "../ref.ts";
 import { resolve } from "../resolve.ts";
 import { run, type Writer } from "../run.ts";
 import type { EmitterInput } from "./emitter.ts";
-import { EMITTERS } from "./emitters.ts";
+import { EMITTERS, findingsOf } from "./emitters.ts";
 
 /**
  * The fixture with its dependency directory in place. A tree holding one cannot be
@@ -136,8 +136,10 @@ describe("the dependencies-and-module-machinery emitter", () => {
   });
 
   it("withholds every finding when the severity map sets the kind or its family to allow", () => {
-    const allow = (severity: Record<string, string>): Finding[] =>
-      sweepFixture(TARGET, JSON.stringify({ target: { kind: "application" }, severity })).findings;
+    const allow = (severity: Record<string, string>): readonly Finding[] =>
+      findingsOf(
+        sweepFixture(TARGET, JSON.stringify({ target: { kind: "application" }, severity })).input,
+      ).filter((finding) => finding.code === "DS1601");
 
     expect(allow({ DS1601: "allow" })).toEqual([]);
     expect(allow({ DS16: "allow" })).toEqual([]);

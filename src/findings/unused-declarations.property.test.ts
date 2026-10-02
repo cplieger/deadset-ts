@@ -5,7 +5,7 @@ import { emitterInputOf } from "../../__test-helpers__/emitter-input.ts";
 import { writeProject } from "../../__test-helpers__/projects.ts";
 import { resolve } from "../resolve.ts";
 import { openEngine, type Engine } from "../session.ts";
-import { unusedDeclarationFindings } from "./unused-declarations.ts";
+import { findingsOf } from "./emitters.ts";
 
 /**
  * One iteration writes a project and sweeps it in a fresh snapshot of one shared client,
@@ -161,12 +161,12 @@ describe("an unreferenced declaration with no exemption", () => {
         fc.property(fc.array(drawn, { minLength: 1, maxLength: 6 }), (declarations) => {
           const root = writeProject(projectOf(declarations));
           try {
-            const reported = unusedDeclarationFindings(
-              emitterInputOf(root, config, { engine: shared }),
-            ).map(
-              (finding) =>
-                `${finding.code} ${finding.symbol.name} ${finding.livenessRelation ?? "-"} ${finding.confidence} ${finding.component.root ? "root" : "falls"}`,
-            );
+            const reported = findingsOf(emitterInputOf(root, config, { engine: shared }))
+              .filter((finding) => finding.code.startsWith("DS10"))
+              .map(
+                (finding) =>
+                  `${finding.code} ${finding.symbol.name} ${finding.livenessRelation ?? "-"} ${finding.confidence} ${finding.component.root ? "root" : "falls"}`,
+              );
             const expected = declarations.map(
               (one, at) =>
                 `${codeFor(one)} ${displayName(one, `d${String(at)}`)} reference-counting certain root`,

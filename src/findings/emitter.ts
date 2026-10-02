@@ -30,8 +30,9 @@ export interface EmitterInput {
 }
 
 /**
- * One kind family's rule over one run: the findings of the codes in its family's range
- * of the Contract's code space, in no particular order.
+ * One kind family's rule over one run: every finding of the codes in its family's range
+ * of the Contract's code space, whatever severity and minimum confidence the
+ * configuration sets, in no particular order.
  */
 export type Emitter = (input: EmitterInput) => readonly Finding[];
 

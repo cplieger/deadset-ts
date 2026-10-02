@@ -1,50 +1,23 @@
 /**
- * What a finding about a declaration carries beyond what its emitter decides, read from
- * the run: the reachability class and the confidence, the relation that decided the
- * subject, the dead component it falls in, the configurations it holds in, and the
- * severity the configuration gives its code. The dials withhold what they name and
- * every finding that falls with a root they withhold.
+ * What every finding carries beyond what its emitter decides, read from the run and from
+ * the code's row of the issue-kind vocabulary, and the dials that withhold a finding
+ * together with every finding that falls with a root they withhold.
  */
 
 import type { RunSweep } from "../analysis.ts";
 import { componentId, type Component } from "../components.ts";
 import type { Confidence, Config, Severity } from "../config.ts";
-import type { Finding } from "../finding.ts";
+import type { CompletedFinding, Finding, FindingComponent } from "../finding.ts";
+import { OUTSIDE } from "../graph.ts";
+import { KINDS } from "../kinds.ts";
 import { FAMILY_KEY_LENGTH } from "../resolve.ts";
-import type { Relation } from "../sweep.ts";
-
-/** The dead component a finding names, as the finding schema spells its members. */
-export interface FindingComponent {
-  readonly id: string;
-  /** Whether the subject is a root member of the component. */
-  readonly root: boolean;
-  /** The number of the component's members. */
-  readonly symbolCount: number;
-  readonly deletableLines: number;
-}
-
-/** One finding with the members the run decides, in this language's case. */
-export interface CompletedFinding extends Finding {
-  readonly reachabilityClass: Confidence;
-  /** The reachability class capped by the code's ceiling. */
-  readonly confidence: Confidence;
-  /** The relation that decided the subject, absent where none did. */
-  readonly livenessRelation?: Relation;
-  /** Whether every reference to the subject comes from a test file. */
-  readonly testOnly: boolean;
-  readonly component: FindingComponent;
-  /** The configurations the finding holds in, in the run's order. */
-  readonly configurations: readonly string[];
-  readonly severity: Severity;
-  /** The per-code members of the finding schema's `details`, empty for a code with none. */
-  readonly details: Readonly<Record<string, unknown>>;
-}
+import type { EmitterInput } from "./emitter.ts";
 
 /** The classes ranked by the claim each makes, the strongest highest. */
-export const RANK: Readonly<Record<Confidence, number>> = { certain: 3, probable: 2, possible: 1 };
+const RANK: Readonly<Record<Confidence, number>> = { certain: 3, probable: 2, possible: 1 };
 
 /** The weaker of two classes, which is a class capped by a ceiling. */
-export function capped(found: Confidence, ceiling: Confidence): Confidence {
+function capped(found: Confidence, ceiling: Confidence): Confidence {
   return RANK[found] <= RANK[ceiling] ? found : ceiling;
 }
 
@@ -52,7 +25,7 @@ export function capped(found: Confidence, ceiling: Confidence): Confidence {
  * The severity the configuration gives one code: the key naming the code, else the key
  * naming its family, else the code's default.
  */
-export function severityOf(config: Config, code: string, fallback: Severity): Severity {
+function severityOf(config: Config, code: string, fallback: Severity): Severity {
   return (
     config.severity.get(code) ?? config.severity.get(code.slice(0, FAMILY_KEY_LENGTH)) ?? fallback
   );
@@ -65,7 +38,7 @@ export function severityOf(config: Config, code: string, fallback: Severity): Se
  * in the loaded program, a private member and a `#private` name among them, and is
  * `certain`.
  */
-export function reachabilityClasses(swept: RunSweep): (id: string) => Confidence {
+function reachabilityClasses(swept: RunSweep): (id: string) => Confidence {
   const union = swept.matrix.union;
   const published = new Set(
     union.rooted
@@ -76,7 +49,7 @@ export function reachabilityClasses(swept: RunSweep): (id: string) => Confidence
 }
 
 /** The component each dead declaration of the run falls in, and none for a live one. */
-export function findingComponents(swept: RunSweep): (id: string) => FindingComponent | undefined {
+function findingComponents(swept: RunSweep): (id: string) => FindingComponent | undefined {
   const held = new Map<string, Component>();
   for (const component of swept.sweep.components) {
     for (const member of component.members) {
@@ -96,35 +69,74 @@ export function findingComponents(swept: RunSweep): (id: string) => FindingCompo
   };
 }
 
-/** One finding with the component it names. */
-export type PlacedFinding = Finding & { readonly component: FindingComponent };
-
 /**
- * Every finding of the run, each with its component, in the order given: the dead
- * component its subject falls in. A subject in none, a live declaration, a file no
- * program builds or a manifest row, falls with nothing and is given a component of its
- * own, numbered past the run's computed components in the order the findings come, so
- * no two families mint one identifier.
+ * Every finding of the run completed, in the order given. A dead declaration carries its
+ * candidate's relation, counts, configurations and component; a live one carries no
+ * relation and holds where it is declared; a file or a manifest row is `certain` and
+ * holds in every configuration. A subject in no dead component gets one of its own,
+ * numbered past the computed ones in finding order, so no two families mint one.
  */
-export function placed(swept: RunSweep, findings: readonly Finding[]): readonly PlacedFinding[] {
+export function completed(
+  input: EmitterInput,
+  findings: readonly Finding[],
+): readonly CompletedFinding[] {
+  const { swept } = input;
+  const union = swept.matrix.union;
+  const positions = new Map(union.symbols.map((symbol, at) => [symbol.ref, at]));
+  const candidates = new Map(swept.sweep.candidates.map((candidate) => [candidate.id, candidate]));
+  const classOf = reachabilityClasses(swept);
   const componentOf = findingComponents(swept);
-  const ids = new Map(swept.matrix.union.symbols.map((symbol) => [symbol.ref, symbol.id]));
   let minted = swept.sweep.components.length;
-  return findings.map((finding) => {
-    const id = ids.get(finding.symbol.ref);
-    const component = id === undefined ? undefined : componentOf(id);
-    if (component !== undefined) {
-      return { ...finding, component };
+
+  return findings.map((finding): CompletedFinding => {
+    const row = KINDS.get(finding.code);
+    if (row === undefined) {
+      throw new Error(`${finding.code} names no live row of the issue-kind vocabulary`);
     }
-    minted += 1;
-    return {
-      ...finding,
-      component: {
+    const at = positions.get(finding.symbol.ref) ?? OUTSIDE;
+    const symbol = union.symbols[at];
+    const judged = union.subject[at] === true ? symbol : undefined;
+    const candidate = judged === undefined ? undefined : candidates.get(judged.id);
+    const found = symbol === undefined ? undefined : componentOf(symbol.id);
+    if (candidate !== undefined && found === undefined) {
+      throw new Error(`${candidate.id} is judged dead and falls in no dead component`);
+    }
+    let component = found;
+    if (component === undefined) {
+      minted += 1;
+      component = {
         id: componentId(minted),
         root: true,
         symbolCount: 1,
         deletableLines: finding.symbol.sizeLines,
-      },
+      };
+    }
+    const counts =
+      candidate === undefined
+        ? union.made[at]
+        : { production: candidate.productionRefs, test: candidate.testRefs };
+    const reachabilityClass = judged === undefined ? "certain" : classOf(judged.id);
+    return {
+      code: finding.code,
+      kind: row.name,
+      language: "ts",
+      position: finding.position,
+      symbol: finding.symbol,
+      reachabilityClass,
+      confidence: capped(reachabilityClass, row.maxClass),
+      ...(candidate === undefined ? {} : { livenessRelation: candidate.relation }),
+      testOnly: judged !== undefined && counts?.production === 0 && counts.test > 0,
+      generated: false,
+      component,
+      retainedBy: [],
+      configurations:
+        candidate?.configurations ??
+        (judged === undefined ? swept.matrix.configurations : (swept.matrix.heldIn[at] ?? [])),
+      consumersLoaded: input.boundary.consumers.loaded,
+      fixability: row.fixability,
+      severity: severityOf(input.config, finding.code, row.defaultSeverity),
+      message: finding.message,
+      details: finding.details ?? {},
     };
   });
 }

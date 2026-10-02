@@ -2,13 +2,15 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { emitterInputOf } from "../../__test-helpers__/emitter-input.ts";
-import { contractDocument, fixture } from "../../__test-helpers__/fixtures.ts";
+import { fixture } from "../../__test-helpers__/fixtures.ts";
 import type { Config } from "../config.ts";
+import type { CompletedFinding } from "../finding.ts";
 import { resolve } from "../resolve.ts";
-import type { CompletedFinding } from "./completion.ts";
 import type { EmitterInput } from "./emitter.ts";
-import { EMITTERS } from "./emitters.ts";
-import { UNUSED_DECLARATION_KINDS, unusedDeclarationFindings } from "./unused-declarations.ts";
+import { EMITTERS, findingsOf } from "./emitters.ts";
+
+/** The codes of this family. */
+const FAMILY = /^DS10[0-9]{2}$/u;
 
 /** One configuration document, resolved. */
 function configOf(document: string): Config {
@@ -19,6 +21,11 @@ function configOf(document: string): Config {
 function sweepProject(name: string): EmitterInput {
   const target = fixture("projects", name);
   return emitterInputOf(target, configOf(readFileSync(join(target, "deadset.json"), "utf8")));
+}
+
+/** The run's reported findings of this family, completed and dialed with every other family's. */
+function family(input: EmitterInput): readonly CompletedFinding[] {
+  return findingsOf(input).filter((finding) => FAMILY.test(finding.code));
 }
 
 /** One finding as one line: every member the family decides or completes. */
@@ -44,32 +51,15 @@ function named(findings: readonly CompletedFinding[]): string[] {
   return findings.map((finding) => `${finding.code} ${finding.symbol.name}`);
 }
 
-describe("the unused-declarations vocabulary", () => {
-  it("states each code of the family as the Contract's issue-kind vocabulary does", () => {
-    const rows = (contractDocument("kinds.json")["kinds"] as Record<string, unknown>[])
-      .filter((row) => String(row["code"]).startsWith("DS10"))
-      .map((row) => [
-        String(row["code"]),
-        { defaultSeverity: row["default_severity"], maxClass: row["max_class"] },
-      ]);
-
-    expect([...UNUSED_DECLARATION_KINDS]).toEqual(rows);
-  });
-});
-
 describe("the unused-declarations emitter over an application", () => {
   const input = sweepProject("unused-declarations");
-  const findings = unusedDeclarationFindings(input);
+  const findings = family(input);
 
   it("is the committed golden table, finding for finding", async () => {
     await expect(
       `${findings.map(line).join("\n")}\n`,
       "regenerate with `npx vitest --run src/findings/unused-declarations.test.ts -u` and review the diff",
     ).toMatchFileSnapshot(fixture("golden", "unused-declarations.findings.txt"));
-  });
-
-  it("is what the emitter table runs for the family", () => {
-    expect(EMITTERS.get("unused-declarations")?.(input)).toEqual(findings);
   });
 
   it("reports an exported and an unexported declaration nothing references, and neither when referenced", () => {
@@ -165,7 +155,7 @@ describe("the unused-declarations emitter over an application", () => {
 describe("the dials over the unused-declarations family", () => {
   const input = sweepProject("unused-declarations");
   const under = (document: string): string[] =>
-    named(unusedDeclarationFindings({ ...input, config: configOf(document) }));
+    named(family({ ...input, config: configOf(document) }));
   const application = (extra: string): string => `{ "target": { "kind": "application" }${extra} }`;
   const everything = under(application(""));
 
@@ -187,7 +177,7 @@ describe("the dials over the unused-declarations family", () => {
   });
 
   it("reads a code's key before its family's", () => {
-    const findings = unusedDeclarationFindings({
+    const findings = family({
       ...input,
       config: configOf(application(`, "severity": { "DS10": "warn", "DS1003": "allow" }`)),
     });
@@ -197,7 +187,7 @@ describe("the dials over the unused-declarations family", () => {
   });
 
   it("gives every code its default severity where nothing names it", () => {
-    const findings = unusedDeclarationFindings({ ...input, config: configOf(application("")) });
+    const findings = family({ ...input, config: configOf(application("")) });
 
     expect(new Set(findings.map((finding) => finding.severity))).toEqual(new Set(["deny"]));
   });
@@ -205,7 +195,7 @@ describe("the dials over the unused-declarations family", () => {
 
 describe("the unused-declarations emitter over a library", () => {
   const input = sweepProject("unused-declarations-library");
-  const findings = unusedDeclarationFindings(input);
+  const findings = family(input);
 
   it("is the committed golden table, finding for finding", async () => {
     await expect(
@@ -243,7 +233,7 @@ describe("the unused-declarations emitter over a library", () => {
   });
 
   it("withholds below the minimum confidence", () => {
-    const certain = unusedDeclarationFindings({
+    const certain = family({
       ...input,
       config: configOf(
         `{ "target": { "kind": "library" }, "analysis": { "min_confidence": "certain" } }`,
@@ -277,9 +267,6 @@ interface Answered {
   readonly unnamed: readonly string[];
 }
 
-/** The codes of this family. */
-const FAMILY = /^DS10[0-9]{2}$/u;
-
 /**
  * Answers one corpus fixture's TypeScript rendering for this family: each row naming a
  * code of the family is matched against the finding at the row's line, each row naming
@@ -298,7 +285,7 @@ function answer(name: string): Answered {
   const config = configOf(`{ "target": { "kind": "${expected.target_kind}" } }`);
   const input = emitterInputOf(join(dir, "ts", "target"), config);
   const { swept } = input;
-  const findings = unusedDeclarationFindings(input);
+  const findings = family(input);
   const at = (row: ExpectRow): { readonly path: string; readonly line: number } => {
     const bound = manifest.symbols[row.symbol];
     return { path: (bound?.file ?? "").replace(/^target\//u, ""), line: bound?.line ?? 0 };
