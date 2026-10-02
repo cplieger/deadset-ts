@@ -69,12 +69,21 @@ function compare(a: string, b: string): number {
   return a < b ? -1 : 1;
 }
 
-/** What makes one reference one reference, whichever configuration made it. */
-function referenceKey(reference: Reference): string {
+/**
+ * What makes one reference one reference, whichever configuration made it. A consumer's
+ * position is rendered against its own root, so the consumer is part of what it names.
+ */
+export function referenceKey(reference: Reference): string {
   const { path, line, column } = reference.position;
-  return [reference.from, reference.to, path, String(line), String(column), reference.use].join(
-    "\u0000",
-  );
+  return [
+    reference.consumer ?? "",
+    reference.from,
+    reference.to,
+    path,
+    String(line),
+    String(column),
+    reference.use,
+  ].join("\u0000");
 }
 
 /**

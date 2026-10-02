@@ -6,12 +6,13 @@
 
 import type { RunSweep } from "../analysis.ts";
 import { componentId, type Component } from "../components.ts";
-import type { Confidence, Config, Severity } from "../config.ts";
+import type { Confidence, Severity } from "../config.ts";
 import type { CompletedFinding, Finding, FindingComponent } from "../finding.ts";
 import { OUTSIDE } from "../graph.ts";
-import { KINDS } from "../kinds.ts";
+import { KINDS, type KindRow } from "../kinds.ts";
 import { FAMILY_KEY_LENGTH } from "../resolve.ts";
 import { isRowSubject, type Dials } from "../suppress.ts";
+import type { Boundary } from "./boundary.ts";
 import type { EmitterInput } from "./emitter.ts";
 
 /** The classes ranked by the claim each makes, the strongest highest. */
@@ -22,31 +23,64 @@ function capped(found: Confidence, ceiling: Confidence): Confidence {
   return RANK[found] <= RANK[ceiling] ? found : ceiling;
 }
 
+/** The kind whose default turns on what the run knows about the target's consumers. */
+const UNUSED_EXPORTED = "DS1001";
+
+/** Whether the run loaded every consumer the scope declared, which holds of a scope declaring none. */
+function everyDeclaredLoaded(boundary: Boundary): boolean {
+  const { declared, loaded } = boundary.consumers;
+  return declared.every((id) => loaded.includes(id));
+}
+
+/**
+ * Whether a library's published API may have a caller the run cannot see: the target is
+ * a library, and the run either holds no consumer information or did not load a consumer
+ * the scope declared. A configuration declaring the consumer set complete holds consumer
+ * information whether or not it declares a consumer, because it says no other exists.
+ */
+function openWorld(input: EmitterInput): boolean {
+  const known = input.config.consumersComplete || input.boundary.consumers.declared.length > 0;
+  return input.config.targetKind === "library" && !(known && everyDeclaredLoaded(input.boundary));
+}
+
 /**
  * The severity the configuration gives one code: the key naming the code, else the key
- * naming its family, else the code's default.
+ * naming its family, else the code's default. The unused-exported kind defaults to
+ * `allow` while a library's published API is open to callers the run cannot see.
  */
-function severityOf(config: Config, code: string, fallback: Severity): Severity {
-  return (
-    config.severity.get(code) ?? config.severity.get(code.slice(0, FAMILY_KEY_LENGTH)) ?? fallback
-  );
+function severityOf(input: EmitterInput, code: string, fallback: Severity): Severity {
+  const { config } = input;
+  const named = config.severity.get(code) ?? config.severity.get(code.slice(0, FAMILY_KEY_LENGTH));
+  if (named !== undefined) {
+    return named;
+  }
+  return code === UNUSED_EXPORTED && openWorld(input) ? "allow" : fallback;
 }
 
 /**
  * The reachability class of one declaration of the run. A declaration of a library's
- * published API has callers outside the target, and the run loads no consumer that
- * would name them, so it is `possible`; every other declaration has every reference
- * in the loaded program, a private member and a `#private` name among them, and is
- * `certain`.
+ * published API has callers outside the target: it is `certain` where the run loaded
+ * every consumer the scope declared and declared at least one, `probable` where it
+ * declared consumers and did not load them all, and `possible` where it declared none.
+ * Whether the configuration declares the consumer set complete decides nothing here.
+ * Every other declaration has every reference in the loaded program, a private member
+ * and a `#private` name among them, and is `certain`.
  */
-function reachabilityClasses(swept: RunSweep): (id: string) => Confidence {
-  const union = swept.matrix.union;
+function reachabilityClasses(input: EmitterInput): (id: string) => Confidence {
+  const union = input.swept.matrix.union;
   const published = new Set(
     union.rooted
       .filter((root) => root.kind === "published-api")
       .map((root) => union.symbols[root.at]?.id),
   );
-  return (id) => (published.has(id) ? "possible" : "certain");
+  const { declared } = input.boundary.consumers;
+  const outside: Confidence =
+    declared.length === 0
+      ? "possible"
+      : everyDeclaredLoaded(input.boundary)
+        ? "certain"
+        : "probable";
+  return (id) => (published.has(id) ? outside : "certain");
 }
 
 /** The component each dead declaration of the run falls in, and none for a live one. */
@@ -76,22 +110,24 @@ function findingComponents(swept: RunSweep): (id: string) => FindingComponent | 
  * relation and holds where it is declared; a file or a manifest row is `certain` and
  * holds in every configuration. A subject in no dead component gets one of its own,
  * numbered past the computed ones in finding order, so no two families mint one; nothing
- * falls with it, so its deletion removes no line.
+ * falls with it, so its deletion removes no line. `kinds` is the vocabulary each code's
+ * row is read from, the shipped one unless a caller supplies its own.
  */
 export function completed(
   input: EmitterInput,
   findings: readonly Finding[],
+  kinds: ReadonlyMap<string, KindRow> = KINDS,
 ): readonly CompletedFinding[] {
   const { swept } = input;
   const union = swept.matrix.union;
   const positions = new Map(union.symbols.map((symbol, at) => [symbol.ref, at]));
   const candidates = new Map(swept.sweep.candidates.map((candidate) => [candidate.id, candidate]));
-  const classOf = reachabilityClasses(swept);
+  const classOf = reachabilityClasses(input);
   const componentOf = findingComponents(swept);
   let minted = swept.sweep.components.length;
 
   return findings.map((finding): CompletedFinding => {
-    const row = KINDS.get(finding.code);
+    const row = kinds.get(finding.code);
     if (row === undefined) {
       throw new Error(`${finding.code} names no live row of the issue-kind vocabulary`);
     }
@@ -140,7 +176,7 @@ export function completed(
         (judged === undefined ? swept.matrix.configurations : (swept.matrix.heldIn[at] ?? [])),
       consumersLoaded: input.boundary.consumers.loaded,
       fixability: row.fixability,
-      severity: severityOf(input.config, finding.code, row.defaultSeverity),
+      severity: severityOf(input, finding.code, row.defaultSeverity),
       message: finding.message,
       details: finding.details ?? {},
     };
@@ -168,7 +204,7 @@ export function dialsOf(
   findings: readonly CompletedFinding[],
 ): Dials<CompletedFinding> {
   const minConfidence = input.config.analysis.minConfidence;
-  const classOf = reachabilityClasses(input.swept);
+  const classOf = reachabilityClasses(input);
   const components = new Set(
     findings
       .filter((finding) => finding.component.root && dialed(finding, minConfidence))
@@ -181,7 +217,7 @@ export function dialsOf(
         row !== undefined &&
         dialed(
           {
-            severity: severityOf(input.config, code, row.defaultSeverity),
+            severity: severityOf(input, code, row.defaultSeverity),
             confidence: capped(classOf(id), row.maxClass),
           },
           minConfidence,

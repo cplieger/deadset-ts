@@ -63,11 +63,18 @@ function fileNeverBuilt({ config, swept, files }: EmitterInput): readonly Findin
 
 /**
  * The paths of every file a reference written in another file reaches, naming the
- * file or a declaration in it. An import is such a reference, so an import from any
- * file reaches what it names, whatever reaches the importing file.
+ * file or a declaration in it, a loaded consumer's file included. An import is such a
+ * reference, so an import from any file reaches what it names, whatever reaches the
+ * importing file.
  */
 function reachedFromOutside(union: Graph): ReadonlySet<string> {
   const reached = new Set<string>();
+  for (const edge of union.consumed) {
+    const to = union.symbols[edge.to];
+    if (to !== undefined) {
+      reached.add(to.position.path);
+    }
+  }
   union.out.forEach((edges, from) => {
     const fromPath = union.symbols[from]?.position.path;
     for (const edge of edges) {

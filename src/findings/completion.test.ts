@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { emitterInputOf } from "../../__test-helpers__/emitter-input.ts";
 import { fixture } from "../../__test-helpers__/fixtures.ts";
+import { writeProject } from "../../__test-helpers__/projects.ts";
 import type { Config } from "../config.ts";
 import type { CompletedFinding } from "../finding.ts";
 import { resolve } from "../resolve.ts";
@@ -197,5 +198,80 @@ describe("the dials over every family's findings", () => {
     expect(everything).toEqual(expect.arrayContaining(["DS1005 testProbe", "DS1201 Probe"]));
     expect(allowed).not.toContain("DS1201 Probe");
     expect(allowed).not.toContain("DS1005 testProbe");
+  });
+});
+
+describe("the defaults of a library", () => {
+  // A published module and one no manifest export reaches. Each module holds an export
+  // only its own file references; the published one also holds exports nothing names.
+  const root = writeProject({
+    "package.json": `${JSON.stringify({
+      name: "@example/defaults",
+      private: true,
+      type: "module",
+      exports: { ".": "./src/index.ts" },
+    })}\n`,
+    "src/index.ts": [
+      'import { callsHelper } from "./internal.js";',
+      "",
+      "export function unusedPublished(): number {",
+      "  return 1;",
+      "}",
+      "",
+      "export function localPublished(): number {",
+      "  return 2;",
+      "}",
+      "",
+      "export const viaLocal = localPublished();",
+      "export const viaInternal = callsHelper();",
+      "",
+    ].join("\n"),
+    "src/internal.ts": [
+      "export function helperLocal(): number {",
+      "  return 3;",
+      "}",
+      "",
+      "export function callsHelper(): number {",
+      "  return helperLocal();",
+      "}",
+      "",
+    ].join("\n"),
+  });
+  afterAll(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  const reported = (document: Record<string, unknown>): string[] =>
+    findingsOf(
+      emitterInputOf(
+        root,
+        resolve({
+          repository: JSON.stringify({ target: { kind: "library" }, ...document }),
+          repositoryLabel: "deadset.json",
+        }).config,
+      ),
+    ).map((finding) => `${finding.code} ${finding.symbol.name} ${finding.confidence}`);
+
+  it("turns the unused-exported kind off and narrows only where no manifest export reaches, with no consumer information", () => {
+    expect(reported({})).toEqual(["DS1104 helperLocal certain"]);
+  });
+
+  it("reports an unused export at possible where the configuration names the kind's severity", () => {
+    expect(reported({ severity: { DS1001: "deny" } })).toEqual([
+      "DS1001 unusedPublished possible",
+      "DS1001 viaLocal possible",
+      "DS1001 viaInternal possible",
+      "DS1104 helperLocal certain",
+    ]);
+  });
+
+  it("reports every kind over the published API once the configuration declares the consumer set complete", () => {
+    expect(reported({ consumers: { complete: true } })).toEqual([
+      "DS1001 unusedPublished possible",
+      "DS1001 viaLocal possible",
+      "DS1001 viaInternal possible",
+      "DS1104 localPublished possible",
+      "DS1104 helperLocal certain",
+    ]);
   });
 });

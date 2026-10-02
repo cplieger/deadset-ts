@@ -10,6 +10,12 @@
 
 import type { Diagnostic } from "@typescript/native/unstable/sync";
 import type { Config, Provenance } from "./config.ts";
+import {
+  consumerLoads,
+  consumerReferences,
+  moduleIdentity,
+  type LoadedConsumer,
+} from "./consumers.ts";
 import { decorator } from "./decorator.ts";
 import { dependenciesOf, projectNeeds } from "./dependencies.ts";
 import { deprecatedDeclarations } from "./deprecation.ts";
@@ -41,11 +47,18 @@ import { injectionContainer } from "./injection-container.ts";
 import { interfaceSatisfaction } from "./interface-satisfaction.ts";
 import { inventory, type Inventory } from "./inventory.ts";
 import { readManifest } from "./manifest.ts";
-import { matrixOf, sweepMatrix, type Configured, type Matrix, type SweepResult } from "./matrix.ts";
+import {
+  matrixOf,
+  referenceKey,
+  sweepMatrix,
+  type Configured,
+  type Matrix,
+  type SweepResult,
+} from "./matrix.ts";
 import { relativePath, resolvePath } from "./paths.ts";
 import { byPosition, type Position } from "./position.ts";
 import { reflectiveLookup } from "./reflective-lookup.ts";
-import { references, testFileRulesOf, type TestFileRule } from "./references.ts";
+import { references, testFileRulesOf, type Reference, type TestFileRule } from "./references.ts";
 import { roots, unmatchedEverywhere, type RootKind, type Roots } from "./roots.ts";
 import type { Scope } from "./scope.ts";
 import { serializationContract } from "./serialization-contract.ts";
@@ -125,11 +138,27 @@ interface ProjectRead {
   readonly rooted: Roots;
 }
 
+/** What a run read of the consumers its scope declares. */
+interface ConsumerReads {
+  /** Every declared consumer, each loaded, in the scope's order. */
+  readonly loaded: readonly LoadedConsumer[];
+  /** Every reference a consumer makes to a declaration of the target, each once. */
+  readonly references: readonly Reference[];
+}
+
+/** What a run read of its projects: each target project's answer, and its consumers. */
+interface ReadProjects<Answer> {
+  readonly answers: readonly Answer[];
+  readonly consumers: ConsumerReads;
+}
+
 /**
- * Reads every project the scope discovers, in one snapshot: each is checked for errors
- * first, then enumerated, then rooted, and `stage` reads the rest of what it needs from
- * the project while its view is open. A project carrying an error fails the run with no
- * answer, as every verb that reads declarations does.
+ * Reads every project the scope discovers, and every project of every consumer it
+ * declares, in one snapshot. Each is checked for errors first. A target project is then
+ * enumerated and rooted, and `stage` reads the rest of what it needs from the project
+ * while its view is open; a consumer project is read for its references to the target's
+ * declarations. A project carrying an error fails the run with no answer, as every verb
+ * that reads declarations does, and so does a declared consumer that cannot be loaded.
  */
 function readProjects<Answer>(
   engine: Engine,
@@ -137,10 +166,16 @@ function readProjects<Answer>(
   scope: Scope,
   config: Config,
   stage: <Brand>(project: ProjectView<Brand>, read: ProjectRead) => Answer,
-): readonly Answer[] {
+): ReadProjects<Answer> {
   const targetRoot = scope.target.path;
   const discovered = discoverProjects(engine, host, scope, config.analysis.configurations);
   const ids = new Map(discovered.projects.map((project) => [project.configFile, project.id]));
+  const loads = consumerLoads(engine, host, scope, discovered.configFiles);
+  const consumerOf = new Map(
+    loads.flatMap((load) =>
+      load.configFiles.map((configFile) => [configFile, load.consumer] as const),
+    ),
+  );
   const options = {
     manifest: readManifest(host, targetRoot),
     patterns: config.rootPatterns,
@@ -149,24 +184,51 @@ function readProjects<Answer>(
     publishedAPI: config.targetKind === "library",
   };
   const failures: Diagnostic[] = [];
-  const { projects } = runSession(engine, discovered.configFiles, (project) => {
-    const errors = diagnosticErrors(diagnosticsOf(project));
-    if (errors.length > 0) {
-      failures.push(...errors);
-      return undefined;
-    }
-    const held = inventory(project, host, targetRoot);
-    const rooted = roots(project, held, targetRoot, options);
-    const configuration = ids.get(project.configFile) ?? project.configFile;
-    return stage(project, { configuration, configFile: project.configFile, held, rooted });
-  });
+  const consumed = new Map<string, Reference>();
+  const { projects } = runSession(
+    engine,
+    [...discovered.configFiles, ...consumerOf.keys()],
+    (project) => {
+      const errors = diagnosticErrors(diagnosticsOf(project));
+      if (errors.length > 0) {
+        failures.push(...errors);
+        return undefined;
+      }
+      const consumer = consumerOf.get(project.configFile);
+      if (consumer !== undefined) {
+        for (const reference of consumerReferences(
+          project,
+          host,
+          targetRoot,
+          {
+            id: consumer.id,
+            root: consumer.path,
+          },
+          config,
+        )) {
+          consumed.set(referenceKey(reference), reference);
+        }
+        return undefined;
+      }
+      const held = inventory(project, host, targetRoot);
+      const rooted = roots(project, held, targetRoot, options);
+      const configuration = ids.get(project.configFile) ?? project.configFile;
+      return stage(project, { configuration, configFile: project.configFile, held, rooted });
+    },
+  );
   if (failures.length > 0) {
     throw new DiscoveryError(
       `${String(failures.length)} error(s); no answer was produced`,
       failures,
     );
   }
-  return projects.filter((answer): answer is Answer => answer !== undefined);
+  return {
+    answers: projects.filter((answer): answer is Answer => answer !== undefined),
+    consumers: {
+      loaded: loads.map((load) => load.consumer),
+      references: [...consumed.values()],
+    },
+  };
 }
 
 /**
@@ -183,7 +245,7 @@ export function runRoots(
   provenance: Provenance,
 ): RunRoots {
   const targetRoot = scope.target.path;
-  const projects = readProjects(engine, host, scope, config, (_project, read) => read);
+  const projects = readProjects(engine, host, scope, config, (_project, read) => read).answers;
 
   const configurations: string[] = [];
   const merged = new Map<string, Omit<RunRoot, "configurations"> & { configurations: string[] }>();
@@ -266,12 +328,15 @@ interface ReadRun<Extra> {
   readonly matrix: Matrix;
   readonly exempt: readonly Exemption[];
   readonly projects: readonly SweptProject<Extra>[];
+  /** Every declared consumer, each loaded, in the scope's order. */
+  readonly consumers: readonly LoadedConsumer[];
 }
 
 /**
  * Reads every project of the run, its references and exemptions, and `extra`'s answer,
  * while the project's view is open, and merges the projects into one matrix in the run's
- * order.
+ * order. Every configuration holds every consumer's references beside its own, because a
+ * consumer calls the target whichever configuration the target is built under.
  */
 function readRun<Extra>(
   engine: Engine,
@@ -288,7 +353,7 @@ function readRun<Extra>(
     ? { delimiters: config.analysis.templateDelimiters, files: [] }
     : readTemplates(host, targetRoot, config.analysis);
   const consumers = scope.consumers.map((consumer) => consumer.path);
-  const projects = readProjects(engine, host, scope, config, (project, projectRead) => {
+  const read = readProjects(engine, host, scope, config, (project, projectRead) => {
     const resolved = references(project, projectRead.held, targetRoot, {
       testFiles: config.ts.testFiles,
     });
@@ -315,10 +380,23 @@ function readRun<Extra>(
       extra: extra(project, projectRead),
     };
   });
+  const consumed = read.consumers.references;
+  const projects = read.answers.map((one) =>
+    consumed.length === 0
+      ? one
+      : {
+          ...one,
+          configured: {
+            ...one.configured,
+            references: [...one.configured.references, ...consumed],
+          },
+        },
+  );
   return {
     matrix: matrixOf(projects.map((one) => one.configured)),
     exempt: exemptionsOf(projects.flatMap((one) => one.exempt)),
     projects,
+    consumers: read.consumers.loaded,
   };
 }
 
@@ -430,7 +508,10 @@ function emitterInputOver(
       heldByInclusion: new Set(projects.flatMap((one) => one.extra.heldByInclusion)),
     },
     boundary: {
-      consumers: { declared: scope.consumers.map((consumer) => consumer.id), loaded: [] },
+      consumers: {
+        declared: scope.consumers.map((consumer) => moduleIdentity(host, consumer)),
+        loaded: read.consumers.map((consumer) => consumer.id),
+      },
       encapsulated: readManifest(host, targetRoot).declaresExports,
       edges: readEdgeSides(host, targetRoot),
     },
@@ -442,8 +523,8 @@ function emitterInputOver(
  * What every emitter reads of the run the scope and the configuration describe, swept
  * under the caller's marks: the run's sweep, the facts beside it each kind family reads,
  * and the sides of the target's declared cross-language edges that name a symbol of this
- * language. The run loads no consumer, and it reads no suppression document, so the
- * self-check family has nothing to report.
+ * language. The run reads no suppression document, so the self-check family has nothing
+ * to report.
  */
 export function runEmitterInput(
   engine: Engine,
@@ -526,6 +607,7 @@ function runAnalysisInputs(
         config.ts.testFiles,
         read.projects.flatMap((one) => one.configured.testFiles),
       ),
+      consumers: read.consumers,
     },
     configured: read.projects.map((one) => one.configured),
   };
@@ -544,6 +626,8 @@ export interface RunFacts {
   readonly projects: readonly RunProject[];
   /** The rules that classified files as test files, each counted over every project at once. */
   readonly testFileRules: readonly TestFileRule[];
+  /** Every consumer the run loaded beside the target, in the scope's order. */
+  readonly consumers: readonly LoadedConsumer[];
 }
 
 /** The findings of one run, beside what a report states about the run itself. */

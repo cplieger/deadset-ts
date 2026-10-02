@@ -211,7 +211,6 @@ describe("the unused-declarations emitter over a library", () => {
       "Published.visible possible",
       "Published.#secret certain",
       "Published.hidden certain",
-      "makePublished possible",
       "internalRetired certain",
     ]);
   });
@@ -277,13 +276,16 @@ function answer(name: string): Answered {
   const dir = fixture("corpus", name);
   const expected = JSON.parse(readFileSync(join(dir, "expect.json"), "utf8")) as {
     readonly target_kind: string;
+    readonly consumers?: readonly string[];
     readonly expect: readonly ExpectRow[];
   };
   const manifest = JSON.parse(readFileSync(join(dir, "ts", "fixture.json"), "utf8")) as {
     readonly symbols: Readonly<Record<string, { readonly file: string; readonly line: number }>>;
   };
   const config = configOf(`{ "target": { "kind": "${expected.target_kind}" } }`);
-  const input = emitterInputOf(join(dir, "ts", "target"), config);
+  const input = emitterInputOf(join(dir, "ts", "target"), config, {
+    consumers: (expected.consumers ?? []).map((consumer) => join(dir, "ts", consumer)),
+  });
   const { swept } = input;
   const findings = family(input);
   const at = (row: ExpectRow): { readonly path: string; readonly line: number } => {
@@ -352,6 +354,7 @@ describe("the corpus fixtures naming a code of the family", () => {
       ],
     ],
     ["test-only-reference", ["OnlyTested DS1004: pass", "Production none: pass"]],
+    ["unused-exported-consumer", ["DeadExport DS1001: pass", "UsedByConsumer none: pass"]],
     [
       "test-of-dead-code",
       [
@@ -390,16 +393,6 @@ describe("the corpus fixtures naming a code of the family", () => {
         // Declared gap: the reference pass resolves a string-literal element access to
         // the member it names, so the member is live rather than held back by a class.
         "ReachedByStringIndex none: not retained by reflective-lookup",
-      ],
-      unnamed: [],
-    });
-  });
-
-  it("declares unused-exported-consumer a gap: no consumer is loaded beside the target", () => {
-    expect(answer("unused-exported-consumer")).toEqual({
-      rows: [
-        "DeadExport DS1001: confidence possible, reachability_class possible",
-        "UsedByConsumer none: reported DS1001",
       ],
       unnamed: [],
     });

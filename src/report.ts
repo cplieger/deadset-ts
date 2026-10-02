@@ -130,6 +130,13 @@ export interface ReportConfiguration {
   readonly project: string;
 }
 
+/** One consumer the run loaded, at the directory a report names it by. */
+interface ReportConsumer {
+  readonly id: string;
+  /** The consumer's directory, as the report names its target's: below the run directory. */
+  readonly path: string;
+}
+
 /** One consumer the scope declared and the run did not load, with why. */
 export interface UnavailableConsumer {
   readonly id: string;
@@ -156,7 +163,11 @@ export interface Report {
   readonly configurations_not_built: readonly never[];
   readonly consumers: {
     readonly declared: number;
-    readonly loaded: readonly never[];
+    readonly loaded: readonly {
+      readonly id: string;
+      readonly role: "consumer";
+      readonly path: string;
+    }[];
     readonly unavailable: readonly {
       readonly id: string;
       readonly role: "consumer";
@@ -180,6 +191,7 @@ export interface ReportInput {
   readonly declaredGaps: readonly DeclaredGap[];
   readonly target: { readonly kind: TargetKind; readonly root: string; readonly identity: string };
   readonly configurations: readonly ReportConfiguration[];
+  readonly loaded: readonly ReportConsumer[];
   readonly unavailable: readonly UnavailableConsumer[];
   readonly result: PassResult;
   readonly testFileRules: readonly TestFileRule[];
@@ -387,6 +399,9 @@ export function buildReport(input: ReportInput): Report {
   const unavailable = [...new Map(input.unavailable.map((one) => [one.id, one])).values()]
     .sort((a, b) => compare(a.id, b.id))
     .map((one) => ({ id: one.id, role: "consumer" as const, reason: one.reason }));
+  const loaded = [...input.loaded]
+    .sort((a, b) => compare(a.id, b.id) || compare(a.path, b.path))
+    .map((one) => ({ id: one.id, role: "consumer" as const, path: one.path }));
   return {
     schema_version: SCHEMA_VERSION,
     contract_version: input.contractVersion,
@@ -406,7 +421,7 @@ export function buildReport(input: ReportInput): Report {
       .sort((a, b) => compare(a.id, b.id))
       .map((one) => ({ id: one.id, project: one.project })),
     configurations_not_built: [],
-    consumers: { declared: unavailable.length, loaded: [], unavailable },
+    consumers: { declared: loaded.length + unavailable.length, loaded, unavailable },
     findings,
     edge_evaluations: input.result.edgeEvaluations.map(wireEvaluation).sort(byEdge),
     stale_suppressions: input.result.staleSuppressions.map(wireStale).sort(canonicalStale),

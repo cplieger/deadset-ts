@@ -113,6 +113,12 @@ export interface Graph {
   readonly exportsOf: readonly (readonly number[])[];
   /** Every root naming a declaration the inventory holds, in the order the root set gives them. */
   readonly rooted: readonly Rooted[];
+  /**
+   * Every reference a loaded consumer makes to a declaration the inventory holds, in the
+   * order given. A consumer is a caller the analysis read, so the sweep holds what it
+   * names live under both relations and reaches on from there.
+   */
+  readonly consumed: readonly Edge[];
   /** The position of the declaration one identifier names, or {@link OUTSIDE}. */
   at(id: string): number;
 }
@@ -136,6 +142,7 @@ export function graphOf(
 
   const out: Edge[][] = symbols.map(() => []);
   const made = symbols.map(() => ({ production: 0, test: 0 }));
+  const consumed: Edge[] = [];
   for (const reference of references) {
     const to = at(reference.to);
     if (to === OUTSIDE) {
@@ -149,11 +156,12 @@ export function graphOf(
         counts.production += 1;
       }
     }
-    out[at(reference.from)]?.push({
-      to,
-      test: reference.test,
-      evaluation: reference.use === "evaluation",
-    });
+    const edge = { to, test: reference.test, evaluation: reference.use === "evaluation" };
+    if (reference.consumer !== undefined) {
+      consumed.push(edge);
+      continue;
+    }
+    out[at(reference.from)]?.push(edge);
   }
 
   const parent = symbols.map((symbol) => at(symbol.parent));
@@ -182,6 +190,7 @@ export function graphOf(
     subject: symbols.map((symbol) => swept(symbol.kind)),
     exportsOf,
     rooted,
+    consumed,
     at,
   };
 }
