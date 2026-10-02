@@ -1,5 +1,6 @@
 import { dependenciesAndModuleMachinery } from "./dependencies-and-module-machinery.ts";
-import type { Emitter, Emitters } from "./emitter.ts";
+import { placed, type PlacedFinding } from "./completion.ts";
+import type { Emitter, EmitterInput, Emitters } from "./emitter.ts";
 import { interfaces } from "./interfaces.ts";
 import { intraFunction } from "./intra-function.ts";
 import { nonCodeArtifacts } from "./non-code-artifacts.ts";
@@ -19,3 +20,14 @@ export const EMITTERS: Emitters = new Map<string, Emitter>([
   ["self-check", selfCheck],
   ["intra-function", intraFunction],
 ]);
+
+/**
+ * Every finding of the run, each family's in table order, each placed in its component
+ * by the one step that numbers the components minted for subjects that fall with none.
+ */
+export function findingsOf(input: EmitterInput): readonly PlacedFinding[] {
+  return placed(
+    input.swept,
+    [...EMITTERS.values()].flatMap((emit) => emit(input)),
+  );
+}

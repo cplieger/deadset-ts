@@ -1,0 +1,3 @@
+src/dead-importer.ts:1:1-5	DS1502	file	src/dead-importer.ts	5	ts://@example/non-code-artifacts-imports/src/dead-importer.ts#	no import reaches this file and no root names it or a declaration in it
+src/lone.ts:1:1-4	DS1502	file	src/lone.ts	4	ts://@example/non-code-artifacts-imports/src/lone.ts#	no import reaches this file and no root names it or a declaration in it
+src/orphan.ts:1:1-7	DS1502	file	src/orphan.ts	7	ts://@example/non-code-artifacts-imports/src/orphan.ts#	no import reaches this file and no root names it or a declaration in it

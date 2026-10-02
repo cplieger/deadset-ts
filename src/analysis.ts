@@ -11,7 +11,10 @@
 import type { Diagnostic } from "@typescript/native/unstable/sync";
 import type { Config, Provenance } from "./config.ts";
 import { decorator } from "./decorator.ts";
+import { dependenciesOf, projectNeeds } from "./dependencies.ts";
+import { deprecatedDeclarations } from "./deprecation.ts";
 import { diagnosticErrors, discoverProjects, DiscoveryError } from "./discover.ts";
+import { enumGroup } from "./enum-group.ts";
 import {
   computeExemptions,
   disabledClasses,
@@ -21,9 +24,12 @@ import {
   type Detectors,
 } from "./exempt.ts";
 import type { TSExemptionClass } from "./exempt-classes.ts";
+import { heldByInclusion, sourceTree } from "./file-facts.ts";
 import type { Finding } from "./finding.ts";
+import type { EmitterInput } from "./findings/emitter.ts";
 import { frameworkLifecycle } from "./framework-lifecycle.ts";
 import type { Host } from "./host.ts";
+import { implementations, mergeImplementations } from "./implementations.ts";
 import { injectionContainer } from "./injection-container.ts";
 import { interfaceSatisfaction } from "./interface-satisfaction.ts";
 import { inventory, type Inventory } from "./inventory.ts";
@@ -37,6 +43,7 @@ import { roots, unmatchedEverywhere, unmatchedRoots, type RootKind, type Roots }
 import type { Scope } from "./scope.ts";
 import { serializationContract } from "./serialization-contract.ts";
 import { diagnosticsOf, runSession, type Engine, type ProjectView } from "./session.ts";
+import { accessorsOf, storesOf } from "./stores.ts";
 import type { Exemption, SweepInput } from "./sweep.ts";
 import { readTemplates, templateField } from "./template-field.ts";
 
@@ -222,6 +229,7 @@ export interface RunSweep {
 /** The exemption classes this analyzer detects, each by its detector; any other retains nothing. */
 const DETECTORS: Detectors = new Map<TSExemptionClass, Detector>([
   ["interface-satisfaction", interfaceSatisfaction],
+  ["enum-group", enumGroup],
   ["template-field", templateField],
   ["reflective-lookup", reflectiveLookup],
   ["decorator", decorator],
@@ -230,31 +238,40 @@ const DETECTORS: Detectors = new Map<TSExemptionClass, Detector>([
   ["serialization-contract", serializationContract],
 ]);
 
+/** What the sweep of one run reads of each project, beside what a caller's stage adds. */
+interface SweptProject<Extra> {
+  readonly configured: Configured;
+  readonly exempt: readonly Exemption[];
+  readonly extra: Extra;
+}
+
+/** The run's sweep, the exemption records it was swept with, and each project's extra answer. */
+interface SweptRun<Extra> {
+  readonly swept: RunSweep;
+  readonly exempt: readonly Exemption[];
+  readonly projects: readonly SweptProject<Extra>[];
+}
+
 /**
- * Sweeps the run the scope and the configuration describe. Each project's references
- * and exemptions are read against its own inventory while its view is open; the
- * projects then merge into one matrix in the run's order, which is swept under the
- * caller's marks and mode with the exemptions every project found. A record found in
- * one configuration holds in every configuration that holds its declaration, because
- * an exemption is evidence of a use the analysis cannot see and a use in one
- * configuration is a use. A project that carries an error ends the run before any
- * project is swept.
+ * Sweeps the run, reading each project's references and exemptions, and `extra`'s
+ * answer, while the project's view is open.
  */
-export function runSweep(
+function sweepRun<Extra>(
   engine: Engine,
   host: Host,
   scope: Scope,
   config: Config,
   input: Pick<SweepInput, "marked" | "mode">,
-  detectors: Detectors = DETECTORS,
-): RunSweep {
+  detectors: Detectors,
+  extra: <Brand>(project: ProjectView<Brand>, read: ProjectRead) => Extra,
+): SweptRun<Extra> {
   const targetRoot = scope.target.path;
   const disabled = disabledClasses(config);
   const templates = disabled.has("template-field")
     ? { delimiters: config.analysis.templateDelimiters, files: [] }
     : readTemplates(host, targetRoot, config.analysis);
   const consumers = scope.consumers.map((consumer) => consumer.path);
-  const read = readProjects(engine, host, scope, config, (project, projectRead) => {
+  const projects = readProjects(engine, host, scope, config, (project, projectRead) => {
     const resolved = references(project, projectRead.held, targetRoot, {
       testFiles: config.ts.testFiles,
     });
@@ -274,9 +291,89 @@ export function runSweep(
         testFiles: new Set(resolved.testFilePaths),
       },
     );
-    return { configured, exempt };
+    return { configured, exempt, extra: extra(project, projectRead) };
   });
-  const matrix = matrixOf(read.map((one) => one.configured));
-  const swept: SweepInput = { ...input, exempt: exemptionsOf(read.flatMap((one) => one.exempt)) };
-  return { matrix, sweep: sweepMatrix(matrix, swept), retained: retainedIn(matrix, swept) };
+  const matrix = matrixOf(projects.map((one) => one.configured));
+  const exempt = exemptionsOf(projects.flatMap((one) => one.exempt));
+  const swept: SweepInput = { ...input, exempt };
+  return {
+    swept: { matrix, sweep: sweepMatrix(matrix, swept), retained: retainedIn(matrix, swept) },
+    exempt,
+    projects,
+  };
+}
+
+/**
+ * Sweeps the run the scope and the configuration describe. Each project's references
+ * and exemptions are read against its own inventory while its view is open; the
+ * projects then merge into one matrix in the run's order, which is swept under the
+ * caller's marks and mode with the exemptions every project found. A record found in
+ * one configuration holds in every configuration that holds its declaration, because
+ * an exemption is evidence of a use the analysis cannot see and a use in one
+ * configuration is a use. A project that carries an error ends the run before any
+ * project is swept.
+ */
+export function runSweep(
+  engine: Engine,
+  host: Host,
+  scope: Scope,
+  config: Config,
+  input: Pick<SweepInput, "marked" | "mode">,
+  detectors: Detectors = DETECTORS,
+): RunSweep {
+  return sweepRun(engine, host, scope, config, input, detectors, () => undefined).swept;
+}
+
+/**
+ * What every emitter reads of the run the scope and the configuration describe: the
+ * run's sweep, and the facts beside it each kind family reads, every per-project one
+ * read in the same session as the sweep. The run loads no consumer and reads no
+ * declared cross-language edge, so its boundary names neither.
+ */
+export function runEmitterInput(
+  engine: Engine,
+  host: Host,
+  scope: Scope,
+  config: Config,
+  input: Pick<SweepInput, "marked" | "mode">,
+  detectors: Detectors = DETECTORS,
+): EmitterInput {
+  const targetRoot = scope.target.path;
+  const run = sweepRun(engine, host, scope, config, input, detectors, (project, read) => ({
+    deprecated: deprecatedDeclarations(project, read.held),
+    accessors: accessorsOf(project, read.held),
+    needs: projectNeeds(project, read.held, host),
+    implementations: implementations(project, read.held),
+    heldByInclusion: heldByInclusion(project, targetRoot),
+  }));
+  const { swept, projects } = run;
+  return {
+    config,
+    swept,
+    deprecated: new Set(projects.flatMap((one) => one.extra.deprecated)),
+    stores: storesOf(
+      projects.map((one) => ({
+        references: one.configured.references,
+        accessors: one.extra.accessors,
+      })),
+      run.exempt,
+      input.mode,
+    ),
+    dependencies: dependenciesOf(
+      host,
+      targetRoot,
+      projects.map((one) => one.extra.needs),
+      swept.sweep.candidates.map((candidate) => candidate.id),
+    ),
+    implementations: mergeImplementations(projects.map((one) => one.extra.implementations)),
+    files: {
+      tree: sourceTree(host, targetRoot),
+      heldByInclusion: new Set(projects.flatMap((one) => one.extra.heldByInclusion)),
+    },
+    boundary: {
+      consumers: { declared: scope.consumers.map((consumer) => consumer.id), loaded: [] },
+      encapsulated: readManifest(host, targetRoot).declaresExports,
+      edges: [],
+    },
+  };
 }

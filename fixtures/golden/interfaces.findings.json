@@ -1,0 +1,169 @@
+[
+  {
+    "code": "DS1201",
+    "position": {
+      "path": "src/contracts.ts",
+      "line": 4,
+      "column": 18,
+      "endLine": 7
+    },
+    "symbol": {
+      "ref": "ts://@example/interfaces/src/contracts.ts#Unused",
+      "kind": "interface",
+      "name": "Unused",
+      "sizeLines": 4
+    },
+    "message": "nothing in the target names the interface as a type",
+    "details": {
+      "implementations": [
+        {
+          "ref": "ts://@example/interfaces/src/classes.ts#Runner",
+          "name": "Runner",
+          "position": {
+            "path": "src/classes.ts",
+            "line": 41,
+            "column": 14,
+            "endLine": 47
+          }
+        }
+      ]
+    }
+  },
+  {
+    "code": "DS1201",
+    "position": {
+      "path": "src/contracts.ts",
+      "line": 10,
+      "column": 18,
+      "endLine": 12
+    },
+    "symbol": {
+      "ref": "ts://@example/interfaces/src/contracts.ts#OnlyDead",
+      "kind": "interface",
+      "name": "OnlyDead",
+      "sizeLines": 3
+    },
+    "message": "the interface is named as a type only from declarations that are themselves dead",
+    "details": {
+      "implementations": []
+    }
+  },
+  {
+    "code": "DS1203",
+    "position": {
+      "path": "src/contracts.ts",
+      "line": 28,
+      "column": 3,
+      "endLine": 28
+    },
+    "symbol": {
+      "ref": "ts://@example/interfaces/src/contracts.ts#Channel.close",
+      "kind": "interface-method",
+      "name": "Channel.close",
+      "sizeLines": 1
+    },
+    "message": "no call site invokes or selects the method through the interface",
+    "details": {
+      "implementations": [
+        {
+          "ref": "ts://@example/interfaces/src/classes.ts#Wire",
+          "name": "Wire",
+          "position": {
+            "path": "src/classes.ts",
+            "line": 11,
+            "column": 14,
+            "endLine": 21
+          }
+        },
+        {
+          "ref": "ts://@example/interfaces/src/classes.ts#Pipe",
+          "name": "Pipe",
+          "position": {
+            "path": "src/classes.ts",
+            "line": 23,
+            "column": 14,
+            "endLine": 31
+          }
+        }
+      ]
+    }
+  },
+  {
+    "code": "DS1203",
+    "position": {
+      "path": "src/contracts.ts",
+      "line": 48,
+      "column": 3,
+      "endLine": 48
+    },
+    "symbol": {
+      "ref": "ts://@example/interfaces/src/contracts.ts#Signal.raise",
+      "kind": "interface-method",
+      "name": "Signal.raise",
+      "sizeLines": 1
+    },
+    "message": "no call site invokes or selects the method through the interface",
+    "details": {
+      "implementations": [
+        {
+          "ref": "ts://@example/interfaces/src/classes.ts#Flag",
+          "name": "Flag",
+          "position": {
+            "path": "src/classes.ts",
+            "line": 55,
+            "column": 14,
+            "endLine": 57
+          }
+        },
+        {
+          "ref": "ts://@example/interfaces/src/classes.ts#Arrowed",
+          "name": "Arrowed",
+          "position": {
+            "path": "src/classes.ts",
+            "line": 59,
+            "column": 14,
+            "endLine": 61
+          }
+        }
+      ]
+    }
+  },
+  {
+    "code": "DS1203",
+    "position": {
+      "path": "src/contracts.ts",
+      "line": 53,
+      "column": 3,
+      "endLine": 53
+    },
+    "symbol": {
+      "ref": "ts://@example/interfaces/src/contracts.ts#Listener.notify",
+      "kind": "interface-method",
+      "name": "Listener.notify",
+      "sizeLines": 1
+    },
+    "message": "no call site invokes or selects the method through the interface",
+    "details": {
+      "implementations": []
+    }
+  },
+  {
+    "code": "DS1201",
+    "position": {
+      "path": "src/contracts.ts",
+      "line": 57,
+      "column": 18,
+      "endLine": 59
+    },
+    "symbol": {
+      "ref": "ts://@example/interfaces/src/contracts.ts#Probe",
+      "kind": "interface",
+      "name": "Probe",
+      "sizeLines": 3
+    },
+    "message": "the interface is named as a type only from test files",
+    "details": {
+      "implementations": []
+    }
+  }
+]

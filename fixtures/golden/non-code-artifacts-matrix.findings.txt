@@ -1,0 +1,2 @@
+src/legacy/old.ts:1:1-3	DS1501	file	src/legacy/old.ts	3	ts://@example/non-code-artifacts-matrix/src/legacy/old.ts#	no project of the build matrix includes this file (app, scripts)
+tools/build.ts:1:1-3	DS1501	file	tools/build.ts	3	ts://@example/tools/build.ts#	no project of the build matrix includes this file (app, scripts)

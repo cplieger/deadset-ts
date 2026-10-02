@@ -1,0 +1,5 @@
+src/helper.ts:13:18: namespace Labels: exported namespace is referenced only inside the file that declares it (DS1104)
+src/helper.ts:23:17: function helperLocal: exported function is referenced only inside the file that declares it (DS1104)
+src/helper.ts:33:17: function forgotten: exported function has no reference in the target, and nothing outside can import the file that declares it (DS1103)
+src/helper.ts:43:17: function behindForgotten: exported function is referenced only from declarations that are themselves dead, and nothing outside can import the file that declares it (DS1103)
+src/helper.ts:47:17: function deadCaller: exported function has no reference in the target, and nothing outside can import the file that declares it (DS1103)

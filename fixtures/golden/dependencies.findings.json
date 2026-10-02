@@ -1,0 +1,97 @@
+[
+  {
+    "code": "DS1601",
+    "position": {
+      "path": "package.json",
+      "line": 13,
+      "column": 5,
+      "endLine": 13
+    },
+    "symbol": {
+      "ref": "ts://@example/dependencies/package.json#unused-runtime:dependency",
+      "kind": "dependency",
+      "name": "unused-runtime",
+      "sizeLines": 1
+    },
+    "message": "no import in the target needs the declared dependency",
+    "details": {
+      "dependencyClass": "dependency"
+    }
+  },
+  {
+    "code": "DS1601",
+    "position": {
+      "path": "package.json",
+      "line": 17,
+      "column": 5,
+      "endLine": 17
+    },
+    "symbol": {
+      "ref": "ts://@example/dependencies/package.json#@types/bundled:dev-dependency",
+      "kind": "dependency",
+      "name": "@types/bundled",
+      "sizeLines": 1
+    },
+    "message": "no import in the target needs the declared development dependency",
+    "details": {
+      "dependencyClass": "dev-dependency"
+    }
+  },
+  {
+    "code": "DS1601",
+    "position": {
+      "path": "package.json",
+      "line": 24,
+      "column": 5,
+      "endLine": 24
+    },
+    "symbol": {
+      "ref": "ts://@example/dependencies/package.json#optional-peer:dev-dependency",
+      "kind": "dependency",
+      "name": "optional-peer",
+      "sizeLines": 1
+    },
+    "message": "no import in the target needs the declared development dependency",
+    "details": {
+      "dependencyClass": "dev-dependency"
+    }
+  },
+  {
+    "code": "DS1601",
+    "position": {
+      "path": "package.json",
+      "line": 27,
+      "column": 5,
+      "endLine": 27
+    },
+    "symbol": {
+      "ref": "ts://@example/dependencies/package.json#unused-dev:dev-dependency",
+      "kind": "dependency",
+      "name": "unused-dev",
+      "sizeLines": 1
+    },
+    "message": "no import in the target needs the declared development dependency",
+    "details": {
+      "dependencyClass": "dev-dependency"
+    }
+  },
+  {
+    "code": "DS1601",
+    "position": {
+      "path": "package.json",
+      "line": 30,
+      "column": 5,
+      "endLine": 30
+    },
+    "symbol": {
+      "ref": "ts://@example/dependencies/package.json#peer-unused:peer-dependency",
+      "kind": "dependency",
+      "name": "peer-unused",
+      "sizeLines": 1
+    },
+    "message": "no import in the target needs the declared peer dependency",
+    "details": {
+      "dependencyClass": "peer-dependency"
+    }
+  }
+]

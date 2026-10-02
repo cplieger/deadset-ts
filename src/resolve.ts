@@ -35,7 +35,7 @@ import {
 const FLAGS_LABEL = "the command-line flags";
 
 /** The length of a severity key naming a whole family: the prefix and two digits. */
-const FAMILY_KEY_LENGTH = 4;
+export const FAMILY_KEY_LENGTH = 4;
 
 const SEVERITY_KEY = /^DS[0-9]{2}([0-9]{2})?$/u;
 const EXEMPTION_CLASS = /^[a-z][a-z0-9-]*$/u;
