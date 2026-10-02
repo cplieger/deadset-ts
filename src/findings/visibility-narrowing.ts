@@ -126,18 +126,13 @@ function wordOf(symbol: InventorySymbol): string {
   return WORDS[symbol.kind] ?? symbol.kind;
 }
 
-/** A finding of this family, with the visibility a narrowing would give its subject. */
-interface NarrowingFinding extends Finding {
-  readonly details: { readonly narrowerVisibility?: "file" | "package" };
-}
-
 /** The visibility each narrowing code names, which only the narrowing codes carry. */
 const NARROWER: Readonly<Record<string, "file" | "package">> = {
   [REDUNDANT_EXPORT_KEYWORD]: "file",
   [UNNECESSARY_EXPORT]: "package",
 };
 
-function findingOf(symbol: InventorySymbol, code: string, message: string): NarrowingFinding {
+function findingOf(symbol: InventorySymbol, code: string, message: string): Finding {
   const { path, line, column } = symbol.position;
   const narrower = Object.hasOwn(NARROWER, code) ? NARROWER[code] : undefined;
   const endLine = Math.max(line, symbol.endLine);

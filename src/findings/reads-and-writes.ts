@@ -1,72 +1,20 @@
-import type { Confidence, Severity } from "../config.ts";
-import type { Finding, FindingPosition } from "../finding.ts";
+import type { Finding, FindingDetails, FindingPosition } from "../finding.ts";
 import type { InventorySymbol } from "../inventory.ts";
 import type { MatrixCandidate } from "../matrix.ts";
 import { positionKey } from "../position.ts";
-import type { Relation } from "../sweep.ts";
-import {
-  findingComponents,
-  RANK,
-  reachabilityClasses,
-  severityOf,
-  type FindingComponent,
-} from "./completion.ts";
 import type { Emitter, EmitterInput } from "./emitter.ts";
 
 /** The codes of this family. */
-export type ReadsAndWritesCode = "DS1301" | "DS1302" | "DS1303";
-
-/**
- * Each code's severity where the configuration sets none, as the issue-kind vocabulary
- * states it.
- */
-export const DEFAULT_SEVERITY: Readonly<Record<ReadsAndWritesCode, Severity>> = {
-  DS1301: "deny",
-  DS1302: "deny",
-  DS1303: "deny",
-};
-
-/** What only some codes carry. */
-export interface ReadsAndWritesDetails {
-  /** Every position the subject is written at, on `DS1301` alone. */
-  readonly writePositions?: readonly FindingPosition[];
-}
-
-/** One finding of this family, with every member the family decides. */
-export interface ReadsAndWritesFinding extends Finding {
-  readonly code: ReadsAndWritesCode;
-  readonly reachabilityClass: Confidence;
-  readonly confidence: Confidence;
-  /** The relation that decided the subject, absent on `DS1301`, whose subject is live. */
-  readonly livenessRelation?: Relation;
-  /** Whether every reference the run counts to the subject comes from a test file. */
-  readonly testOnly: boolean;
-  /**
-   * The dead component the subject belongs to, absent where it belongs to none: a live
-   * subject falls with nothing, and the report gives it a component of its own.
-   */
-  readonly component?: FindingComponent;
-  /** The configurations the finding holds in, in the run's order. */
-  readonly configurations: readonly string[];
-  readonly severity: Severity;
-  readonly details: ReadsAndWritesDetails;
-}
+type ReadsAndWritesCode = "DS1301" | "DS1302" | "DS1303";
 
 /** The containers whose type parameters `DS1303` reports: a function and a class method. */
 const SIGNATURES: ReadonlySet<string> = new Set(["function", "method"]);
-
-/** The severity the configuration gives one code of the family. */
-function severityIn(input: EmitterInput, code: ReadsAndWritesCode): Severity {
-  return severityOf(input.config, code, DEFAULT_SEVERITY[code]);
-}
 
 /** What the family reads of one run, indexed by declaration. */
 interface Run {
   readonly input: EmitterInput;
   readonly symbols: ReadonlyMap<string, InventorySymbol>;
   readonly candidates: ReadonlyMap<string, MatrixCandidate>;
-  readonly componentOf: (id: string) => FindingComponent | undefined;
-  readonly classOf: (id: string) => Confidence;
 }
 
 function indexed(input: EmitterInput): Run {
@@ -75,8 +23,6 @@ function indexed(input: EmitterInput): Run {
     input,
     symbols: new Map(matrix.union.symbols.map((symbol) => [symbol.id, symbol])),
     candidates: new Map(sweep.candidates.map((candidate) => [candidate.id, candidate])),
-    componentOf: findingComponents(input.swept),
-    classOf: reachabilityClasses(input.swept),
   };
 }
 
@@ -90,22 +36,14 @@ function positionOf(symbol: InventorySymbol): FindingPosition {
   };
 }
 
-/** The finding about one declaration, every member the family decides filled in. */
+/** The finding one code makes about one declaration. */
 function findingAbout(
-  run: Run,
   symbol: InventorySymbol,
   code: ReadsAndWritesCode,
   message: string,
-  facts: {
-    readonly livenessRelation?: Relation;
-    readonly testOnly: boolean;
-    readonly configurations: readonly string[];
-    readonly details: ReadsAndWritesDetails;
-  },
-): ReadsAndWritesFinding {
+  details?: FindingDetails,
+): Finding {
   const position = positionOf(symbol);
-  const reachabilityClass = run.classOf(symbol.id);
-  const component = run.componentOf(symbol.id);
   return {
     code,
     position,
@@ -116,14 +54,7 @@ function findingAbout(
       sizeLines: position.endLine - position.line + 1,
     },
     message,
-    reachabilityClass,
-    confidence: reachabilityClass,
-    ...(facts.livenessRelation === undefined ? {} : { livenessRelation: facts.livenessRelation }),
-    testOnly: facts.testOnly,
-    ...(component === undefined ? {} : { component }),
-    configurations: facts.configurations,
-    severity: severityIn(run.input, code),
-    details: facts.details,
+    ...(details === undefined ? {} : { details }),
   };
 }
 
@@ -131,8 +62,6 @@ function findingAbout(
 interface Uses {
   readonly writes: FindingPosition[];
   reads: number;
-  production: number;
-  test: number;
 }
 
 /**
@@ -155,20 +84,15 @@ function writable(run: Run, symbol: InventorySymbol): boolean {
  * written one live and its candidates are never this kind's. Every reference that is
  * not a store reads, and so does an exemption record naming the declaration.
  */
-function writeOnlySymbols(run: Run): readonly ReadsAndWritesFinding[] {
+function writeOnlySymbols(run: Run): readonly Finding[] {
   const { stores } = run.input;
   const { matrix } = run.input.swept;
   const uses = new Map<string, Uses>();
   for (const reference of stores.references) {
     let held = uses.get(reference.to);
     if (held === undefined) {
-      held = { writes: [], reads: 0, production: 0, test: 0 };
+      held = { writes: [], reads: 0 };
       uses.set(reference.to, held);
-    }
-    if (reference.test) {
-      held.test += 1;
-    } else {
-      held.production += 1;
     }
     if (reference.use !== "write") {
       held.reads += 1;
@@ -181,8 +105,8 @@ function writeOnlySymbols(run: Run): readonly ReadsAndWritesFinding[] {
     }
   }
 
-  const found: ReadsAndWritesFinding[] = [];
-  matrix.union.symbols.forEach((symbol, at) => {
+  const found: Finding[] = [];
+  for (const symbol of matrix.union.symbols) {
     const held = uses.get(symbol.id);
     if (
       held === undefined ||
@@ -192,24 +116,16 @@ function writeOnlySymbols(run: Run): readonly ReadsAndWritesFinding[] {
       stores.exempt.has(symbol.id) ||
       run.candidates.has(symbol.id)
     ) {
-      return;
+      continue;
     }
     const writes = held.writes.length === 1 ? "once" : `at ${String(held.writes.length)} positions`;
     const word = symbol.kind === "variable" ? "variable" : "member";
     found.push(
-      findingAbout(
-        run,
-        symbol,
-        "DS1301",
-        `${word} ${symbol.name} is written ${writes} and never read`,
-        {
-          testOnly: held.production === 0 && held.test > 0,
-          configurations: matrix.heldIn[at] ?? [],
-          details: { writePositions: held.writes },
-        },
-      ),
+      findingAbout(symbol, "DS1301", `${word} ${symbol.name} is written ${writes} and never read`, {
+        writePositions: held.writes,
+      }),
     );
-  });
+  }
   return found;
 }
 
@@ -218,24 +134,19 @@ function writeOnlySymbols(run: Run): readonly ReadsAndWritesFinding[] {
  * one kind. A reference from a test file alone leaves a candidate to the test-only kind,
  * and a member of a dead container falls with it and is reported inside its component.
  */
-function unnamed(
-  run: Run,
-  kind: InventorySymbol["kind"],
-): readonly [MatrixCandidate, InventorySymbol][] {
-  return run.input.swept.sweep.candidates.flatMap(
-    (candidate): [MatrixCandidate, InventorySymbol][] => {
-      const symbol = run.symbols.get(candidate.id);
-      if (
-        symbol?.kind !== kind ||
-        candidate.productionRefs > 0 ||
-        candidate.testRefs > 0 ||
-        run.candidates.has(symbol.parent)
-      ) {
-        return [];
-      }
-      return [[candidate, symbol]];
-    },
-  );
+function unnamed(run: Run, kind: InventorySymbol["kind"]): readonly InventorySymbol[] {
+  return run.input.swept.sweep.candidates.flatMap((candidate): InventorySymbol[] => {
+    const symbol = run.symbols.get(candidate.id);
+    if (
+      symbol?.kind !== kind ||
+      candidate.productionRefs > 0 ||
+      candidate.testRefs > 0 ||
+      run.candidates.has(symbol.parent)
+    ) {
+      return [];
+    }
+    return [symbol];
+  });
 }
 
 /**
@@ -243,14 +154,9 @@ function unnamed(
  * record holds back is no candidate, so a member a conversion can produce never reaches
  * this kind.
  */
-function unusedEnumMembers(run: Run): readonly ReadsAndWritesFinding[] {
-  return unnamed(run, "enum-member").map(([candidate, symbol]) =>
-    findingAbout(run, symbol, "DS1302", `enum member ${symbol.name} is named nowhere`, {
-      livenessRelation: candidate.relation,
-      testOnly: false,
-      configurations: candidate.configurations,
-      details: {},
-    }),
+function unusedEnumMembers(run: Run): readonly Finding[] {
+  return unnamed(run, "enum-member").map((symbol) =>
+    findingAbout(symbol, "DS1302", `enum member ${symbol.name} is named nowhere`),
   );
 }
 
@@ -260,21 +166,14 @@ function unusedEnumMembers(run: Run): readonly ReadsAndWritesFinding[] {
  * a type alias or a method signature belongs to a type declaration and is never
  * reported, because a phantom parameter makes two instantiations distinct types.
  */
-function unusedTypeParameters(run: Run): readonly ReadsAndWritesFinding[] {
+function unusedTypeParameters(run: Run): readonly Finding[] {
   return unnamed(run, "type-parameter")
-    .filter(([, symbol]) => SIGNATURES.has(run.symbols.get(symbol.parent)?.kind ?? ""))
-    .map(([candidate, symbol]) =>
+    .filter((symbol) => SIGNATURES.has(run.symbols.get(symbol.parent)?.kind ?? ""))
+    .map((symbol) =>
       findingAbout(
-        run,
         symbol,
         "DS1303",
         `type parameter ${symbol.name} is named in neither its signature nor its body`,
-        {
-          livenessRelation: candidate.relation,
-          testOnly: false,
-          configurations: candidate.configurations,
-          details: {},
-        },
       ),
     );
 }
@@ -288,24 +187,11 @@ export function writeOnlyDeclarations(input: EmitterInput): ReadonlySet<string> 
   return new Set(writeOnlySymbols(indexed(input)).map((finding) => finding.symbol.ref));
 }
 
-/** Each code's rule, in code order. */
-const RULES: readonly [ReadsAndWritesCode, (run: Run) => readonly ReadsAndWritesFinding[]][] = [
-  ["DS1301", writeOnlySymbols],
-  ["DS1302", unusedEnumMembers],
-  ["DS1303", unusedTypeParameters],
-];
-
 /**
- * The findings of the reads-and-writes family, `DS1300` to `DS1399`, each code's in site
- * order. A code the configuration sets to `allow` reports nothing, and a finding whose
- * confidence is below the configured minimum is withheld.
+ * The findings of the reads-and-writes family, `DS1300` to `DS1399`, in code order and
+ * each code's in site order.
  */
 export const readsAndWrites: Emitter = (input) => {
   const run = indexed(input);
-  const least = RANK[input.config.analysis.minConfidence];
-  return RULES.flatMap(([code, rule]) =>
-    severityIn(input, code) === "allow"
-      ? []
-      : rule(run).filter((finding) => RANK[finding.confidence] >= least),
-  );
+  return [...writeOnlySymbols(run), ...unusedEnumMembers(run), ...unusedTypeParameters(run)];
 };

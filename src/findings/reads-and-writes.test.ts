@@ -3,15 +3,15 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { nodeHost } from "../../bin/node-host.ts";
 import { emitterInputOf } from "../../__test-helpers__/emitter-input.ts";
-import { contractDocument, fixture } from "../../__test-helpers__/fixtures.ts";
+import { fixture } from "../../__test-helpers__/fixtures.ts";
 import { writeProject } from "../../__test-helpers__/projects.ts";
 import type { Config } from "../config.ts";
+import type { CompletedFinding } from "../finding.ts";
 import { resolve } from "../resolve.ts";
 import { run, type Writer } from "../run.ts";
 import type { Mode } from "../sweep.ts";
 import type { EmitterInput } from "./emitter.ts";
-import { EMITTERS } from "./emitters.ts";
-import { DEFAULT_SEVERITY, type ReadsAndWritesFinding } from "./reads-and-writes.ts";
+import { findingsOf as reportedOf } from "./emitters.ts";
 
 const TARGET = fixture("projects", "reads-and-writes");
 const PRODUCTION: Mode = { production: true };
@@ -21,13 +21,9 @@ function configOf(document: string): Config {
   return resolve({ repository: document, repositoryLabel: "deadset.json" }).config;
 }
 
-/** The findings the table's reads-and-writes emitter returns over one run. */
-function emitted(input: EmitterInput): readonly ReadsAndWritesFinding[] {
-  const emit = EMITTERS.get("reads-and-writes");
-  if (emit === undefined) {
-    throw new Error("the emitter table holds no reads-and-writes emitter");
-  }
-  return emit(input) as readonly ReadsAndWritesFinding[];
+/** The run's reported findings of the reads-and-writes family, completed and dialed. */
+function emitted(input: EmitterInput): readonly CompletedFinding[] {
+  return reportedOf(input).filter((finding) => finding.code.startsWith("DS13"));
 }
 
 /** One target's findings, swept and emitted under one configuration document. */
@@ -35,7 +31,7 @@ function findingsOf(
   target: string,
   document: string,
   mode = PRODUCTION,
-): readonly ReadsAndWritesFinding[] {
+): readonly CompletedFinding[] {
   const config = configOf(document);
   return emitted(emitterInputOf(target, config, { mode }));
 }
@@ -50,12 +46,9 @@ function fixtureDocument(extra: Record<string, unknown> = {}): string {
 }
 
 /** One finding as a line: where, what, the claim, the component, the dials and the writes. */
-function line(finding: ReadsAndWritesFinding): string {
+function line(finding: CompletedFinding): string {
   const { path, line: at, column, endLine } = finding.position;
-  const component =
-    finding.component === undefined
-      ? "-"
-      : `${finding.component.id} root=${String(finding.component.root)} symbols=${String(finding.component.symbolCount)} lines=${String(finding.component.deletableLines)}`;
+  const component = `${finding.component.id} root=${String(finding.component.root)} symbols=${String(finding.component.symbolCount)} lines=${String(finding.component.deletableLines)}`;
   const writes = (finding.details.writePositions ?? [])
     .map((write) => `${write.path}:${String(write.line)}:${String(write.column)}`)
     .join(" ");
@@ -77,7 +70,7 @@ function line(finding: ReadsAndWritesFinding): string {
 }
 
 /** Each finding's code and display name. */
-function named(findings: readonly ReadsAndWritesFinding[]): string[] {
+function named(findings: readonly CompletedFinding[]): string[] {
   return findings.map((finding) => `${finding.code} ${finding.symbol.name}`);
 }
 
@@ -197,7 +190,7 @@ describe("a write-only member of a library's published API", () => {
       "",
     ].join("\n"),
   });
-  const library = (extra: Record<string, unknown> = {}): readonly ReadsAndWritesFinding[] =>
+  const library = (extra: Record<string, unknown> = {}): readonly CompletedFinding[] =>
     findingsOf(root, JSON.stringify({ target: { kind: "library" }, ...extra }));
   const open = library();
   const certainOnly = library({ analysis: { min_confidence: "certain" } });
@@ -255,7 +248,7 @@ describe.each(["enum-group-conversion", "private-member-unread"])(
     const input = emitterInputOf(target, config);
     const { swept } = input;
     const findings = emitted(input);
-    const findingAt = (symbol: string): ReadsAndWritesFinding | undefined =>
+    const findingAt = (symbol: string): CompletedFinding | undefined =>
       findings.find(
         (finding) => `${finding.position.path}:${String(finding.position.line)}` === at.get(symbol),
       );
@@ -312,18 +305,6 @@ describe.each(["enum-group-conversion", "private-member-unread"])(
     });
   },
 );
-
-describe("the family's vocabulary", () => {
-  it("defaults each code to the severity the issue-kind vocabulary states", () => {
-    const kinds = (
-      contractDocument("kinds.json")["kinds"] as { code: string; default_severity: string }[]
-    )
-      .filter((kind) => kind.code.startsWith("DS13"))
-      .map((kind) => [kind.code, kind.default_severity]);
-
-    expect(Object.entries(DEFAULT_SEVERITY)).toEqual(kinds);
-  });
-});
 
 describe("print-retained over a project whose enums a conversion produces", () => {
   it("prints each member of such an enum with the conversion that holds it back, and exits 0", async () => {

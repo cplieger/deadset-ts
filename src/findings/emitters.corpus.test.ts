@@ -3,8 +3,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { emitterInputOf } from "../../__test-helpers__/emitter-input.ts";
 import { fixture } from "../../__test-helpers__/fixtures.ts";
+import type { CompletedFinding } from "../finding.ts";
 import { resolve } from "../resolve.ts";
-import type { CompletedFinding, PlacedFinding } from "./completion.ts";
 import { findingsOf } from "./emitters.ts";
 
 /** One row of a corpus fixture's expectation file. */
@@ -34,11 +34,9 @@ interface Answered {
   readonly unnamed: readonly string[];
 }
 
-/** What one finding states beyond its emitter's members, where its family completes it. */
-type Stated = PlacedFinding & Partial<Omit<CompletedFinding, "component">>;
-
 /** The members a row pins, each against what the finding states. */
-function mismatches(row: ExpectRow, found: Stated): string[] {
+function mismatches(row: ExpectRow, found: CompletedFinding): string[] {
+  const details = new Map(Object.entries(found.details));
   const wanted: [string, unknown, unknown][] = [
     ["confidence", row.confidence, found.confidence],
     ["reachability_class", row.reachability_class, found.reachabilityClass],
@@ -47,7 +45,7 @@ function mismatches(row: ExpectRow, found: Stated): string[] {
     ...Object.entries(row.details ?? {}).map(([member, want]): [string, unknown, unknown] => [
       `details.${member}`,
       want,
-      found.details?.[member.replace(/_([a-z])/gu, (_all, letter: string) => letter.toUpperCase())],
+      details.get(member.replace(/_([a-z])/gu, (_all, letter: string) => letter.toUpperCase())),
     ]),
   ];
   return wanted
@@ -75,7 +73,7 @@ function answer(name: string): Answered {
   };
   const { config } = resolve({ repository: JSON.stringify(document), repositoryLabel: name });
   const input = emitterInputOf(join(dir, "ts", "target"), config);
-  const findings: readonly Stated[] = findingsOf(input);
+  const findings = findingsOf(input);
   const union = input.swept.matrix.union;
 
   const at = (row: ExpectRow): string => {
@@ -83,7 +81,7 @@ function answer(name: string): Answered {
     return `${(bound?.file ?? "").replace(/^target\//u, "")}:${String(bound?.line ?? 0)}`;
   };
   const siteOf = (path: string, line: number): string => `${path}:${String(line)}`;
-  const foundAt = (row: ExpectRow): readonly Stated[] =>
+  const foundAt = (row: ExpectRow): readonly CompletedFinding[] =>
     findings.filter((finding) => siteOf(finding.position.path, finding.position.line) === at(row));
 
   const rows = expected.expect.map((row) => {
@@ -110,7 +108,7 @@ function answer(name: string): Answered {
     if (same.length !== 1 || found.length !== 1) {
       return `${label}: reported ${found.map((one) => one.code).join(" ") || "nothing"}`;
     }
-    const wrong = mismatches(row, same[0] as Stated);
+    const wrong = mismatches(row, same[0] as CompletedFinding);
     return wrong.length === 0 ? `${label}: pass` : `${label}: ${wrong.join(", ")}`;
   });
   const unnamed = findings
@@ -192,12 +190,11 @@ describe("every corpus fixture with a TypeScript rendering, answered by every fa
     });
   });
 
-  it("declares redundant-export-keyword a gap: no consumer is loaded, and no report completes a narrowing", () => {
+  it("declares redundant-export-keyword a gap: no consumer is loaded beside the target", () => {
     expect(answer("redundant-export-keyword")).toEqual({
       rows: [
         "Published none: reported DS1001",
-        // The narrowing family states no class or confidence; a report completes them.
-        "LocalOnly DS1104: confidence absent, reachability_class absent",
+        "LocalOnly DS1104: confidence possible, reachability_class possible",
         "Caller none: reported DS1001",
       ],
       unnamed: [],

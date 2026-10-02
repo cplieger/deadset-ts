@@ -1,13 +1,14 @@
+import type { Confidence, Severity } from "./config.ts";
+import type { Fixability } from "./kinds.ts";
+import type { DependencySection } from "./ref.ts";
+import type { Relation } from "./sweep.ts";
+
 /**
- * The members of a finding its emitter decides: the code, where the subject is,
- * what the subject is, and the sentence the finding reports. They are the
- * Contract's finding members of the same names, spelled in this language's case.
- *
- * Every other member the finding schema requires follows from these and from the
- * run: the kind's name, its fixability and its ceiling come from the code's row of
- * the issue-kind vocabulary, the severity and the confidence from the resolved
- * configuration, the language from the analyzer. A report completes them, so an
- * emitter cannot state one that disagrees with the vocabulary.
+ * The finding: what an emitter decides about one subject, and every member the
+ * Contract's finding schema requires, spelled in this language's case. An emitter states
+ * the code, where the subject is, what it is, the sentence, and the details its code
+ * carries; the completion step reads every other member from the run and from the code's
+ * row of the issue-kind vocabulary, so no emitter states one that disagrees with either.
  */
 
 /** Where the subject of a finding is. */
@@ -34,10 +35,75 @@ export interface FindingSubject {
   readonly sizeLines: number;
 }
 
-/** One finding, as its emitter states it. */
+/** A declaration a finding names beside the subject, with where it is written. */
+export interface PositionedSymbol {
+  readonly ref: string;
+  readonly name: string;
+  readonly position: FindingPosition;
+}
+
+/**
+ * What only some codes carry. The finding schema's branches decide which code carries
+ * which member, and every member is absent under every other code.
+ */
+export interface FindingDetails {
+  /**
+   * On `DS1101` and `DS1104`: the widest scope that holds every reference to the
+   * subject, which is the visibility its references support.
+   */
+  readonly narrowerVisibility?: "file" | "package";
+  /** On `DS1201` and `DS1203`: the classes implementing the interface, in site order. */
+  readonly implementations?: readonly PositionedSymbol[];
+  /** On `DS1301`: every position the subject is written at, in site order. */
+  readonly writePositions?: readonly FindingPosition[];
+  /** On `DS1601`: the manifest section that declares the dependency. */
+  readonly dependencyClass?: DependencySection;
+}
+
+/** One finding as its emitter states it. */
 export interface Finding {
   readonly code: string;
   readonly position: FindingPosition;
   readonly symbol: FindingSubject;
   readonly message: string;
+  /** Absent where the code carries nothing. */
+  readonly details?: FindingDetails;
+}
+
+/** The dead component a finding names, as the finding schema spells its members. */
+export interface FindingComponent {
+  readonly id: string;
+  /** Whether the subject is a root member of the component. */
+  readonly root: boolean;
+  /** The number of the component's members. */
+  readonly symbolCount: number;
+  readonly deletableLines: number;
+}
+
+/** One finding with every member the finding schema requires. */
+export interface CompletedFinding extends Finding {
+  /** The name of the code's row of the issue-kind vocabulary. */
+  readonly kind: string;
+  readonly language: "ts";
+  readonly reachabilityClass: Confidence;
+  /** The reachability class capped by the code's ceiling. */
+  readonly confidence: Confidence;
+  /**
+   * The relation that decided the subject: present on a declaration the sweep judged
+   * dead, absent on a live one and on a subject that is no declaration.
+   */
+  readonly livenessRelation?: Relation;
+  /** Whether every reference to the subject comes from a test file. */
+  readonly testOnly: boolean;
+  readonly generated: boolean;
+  readonly component: FindingComponent;
+  /** Empty on every finding: a declaration an exemption holds back is not reported. */
+  readonly retainedBy: readonly string[];
+  /** The configurations the finding holds in, in the run's order. */
+  readonly configurations: readonly string[];
+  /** The consumers the run loaded beside the target. */
+  readonly consumersLoaded: readonly string[];
+  readonly fixability: Fixability;
+  readonly severity: Severity;
+  readonly details: FindingDetails;
 }
