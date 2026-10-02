@@ -5,7 +5,7 @@
  */
 
 import type { AnalysisInputs } from "./analysis.ts";
-import type { Config, Severity } from "./config.ts";
+import { fails, type Config } from "./config.ts";
 import type { EdgeEvaluation } from "./edges.ts";
 import type { CompletedFinding, Finding } from "./finding.ts";
 import { decidedFindings } from "./findings/emitters.ts";
@@ -43,9 +43,6 @@ export interface PassResult {
 
 /** The exit code of a report holding at least one pending finding. */
 export const EXIT_PENDING = 4;
-
-/** The severities ranked, the strongest highest. */
-const SEVERITY_RANK: Readonly<Record<Severity, number>> = { allow: 0, warn: 1, deny: 2 };
 
 /** Two strings ordered bytewise. */
 function compare(a: string, b: string): number {
@@ -119,9 +116,10 @@ export function verdictOf(result: PassResult, config: Config): number {
   if (result.totals.staleSuppressions > 0) {
     return EXIT_FINDINGS;
   }
-  const failing = SEVERITY_RANK[config.reporters.failOn];
-  const fails = result.findings.some((finding) => SEVERITY_RANK[finding.severity] >= failing);
-  return fails ? EXIT_FINDINGS : EXIT_CLEAN;
+  const failing = result.findings.some((finding) =>
+    fails(finding.severity, config.reporters.failOn),
+  );
+  return failing ? EXIT_FINDINGS : EXIT_CLEAN;
 }
 
 /**

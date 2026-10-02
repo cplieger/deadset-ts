@@ -28,6 +28,14 @@ export type Language = "go" | "ts";
 /** What a finding of one issue kind does to a run. */
 export type Severity = "allow" | "warn" | "deny";
 
+/** The severities ranked, the strongest highest. */
+const SEVERITY_RANK: Readonly<Record<Severity, number>> = { allow: 0, warn: 1, deny: 2 };
+
+/** Whether a finding at one severity fails a run under the failing severity. */
+export function fails(severity: Severity, failOn: Severity): boolean {
+  return SEVERITY_RANK[severity] >= SEVERITY_RANK[failOn];
+}
+
 /** One rendering of the finding list. */
 export type Format = "text" | "json" | "github" | "sarif" | "template";
 

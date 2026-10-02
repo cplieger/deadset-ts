@@ -3,7 +3,7 @@ import { ConfigError, type Format } from "../config.ts";
 import { CONFORMANCE, DECLARED_GAPS } from "../conformance.ts";
 import { analyzerProvenance, recordedFindings, verdictOf } from "../findings-pass.ts";
 import { packageScope } from "../inventory.ts";
-import { normalizePath, relativePath, resolvePath } from "../paths.ts";
+import { joinPath, normalizePath, relativePath, resolvePath } from "../paths.ts";
 import type { Host } from "../host.ts";
 import {
   buildReport,
@@ -14,6 +14,7 @@ import {
 } from "../report.ts";
 import { json } from "../reporters/json.ts";
 import { RENDERINGS } from "../reporters/reporters.ts";
+import { parseTemplate, TemplateError, type Template } from "../reporters/template.ts";
 import { resolve } from "../resolve.ts";
 import type { Module } from "../scope.ts";
 import { writeBaseline, type Recorded } from "../suppress-file.ts";
@@ -22,7 +23,7 @@ import { EXIT_CLEAN, EXIT_FAILURE, type Verb, type VerbOptions } from "./verb.ts
 
 /** The options `analyze` takes beside the ones every verb takes. */
 export const ANALYZE_OPTIONS: VerbOptions = {
-  plain: ["report", "baseline-write", "exit-code"],
+  plain: ["report", "baseline-write", "exit-code", "template"],
   repeatable: ["format"],
 };
 
@@ -110,6 +111,47 @@ function counted(n: number, noun: string): string {
   return `${String(n)} ${noun}${n === 1 ? "" : "s"}`;
 }
 
+/**
+ * The template `--template` names, read and parsed before any analysis, so a template that
+ * cannot be read or does not parse refuses the invocation. The template format with no
+ * template named is refused the same way.
+ */
+function templateOf(
+  host: Host,
+  invoked: string,
+  named: string | undefined,
+  formats: readonly Format[],
+): Template | undefined {
+  if (named === undefined || named === "") {
+    if (formats.includes("template")) {
+      throw new ConfigError(
+        "malformed",
+        "",
+        "the template format renders the template --template names, and none was named",
+      );
+    }
+    return undefined;
+  }
+  let source: string;
+  try {
+    source = host.readFile(resolvePath(invoked, named));
+  } catch (error: unknown) {
+    throw new ConfigError(
+      "malformed",
+      "",
+      `--template=${named}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  try {
+    return parseTemplate(source);
+  } catch (error: unknown) {
+    if (!(error instanceof TemplateError)) {
+      throw error;
+    }
+    throw new ConfigError("malformed", "", `--template=${named}: ${error.message}`);
+  }
+}
+
 /** Every document one invocation asked for: the report, each rendering beside it, a baseline. */
 interface Documents {
   readonly report: string;
@@ -121,8 +163,9 @@ interface Documents {
  * Analyzes the scope under the configuration and writes the JSON report to the path
  * `--report` names, each rendering `--format` names beside it at the report's path with the
  * format's suffix appended, and a baseline of every finding where `--baseline-write` names a
- * path. Nothing is written to the output stream; diagnostics go to the error stream and the
- * verdict is the exit code, or 0 under `--exit-code=off`.
+ * path. The template format renders the template `--template` names. Nothing is written to
+ * the output stream; diagnostics go to the error stream and the verdict is the exit code, or 0
+ * under `--exit-code=off`, and a rendering that cannot be written ends the run with 3.
  */
 export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option, repeated }) => {
   const reportPath = option("report");
@@ -153,6 +196,7 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
     formats: formatsOf(repeated("format"), config.reporters.formats),
     baseline: baseline === undefined ? undefined : resolvePath(invoked, baseline),
   };
+  const template = templateOf(host, invoked, option("template"), documents.formats);
   const scoped = scope();
   const targetRoot = scoped.target.path;
 
@@ -201,10 +245,15 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
 
   try {
     host.writeFile(documents.report, json(report));
+    const options = {
+      failOn: config.reporters.failOn,
+      readSource: (path: string) => host.readFile(joinPath(targetRoot, path)),
+      template,
+    };
     for (const format of documents.formats) {
       const rendering = RENDERINGS.get(format);
       if (rendering !== undefined) {
-        host.writeFile(documents.report + rendering.suffix, rendering.render(report));
+        host.writeFile(documents.report + rendering.suffix, rendering.render(report, options));
       }
     }
     if (documents.baseline !== undefined) {

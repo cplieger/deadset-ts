@@ -11,6 +11,7 @@ import { printRetainedVerb } from "./verbs/print-retained.ts";
 import { printRootsVerb } from "./verbs/print-roots.ts";
 import { ANALYZE_OPTIONS, analyzeVerb } from "./verbs/analyze.ts";
 import { describeVerb } from "./verbs/describe.ts";
+import { EXPLAIN_OPTIONS, explainVerb } from "./verbs/explain.ts";
 import { EXIT_FAILURE, EXIT_USAGE, type Verb, type VerbOptions } from "./verbs/verb.ts";
 import { versionVerb } from "./verbs/version.ts";
 
@@ -19,17 +20,14 @@ export interface Writer {
   write(text: string): void;
 }
 
-/**
- * Every verb this command answers, in the order the usage text lists them. A verb
- * with no `run` is listed, and invoking it is a usage error.
- */
+/** Every verb this command answers, in the order the usage text lists them. */
 const VERBS: readonly {
   readonly name: string;
-  readonly run?: Verb;
+  readonly run: Verb;
   readonly options?: VerbOptions;
 }[] = [
   { name: "analyze", run: analyzeVerb, options: ANALYZE_OPTIONS },
-  { name: "explain" },
+  { name: "explain", run: explainVerb, options: EXPLAIN_OPTIONS },
   { name: "print-config", run: printConfigVerb },
   { name: "print-projects", run: printProjectsVerb },
   { name: "print-roots", run: printRootsVerb },
@@ -219,7 +217,7 @@ export function run(
 
   const name = args[0];
   const verb = VERBS.find((listed) => listed.name === name);
-  if (verb?.run !== undefined) {
+  if (verb !== undefined) {
     return invoke(
       verb.run,
       verb.options ?? NO_OPTIONS,
@@ -227,10 +225,6 @@ export function run(
       { out, err, host },
       openClient,
     );
-  }
-  if (verb !== undefined) {
-    err.write(`deadset-ts: ${verb.name} is not implemented\n`);
-    return EXIT_USAGE;
   }
   if (name !== undefined) {
     err.write(`deadset-ts: unknown verb ${JSON.stringify(name)}\n`);
