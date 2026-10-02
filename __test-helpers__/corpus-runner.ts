@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import {
   cpSync,
-  existsSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
@@ -187,6 +186,20 @@ function compare(a: string, b: string): number {
 
 function readJson(path: string): unknown {
   return JSON.parse(readFileSync(path, "utf8")) as unknown;
+}
+
+/** The JSON document at path, or undefined where no file is there. */
+function readJsonIfPresent(path: string): unknown {
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return undefined;
+    }
+    throw error;
+  }
+  return JSON.parse(text) as unknown;
 }
 
 /** The corpus document of the committed copy: its version and the subjects no record binds to. */
@@ -598,12 +611,11 @@ function suppressionPhase(
   }
 
   const path = join(at.rendering, TARGET, IGNORE_FILE);
-  const own = existsSync(path)
-    ? (readJson(path) as { description?: string; ignore: IgnoreEntry[] })
-    : {
-        description: "The adjudications the conformance run writes for its suppression phase.",
-        ignore: [],
-      };
+  const own = (readJsonIfPresent(path) as
+    { description?: string; ignore: IgnoreEntry[] } | undefined) ?? {
+    description: "The adjudications the conformance run writes for its suppression phase.",
+    ignore: [],
+  };
   const body = `${JSON.stringify({ ...own, ignore: [...own.ignore, ...covered.values()] }, null, 2)}\n`;
   writeFileSync(path, body);
 
