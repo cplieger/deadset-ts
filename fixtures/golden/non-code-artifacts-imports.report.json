@@ -92,7 +92,7 @@
       "test_only": false,
       "generated": false,
       "component": {
-        "id": "deadset-ts/c-0008",
+        "id": "deadset-ts/c-0007",
         "root": true,
         "symbol_count": 1,
         "deletable_lines": 0
@@ -278,7 +278,7 @@
       "test_only": false,
       "generated": false,
       "component": {
-        "id": "deadset-ts/c-0009",
+        "id": "deadset-ts/c-0008",
         "root": true,
         "symbol_count": 1,
         "deletable_lines": 0
@@ -291,43 +291,6 @@
       "fixability": "deletable",
       "severity": "deny",
       "message": "no import reaches this file and no root names it or a declaration in it",
-      "details": {}
-    },
-    {
-      "code": "DS1001",
-      "kind": "unused-exported",
-      "language": "ts",
-      "position": {
-        "path": "src/main.ts",
-        "line": 5,
-        "column": 17,
-        "end_line": 7
-      },
-      "symbol": {
-        "ref": "ts://@example/non-code-artifacts-imports/src/main.ts#start",
-        "kind": "function",
-        "name": "start",
-        "size_lines": 3
-      },
-      "reachability_class": "certain",
-      "confidence": "certain",
-      "liveness_relation": "reference-counting",
-      "test_only": false,
-      "generated": false,
-      "component": {
-        "id": "deadset-ts/c-0004",
-        "root": true,
-        "symbol_count": 1,
-        "deletable_lines": 3
-      },
-      "retained_by": [],
-      "configurations": [
-        "tsconfig.json"
-      ],
-      "consumers_loaded": [],
-      "fixability": "deletable",
-      "severity": "deny",
-      "message": "exported function has no reference in the target and none from any loaded consumer",
       "details": {}
     },
     {
@@ -351,7 +314,7 @@
       "test_only": false,
       "generated": false,
       "component": {
-        "id": "deadset-ts/c-0010",
+        "id": "deadset-ts/c-0009",
         "root": true,
         "symbol_count": 1,
         "deletable_lines": 0
@@ -388,7 +351,7 @@
       "test_only": false,
       "generated": false,
       "component": {
-        "id": "deadset-ts/c-0005",
+        "id": "deadset-ts/c-0004",
         "root": true,
         "symbol_count": 2,
         "deletable_lines": 6
@@ -425,7 +388,7 @@
       "test_only": false,
       "generated": false,
       "component": {
-        "id": "deadset-ts/c-0005",
+        "id": "deadset-ts/c-0004",
         "root": false,
         "symbol_count": 2,
         "deletable_lines": 6
@@ -462,7 +425,7 @@
       "test_only": false,
       "generated": false,
       "component": {
-        "id": "deadset-ts/c-0006",
+        "id": "deadset-ts/c-0005",
         "root": true,
         "symbol_count": 1,
         "deletable_lines": 1
@@ -499,7 +462,7 @@
       "test_only": true,
       "generated": false,
       "component": {
-        "id": "deadset-ts/c-0007",
+        "id": "deadset-ts/c-0006",
         "root": true,
         "symbol_count": 1,
         "deletable_lines": 3
@@ -532,13 +495,13 @@
     }
   ],
   "totals": {
-    "findings": 13,
+    "findings": 12,
     "by_severity": {
       "allow": 0,
       "warn": 0,
-      "deny": 13
+      "deny": 12
     },
-    "deletable_lines": 28,
+    "deletable_lines": 25,
     "suppressions_in_effect": 0,
     "reasons_recorded": 0,
     "stale_suppressions": 0,

@@ -39,15 +39,15 @@ const SWEPT: Readonly<Record<SymbolKind, boolean>> = {
 
 /**
  * Whether a root of each kind names a caller, which holds it live under both relations: a
- * tool reads the configuration it loads, a runtime runs a test file, a setup file and a
- * worker, and a configured root asserts a caller. The other kinds only suppose a consumer
- * that imports what a manifest entry, a binary or an entry file exports, or names a
- * library's published API, so such a root is live under reachability alone.
+ * tool reads the configuration it loads, a runtime runs a test file, a setup file, a
+ * worker and a command, the manifest names what enters the package, and an entry file, a
+ * configured root and a pattern assert a caller. A library's published API only supposes
+ * a consumer the run may not see, so it is live under reachability alone.
  */
 const NAMES_A_CALLER: Readonly<Record<RootKind, boolean>> = {
-  "entry-file": false,
-  "manifest-entry": false,
-  "manifest-binary": false,
+  "entry-file": true,
+  "manifest-entry": true,
+  "manifest-binary": true,
   "published-api": false,
   configured: true,
   pattern: true,

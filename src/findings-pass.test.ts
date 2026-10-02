@@ -372,9 +372,9 @@ describe("a declared edge naming a symbol a narrowing kind reports", () => {
       ),
     ).toEqual([
       "unreachable-export deadset-ts/c-0003",
-      "redundant-export-keyword deadset-ts/c-0013",
+      "redundant-export-keyword deadset-ts/c-0012",
     ]);
-    expect(reported.has("deadset-ts/c-0013")).toBe(false);
+    expect(reported.has("deadset-ts/c-0012")).toBe(false);
   });
 });
 

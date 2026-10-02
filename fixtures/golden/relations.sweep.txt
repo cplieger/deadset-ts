@@ -12,7 +12,7 @@ ts://@example/relations/src/impl.ts#relayed	reference-counting,reachability	live
 ts://@example/relations/src/impl.ts#unrelayed	reference-counting	reachability
 ts://@example/relations/src/impl.ts#listed	reference-counting	reachability
 ts://@example/relations/src/impl.ts#listed:alias	-	reference-counting
-ts://@example/relations/src/main.ts#entryExport	reachability	reference-counting
+ts://@example/relations/src/main.ts#entryExport	reference-counting,reachability	live
 ts://@example/relations/src/main.ts#keptByTheEntryExport	reference-counting,reachability	live
 ts://@example/relations/src/recursive.ts#recurse	reference-counting	reachability
 ts://@example/relations/src/relay.ts#relayed:alias	reference-counting,reachability	live
