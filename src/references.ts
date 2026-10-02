@@ -29,6 +29,7 @@ import {
 } from "@typescript/native/unstable/ast";
 import type { Symbol as TSSymbol } from "@typescript/native/unstable/sync";
 import { aliasChains } from "./alias-chain.ts";
+import { destructuring, propertyReadsOf, type PropertyRead } from "./destructuring.ts";
 import { globExpression } from "./glob.ts";
 import { nodeKey, type Inventory } from "./inventory.ts";
 import { byPosition, renderPosition, type Position } from "./position.ts";
@@ -71,8 +72,11 @@ export type Use = "read" | "write" | "evaluation" | "decorator";
  *   the literal declares rather than to the declaration that name reads.
  * - `alias` is a step along an import or export chain, from one link to what it names.
  * - `syntax` is the tree alone, which says what a decorator is attached to.
+ * - `destructured` is the property a pattern names, looked up on the type of the value
+ *   the pattern destructures.
  */
-export type Resolution = "batch" | "resolved-symbol" | "shorthand" | "alias" | "syntax";
+export type Resolution =
+  "batch" | "resolved-symbol" | "shorthand" | "alias" | "syntax" | "destructured";
 
 /** One use of one declaration by one declaration. */
 export interface Reference {
@@ -119,6 +123,16 @@ export interface ReferenceCost {
   readonly shorthandLookups: number;
   /** Per-symbol lookups that step from one alias to what it names, one per alias. */
   readonly aliasSteps: number;
+  /**
+   * Batched type lookups for the object patterns: per file, the patterns and the values
+   * assigned to destructuring targets, divided by the batch cap, rounded up.
+   */
+  readonly patternBatches: number;
+  /**
+   * Per-type lookups for the object patterns: one property table per distinct type a
+   * pattern destructures, and each step a nested assignment target takes into its value.
+   */
+  readonly patternLookups: number;
 }
 
 /** One project's references, in position order, and what reading them cost. */
@@ -326,9 +340,15 @@ interface Decorated {
   readonly declaration: string;
 }
 
+/** One property a pattern reads, and the declaration the pattern is written inside. */
+interface Read extends PropertyRead {
+  readonly from: string;
+}
+
 /** Everything one file's walk found to resolve, and the decorators it needs no resolution for. */
 interface FileSites {
   readonly uses: readonly Site[];
+  readonly reads: readonly Read[];
   readonly links: readonly Link[];
   readonly evaluations: readonly Evaluation[];
   readonly decorated: readonly Decorated[];
@@ -425,6 +445,7 @@ function sitesOf(
   fileId: string,
 ): FileSites {
   const found: Site[] = [];
+  const reads: Read[] = [];
   const links: Link[] = [];
   const evaluations: Evaluation[] = [];
   const decorated: Decorated[] = [];
@@ -465,6 +486,9 @@ function sitesOf(
     }
     markNames(node);
     markStores(node, writes);
+    for (const read of propertyReadsOf(node)) {
+      reads.push({ ...read, from: enclosing });
+    }
     links.push(...linksOf(file, node, declarations, enclosing));
     const evaluated = evaluatedBy(node);
     if (evaluated !== undefined) {
@@ -485,7 +509,7 @@ function sitesOf(
   };
 
   file.forEachChild(visit);
-  return { uses: found, links, evaluations, decorated };
+  return { uses: found, reads, links, evaluations, decorated };
 }
 
 /**
@@ -551,6 +575,7 @@ export function references<Brand>(
   const found: Reference[] = [];
   const tests: string[] = [];
   const chains = aliasChains(project, held);
+  const destructured = destructuring(project, cap);
   let batched = 0;
   let fileBatches = 0;
   let residueFallbacks = 0;
@@ -595,7 +620,7 @@ export function references<Brand>(
     if (test) {
       tests.push(path);
     }
-    const { uses, links, evaluations, decorated } = sitesOf(
+    const { uses, reads, links, evaluations, decorated } = sitesOf(
       file,
       declarations,
       declaredAt(file) ?? "",
@@ -679,6 +704,26 @@ export function references<Brand>(
       }
     }
 
+    // A pattern names a property of the value it destructures, which no name node of
+    // the pattern resolves to: a shorthand's name is the local it binds.
+    destructured.resolve(reads).forEach((symbol, index) => {
+      const read = reads[index];
+      if (symbol === undefined || read === undefined) {
+        return;
+      }
+      const position = renderPosition(file, targetRoot, read.key.getStart());
+      for (const target of chains.chainOf(symbol)) {
+        found.push({
+          from: read.from,
+          to: target.id,
+          position,
+          use: "read",
+          resolution: "destructured",
+          test,
+        });
+      }
+    });
+
     for (const site of uses) {
       const direct: Resolution =
         site.shorthand !== undefined
@@ -718,6 +763,14 @@ export function references<Brand>(
     configFile: project.configFile,
     references: found,
     testFilePaths: tests.sort(compare),
-    cost: { batched, fileBatches, residueFallbacks, shorthandLookups, aliasSteps: chains.steps },
+    cost: {
+      batched,
+      fileBatches,
+      residueFallbacks,
+      shorthandLookups,
+      aliasSteps: chains.steps,
+      patternBatches: destructured.cost.patternBatches,
+      patternLookups: destructured.cost.patternLookups,
+    },
   };
 }

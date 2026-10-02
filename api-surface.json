@@ -7,6 +7,7 @@
     {
       "path": "@typescript/native/unstable/ast",
       "names": [
+        "BinaryExpression",
         "CallExpression",
         "Decorator",
         "Expression",
@@ -54,6 +55,7 @@
         "isNewExpression",
         "isNoSubstitutionTemplateLiteral",
         "isNumericLiteral",
+        "isObjectBindingPattern",
         "isObjectLiteralExpression",
         "isParameterDeclaration",
         "isParenthesizedExpression",
