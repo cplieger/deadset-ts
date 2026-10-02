@@ -1,1 +1,1 @@
-{ "name": "typed-only", "version": "1.0.0", "main": "./index.js" }
+{"name": "typed-only", "private": true, "version": "1.0.0", "main": "./index.js"}

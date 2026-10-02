@@ -1,1 +1,1 @@
-{ "name": "bundled", "version": "1.0.0", "types": "./index.d.ts" }
+{"name": "bundled", "private": true, "version": "1.0.0", "types": "./index.d.ts"}

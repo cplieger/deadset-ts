@@ -1,1 +1,1 @@
-{ "name": "@types/globals", "version": "1.0.0", "types": "./index.d.ts" }
+{"name": "@types/globals", "private": true, "version": "1.0.0", "types": "./index.d.ts"}
