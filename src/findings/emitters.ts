@@ -9,7 +9,7 @@ import { intraFunction } from "./intra-function.ts";
 import { nonCodeArtifacts } from "./non-code-artifacts.ts";
 import { readsAndWrites } from "./reads-and-writes.ts";
 import { selfCheck } from "./self-check.ts";
-import { unusedDeclarations } from "./unused-declarations.ts";
+import { fallenMembers, unusedDeclarations } from "./unused-declarations.ts";
 import { visibilityNarrowing } from "./visibility-narrowing.ts";
 
 /** Every kind family this analyzer reports, each by its emitter, in code order. */
@@ -44,11 +44,14 @@ export interface DecidedFindings {
   readonly would: readonly CompletedFinding[];
 }
 
-/** Every family's findings over one sweep, completed by one step. */
-function completedOver(input: EmitterInput): readonly CompletedFinding[] {
+/** Every family's findings over one sweep, and those of any further emitter, completed by one step. */
+function completedOver(
+  input: EmitterInput,
+  ...more: readonly Emitter[]
+): readonly CompletedFinding[] {
   return completed(
     input,
-    [...EMITTERS.values()].flatMap((emit) => emit(input)),
+    [...EMITTERS.values(), ...more].flatMap((emit) => emit(input)),
   );
 }
 
@@ -85,7 +88,8 @@ export function decidedFindings(
   suppressed: Suppressed = { unmarked: input, records: [] },
 ): DecidedFindings {
   const found = completedOver(input);
-  const unmarked = suppressed.records.length === 0 ? [] : completedOver(suppressed.unmarked);
+  const unmarked =
+    suppressed.records.length === 0 ? [] : completedOver(suppressed.unmarked, fallenMembers);
   const would = [...unmarked, ...found];
   const ledger = ledgerOf(suppressed.records, would, dialsOver(input, found, suppressed, unmarked));
   const kept = reportable(

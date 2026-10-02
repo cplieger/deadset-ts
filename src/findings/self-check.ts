@@ -14,6 +14,12 @@ import type { Emitter } from "./emitter.ts";
 /** The code a configured root that matches nothing is reported under. */
 const UNMATCHED_ROOT = "DS1704";
 
+/** The code a configured declaration that names nothing is reported under. */
+const UNMATCHED_DECLARATION = "DS1706";
+
+/** The subject kind of a finding about a configured declaration. */
+const DECLARATION_SUBJECT = "configured-declaration";
+
 /** The subject kind of a finding about a suppression record. */
 const SUPPRESSION_SUBJECT = "suppression";
 
@@ -38,6 +44,18 @@ export interface SelfCheckFacts {
   readonly unmatchedRoots: readonly string[];
   /** The document below the target root that declared the roots, empty where none did. */
   readonly rootsDocument: string;
+  /** Every configured declaration that named no declaration in any project, in reading order. */
+  readonly unmatchedDeclarations: readonly UnmatchedDeclaration[];
+}
+
+/** One configured declaration that named nothing, and the document that configured it. */
+interface UnmatchedDeclaration {
+  /** The entry as a finding's subject reference spells it. */
+  readonly ref: string;
+  /** The dotted path of the key that holds the entry. */
+  readonly key: string;
+  /** The document below the target root that declared the key, empty where none did. */
+  readonly document: string;
 }
 
 /** A run with nothing for the self-check family to report. */
@@ -45,6 +63,7 @@ export const NO_SELF_CHECK: SelfCheckFacts = {
   refusals: [],
   unmatchedRoots: [],
   rootsDocument: "",
+  unmatchedDeclarations: [],
 };
 
 /** The words a message names a mechanism by. */
@@ -188,6 +207,31 @@ export function staleSuppressions(
   });
 }
 
+/** The first position of the document that configured a setting, or of the conventional one. */
+function documentPosition(document: string): Finding["position"] {
+  return {
+    path: document === "" ? REPOSITORY_DOCUMENT : document,
+    line: DOCUMENT_POSITION,
+    column: DOCUMENT_POSITION,
+    endLine: DOCUMENT_POSITION,
+  };
+}
+
+/**
+ * One finding per configured declaration that named no declaration in any project, at the
+ * first position of the document that configured its key, as a configured root's is.
+ */
+function unmatchedDeclarationFindings(
+  unmatched: readonly UnmatchedDeclaration[],
+): readonly Finding[] {
+  return unmatched.map((one) => ({
+    code: UNMATCHED_DECLARATION,
+    position: documentPosition(one.document),
+    symbol: { ref: one.ref, kind: DECLARATION_SUBJECT, name: one.ref, sizeLines: 1 },
+    message: `${one.key} entry names no declaration in any project`,
+  }));
+}
+
 /**
  * One finding per configured root or pattern that named nothing in any project. A finding
  * names the document that declared the roots, or the conventional repository configuration
@@ -199,12 +243,7 @@ export function unmatchedRootFindings(
   sources: readonly string[],
   document: string,
 ): readonly Finding[] {
-  const position = {
-    path: document === "" ? REPOSITORY_DOCUMENT : document,
-    line: DOCUMENT_POSITION,
-    column: DOCUMENT_POSITION,
-    endLine: DOCUMENT_POSITION,
-  };
+  const position = documentPosition(document);
   return sources.map((source) => ({
     code: UNMATCHED_ROOT,
     position,
@@ -218,11 +257,13 @@ export function unmatchedRootFindings(
 
 /**
  * The findings of the self-check family, `DS1700` to `DS1799`: a suppression refused for
- * carrying no reason or naming no path, and a configured root that named nothing. A
+ * carrying no reason or naming no path, and a configured root or declaration that named
+ * nothing. A
  * suppression that matched nothing is a record of the report's stale suppressions, which
  * {@link staleSuppressions} builds, and a stale cross-language edge is the merge's to report.
  */
 export const selfCheck: Emitter = ({ selfCheck: facts, swept }) => [
   ...refusedSuppressions(facts.refusals, fileRefsOf(swept.matrix.union.symbols)),
   ...unmatchedRootFindings(facts.unmatchedRoots, facts.rootsDocument),
+  ...unmatchedDeclarationFindings(facts.unmatchedDeclarations),
 ];

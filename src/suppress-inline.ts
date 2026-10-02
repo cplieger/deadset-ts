@@ -8,6 +8,7 @@ import { SyntaxKind, type Node, type SourceFile } from "@typescript/native/unsta
 import { nodeKey, type Inventory } from "./inventory.ts";
 import { byPosition, positionKey, renderPosition, type Position } from "./position.ts";
 import type { ProjectView } from "./session.ts";
+import { signatureOf } from "./signatures.ts";
 import {
   SUPPRESSION_WITHOUT_REASON,
   SuppressionError,
@@ -168,7 +169,8 @@ interface Declared {
 /**
  * The declarations of one file by the line each begins on, the line of its first token: a
  * decorator, a modifier or the keyword. A variable's first token is its statement's
- * keyword, and a variable written on a later line of the statement also begins there.
+ * keyword, and a variable written on a later line of the statement also begins there. A
+ * function also begins, for a directive, on the line of each of its parameters.
  */
 function declarationLines(
   file: SourceFile,
@@ -189,6 +191,11 @@ function declarationLines(
     const one = id === undefined ? undefined : symbols.get(id);
     if (one !== undefined) {
       add(node.pos, one);
+      // A parameter on a later line of a wrapped signature takes its directive on the
+      // line above it, inside the parameter list, and the directive binds the function.
+      for (const parameter of signatureOf(node)?.parameters ?? []) {
+        add(parameter.pos, one);
+      }
       const list = node.parent;
       if (
         node.kind === SyntaxKind.VariableDeclaration &&

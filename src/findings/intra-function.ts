@@ -1,4 +1,107 @@
-import type { Emitter } from "./emitter.ts";
+import type { Finding } from "../finding.ts";
+import { KINDS } from "../kinds.ts";
+import { UNUSED_PARAMETER, UNUSED_RESULT, type PartFact } from "../intra-function-parts.ts";
+import type { Emitter, EmitterInput } from "./emitter.ts";
 
-/** The findings of the intra-function family, `DS1800` to `DS1899`. */
-export const intraFunction: Emitter = () => [];
+/** A list of rules as a sentence names them. */
+function spelled(rules: readonly string[]): string {
+  if (rules.length < 2) {
+    return rules.join("");
+  }
+  return `${rules.slice(0, -1).join(", ")} and ${rules.at(-1) ?? ""}`;
+}
+
+/** The clause a message ends with: the other rules that report the kind, or that none is known. */
+function overlapClause(overlap: readonly string[]): string {
+  return overlap.length === 1 && overlap[0] === "none known"
+    ? "no other rule is known to report it"
+    : `also reported by ${spelled(overlap)}`;
+}
+
+/**
+ * Whether one part is reported. A parameter needs its function's signature free to
+ * change; a result needs that, every call in the loaded program to discard it, and every
+ * call site to be in the loaded program, so a function with a root or one a module
+ * exports to callers the run cannot see has no result to report. Every other part is
+ * reported wherever no project found it in use.
+ */
+function reported(
+  input: EmitterInput,
+  part: PartFact,
+  callersUnknown: ReadonlySet<string>,
+): boolean {
+  if (part.used) {
+    return false;
+  }
+  const { free, discardedEverywhere } = input.intraFunction;
+  switch (part.code) {
+    case UNUSED_PARAMETER:
+      return free.has(part.declaration);
+    case UNUSED_RESULT:
+      return (
+        free.has(part.declaration) &&
+        discardedEverywhere.has(part.declaration) &&
+        !callersUnknown.has(part.declaration)
+      );
+    default:
+      return true;
+  }
+}
+
+/**
+ * The findings of the intra-function family, `DS1800` to `DS1899`, each about a part of
+ * the declaration its reference names, at the part's own position, whatever the sweep
+ * decided about that declaration. Each message names the other rules that report the
+ * kind, as the vocabulary lists them, and so does the finding's details.
+ */
+export const intraFunction: Emitter = (input) => {
+  const union = input.swept.matrix.union;
+  const byId = new Map(union.symbols.map((symbol) => [symbol.id, symbol]));
+  const unknown = new Set(
+    union.rooted.flatMap((root) => {
+      const symbol = union.symbols[root.at];
+      return symbol === undefined ? [] : [symbol.id];
+    }),
+  );
+  const { declared, loaded } = input.boundary.consumers;
+  const closed = input.config.consumersComplete && declared.every((id) => loaded.includes(id));
+  const published = (id: string): boolean => {
+    const symbol = byId.get(id);
+    return (
+      symbol !== undefined &&
+      symbol.kind !== "file" &&
+      (symbol.exported || published(symbol.parent))
+    );
+  };
+  if (!closed) {
+    for (const part of input.intraFunction.parts) {
+      if (published(part.declaration)) {
+        unknown.add(part.declaration);
+      }
+    }
+  }
+  const found: Finding[] = [];
+  for (const part of input.intraFunction.parts) {
+    const declaration = byId.get(part.declaration);
+    const overlap = KINDS.get(part.code)?.overlap ?? [];
+    if (declaration === undefined || !reported(input, part, unknown)) {
+      continue;
+    }
+    found.push({
+      code: part.code,
+      position: part.position,
+      symbol: {
+        ref: declaration.ref,
+        kind: part.kind,
+        name: part.name,
+        sizeLines: part.position.endLine - part.position.line + 1,
+      },
+      message: `${part.message}; ${overlapClause(overlap)}`,
+      details: {
+        ...(part.kind === "store" ? { writePositions: [part.position] } : {}),
+        overlap,
+      },
+    });
+  }
+  return found;
+};

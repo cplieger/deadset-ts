@@ -1,7 +1,7 @@
 import type { Finding } from "../finding.ts";
 import type { InventorySymbol, SymbolKind } from "../inventory.ts";
 import type { MatrixCandidate } from "../matrix.ts";
-import type { Emitter } from "./emitter.ts";
+import type { Emitter, EmitterInput } from "./emitter.ts";
 import { unreachableExports } from "./visibility-narrowing.ts";
 
 /** The kinds of declaration that are members of a class, an interface, a type or an enum. */
@@ -137,7 +137,17 @@ function messageOf(code: string, judged: Judged): string {
 }
 
 /** The findings of the unused-declarations family, `DS1000` to `DS1099`. */
-export const unusedDeclarations: Emitter = (input) => {
+export const unusedDeclarations: Emitter = (input) => familyFindings(input, false);
+
+/**
+ * The finding each member of a dead container would carry were its container live: what
+ * a record on such a member is matched against, since the report carries the container's
+ * finding rather than one of the member's own.
+ */
+export const fallenMembers: Emitter = (input) => familyFindings(input, true);
+
+/** The family's findings, or, where `fallen` is set, its dead containers' members' alone. */
+function familyFindings(input: EmitterInput, fallen: boolean): Finding[] {
   const union = input.swept.matrix.union;
   const dead = new Set(input.swept.sweep.candidates.map((candidate) => candidate.id));
   const unreachable = unreachableExports(input);
@@ -149,11 +159,15 @@ export const unusedDeclarations: Emitter = (input) => {
     if (symbol === undefined) {
       continue;
     }
+    const containerDead = dead.has(symbol.parent);
+    if (fallen !== containerDead) {
+      continue;
+    }
     const judged: Judged = {
       candidate,
       symbol,
       test: union.test[at] === true,
-      containerDead: dead.has(symbol.parent),
+      containerDead: containerDead && !fallen,
       deprecated: input.deprecated.has(symbol.id),
       unreachable: unreachable.has(symbol.id),
     };
@@ -175,4 +189,4 @@ export const unusedDeclarations: Emitter = (input) => {
     });
   }
   return found;
-};
+}

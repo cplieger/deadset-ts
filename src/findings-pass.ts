@@ -122,19 +122,34 @@ export function verdictOf(result: PassResult, config: Config): number {
   return failing ? EXIT_FINDINGS : EXIT_CLEAN;
 }
 
+/** What a baseline row is recorded from: a finding's code, subject and file. */
+export interface RecordableFinding {
+  readonly code: string;
+  readonly symbol: { readonly ref: string; readonly kind: string };
+  readonly position: { readonly path: string };
+}
+
 /**
- * The findings of a report as a baseline records them, in report order. A finding about a
- * row of a document is not recorded: no record withholds one, so a row recording it would
- * be stale on the first read back.
+ * The rows one round of a baseline write records from its findings, in their order. A
+ * finding about a row of a document is not recorded: no record withholds one, so a row
+ * recording it would be stale on the first read back. Two findings that would record the
+ * same row, two parts of one declaration under one code, record it once.
  */
-export function recordedFindings(result: PassResult): readonly Recorded[] {
-  return result.findings
-    .filter((finding) => !isRowSubject(finding.symbol.kind))
-    .map((finding) => ({
-      code: finding.code,
-      symbol: finding.symbol.ref,
-      path: finding.position.path,
-    }));
+export function recordedFindings(findings: readonly RecordableFinding[]): readonly Recorded[] {
+  const rows = new Map<string, Recorded>();
+  for (const finding of findings) {
+    if (isRowSubject(finding.symbol.kind)) {
+      continue;
+    }
+    const row = { code: finding.code, symbol: finding.symbol.ref, path: finding.position.path };
+    rows.set(rowKey(row), rows.get(rowKey(row)) ?? row);
+  }
+  return [...rows.values()];
+}
+
+/** One row's identity: its code, its symbol and its path. */
+export function rowKey(row: Recorded): string {
+  return `${row.code}\u0000${row.symbol}\u0000${row.path}`;
 }
 
 /** The analyzer identity a baseline this analyzer writes names as its rows' provenance. */

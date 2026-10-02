@@ -1,4 +1,4 @@
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -13,6 +13,7 @@ import {
   recordedFindings,
   verdictOf,
   type PassResult,
+  type RecordableFinding,
 } from "./findings-pass.ts";
 import { resolve } from "./resolve.ts";
 import { scopeForDir } from "./scope.ts";
@@ -261,7 +262,10 @@ describe("a baseline", () => {
   const root = copyOf(SUPPRESSIONS);
   rmSync(join(root, "deadset-ignore.json"));
   const first = passOver(root);
-  const written = writeBaseline(recordedFindings(first.result), analyzerProvenance("1.2.3"));
+  const written = writeBaseline(
+    recordedFindings(first.result.findings),
+    analyzerProvenance("1.2.3"),
+  );
   writeFileSync(join(root, BASELINE_FILE), written);
   const again = passOver(root);
 
@@ -385,5 +389,43 @@ describe("a report holding no pending finding, no stale suppression and nothing 
     writeFileSync(join(root, "src", "wire.ts"), "export function liveHelper(): void {}\n");
 
     expect(passOver(root).exit).toBe(EXIT_CLEAN);
+  });
+});
+
+/** The published baseline vector cases, each by its directory name, in ascending order. */
+function baselineCases(): string[] {
+  return readdirSync(fixture("vectors", "baseline"), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+}
+
+/** One file of one baseline vector case, decoded. */
+function baselineCase(name: string, file: string): unknown {
+  return JSON.parse(readFileSync(fixture("vectors", "baseline", name, file), "utf8")) as unknown;
+}
+
+describe("the published baseline vectors", () => {
+  it("are the case set this suite runs", () => {
+    expect(baselineCases()).toEqual([
+      "declarations-and-parts",
+      "document-rows-left-out",
+      "nothing-to-record",
+      "typescript-rows",
+    ]);
+  });
+
+  it.each(baselineCases())("records the rows %s states from its round's report", (name) => {
+    const report = baselineCase(name, "report.json") as {
+      analyzer: { name: string; version: string };
+      findings: RecordableFinding[];
+    };
+    const expected = baselineCase(name, "expected.json") as { baseline: unknown[] };
+    const written = writeBaseline(recordedFindings(report.findings), {
+      analyzer: report.analyzer.name,
+      version: report.analyzer.version,
+    });
+
+    expect((JSON.parse(written) as { baseline: unknown[] }).baseline).toEqual(expected.baseline);
   });
 });

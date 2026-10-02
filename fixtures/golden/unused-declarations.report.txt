@@ -26,4 +26,4 @@ src/catalog.ts:139:17: function deprecatedTestedOnly: deprecated function has no
 src/catalog.ts:144:17: function onlyTested: function is referenced only from test files and never from production code [certain] (DS1004)
 src/catalog.ts:150:17: function testedByDeadTest: function is referenced only from test files and never from production code [certain] (DS1004)
 src/catalog.ts:154:17: function measure: function is referenced only from test files and never from production code [certain] (DS1004)
-summary: 28 findings (0 allow, 0 warn, 28 deny), 71 deletable lines, 0 suppressions in effect, 0 reasons recorded, 0 stale suppressions, 0 pending, 0 omitted
+summary: 28 findings (0 allow, 0 warn, 28 deny), 63 deletable lines, 0 suppressions in effect, 0 reasons recorded, 0 stale suppressions, 0 pending, 0 omitted

@@ -1,4 +1,6 @@
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { fixture } from "../../__test-helpers__/fixtures.ts";
 import { RenderError } from "./reporter.ts";
 import { parseTemplate, renderTemplate, TemplateError } from "./template.ts";
 
@@ -124,5 +126,50 @@ describe("a template that does not parse", () => {
 
   it("names the line the refusal is at", () => {
     expect(() => parseTemplate("a\nb\n{{nope}}")).toThrow(/^line 3: /u);
+  });
+});
+
+/** The published template vector cases, each by its directory name, in ascending order. */
+function templateCases(): string[] {
+  return readdirSync(fixture("vectors", "template"), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+}
+
+/** One file of one template vector case as text, or undefined where the case holds none. */
+function caseFile(name: string, file: string): string | undefined {
+  const path = fixture("vectors", "template", name, file);
+  return existsSync(path) ? readFileSync(path, "utf8") : undefined;
+}
+
+/** What a case's template does: its rendering, or the exit code the run ends with. */
+function outcomeOf(name: string): string {
+  let template;
+  try {
+    template = parseTemplate(caseFile(name, "template.tmpl") ?? "");
+  } catch (error: unknown) {
+    if (error instanceof TemplateError) {
+      return "exit 2";
+    }
+    throw error;
+  }
+  try {
+    return renderTemplate(template, JSON.parse(caseFile(name, "report.json") ?? "") as unknown);
+  } catch (error: unknown) {
+    if (error instanceof RenderError) {
+      return "exit 3";
+    }
+    throw error;
+  }
+}
+
+describe("the published template vectors", () => {
+  it.each(templateCases())("%s ends as the case states", (name) => {
+    const exit = caseFile(name, "expected_exit");
+
+    expect(outcomeOf(name)).toBe(
+      exit === undefined ? caseFile(name, "expected.txt") : `exit ${exit.trim()}`,
+    );
   });
 });

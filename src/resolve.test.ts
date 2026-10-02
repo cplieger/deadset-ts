@@ -80,7 +80,7 @@ describe("a severity key", () => {
       name: "a family prefix whose range holds a fixed code",
       text: '{"target":{"kind":"library"},"severity":{"DS17":"allow"}}',
       setting: "severity.DS17",
-      names: "DS1703 and DS1704",
+      names: "DS1703, DS1704 and DS1706",
     },
     {
       name: "a key that is neither a code nor a family prefix",

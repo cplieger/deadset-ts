@@ -8,7 +8,7 @@ import {
   rmSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { emitterInputOf } from "../../__test-helpers__/emitter-input.ts";
 import { contractDocument, fixture, ROOT } from "../../__test-helpers__/fixtures.ts";
@@ -91,17 +91,19 @@ describe("every finding the table reports", () => {
 
   /**
    * The target as the analysis reads it. A fixture keeping its dependency directory under
-   * `installed/` is copied with that directory moved where the package manager puts it.
+   * `installed/`, inside the target or beside it at the rendering root, is copied with that
+   * directory moved where the package manager puts it.
    */
   const readable = (target: string): string => {
-    if (!existsSync(join(target, "installed"))) {
+    const holder = [target, dirname(target)].find((dir) => existsSync(join(dir, "installed")));
+    if (holder === undefined) {
       return target;
     }
     const copy = mkdtempSync(join(tmpdir(), "deadset-ts-schema-"));
     copies.push(copy);
-    cpSync(target, copy, { recursive: true });
+    cpSync(holder, copy, { recursive: true });
     renameSync(join(copy, "installed"), join(copy, "node_modules"));
-    return copy;
+    return holder === target ? copy : join(copy, basename(target));
   };
 
   it.each(targets())(

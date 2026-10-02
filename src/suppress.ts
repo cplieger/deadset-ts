@@ -169,6 +169,7 @@ const ROW_SUBJECTS: ReadonlySet<string> = new Set([
   "dependency",
   "module-directive",
   "root",
+  "configured-declaration",
   "suppression",
   "edge",
 ]);
@@ -176,6 +177,36 @@ const ROW_SUBJECTS: ReadonlySet<string> = new Set([
 /** Whether a finding's subject is a row of a document, which no record can withhold. */
 export function isRowSubject(kind: string): boolean {
   return ROW_SUBJECTS.has(kind);
+}
+
+/**
+ * The subject kinds that are a part of a declaration rather than a declaration: a part
+ * has no reference of its own, so a finding about one names the declaration that holds
+ * it, and the part is decided inside that declaration whatever uses it.
+ */
+const PART_SUBJECTS: ReadonlySet<string> = new Set([
+  "parameter",
+  "receiver",
+  "result",
+  "statement",
+  "case",
+  "store",
+]);
+
+/** Whether a finding's subject is a part of the declaration its reference names. */
+export function isPartSubject(kind: string): boolean {
+  return PART_SUBJECTS.has(kind);
+}
+
+/** The prefix of the codes of the part kinds, the intra-function range. */
+const PART_KIND_PREFIX = "DS18";
+
+/**
+ * Whether a code is a part kind, whose record withholds its finding and marks nothing:
+ * the record says the part is wanted, not that the declaration holding it is.
+ */
+export function isPartKind(code: string): boolean {
+  return code.startsWith(PART_KIND_PREFIX);
 }
 
 /** One finding's identity: its code and the position of the thing it names. */

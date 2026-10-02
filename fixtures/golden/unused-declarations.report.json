@@ -1,6 +1,6 @@
 {
-  "schema_version": "6.0.0",
-  "contract_version": "3.2.0",
+  "schema_version": "6.1.0",
+  "contract_version": "4.0.0",
   "analyzer": {
     "name": "deadset-ts",
     "version": "0.0.0",
@@ -8,12 +8,13 @@
       "ts"
     ],
     "schema_versions_accepted": [
-      "6.0.0"
+      "6.0.0",
+      "6.1.0"
     ],
     "conformance": {
-      "corpus_version": "1.9.0",
+      "corpus_version": "2.0.0",
       "result": "pass",
-      "digest": "sha256:3e9e40876551faa2c196311bf06d47d220ab5127a9fb8921969aae552c42e824"
+      "digest": "sha256:1274315595d7b944d22eb0126081e24cf293c9fe53a236f4d263c714644f32ee"
     }
   },
   "target": {
@@ -58,8 +59,8 @@
       "component": {
         "id": "deadset-ts/c-0001",
         "root": true,
-        "symbol_count": 10,
-        "deletable_lines": 27
+        "symbol_count": 3,
+        "deletable_lines": 9
       },
       "retained_by": [],
       "configurations": [
@@ -574,10 +575,10 @@
       "test_only": false,
       "generated": false,
       "component": {
-        "id": "deadset-ts/c-0001",
+        "id": "deadset-ts/c-0014",
         "root": false,
-        "symbol_count": 10,
-        "deletable_lines": 27
+        "symbol_count": 4,
+        "deletable_lines": 7
       },
       "retained_by": [],
       "configurations": [
@@ -611,7 +612,7 @@
       "test_only": false,
       "generated": false,
       "component": {
-        "id": "deadset-ts/c-0014",
+        "id": "deadset-ts/c-0015",
         "root": false,
         "symbol_count": 2,
         "deletable_lines": 4
@@ -648,7 +649,7 @@
       "test_only": false,
       "generated": false,
       "component": {
-        "id": "deadset-ts/c-0015",
+        "id": "deadset-ts/c-0016",
         "root": true,
         "symbol_count": 1,
         "deletable_lines": 1
@@ -685,7 +686,7 @@
       "test_only": false,
       "generated": false,
       "component": {
-        "id": "deadset-ts/c-0014",
+        "id": "deadset-ts/c-0015",
         "root": true,
         "symbol_count": 2,
         "deletable_lines": 4
@@ -722,7 +723,7 @@
       "test_only": false,
       "generated": false,
       "component": {
-        "id": "deadset-ts/c-0016",
+        "id": "deadset-ts/c-0017",
         "root": true,
         "symbol_count": 1,
         "deletable_lines": 1
@@ -759,7 +760,7 @@
       "test_only": false,
       "generated": false,
       "component": {
-        "id": "deadset-ts/c-0017",
+        "id": "deadset-ts/c-0018",
         "root": true,
         "symbol_count": 1,
         "deletable_lines": 1
@@ -796,7 +797,7 @@
       "test_only": false,
       "generated": false,
       "component": {
-        "id": "deadset-ts/c-0018",
+        "id": "deadset-ts/c-0019",
         "root": true,
         "symbol_count": 1,
         "deletable_lines": 1
@@ -833,7 +834,7 @@
       "test_only": false,
       "generated": false,
       "component": {
-        "id": "deadset-ts/c-0019",
+        "id": "deadset-ts/c-0020",
         "root": true,
         "symbol_count": 1,
         "deletable_lines": 3
@@ -870,7 +871,7 @@
       "test_only": false,
       "generated": false,
       "component": {
-        "id": "deadset-ts/c-0020",
+        "id": "deadset-ts/c-0021",
         "root": true,
         "symbol_count": 1,
         "deletable_lines": 1
@@ -907,7 +908,7 @@
       "test_only": false,
       "generated": false,
       "component": {
-        "id": "deadset-ts/c-0021",
+        "id": "deadset-ts/c-0022",
         "root": true,
         "symbol_count": 1,
         "deletable_lines": 1
@@ -944,10 +945,10 @@
       "test_only": true,
       "generated": false,
       "component": {
-        "id": "deadset-ts/c-0001",
-        "root": false,
-        "symbol_count": 10,
-        "deletable_lines": 27
+        "id": "deadset-ts/c-0023",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 3
       },
       "retained_by": [],
       "configurations": [
@@ -983,8 +984,8 @@
       "component": {
         "id": "deadset-ts/c-0001",
         "root": true,
-        "symbol_count": 10,
-        "deletable_lines": 27
+        "symbol_count": 3,
+        "deletable_lines": 9
       },
       "retained_by": [],
       "configurations": [
@@ -1020,8 +1021,8 @@
       "component": {
         "id": "deadset-ts/c-0001",
         "root": true,
-        "symbol_count": 10,
-        "deletable_lines": 27
+        "symbol_count": 3,
+        "deletable_lines": 9
       },
       "retained_by": [],
       "configurations": [
@@ -1055,10 +1056,10 @@
       "test_only": true,
       "generated": false,
       "component": {
-        "id": "deadset-ts/c-0001",
-        "root": false,
-        "symbol_count": 10,
-        "deletable_lines": 27
+        "id": "deadset-ts/c-0014",
+        "root": true,
+        "symbol_count": 4,
+        "deletable_lines": 7
       },
       "retained_by": [],
       "configurations": [
@@ -1094,7 +1095,7 @@
       "warn": 0,
       "deny": 28
     },
-    "deletable_lines": 71,
+    "deletable_lines": 63,
     "suppressions_in_effect": 0,
     "reasons_recorded": 0,
     "stale_suppressions": 0,

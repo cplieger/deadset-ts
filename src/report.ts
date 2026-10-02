@@ -18,7 +18,13 @@ import type { StaleSuppression } from "./findings/self-check.ts";
 import type { TestFileRule } from "./references.ts";
 
 /** The version of the report schema this analyzer writes a report to. */
-export const SCHEMA_VERSION = "6.0.0";
+const SCHEMA_VERSION = "6.1.0";
+
+/**
+ * Every report schema version this analyzer reads: the schema versions the Contract it
+ * implements admits, each an instance of the one it writes.
+ */
+export const SCHEMA_VERSIONS_ACCEPTED: readonly string[] = ["6.0.0", SCHEMA_VERSION];
 
 /** The name this analyzer writes every document under and mints every identifier with. */
 export const ANALYZER_NAME = "deadset-ts";
@@ -49,6 +55,7 @@ export interface WireDetails {
     readonly path?: string;
     readonly reason?: string;
   };
+  readonly overlap?: readonly string[];
 }
 
 /** One finding as the finding schema spells it. */
@@ -73,6 +80,11 @@ export interface WireFinding {
     readonly root: boolean;
     readonly symbol_count: number;
     readonly deletable_lines: number;
+    readonly members?: readonly {
+      readonly ref: string;
+      readonly name: string;
+      readonly position: WirePosition;
+    }[];
   };
   readonly retained_by: readonly string[];
   readonly configurations: readonly string[];
@@ -247,6 +259,7 @@ function wireDetails(details: FindingDetails): WireDetails {
             ...(entry.reason === undefined ? {} : { reason: entry.reason }),
           },
         }),
+    ...(details.overlap === undefined ? {} : { overlap: details.overlap }),
   };
 }
 
@@ -275,6 +288,9 @@ export function wireFinding(finding: CompletedFinding): WireFinding {
       root: finding.component.root,
       symbol_count: finding.component.symbolCount,
       deletable_lines: finding.component.deletableLines,
+      ...(finding.component.members === undefined
+        ? {}
+        : { members: finding.component.members.map(wireSymbol) }),
     },
     retained_by: finding.retainedBy,
     configurations: finding.configurations,
@@ -409,7 +425,7 @@ export function buildReport(input: ReportInput): Report {
       name: ANALYZER_NAME,
       version: input.version,
       languages: [LANGUAGE],
-      schema_versions_accepted: [SCHEMA_VERSION],
+      schema_versions_accepted: SCHEMA_VERSIONS_ACCEPTED,
       conformance: {
         corpus_version: input.conformance.corpusVersion,
         result: input.conformance.result,

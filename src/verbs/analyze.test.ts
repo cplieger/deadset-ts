@@ -377,7 +377,7 @@ describe("the exit code", () => {
 
 describe("the baseline", () => {
   it(
-    "records every finding, the omitted ones included, and the next run holds each of them in effect",
+    "records every finding, the omitted ones included, and each one reading them back exposes, so the next run reports none",
     () => {
       const tree = mkdtempSync(join(tmpdir(), "deadset-ts-baseline-"));
       onTestFinished(() => {
@@ -391,11 +391,13 @@ describe("the baseline", () => {
       const second = analyze(tree, [], tree);
 
       expect(findingsOf(first)).toHaveLength(1);
-      expect(rows).toHaveLength(totalsOf(first)["findings"] ?? 0);
+      expect(totalsOf(first)["findings"]).toBe(28);
+      expect(rows).toHaveLength(33);
       expect(totalsOf(second)).toMatchObject({
+        findings: 0,
         stale_suppressions: 0,
-        suppressions_in_effect: rows.length,
-        reasons_recorded: rows.length,
+        suppressions_in_effect: 33,
+        reasons_recorded: 33,
       });
     },
     LOAD_TIMEOUT,
@@ -573,6 +575,90 @@ describe("the renderings beside the report", () => {
       expect(got.code).toBe(3);
       expect(got.err).toBe('deadset-ts: the document has no member "nothing_here" here\n');
       expect(readdirSync(got.dir)).toEqual(["report.json"]);
+    },
+    LOAD_TIMEOUT,
+  );
+});
+
+describe("a configured declaration", () => {
+  it(
+    "that names no declaration in any project is reported once per entry, in each shape and under each key, and one that names a declaration is not",
+    () => {
+      const root = project({
+        "deadset.json": `${JSON.stringify({
+          target: { kind: "application" },
+          ts: {
+            entry_files: ["src/main.ts"],
+            injection_registrations: [{ global: "neverDeclared.register" }],
+            serializers: [
+              { symbol: "ts://@example/configured/src/main.ts#encode" },
+              { module: "@example/absent", name: "encode" },
+            ],
+            lifecycle_contracts: [
+              {
+                components: [{ symbol: "ts://@example/configured/src/main.ts#missing" }],
+                bases: [{ global: "JSON.parse" }],
+                members: ["attach"],
+              },
+            ],
+          },
+        })}\n`,
+        "package.json": '{ "name": "@example/configured", "private": true, "type": "module" }\n',
+        "src/main.ts":
+          "export function encode(value: unknown): string {\n  return String(value);\n}\n\nconsole.log(encode(1));\n",
+      });
+      const got = analyze(root, [], root);
+      expect(got.err).toBe("");
+      const unmatched = findingsOf(got)
+        .filter((one) => one["code"] === "DS1706")
+        .map((one) => ({
+          ref: (one["symbol"] as Record<string, unknown>)["ref"],
+          kind: (one["symbol"] as Record<string, unknown>)["kind"],
+          path: (one["position"] as Record<string, unknown>)["path"],
+          severity: one["severity"],
+          relation: one["liveness_relation"],
+        }));
+
+      expect(got.code).toBe(1);
+      expect(unmatched).toEqual(
+        [
+          "#neverDeclared.register",
+          "@example/absent#encode",
+          "ts://@example/configured/src/main.ts#missing",
+        ].map((ref) => ({
+          ref,
+          kind: "configured-declaration",
+          path: "deadset.json",
+          severity: "deny",
+          relation: undefined,
+        })),
+      );
+    },
+    LOAD_TIMEOUT,
+  );
+});
+
+describe("an unused parameter", () => {
+  it(
+    "is reported in a project whose compiler configuration does not set noUnusedParameters, and the run does not fail",
+    () => {
+      const root = project({
+        "deadset.json":
+          '{ "target": { "kind": "application" }, "ts": { "entry_files": ["src/main.ts"] } }\n',
+        "package.json": '{ "name": "@example/parameter", "private": true, "type": "module" }\n',
+        "src/main.ts":
+          "function scaled(value: number, factor: number): number {\n  return value * 2;\n}\n\nconsole.log(scaled(1, 2));\n",
+      });
+      const got = analyze(root, [], root);
+
+      expect(got.code).toBe(0);
+      expect(
+        findingsOf(got).map((one) => [
+          one["code"],
+          (one["symbol"] as Record<string, unknown>)["name"],
+          one["severity"],
+        ]),
+      ).toEqual([["DS1801", "factor", "warn"]]);
     },
     LOAD_TIMEOUT,
   );

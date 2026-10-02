@@ -1,9 +1,11 @@
 /**
- * The classes of the target a value of one type carries, as a serializer walking the
- * value reaches them: through union and intersection constituents, array and tuple
- * elements, and the data members of the target's classes and of object types the
- * target writes. The walk stops at `any`, `unknown`, a type parameter, a function and
- * an interface or class of another program, so an instance held only there is missed.
+ * The classes of the target a value of one type carries, and the members of the other
+ * object types the target writes that it carries, as a serializer walking the value
+ * reaches them: through union and intersection constituents, array and tuple elements,
+ * and the data members and index signatures of the target's classes and of the
+ * interfaces and object types the target writes. The walk stops at `any`, `unknown`, a
+ * type parameter, a function and an interface or class of another program, so an
+ * instance held only there is missed.
  */
 
 import {
@@ -23,11 +25,24 @@ const WRITTEN = ObjectFlags.ObjectLiteral | ObjectFlags.Mapped;
 /** The symbols of an anonymous object type the target writes as a type. */
 const LITERAL_SYMBOLS = SymbolFlags.TypeLiteral | SymbolFlags.ObjectLiteral;
 
-/** The classes a type's values carry, each asked of the checker once. */
-export interface ValueReach {
-  /** The identifiers of the target's classes a value of `type` carries. */
-  classesOf(type: Type): ReadonlySet<string>;
+/** What a value of one type carries that the target declares. */
+export interface Reached {
+  /** The identifiers of the target's classes. */
+  readonly classes: ReadonlySet<string>;
+  /**
+   * The members of the interfaces and object types the target writes, other than its
+   * classes: each data member, and each method named `toJSON` or `toString`.
+   */
+  readonly members: readonly TSSymbol[];
 }
+
+/** What each type's values carry, each type asked of the checker once. */
+export interface ValueReach {
+  reachedFrom(type: Type): Reached;
+}
+
+/** The two conversion methods a serializer or a formatter resolves on a value's own shape. */
+const CONVERSION_NAMES: ReadonlySet<string> = new Set(["toJSON", "toString"]);
 
 /** The global array types, whose element type is what an array value carries. */
 function arrayTargets<Brand>(project: ProjectView<Brand>): ReadonlySet<number> {
@@ -105,6 +120,29 @@ export function valueReach<Brand>(project: ProjectView<Brand>, held: Inventory):
     ];
   };
 
+  /** Whether the walk reads one type's members because the target writes the type, not as a class. */
+  const writtenObject = (type: Type): boolean => {
+    if (!type.isObjectType() || classOf(type) !== undefined) {
+      return false;
+    }
+    const target = targetOf(type);
+    const isList =
+      type.isTypeReference() &&
+      (arrays.has(target.id) ||
+        (target.isObjectType() && (target.objectFlags & ObjectFlags.Tuple) !== 0));
+    return !isList && isWritten(type);
+  };
+
+  /** The data members and conversion methods of one written object type. */
+  const carried = (type: Type): readonly TSSymbol[] =>
+    checker
+      .getPropertiesOfType(type)
+      .filter(
+        (property) =>
+          (property.flags & SymbolFlags.Property) !== 0 ||
+          ((property.flags & SymbolFlags.Method) !== 0 && CONVERSION_NAMES.has(property.name)),
+      );
+
   /** The types a value of one type holds, read once per type. */
   const childrenOf = (type: Type): readonly Type[] => {
     const known = children.get(type.id);
@@ -131,8 +169,9 @@ export function valueReach<Brand>(project: ProjectView<Brand>, held: Inventory):
   };
 
   return {
-    classesOf: (type) => {
-      const found = new Set<string>();
+    reachedFrom: (type) => {
+      const classes = new Set<string>();
+      const members: TSSymbol[] = [];
       const seen = new Set<number>();
       const pending: Type[] = [type];
       for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
@@ -142,11 +181,13 @@ export function valueReach<Brand>(project: ProjectView<Brand>, held: Inventory):
         seen.add(next.id);
         const owner = classOf(next);
         if (owner !== undefined) {
-          found.add(owner);
+          classes.add(owner);
+        } else if (writtenObject(next)) {
+          members.push(...carried(next));
         }
         pending.push(...childrenOf(next));
       }
-      return found;
+      return { classes, members };
     },
   };
 }

@@ -4,6 +4,7 @@ import type { Dependencies } from "../dependencies.ts";
 import type { FileFacts } from "../file-facts.ts";
 import type { Finding } from "../finding.ts";
 import type { Implementations } from "../implementations.ts";
+import type { IntraFunctionFacts } from "../intra-function-parts.ts";
 import type { Stores } from "../stores.ts";
 import type { Boundary } from "./boundary.ts";
 import type { SelfCheckFacts } from "./self-check.ts";
@@ -30,6 +31,8 @@ export interface EmitterInput {
   readonly boundary: Boundary;
   /** The run's suppression outcomes and configured roots, which the self-check family reports. */
   readonly selfCheck: SelfCheckFacts;
+  /** The parts of the run's declarations, which the intra-function family reports. */
+  readonly intraFunction: IntraFunctionFacts;
 }
 
 /**

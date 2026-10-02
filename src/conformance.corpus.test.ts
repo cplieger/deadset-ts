@@ -6,6 +6,8 @@ import { beforeAll, describe, expect, it } from "vitest";
 import {
   committedGaps,
   corpusFixtures,
+  declarationRef,
+  edgeDifferences,
   runCorpus,
   STALE_GAP,
   unexpectedOf,
@@ -123,12 +125,17 @@ describe("the conformance corpus, answered through the analyze verb", () => {
 });
 
 describe("the closed world of a fixture", () => {
-  it("names every finding and record at no expected site, and every unmatched root it did not configure", () => {
+  it("names every finding and record no row names by position and code, and every configured entry no row names", () => {
     const at = (path: string, line: number) => ({ path, line, column: 1 });
     const report = {
       findings: [
         {
           code: "DS1001",
+          symbol: { ref: "ts://@example/target/a.ts#kept" },
+          position: at("a.ts", 3),
+        },
+        {
+          code: "DS1104",
           symbol: { ref: "ts://@example/target/a.ts#kept" },
           position: at("a.ts", 3),
         },
@@ -147,6 +154,16 @@ describe("the closed world of a fixture", () => {
           symbol: { ref: "ts://@example/target#other" },
           position: at("deadset.json", 1),
         },
+        {
+          code: "DS1706",
+          symbol: { ref: "@example/absent#encode" },
+          position: at("deadset.json", 1),
+        },
+        {
+          code: "DS1706",
+          symbol: { ref: "#JSON.parse" },
+          position: at("deadset.json", 1),
+        },
       ],
       stale_suppressions: [{ code: "DS1703", position: at("a.ts", 1) }],
     } as unknown as Report;
@@ -154,13 +171,97 @@ describe("the closed world of a fixture", () => {
     expect(
       unexpectedOf(
         report,
-        new Map([["kept", "target/a.ts:3"]]),
-        new Set(["ts://@example/target#configured"]),
+        new Set(["target/a.ts:3 DS1001"]),
+        new Set(["DS1704 ts://@example/target#configured", "DS1706 @example/absent#encode"]),
       ),
     ).toEqual([
       { file: "target/a.ts", line: 1, report: "DS1703" },
+      { file: "target/a.ts", line: 3, report: "DS1104" },
       { file: "target/b.ts", line: 9, report: "DS1002" },
       { file: "target/deadset.json", line: 1, report: "DS1704" },
+      { file: "target/deadset.json", line: 1, report: "DS1706" },
     ]);
+  });
+
+  it("spells a configured declaration's reference in each of the entry's three shapes", () => {
+    expect(declarationRef({ symbol: "ts://@example/target/codec.ts#encode" })).toBe(
+      "ts://@example/target/codec.ts#encode",
+    );
+    expect(declarationRef({ module: "@example/absent", name: "encode" })).toBe(
+      "@example/absent#encode",
+    );
+    expect(declarationRef({ global: "JSON.parse" })).toBe("#JSON.parse");
+  });
+});
+
+describe("the edge evaluations of a fixture", () => {
+  const manifest = { symbols: { Handler: { file: "target/a.ts", line: 4 } } };
+  const finding = { code: "DS1001", position: { path: "a.ts", line: 4 } };
+
+  it("agrees with a report holding exactly the records the entries name", () => {
+    expect(
+      edgeDifferences(
+        {
+          edge_evaluations: [
+            {
+              edge: "wire/one",
+              side: "provides",
+              state: "dead",
+              symbol: "Handler",
+              report: "DS1001",
+            },
+            { edge: "wire/two", side: "used_by", state: "live" },
+          ],
+        },
+        manifest,
+        {
+          edge_evaluations: [
+            { edge: "wire/one", side: "provides", symbol: "s", state: "dead", finding },
+            { edge: "wire/two", side: "used_by", symbol: "t", state: "live" },
+          ],
+        } as unknown as Report,
+      ),
+    ).toBe("");
+  });
+
+  it("names a missing record, a state that differs, a pending finding elsewhere and a record no entry names", () => {
+    expect(
+      edgeDifferences(
+        {
+          edge_evaluations: [
+            {
+              edge: "wire/one",
+              side: "provides",
+              state: "dead",
+              symbol: "Handler",
+              report: "DS1002",
+            },
+            { edge: "wire/two", side: "used_by", state: "live" },
+            { edge: "wire/three", side: "provides", state: "absent" },
+          ],
+        },
+        manifest,
+        {
+          edge_evaluations: [
+            { edge: "wire/one", side: "provides", symbol: "s", state: "dead", finding },
+            { edge: "wire/two", side: "used_by", symbol: "t", state: "absent" },
+            { edge: "wire/four", side: "used_by", symbol: "u", state: "live" },
+          ],
+        } as unknown as Report,
+      ),
+    ).toBe(
+      "wire/one provides want DS1002 at target/a.ts:4, got DS1001 at target/a.ts:4; " +
+        "wire/two used_by state want live got absent; " +
+        "want exactly one evaluation of wire/three provides, got 0; " +
+        "evaluation of wire/four used_by, which no entry names",
+    );
+  });
+
+  it("expects no record where the fixture names no evaluation", () => {
+    expect(
+      edgeDifferences({}, manifest, {
+        edge_evaluations: [{ edge: "wire/one", side: "provides", symbol: "s", state: "live" }],
+      } as unknown as Report),
+    ).toBe("evaluation of wire/one provides, which no entry names");
   });
 });

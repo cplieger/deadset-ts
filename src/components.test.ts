@@ -106,19 +106,21 @@ describe("the dead components of one project", () => {
     );
   });
 
-  it("names no member of a cycle a root when a dead declaration outside the cycle references one", () => {
+  it("roots a test of dead code together with the declarations it exercises, and leaves every other test-file declaration out", () => {
     const held = componentOf("src/catalog.test.ts#testDeadOnly");
 
-    expect(named(held?.roots ?? []), "the test referencing a live declaration as well").toEqual([
-      "src/catalog.test.ts#testMixed",
-    ]);
-    expect(named(held?.members ?? [])).toEqual([
+    expect(named(held?.roots ?? [])).toEqual([
       "src/catalog.test.ts#testDeadOnly",
-      "src/catalog.test.ts#testMixed",
-      "src/catalog.test.ts#assertSum",
       "src/catalog.ts#deadOne",
       "src/catalog.ts#deadTwo",
     ]);
+    expect(named(held?.members ?? [])).toEqual([
+      "src/catalog.test.ts#testDeadOnly",
+      "src/catalog.ts#deadOne",
+      "src/catalog.ts#deadTwo",
+    ]);
+    expect(componentOf("src/catalog.test.ts#testMixed")).toBeUndefined();
+    expect(componentOf("src/catalog.test.ts#assertSum")).toBeUndefined();
   });
 
   it("puts a test of dead code in the component of the declarations it exercises", () => {
@@ -156,14 +158,22 @@ describe("the dead components of one project", () => {
     expect(named(held?.roots ?? [])).toEqual(["src/shared.ts#left", "src/shared.ts#right"]);
   });
 
-  it("gives every component a root and every dead declaration one component", () => {
+  it("gives every component a root and every dead declaration outside the test files, and every test of dead code, one component", () => {
     const members = COMPONENTS.sweep.components.flatMap((component) => component.members);
 
     expect(COMPONENTS.sweep.components.filter((component) => component.roots.length === 0)).toEqual(
       [],
     );
     expect(new Set(members).size).toBe(members.length);
-    expect(members.length).toBe(COMPONENTS.sweep.candidates.length);
+    const union = COMPONENTS.matrix.union;
+    const inTestFile = new Set(
+      union.symbols.filter((_symbol, at) => union.test[at] === true).map((symbol) => symbol.id),
+    );
+    expect(members.length).toBe(
+      COMPONENTS.sweep.candidates.filter(
+        (candidate) => !inTestFile.has(candidate.id) || candidate.testOfDeadCode,
+      ).length,
+    );
   });
 
   it("mints identifiers of the form the finding schema declares, prefixed with this analyzer", () => {

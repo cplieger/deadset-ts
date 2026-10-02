@@ -1,9 +1,8 @@
 import type { Confidence, Severity } from "../config.ts";
-import { KINDS } from "../kinds.ts";
+import { KINDS, type KindRow } from "../kinds.ts";
 import type { Report, WireFinding, WireStaleSuppression } from "../report.ts";
 import { lineHashes, symbolFingerprint } from "./fingerprint.ts";
 import { RenderError, type RenderOptions } from "./reporter.ts";
-import { RULE_TEXTS } from "./rules.ts";
 import { utf8Bytes } from "./sha256.ts";
 
 const SCHEMA =
@@ -12,7 +11,7 @@ const VERSION = "2.1.0";
 /** The unit a finding's column counts. */
 const COLUMN_KIND = "utf16CodeUnits";
 const URI_BASE_ID = "%SRCROOT%";
-const ROOT_DESCRIPTION = "The target root, the directory the analyzer was run on.";
+const ROOT_DESCRIPTION = "The target root.";
 
 /** The most related locations one result carries; the report stays complete beyond them. */
 const MAX_RELATED = 100;
@@ -41,23 +40,26 @@ function firstSentence(text: string): string {
   return text;
 }
 
+/** Every live kind whose languages include one of the run's, in code order. */
+function kindsOf(languages: readonly string[]): readonly KindRow[] {
+  return [...KINDS.values()].filter((kind) =>
+    kind.languages.some((language) => languages.includes(language)),
+  );
+}
+
 /**
- * One rule per live kind of this analyzer's language, in code order, whether or not a result
+ * One rule per live kind of the run's languages, in code order, whether or not a result
  * names it, so a rule's index is the same in every run and under every configuration.
  */
-function rules(): readonly Record<string, unknown>[] {
-  return [...RULE_TEXTS].map(([code, text]) => {
-    const kind = KINDS.get(code);
-    if (kind === undefined) {
-      throw new RenderError(`the rule ${code} names no live kind`);
-    }
+function rules(kinds: readonly KindRow[]): readonly Record<string, unknown>[] {
+  return kinds.map((kind) => {
     return {
-      id: code,
+      id: kind.code,
       name: kind.name,
-      shortDescription: { text: firstSentence(text.rule) },
-      fullDescription: { text: text.rule },
+      shortDescription: { text: firstSentence(kind.rule) },
+      fullDescription: { text: kind.rule },
       help: {
-        text: text.precondition === undefined ? text.rule : `${text.rule}\n\n${text.precondition}`,
+        text: kind.precondition === undefined ? kind.rule : `${kind.rule}\n\n${kind.precondition}`,
       },
       defaultConfiguration: { level: LEVEL[kind.defaultSeverity] },
       properties: {
@@ -154,6 +156,11 @@ function relatedOf(found: WireFinding): readonly Related[] {
   }
   for (const at of found.details.write_positions ?? []) {
     related.push({ label: "write", at, endLine: at.end_line });
+  }
+  for (const one of found.component.members ?? []) {
+    if (one.ref !== found.symbol.ref) {
+      related.push({ label: "member", at: one.position, endLine: one.position.end_line });
+    }
   }
   return related.slice(0, MAX_RELATED);
 }
@@ -254,8 +261,9 @@ function staleResult(
  * rendering, because a line fingerprint computed from other bytes opens a second alert.
  */
 export function sarif(report: Report, options: RenderOptions): string {
-  const ruleList = rules();
-  const index = new Map([...RULE_TEXTS.keys()].map((code, at) => [code, at]));
+  const kinds = kindsOf(report.analyzer.languages);
+  const ruleList = rules(kinds);
+  const index = new Map(kinds.map((kind, at) => [kind.code, at]));
   const hashOf = lineHashCache(options.readSource);
   const results = [
     ...report.findings.map((found) => findingResult(found, index, hashOf)),
