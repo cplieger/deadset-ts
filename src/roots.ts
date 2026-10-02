@@ -11,9 +11,7 @@
 
 import type { SourceFile } from "@typescript/native/unstable/ast";
 import { aliasChains } from "./alias-chain.ts";
-import { REPOSITORY_DOCUMENT } from "./config.ts";
 import { entryPoints, type EntryRule } from "./entry-points.ts";
-import type { Finding } from "./finding.ts";
 import { globExpression } from "./glob.ts";
 import { nodeKey, type Inventory, type InventorySymbol } from "./inventory.ts";
 import type { Manifest, ManifestEntry } from "./manifest.ts";
@@ -88,15 +86,6 @@ export interface RootOptions {
   /** Whether the target is a library, so a consumer outside it reaches its published API. */
   readonly publishedAPI: boolean;
 }
-
-/** The code the Contract gives a configured root that matches nothing. */
-const UNMATCHED_ROOT_CODE = "DS1704";
-
-/** The subject kind a finding under that code carries, from the Contract's vocabulary. */
-const UNMATCHED_ROOT_SUBJECT = "root";
-
-/** The fixed position of a finding about a document rather than about a line of one. */
-const DOCUMENT_POSITION = 1;
 
 /** Whether a configured string carries either special character. */
 function isPattern(text: string): boolean {
@@ -405,32 +394,4 @@ export function unmatchedEverywhere(
   return [...new Set(patterns)].filter((pattern) =>
     perProject.every((project) => project.unmatched.includes(pattern)),
   );
-}
-
-/**
- * The findings a run reports for the configured strings that named nothing.
- *
- * `document` is the path of the document that declared the roots, below the target
- * root; where the run read them from no document of the target it is empty and the
- * finding names the conventional repository configuration, which is the document a
- * maintainer writes a configured root in. Every finding of one run sits at that
- * document's first position: the roots are written as an array whose members carry
- * no line of their own, so the string each finding names is what tells one from
- * another.
- */
-export function unmatchedRoots(sources: readonly string[], document: string): readonly Finding[] {
-  const position = {
-    path: document === "" ? REPOSITORY_DOCUMENT : document,
-    line: DOCUMENT_POSITION,
-    column: DOCUMENT_POSITION,
-    endLine: DOCUMENT_POSITION,
-  };
-  return sources.map((source) => ({
-    code: UNMATCHED_ROOT_CODE,
-    position,
-    symbol: { ref: source, kind: UNMATCHED_ROOT_SUBJECT, name: source, sizeLines: 1 },
-    message: isPattern(source)
-      ? "configured root pattern matches no symbol of the inventory"
-      : "configured root matches no symbol of the inventory",
-  }));
 }

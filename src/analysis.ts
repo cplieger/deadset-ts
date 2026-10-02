@@ -14,6 +14,7 @@ import { decorator } from "./decorator.ts";
 import { dependenciesOf, projectNeeds } from "./dependencies.ts";
 import { deprecatedDeclarations } from "./deprecation.ts";
 import { diagnosticErrors, discoverProjects, DiscoveryError } from "./discover.ts";
+import { readEdgeSides } from "./edges.ts";
 import { enumGroup } from "./enum-group.ts";
 import {
   computeExemptions,
@@ -26,7 +27,13 @@ import {
 import type { TSExemptionClass } from "./exempt-classes.ts";
 import { heldByInclusion, sourceTree } from "./file-facts.ts";
 import type { Finding } from "./finding.ts";
+import { findingsPass, type PassResult } from "./findings-pass.ts";
 import type { EmitterInput } from "./findings/emitter.ts";
+import {
+  NO_SELF_CHECK,
+  unmatchedRootFindings,
+  type SelfCheckFacts,
+} from "./findings/self-check.ts";
 import { frameworkLifecycle } from "./framework-lifecycle.ts";
 import type { Host } from "./host.ts";
 import { implementations, mergeImplementations } from "./implementations.ts";
@@ -39,12 +46,15 @@ import { relativePath, resolvePath } from "./paths.ts";
 import { byPosition, type Position } from "./position.ts";
 import { reflectiveLookup } from "./reflective-lookup.ts";
 import { references } from "./references.ts";
-import { roots, unmatchedEverywhere, unmatchedRoots, type RootKind, type Roots } from "./roots.ts";
+import { roots, unmatchedEverywhere, type RootKind, type Roots } from "./roots.ts";
 import type { Scope } from "./scope.ts";
 import { serializationContract } from "./serialization-contract.ts";
 import { diagnosticsOf, runSession, type Engine, type ProjectView } from "./session.ts";
 import { accessorsOf, storesOf } from "./stores.ts";
-import type { Exemption, SweepInput } from "./sweep.ts";
+import type { Suppressions } from "./suppress.ts";
+import { readBaseline, readIgnoreFile } from "./suppress-file.ts";
+import { inlineDirectives, inlineSuppressions, type InlineDirective } from "./suppress-inline.ts";
+import type { Exemption, Mode, SweepInput } from "./sweep.ts";
 import { readTemplates, templateField } from "./template-field.ts";
 
 /** The setting whose source decides where a finding about a configured root sits. */
@@ -211,7 +221,10 @@ export function runRoots(
   return {
     configurations,
     roots: ordered,
-    findings: unmatchedRoots(unmatched, documentOf(host, provenance, ROOTS_SETTING, targetRoot)),
+    findings: unmatchedRootFindings(
+      unmatched,
+      documentOf(host, provenance, ROOTS_SETTING, targetRoot),
+    ),
   };
 }
 
@@ -245,26 +258,27 @@ interface SweptProject<Extra> {
   readonly extra: Extra;
 }
 
-/** The run's sweep, the exemption records it was swept with, and each project's extra answer. */
-interface SweptRun<Extra> {
-  readonly swept: RunSweep;
+/** What a run read of its projects before any sweep: the matrix, its exemptions, and each project's answers. */
+interface ReadRun<Extra> {
+  readonly matrix: Matrix;
   readonly exempt: readonly Exemption[];
   readonly projects: readonly SweptProject<Extra>[];
 }
 
 /**
- * Sweeps the run, reading each project's references and exemptions, and `extra`'s
- * answer, while the project's view is open.
+ * Reads every project of the run, its references and exemptions, and `extra`'s answer,
+ * while the project's view is open, and merges the projects into one matrix in the run's
+ * order.
  */
-function sweepRun<Extra>(
+function readRun<Extra>(
   engine: Engine,
   host: Host,
   scope: Scope,
   config: Config,
-  input: Pick<SweepInput, "marked" | "mode">,
+  mode: Mode,
   detectors: Detectors,
   extra: <Brand>(project: ProjectView<Brand>, read: ProjectRead) => Extra,
-): SweptRun<Extra> {
+): ReadRun<Extra> {
   const targetRoot = scope.target.path;
   const disabled = disabledClasses(config);
   const templates = disabled.has("template-field")
@@ -287,19 +301,29 @@ function sweepRun<Extra>(
       detectors,
       {
         disabled,
-        mode: input.mode,
+        mode,
         testFiles: new Set(resolved.testFilePaths),
       },
     );
     return { configured, exempt, extra: extra(project, projectRead) };
   });
-  const matrix = matrixOf(projects.map((one) => one.configured));
-  const exempt = exemptionsOf(projects.flatMap((one) => one.exempt));
-  const swept: SweepInput = { ...input, exempt };
   return {
-    swept: { matrix, sweep: sweepMatrix(matrix, swept), retained: retainedIn(matrix, swept) },
-    exempt,
+    matrix: matrixOf(projects.map((one) => one.configured)),
+    exempt: exemptionsOf(projects.flatMap((one) => one.exempt)),
     projects,
+  };
+}
+
+/** The sweep of a run read once, under one set of marks. */
+function sweptOf<Extra>(
+  read: ReadRun<Extra>,
+  input: Pick<SweepInput, "marked" | "mode">,
+): RunSweep {
+  const swept: SweepInput = { ...input, exempt: read.exempt };
+  return {
+    matrix: read.matrix,
+    sweep: sweepMatrix(read.matrix, swept),
+    retained: retainedIn(read.matrix, swept),
   };
 }
 
@@ -321,32 +345,59 @@ export function runSweep(
   input: Pick<SweepInput, "marked" | "mode">,
   detectors: Detectors = DETECTORS,
 ): RunSweep {
-  return sweepRun(engine, host, scope, config, input, detectors, () => undefined).swept;
+  return sweptOf(
+    readRun(engine, host, scope, config, input.mode, detectors, () => undefined),
+    input,
+  );
 }
 
-/**
- * What every emitter reads of the run the scope and the configuration describe: the
- * run's sweep, and the facts beside it each kind family reads, every per-project one
- * read in the same session as the sweep. The run loads no consumer and reads no
- * declared cross-language edge, so its boundary names neither.
- */
-export function runEmitterInput(
+/** What each project contributes to the facts every emitter reads beside the sweep. */
+interface EmitterExtra {
+  readonly deprecated: readonly string[];
+  readonly accessors: ReturnType<typeof accessorsOf>;
+  readonly needs: ReturnType<typeof projectNeeds>;
+  readonly implementations: ReturnType<typeof implementations>;
+  readonly heldByInclusion: readonly string[];
+  readonly rooted: Roots;
+  readonly directives: readonly InlineDirective[];
+}
+
+/** Reads a run's projects with every per-project fact an emitter reads. */
+function readEmitterRun(
   engine: Engine,
   host: Host,
   scope: Scope,
   config: Config,
-  input: Pick<SweepInput, "marked" | "mode">,
-  detectors: Detectors = DETECTORS,
-): EmitterInput {
+  mode: Mode,
+  detectors: Detectors,
+): ReadRun<EmitterExtra> {
   const targetRoot = scope.target.path;
-  const run = sweepRun(engine, host, scope, config, input, detectors, (project, read) => ({
+  return readRun(engine, host, scope, config, mode, detectors, (project, read) => ({
     deprecated: deprecatedDeclarations(project, read.held),
     accessors: accessorsOf(project, read.held),
     needs: projectNeeds(project, read.held, host),
     implementations: implementations(project, read.held),
     heldByInclusion: heldByInclusion(project, targetRoot),
+    rooted: read.rooted,
+    directives: inlineDirectives(project, read.held, targetRoot),
   }));
-  const { swept, projects } = run;
+}
+
+/**
+ * The input every emitter reads over one sweep of a read run: the facts beside the sweep
+ * each kind family reads, every per-project one read in the same session as the sweep.
+ */
+function emitterInputOver(
+  host: Host,
+  scope: Scope,
+  config: Config,
+  read: ReadRun<EmitterExtra>,
+  input: Pick<SweepInput, "marked" | "mode">,
+  selfCheck: SelfCheckFacts,
+): EmitterInput {
+  const targetRoot = scope.target.path;
+  const swept = sweptOf(read, input);
+  const { projects } = read;
   return {
     config,
     swept,
@@ -356,7 +407,7 @@ export function runEmitterInput(
         references: one.configured.references,
         accessors: one.extra.accessors,
       })),
-      run.exempt,
+      read.exempt,
       input.mode,
     ),
     dependencies: dependenciesOf(
@@ -373,7 +424,100 @@ export function runEmitterInput(
     boundary: {
       consumers: { declared: scope.consumers.map((consumer) => consumer.id), loaded: [] },
       encapsulated: readManifest(host, targetRoot).declaresExports,
-      edges: [],
+      edges: readEdgeSides(host, targetRoot),
     },
+    selfCheck,
   };
+}
+
+/**
+ * What every emitter reads of the run the scope and the configuration describe, swept
+ * under the caller's marks: the run's sweep, the facts beside it each kind family reads,
+ * and the sides of the target's declared cross-language edges that name a symbol of this
+ * language. The run loads no consumer, and it reads no suppression document, so the
+ * self-check family has nothing to report.
+ */
+export function runEmitterInput(
+  engine: Engine,
+  host: Host,
+  scope: Scope,
+  config: Config,
+  input: Pick<SweepInput, "marked" | "mode">,
+  detectors: Detectors = DETECTORS,
+): EmitterInput {
+  const read = readEmitterRun(engine, host, scope, config, input.mode, detectors);
+  return emitterInputOver(host, scope, config, read, input, NO_SELF_CHECK);
+}
+
+/** One run read for its findings: the input swept with and without its suppressions' marks. */
+export interface AnalysisInputs {
+  /** The run swept under the marks of every bound suppression record. */
+  readonly marked: EmitterInput;
+  /** The same run swept with no mark, which is what a record would have withheld. */
+  readonly unmarked: EmitterInput;
+  /** The run's suppression records and refusals, in reading order. */
+  readonly suppressions: Suppressions;
+}
+
+/**
+ * Reads the run the scope and the configuration describe for its findings. The inline
+ * directives, the ignore file's entries and the baseline's rows are read and bound before
+ * any sweep, and the run is swept once under every bound record's mark and once under
+ * none, so a record is decided against the finding its code would have produced. The
+ * self-check family reports the refused suppressions and the roots that named nothing.
+ */
+function runAnalysisInputs(
+  engine: Engine,
+  host: Host,
+  scope: Scope,
+  config: Config,
+  provenance: Provenance,
+  mode: Mode,
+  detectors: Detectors = DETECTORS,
+): AnalysisInputs {
+  const targetRoot = scope.target.path;
+  const read = readEmitterRun(engine, host, scope, config, mode, detectors);
+  const symbols = read.matrix.union.symbols;
+  const documents = [
+    inlineSuppressions(read.projects.map((one) => one.extra.directives)),
+    readIgnoreFile(host, targetRoot, symbols),
+    readBaseline(host, targetRoot, symbols),
+  ];
+  const suppressions: Suppressions = {
+    records: documents.flatMap((one) => one.records),
+    refusals: documents.flatMap((one) => one.refusals),
+  };
+  const facts: SelfCheckFacts = {
+    refusals: suppressions.refusals,
+    unmatchedRoots: unmatchedEverywhere(
+      config.rootPatterns,
+      read.projects.map((one) => one.extra.rooted),
+    ),
+    rootsDocument: documentOf(host, provenance, ROOTS_SETTING, targetRoot),
+  };
+  const marked = [...new Set(suppressions.records.map((record) => record.bound))].filter(
+    (id) => id !== "",
+  );
+  return {
+    marked: emitterInputOver(host, scope, config, read, { marked, mode }, facts),
+    unmarked: emitterInputOver(host, scope, config, read, { marked: [], mode }, facts),
+    suppressions,
+  };
+}
+
+/**
+ * The findings of the run the scope and the configuration describe: the run read with its
+ * suppressions bound, then every family's findings with the suppressions applied and the
+ * declared edges evaluated.
+ */
+export function runFindings(
+  engine: Engine,
+  host: Host,
+  scope: Scope,
+  config: Config,
+  provenance: Provenance,
+  mode: Mode,
+  detectors: Detectors = DETECTORS,
+): PassResult {
+  return findingsPass(runAnalysisInputs(engine, host, scope, config, provenance, mode, detectors));
 }

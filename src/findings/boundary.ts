@@ -1,5 +1,3 @@
-import type { Finding } from "../finding.ts";
-
 /** Which side of a declared cross-language edge, as the edges document spells it. */
 export type EdgeSideName = "provides" | "used_by";
 
@@ -10,15 +8,6 @@ export interface EdgeSide {
   readonly side: EdgeSideName;
   /** The stable symbol reference the side names. */
   readonly symbol: string;
-}
-
-/**
- * One finding a declared edge holds back: the finding the analyzer would report about
- * the symbol one side of the edge names, which a report carries only inside that side's
- * evaluation, because the code that may use the symbol is in the other language.
- */
-export interface PendingFinding extends EdgeSide {
-  readonly finding: Finding;
 }
 
 /** What the run knows about the code outside the target that can reach its declarations. */
