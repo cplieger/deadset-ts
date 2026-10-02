@@ -1,5 +1,7 @@
+import { ConfigError } from "./config.ts";
 import type { Host } from "./host.ts";
 import { dirnamePath, isAbsolutePath, joinPath, resolvePath } from "./paths.ts";
+import { checkDocument, type KeyNode } from "./schema.ts";
 
 /** The roles a scope document declares for a module. */
 export const ROLE_TARGET = "target";
@@ -43,20 +45,44 @@ export interface Scope {
   readonly consumers: readonly Module[];
 }
 
-const DECLARED_KEYS = new Set(["target", "workspace", "consumers"]);
-const MODULE_KEYS = new Set(["id", "role", "path"]);
+const MODULE: KeyNode = {
+  kind: "section",
+  members: { id: { kind: "leaf" }, role: { kind: "leaf" }, path: { kind: "leaf" } },
+};
+
+/** The closed key list of the scope document, compared as bytes. */
+const SCOPE_ROOT: KeyNode = {
+  kind: "section",
+  members: {
+    target: MODULE,
+    workspace: { kind: "leaf" },
+    consumers: { kind: "list", members: MODULE.members ?? {} },
+  },
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function stringMember(parent: Record<string, unknown>, name: string, at: string): string {
+/**
+ * One string member, or undefined where the document omits it. A member the
+ * document writes is a string holding at least one character, so `null` and `""`
+ * are refused rather than read as absent.
+ */
+function stringMember(
+  parent: Record<string, unknown>,
+  name: string,
+  at: string,
+): string | undefined {
   if (!Object.hasOwn(parent, name)) {
-    return "";
+    return undefined;
   }
   const value = parent[name];
   if (typeof value !== "string") {
-    throw new ScopeError(`scope: ${at}.${name} is not a string`);
+    throw new ScopeError(`scope: ${at === "" ? name : `${at}.${name}`} is not a string`);
+  }
+  if (value === "") {
+    throw new ScopeError(`scope: ${at === "" ? name : `${at}.${name}`} names nothing`);
   }
   return value;
 }
@@ -65,33 +91,51 @@ function readModule(value: unknown, at: string, role: string, documentDir: strin
   if (!isRecord(value)) {
     throw new ScopeError(`scope: ${at} is not an object`);
   }
-  for (const name of Object.keys(value)) {
-    if (!MODULE_KEYS.has(name)) {
-      throw new ScopeError(`scope: ${at}.${name} is not a declared key`);
-    }
-  }
   const declared = stringMember(value, "role", at);
-  if (declared !== "" && declared !== role) {
+  if (declared !== undefined && declared !== role) {
     throw new ScopeError(
       `scope: ${at}.role is ${JSON.stringify(declared)}, want ${JSON.stringify(role)}`,
     );
   }
   const path = stringMember(value, "path", at);
-  if (path === "") {
+  if (path === undefined) {
     throw new ScopeError(`scope: ${at}.path names nothing`);
   }
   return {
-    id: stringMember(value, "id", at),
+    id: stringMember(value, "id", at) ?? "",
     path: isAbsolutePath(path) ? path : joinPath(documentDir, path),
   };
 }
 
 /**
- * Decodes the scope document at `file`. Decoding is strict: an undeclared key is an
- * error, and a relative path inside the document resolves against the document's
- * own directory.
+ * Walks the document's text against the closed key list, refusing a key the list
+ * does not declare, compared as bytes, and a key one object writes twice, which a
+ * parse cannot report because it keeps the last value.
+ */
+function checkKeys(text: string, file: string): void {
+  try {
+    checkDocument(text, SCOPE_ROOT, `scope: ${file}`);
+  } catch (error: unknown) {
+    if (error instanceof ConfigError) {
+      // The configuration's refusal names the nearest configuration key, which a
+      // scope document does not have.
+      throw new ScopeError(
+        error.kind === "unimplemented-key"
+          ? `scope: ${file}: ${error.key} is not a declared key`
+          : error.message,
+      );
+    }
+    throw error;
+  }
+}
+
+/**
+ * Decodes the scope document at `file`. Decoding is strict: an undeclared key, a
+ * key written twice in one object, and a value of a type the document does not
+ * admit, `null` included, are errors, and a relative path inside the document
+ * resolves against the document's own directory.
  *
- * The `workspace` key the format declares is read and carries nothing here: it
+ * The `workspace` key the format declares is checked and carries nothing here: it
  * names the file a Go consumer resolves the target through, and a TypeScript
  * project resolves one through its own compiler configuration.
  */
@@ -119,11 +163,8 @@ export function readScope(host: Host, file: string): Scope {
   if (!isRecord(value)) {
     throw new ScopeError(`scope: ${file} is not one JSON object`);
   }
-  for (const name of Object.keys(value)) {
-    if (!DECLARED_KEYS.has(name)) {
-      throw new ScopeError(`scope: ${file}: ${name} is not a declared key`);
-    }
-  }
+  checkKeys(text, file);
+  stringMember(value, "workspace", "");
   const documentDir = dirnamePath(absolute);
   if (!Object.hasOwn(value, "target")) {
     throw new ScopeError(`scope: ${file} names no target`);

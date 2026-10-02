@@ -28,6 +28,10 @@ export function sendAll(this: unknown, ...values: unknown[]): string {
   return JSON.stringify(values);
 }
 
+export const sendVar = function (this: unknown, value: unknown): string {
+  return JSON.stringify(value);
+};
+
 export class Courier {
   post(this: Courier, value: unknown): string {
     return JSON.stringify(value);

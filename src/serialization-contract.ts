@@ -3,11 +3,15 @@
  * `JSON.stringify` or a call `ts.serializers` names, and those and `toJSON` and
  * `toString` where a value is passed to an `unknown` or `any` parameter of a function
  * outside the analysis. A function of the project handing such a parameter of its own
- * to a destination is one, holding back what that destination does, to a fixpoint.
+ * to a destination is one, holding back what that destination does, to a fixpoint. A
+ * function invoked through `Function.prototype.call`, `apply` or `bind` is the callee,
+ * given the arguments those methods pass it.
  */
 
 import {
+  isArrayLiteralExpression,
   isArrowFunction,
+  isCallExpression,
   isClassDeclaration,
   isClassExpression,
   isClassStaticBlockDeclaration,
@@ -20,6 +24,7 @@ import {
   isNumericLiteral,
   isObjectLiteralExpression,
   isParenthesizedExpression,
+  isPropertyAccessExpression,
   isSetAccessorDeclaration,
   isSpreadElement,
   isStringLiteral,
@@ -32,6 +37,7 @@ import {
   type ParameterDeclaration,
 } from "@typescript/native/unstable/ast";
 import {
+  SignatureKind,
   SymbolFlags,
   TypeFlags,
   type Symbol as TSSymbol,
@@ -164,6 +170,76 @@ function evaluated(argument: Expression): Expression {
   return isParenthesizedExpression(value) ? evaluated(value.expression) : value;
 }
 
+/** The methods of `Function.prototype` that invoke a function with arguments of their own. */
+const FUNCTION_METHODS: ReadonlySet<string> = new Set(["call", "apply", "bind"]);
+
+/** The interfaces of the standard library that declare those methods for a function value. */
+const FUNCTION_INTERFACES: ReadonlySet<string> = new Set([
+  "Function",
+  "CallableFunction",
+  "NewableFunction",
+]);
+
+/**
+ * One call as the function it invokes sees it: the expression naming that function,
+ * and the argument each of its parameters binds, in order.
+ */
+interface Invocation {
+  readonly callee: Expression;
+  readonly arguments: readonly Expression[];
+  /** Whether the call reaches the callee through a method of `Function.prototype`. */
+  readonly indirect: boolean;
+}
+
+/** A call through a method of `Function.prototype`: the method's name and the invocation. */
+interface MethodForm {
+  readonly method: Node;
+  readonly invocation: Invocation;
+}
+
+function unparenthesized(expression: Expression): Expression {
+  return isParenthesizedExpression(expression)
+    ? unparenthesized(expression.expression)
+    : expression;
+}
+
+/**
+ * The invocation a call writes through a method of `Function.prototype`, read from
+ * the syntax alone: `f.call(self, a)`, `f.apply(self, [a])`, `f.bind(self, a)`, which
+ * binds `a`, and `f.bind(self, a)(b)`, which passes `b` after it. An `apply` argument
+ * that is no array literal is the value of the first parameter, whose elements it
+ * carries. Whether the method is the prototype's is resolution's to say.
+ */
+function throughMethod(call: CallExpression): MethodForm | undefined {
+  const expression = unparenthesized(call.expression);
+  if (isPropertyAccessExpression(expression) && FUNCTION_METHODS.has(expression.name.text)) {
+    const [, ...rest] = call.arguments;
+    let passed: readonly Expression[] = rest;
+    if (expression.name.text === "apply") {
+      const list = rest[0] === undefined ? undefined : unparenthesized(rest[0]);
+      passed = list === undefined ? [] : isArrayLiteralExpression(list) ? list.elements : [list];
+    }
+    return {
+      method: expression.name,
+      invocation: { callee: expression.expression, arguments: passed, indirect: true },
+    };
+  }
+  if (isCallExpression(expression)) {
+    const bound = unparenthesized(expression.expression);
+    if (isPropertyAccessExpression(bound) && bound.name.text === "bind") {
+      return {
+        method: bound.name,
+        invocation: {
+          callee: bound.expression,
+          arguments: [...expression.arguments.slice(1), ...call.arguments],
+          indirect: true,
+        },
+      };
+    }
+  }
+  return undefined;
+}
+
 /** What one walk of the project's own files found: its calls and its functions' parameters. */
 interface Walked {
   readonly sites: readonly Site[];
@@ -256,10 +332,11 @@ function handedOn<Brand>(
   project: ProjectView<Brand>,
   sites: readonly Site[],
   erased: ReadonlyMap<number, Parameter>,
+  invocationOf: (call: CallExpression) => Invocation,
 ): readonly Forwarded[] {
   const spellings = new Set([...erased.values()].map((parameter) => parameter.name.getText()));
   const candidates = sites.flatMap((site) =>
-    site.call.arguments.flatMap((argument, index) =>
+    invocationOf(site.call).arguments.flatMap((argument, index) =>
       valuesPassed(argument)
         .filter((value) => spellings.has(value.name.getText()))
         .map((value) => ({ site, argument: index, value })),
@@ -279,6 +356,8 @@ function handedOn<Brand>(
 
 /** The destination of each call's arguments, with the project's forwarding functions settled. */
 interface Destinations {
+  /** The function one call invokes and the arguments its parameters bind. */
+  invocation(call: CallExpression): Invocation;
   /** The destination one argument of one call is, if it is one. */
   at(call: CallExpression, argument: number): Destination | undefined;
   /** Whether a call can be a destination at any argument, read without a round trip. */
@@ -304,14 +383,20 @@ function destinations<Brand>(
   const named = resolveEntries(project, held, [JSON_STRINGIFY, ...input.ts.serializers]).filter(
     namesADeclaration,
   );
-  const callees = resolvedTargets(
-    project,
-    walked.sites.flatMap((site) => calleeName(site.call.expression) ?? []),
-  );
-  const calleeOf = (call: CallExpression): TSSymbol | undefined => {
-    const name = calleeName(call.expression);
-    return name === undefined ? undefined : callees.get(name);
-  };
+  const forms = new Map<CallExpression, MethodForm>();
+  for (const site of walked.sites) {
+    const form = throughMethod(site.call);
+    if (form !== undefined) {
+      forms.set(site.call, form);
+    }
+  }
+  const callees = resolvedTargets(project, [
+    ...walked.sites.flatMap((site) => calleeName(site.call.expression) ?? []),
+    ...[...forms.values()].flatMap((form) => {
+      const name = calleeName(form.invocation.callee);
+      return name === undefined ? [form.method] : [form.method, name];
+    }),
+  ]);
   const erased = erasedParameters(project, walked.parameters);
   const byFunction = new Map<string, Parameter[]>();
   for (const parameter of erased.values()) {
@@ -324,17 +409,47 @@ function destinations<Brand>(
         !own.has(handle.path) &&
         !input.consumers.some((root) => handle.path === root || handle.path.startsWith(`${root}/`)),
     );
+  const invocation = (call: CallExpression): Invocation => {
+    const form = forms.get(call);
+    const method = form === undefined ? undefined : callees.get(form.method);
+    // Only the standard library's function methods pass their arguments on: the
+    // program's own `call` and `Reflect.apply` invoke nothing here.
+    if (
+      form !== undefined &&
+      method !== undefined &&
+      outside(method) &&
+      FUNCTION_INTERFACES.has(method.getParent()?.name ?? "")
+    ) {
+      return form.invocation;
+    }
+    return { callee: call.expression, arguments: call.arguments, indirect: false };
+  };
+  const calleeOf = (call: CallExpression): TSSymbol | undefined => {
+    const name = calleeName(invocation(call).callee);
+    return name === undefined ? undefined : callees.get(name);
+  };
   const erasedArguments = new Map<CallExpression, ReadonlySet<number>>();
   const erasedAt = (call: CallExpression, argument: number): boolean => {
     let indexes = erasedArguments.get(call);
     if (indexes === undefined) {
-      const signature = checker.getResolvedSignature(call);
+      const invoked = invocation(call);
+      // Through a method of the prototype the resolved signature is the method's, so
+      // the parameters are read off the callee's own signatures, any one erasing.
+      const type = invoked.indirect ? checker.getTypeAtLocation(invoked.callee) : undefined;
+      const signatures = invoked.indirect
+        ? type === undefined
+          ? []
+          : checker.getSignaturesOfType(type, SignatureKind.Call)
+        : [checker.getResolvedSignature(call)].filter((one) => one !== undefined);
       indexes = new Set(
-        call.arguments.flatMap((_unused, index) => {
-          const type =
-            signature === undefined ? undefined : checker.getParameterType(signature, index);
-          return type !== undefined && (type.flags & ERASED) !== 0 ? [index] : [];
-        }),
+        invoked.arguments.flatMap((_unused, index) =>
+          signatures.some((signature) => {
+            const parameter = checker.getParameterType(signature, index);
+            return parameter !== undefined && (parameter.flags & ERASED) !== 0;
+          })
+            ? [index]
+            : [],
+        ),
       );
       erasedArguments.set(call, indexes);
     }
@@ -355,7 +470,10 @@ function destinations<Brand>(
     const declared = chains.declarationsOf(target);
     if (declared.length === 0) {
       return outside(target) && erasedAt(call, argument)
-        ? { reach: "conversions", callee: call.expression.getText().replace(/\s+/gu, "") }
+        ? {
+            reach: "conversions",
+            callee: invocation(call).callee.getText().replace(/\s+/gu, ""),
+          }
         : undefined;
     }
     for (const fn of declared) {
@@ -370,7 +488,7 @@ function destinations<Brand>(
     return undefined;
   };
 
-  const forwarded = handedOn(project, walked.sites, erased);
+  const forwarded = handedOn(project, walked.sites, erased, invocation);
   for (let moved = true; moved;) {
     moved = false;
     for (const one of forwarded) {
@@ -400,7 +518,7 @@ function destinations<Brand>(
       (byFunction.get(fn) ?? []).some((parameter) => forwards.has(keyOf(parameter))),
     );
   };
-  return { at, mayReceive };
+  return { invocation, at, mayReceive };
 }
 
 /** One argument whose value carries classes of the target into a destination. */
@@ -420,7 +538,7 @@ function flowsOf<Brand>(
   const reach = valueReach(project, held);
   const arguments_ = sites.flatMap((site) =>
     to.mayReceive(site.call)
-      ? site.call.arguments.flatMap((argument, index) => {
+      ? to.invocation(site.call).arguments.flatMap((argument, index) => {
           const value = evaluated(argument);
           return holdsNoInstance(value) ? [] : [{ site, argument: index, value }];
         })

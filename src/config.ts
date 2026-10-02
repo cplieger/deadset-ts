@@ -122,6 +122,34 @@ export interface LifecycleContract {
   readonly members: readonly string[];
 }
 
+/**
+ * One analyzer the orchestrator may run, in exactly one of two shapes: an installed
+ * analyzer, named by its command alone, or an acquirable one, which also names the
+ * artifact acquisition fetches and verifies. This analyzer validates and prints the
+ * list and runs nothing from it.
+ */
+export type Provider =
+  | {
+      readonly shape: "installed";
+      readonly name: string;
+      readonly languages: readonly Language[];
+      readonly command: string;
+    }
+  | {
+      readonly shape: "acquirable";
+      readonly name: string;
+      readonly languages: readonly Language[];
+      readonly command: string;
+      readonly source: string;
+      readonly version: string;
+      readonly digest: string;
+    };
+
+/** The analyzers the orchestrator runs. */
+export interface Providers {
+  readonly analyzers: readonly Provider[];
+}
+
 /** The section the TypeScript analyzer owns. */
 export interface TSSection {
   readonly testFiles: readonly string[];
@@ -152,6 +180,7 @@ export interface Config {
   readonly severity: ReadonlyMap<string, Severity>;
   readonly exemptionsDisabled: readonly string[];
   readonly reporters: Reporters;
+  readonly providers: Providers;
   readonly ts: TSSection;
 }
 
@@ -183,6 +212,12 @@ export function defaultConfig(): Config {
       cascade: "roots",
       maxFindings: 0,
       failOn: "deny",
+    },
+    providers: {
+      analyzers: [
+        { shape: "installed", name: "deadset-go", languages: ["go"], command: "deadset-go" },
+        { shape: "installed", name: "deadset-ts", languages: ["ts"], command: "deadset-ts" },
+      ],
     },
     ts: {
       testFiles: ["**/*.test.{ts,tsx,mts,cts}"],
@@ -246,8 +281,8 @@ export type ErrorKind =
    */
   | "malformed"
   /**
-   * A key the closed key list does not declare, or a severity key naming a kind
-   * whose severity the Contract fixes.
+   * A key the closed key list does not declare, or a severity key naming no live
+   * kind or a kind whose severity the Contract fixes.
    */
   | "unimplemented-key"
   /** A resolved configuration no source supplied a target kind for. */

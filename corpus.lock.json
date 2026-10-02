@@ -1,11 +1,13 @@
 {
-  "description": "The deadset-spec release this analyzer implements, and the digest of the copy of that release's documents committed under fixtures/. tag and commit name the release; every file under fixtures/contract is byte-identical to that commit's contract/ tree, which the copy holds whole so that a page's links to its siblings resolve, and every file under fixtures/vectors is byte-identical to the same commit's vectors/config/ case directories, so `git diff` against a clone of the tag verifies both. digest is sha256 over, for each file below the named directory in ascending path order, the path, a newline, the file's sha256 in lowercase hexadecimal and a newline; the suite recomputes it, so an edit to a committed copy fails a test rather than moving the Contract this analyzer is tested against. contract_version is the version contract/contract.json carries at that commit, which the analyzer names in every resolved configuration it prints.",
-  "tag": "v3.1.0",
-  "commit": "5ddd43253ceb43165f5f9f877801c2b48b91e0f9",
-  "contract_version": "3.1.0",
-  "reason": "The release whose closed configuration key list, exit-code table, issue-kind vocabulary, exemption classes, stable-symbol-reference grammar with its token and pattern corpora, and published configuration vectors this analyzer is written against.",
+  "description": "The deadset-spec release this analyzer implements, and the digest of the copy of that release's documents committed under fixtures/. tag and commit name the release; every file under fixtures/contract is byte-identical to that commit's contract/ tree, which the copy holds whole so that a page's links to its siblings resolve, every file under fixtures/vectors is byte-identical to the same commit's vectors/config/ case directories, and every file under fixtures/examples/negatives and fixtures/examples/scope is byte-identical to the same commit's examples/negatives/ and examples/scope/ trees, so `git diff` against a clone of the tag verifies each of them. digest is sha256 over, for each file below the named directory in ascending path order, the path, a newline, the file's sha256 in lowercase hexadecimal and a newline; the suite recomputes it, so an edit to a committed copy fails a test rather than moving the Contract this analyzer is tested against. contract_version is the version contract/contract.json carries at that commit, which the analyzer names in every resolved configuration it prints.",
+  "tag": "v3.2.0",
+  "commit": "696e9d3ed7e1aa8f31adb042deae3d76cfcbd652",
+  "contract_version": "3.2.0",
+  "reason": "The release whose closed configuration key list, exit-code table, issue-kind vocabulary, exemption classes, scope document, stable-symbol-reference grammar with its token and pattern corpora, published configuration vectors and refused documents this analyzer is written against.",
   "digests": {
-    "fixtures/contract": "74563aa363648bfc5f2c7b2e3fbef9068a054e3695ef4090b2e6971050a470fd",
-    "fixtures/vectors": "6fdc284678cf50b487367ec9272ee96401a1cf314e0277225518a4ca1b28d02b"
+    "fixtures/contract": "44973c0ae94c4b3caf8502854d50c5e064ad1bae0e77fef5a76957067f64618d",
+    "fixtures/examples/negatives": "e6bd9f25f48f0744538b0781281865e05f1bf1c256f35ee299673bd337b04343",
+    "fixtures/examples/scope": "f49f66169cb5ec0580840a90b66f9009ff3c907495f0b35d4e3e0a17ffa93e6f",
+    "fixtures/vectors": "219fdf5bc208575350f1a538aee81baa456264a89894af89e5dd0898e1214c0f"
   }
 }

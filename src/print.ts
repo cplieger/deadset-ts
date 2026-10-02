@@ -1,4 +1,10 @@
-import { renderOrigin, type Config, type DeclarationEntry, type Provenance } from "./config.ts";
+import {
+  renderOrigin,
+  type Config,
+  type DeclarationEntry,
+  type Provenance,
+  type Provider,
+} from "./config.ts";
 
 /** One declaration entry as a document writes it: the members of its shape alone. */
 function declarationOf(entry: DeclarationEntry): Record<string, string> {
@@ -10,6 +16,15 @@ function declarationOf(entry: DeclarationEntry): Record<string, string> {
     case "global":
       return { global: entry.global };
   }
+}
+
+/** One provider entry as a document writes it: the members of its shape alone. */
+function providerOf(entry: Provider): Record<string, unknown> {
+  const installed = { name: entry.name, languages: entry.languages, command: entry.command };
+  if (entry.shape === "installed") {
+    return installed;
+  }
+  return { ...installed, source: entry.source, version: entry.version, digest: entry.digest };
 }
 
 /**
@@ -55,6 +70,7 @@ export function printConfig(config: Config, provenance: Provenance): string {
       max_findings: config.reporters.maxFindings,
       fail_on: config.reporters.failOn,
     },
+    providers: { analyzers: config.providers.analyzers.map(providerOf) },
     go: {},
     ts: {
       test_files: config.ts.testFiles,

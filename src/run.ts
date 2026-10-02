@@ -59,8 +59,15 @@ export const SETTING_OPTIONS: ReadonlyMap<string, string> = new Map([
 /** The options that take a value and are not settings. */
 const PLAIN_OPTIONS: ReadonlySet<string> = new Set(["target", "config", "central", "scope"]);
 
-/** The setting options whose value is a number rather than a string. */
-const NUMBER_OPTIONS: ReadonlySet<string> = new Set(["max-findings"]);
+/**
+ * The setting options whose value is an integer rather than a string. A value
+ * written other than as digits is passed on as the string it is, so resolution
+ * refuses it by its type rather than reading `1e2` as 100.
+ */
+const INTEGER_OPTIONS: ReadonlySet<string> = new Set(["max-findings"]);
+
+/** An integer as an option writes it: an optional minus sign and digits alone. */
+const INTEGER_TEXT = /^-?[0-9]+$/u;
 
 /** One invocation's options, by name, with the verb's remaining arguments. */
 interface Options {
@@ -145,7 +152,7 @@ function inputsOf(host: Host, options: Options): Inputs {
     if (value === undefined) {
       continue;
     }
-    flat[path] = NUMBER_OPTIONS.has(name) ? Number(value) : value;
+    flat[path] = INTEGER_OPTIONS.has(name) && INTEGER_TEXT.test(value) ? Number(value) : value;
     flagLabels.set(path, `--${name}`);
   }
   const flags = Object.keys(flat).length === 0 ? undefined : JSON.stringify(flat);

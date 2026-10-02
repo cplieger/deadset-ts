@@ -170,6 +170,31 @@ describe("print-config", () => {
     });
   });
 
+  it("reads a count option written as digits as the integer it spells", () => {
+    const got = invoke([
+      "print-config",
+      `--config=${fixture("vectors", "config", "provenance-on-input", "repository.json")}`,
+      "--max-findings=7",
+    ]);
+
+    expect(got.code, got.err).toBe(0);
+    expect(JSON.parse(got.out)).toMatchObject({ reporters: { max_findings: 7 } });
+  });
+
+  it.each(["1e2", "100.0"])(
+    "refuses a count option written %j, naming the setting, and exits 2",
+    (value) => {
+      const got = invoke([
+        "print-config",
+        `--config=${fixture("vectors", "config", "provenance-on-input", "repository.json")}`,
+        `--max-findings=${value}`,
+      ]);
+
+      expect(got.code).toBe(2);
+      expect(got.err).toContain("reporters.max_findings");
+    },
+  );
+
   it("names an unknown option and exits 2", () => {
     const got = invoke(["print-config", "--nope=1"]);
 

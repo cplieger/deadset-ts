@@ -1,40 +1,15 @@
 deadset-ts/c-0001	lines=17
 	roots	ts://@example/components/src/catalog.test.ts#testMixed
-	members	ts://@example/components/src/catalog.test.ts#testMixed
-	falls	ts://@example/components/src/catalog.test.ts#testDeadOnly ts://@example/components/src/catalog.test.ts#testMixed ts://@example/components/src/catalog.test.ts#assertSum ts://@example/components/src/catalog.ts#deadOne ts://@example/components/src/catalog.ts#deadTwo
+	members	ts://@example/components/src/catalog.test.ts#testDeadOnly ts://@example/components/src/catalog.test.ts#testMixed ts://@example/components/src/catalog.test.ts#assertSum ts://@example/components/src/catalog.ts#deadOne ts://@example/components/src/catalog.ts#deadTwo
 deadset-ts/c-0002	lines=9
 	roots	ts://@example/components/src/cycle.ts#first ts://@example/components/src/cycle.ts#second ts://@example/components/src/cycle.ts#third
 	members	ts://@example/components/src/cycle.ts#first ts://@example/components/src/cycle.ts#second ts://@example/components/src/cycle.ts#third
-	falls	ts://@example/components/src/cycle.ts#first ts://@example/components/src/cycle.ts#second ts://@example/components/src/cycle.ts#third
-deadset-ts/c-0003	lines=6
-	roots	ts://@example/components/src/shared.ts#left
-	members	ts://@example/components/src/shared.ts#left
-	falls	ts://@example/components/src/shared.ts#left ts://@example/components/src/shared.ts#onlyLeft
-deadset-ts/c-0004	lines=3
-	roots	ts://@example/components/src/shared.ts#right
-	members	ts://@example/components/src/shared.ts#right
-	falls	ts://@example/components/src/shared.ts#right
-deadset-ts/c-0005	lines=8
+deadset-ts/c-0003	lines=12
+	roots	ts://@example/components/src/shared.ts#left ts://@example/components/src/shared.ts#right
+	members	ts://@example/components/src/shared.ts#left ts://@example/components/src/shared.ts#right ts://@example/components/src/shared.ts#sharedHelper ts://@example/components/src/shared.ts#onlyLeft
+deadset-ts/c-0004	lines=8
 	roots	ts://@example/components/src/types.ts#Unused
 	members	ts://@example/components/src/types.ts#Unused ts://@example/components/src/types.ts#Unused.count ts://@example/components/src/types.ts#Unused.bump
-	falls	ts://@example/components/src/types.ts#Unused ts://@example/components/src/types.ts#Unused.count ts://@example/components/src/types.ts#Unused.bump
-deadset-ts/c-0006	lines=4
+deadset-ts/c-0005	lines=4
 	roots	ts://@example/components/src/types.ts#Shape
 	members	ts://@example/components/src/types.ts#Shape ts://@example/components/src/types.ts#Shape.name ts://@example/components/src/types.ts#Shape.area
-	falls	ts://@example/components/src/types.ts#Shape ts://@example/components/src/types.ts#Shape.name ts://@example/components/src/types.ts#Shape.area
-deadset-ts/c-0007	lines=9
-	roots	ts://@example/components/src/catalog.test.ts#testDeadOnly ts://@example/components/src/catalog.ts#deadTwo
-	members	ts://@example/components/src/catalog.test.ts#testDeadOnly ts://@example/components/src/catalog.ts#deadOne ts://@example/components/src/catalog.ts#deadTwo
-	falls	ts://@example/components/src/catalog.test.ts#testDeadOnly ts://@example/components/src/catalog.ts#deadOne ts://@example/components/src/catalog.ts#deadTwo
-deadset-ts/c-0008	lines=3
-	roots	-
-	members	ts://@example/components/src/shared.ts#sharedHelper
-	falls	ts://@example/components/src/shared.ts#sharedHelper
-deadset-ts/c-0009	lines=3
-	roots	-
-	members	ts://@example/components/src/shared.ts#onlyLeft
-	falls	ts://@example/components/src/shared.ts#onlyLeft
-deadset-ts/c-0010	lines=5
-	roots	-
-	members	ts://@example/components/src/catalog.test.ts#assertSum
-	falls	ts://@example/components/src/catalog.test.ts#assertSum

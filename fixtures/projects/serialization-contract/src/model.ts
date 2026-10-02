@@ -171,6 +171,45 @@ export class Posted {
   id = 0;
 }
 
+// Handed to JSON.stringify through Function.prototype.call, which passes its arguments on.
+export class Called {
+  id = 0;
+}
+
+// Handed to JSON.stringify through Function.prototype.apply, in its argument array.
+export class Applied {
+  id = 0;
+}
+
+// Handed to the function Function.prototype.bind returns for JSON.stringify.
+export class Rebound {
+  id = 0;
+}
+
+// Bound as JSON.stringify's first argument by Function.prototype.bind.
+export class Prebound {
+  id = 0;
+}
+
+// Handed to console.log through Function.prototype.call, outside the analysis.
+export class Logged {
+  kind = "";
+
+  toString(): string {
+    return "logged";
+  }
+}
+
+// Handed through Function.prototype.call to a function of the project that hands it on.
+export class Dispatched {
+  text = "";
+}
+
+// Handed to a function expression held by a variable, whose `this` parameter binds no argument.
+export class VarBound {
+  id = 0;
+}
+
 // Handed nowhere.
 export class Kept {
   unused = "";

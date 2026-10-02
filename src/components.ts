@@ -1,7 +1,7 @@
 /**
- * The dead components of one graph: the strongly connected components of the subgraph
- * the dead declarations induce, ordered so a report is worked from the top down, each
- * with the root members a deletion starts at and what falls with it.
+ * The dead components of one graph. A component is a set of dead declarations one
+ * deletion removes together: its root members, which are where the deletion starts,
+ * and every dead declaration that falls with them, being dead only through them.
  */
 
 import type { Cascade } from "./config.ts";
@@ -17,25 +17,22 @@ const ID_DIGITS = 4;
 /** The index of a declaration the component walk has not reached. */
 const UNVISITED = -1;
 
-/** One dead component and its place in the acyclic graph over the components. */
+/** One dead component. */
 export interface Component {
   /** The analyzer's name, a solidus, and `c-` followed by the component's place in the order. */
   readonly id: string;
-  /** The component's declarations, by site. A dead member of a dead container is one of them. */
+  /**
+   * The component's declarations by site: its root members and every dead declaration
+   * that falls with them. A dead member of a dead container is one of them.
+   */
   readonly members: readonly string[];
   /**
-   * The members no other dead component references and whose container is not dead,
-   * which are where a deletion starts. A cycle has as many as it has members no dead
-   * component outside it references.
+   * The root members, by site. A root member is a member of a cycle no dead declaration
+   * outside the cycle references, whose container is not dead; every member of such a
+   * cycle with a live container is one, so a component has at least one.
    */
   readonly roots: readonly string[];
-  /**
-   * What one deletion of the component removes: its members, and every dead declaration
-   * only this component reaches. A dead declaration two components both reach falls with
-   * neither and is counted by its own component.
-   */
-  readonly falls: readonly string[];
-  /** The source lines the deletion removes: the distinct lines {@link Component.falls} spans. */
+  /** The source lines one deletion of the component removes: the distinct lines its members span. */
   readonly deletableLines: number;
 }
 
@@ -48,22 +45,22 @@ export interface Listing {
   readonly deletableLines: number;
 }
 
-/** What a report carries for one component: its roots and what falls, and its members in full. */
+/** What a report carries for one component: its roots and counts, and its members in full. */
 export function listing(component: Component, cascade: Cascade): Listing {
   return {
     roots: component.roots,
     members: cascade === "full" ? component.members : [],
-    symbolCount: component.falls.length,
+    symbolCount: component.members.length,
     deletableLines: component.deletableLines,
   };
 }
 
 /**
- * Groups the declarations `dead` marks into components and orders them so each precedes
- * every component it reaches, two that neither reaches ordered by their first member's
- * site. `dead` and `testOfDeadCode` hold one flag per declaration of the graph; the dead
- * set arrives rather than being read from a sweep, so a set several sweeps intersect is
- * grouped over this graph's edges the same way.
+ * Groups the declarations `dead` marks into components, ordered by their first member's
+ * site; `dead` and `testOfDeadCode` hold one flag per declaration of the graph. Root
+ * members sit on the cycles no other cycle references. A cycle two roots both reach is
+ * dead only through both, so a component is a weakly connected part of the dead
+ * subgraph: no dead declaration of one references a declaration of another.
  */
 export function componentsOf(
   graph: Graph,
@@ -75,26 +72,22 @@ export function componentsOf(
     return [];
   }
   const { componentOf, members } = connected(adjacent);
-  const { edges, into } = condense(adjacent, componentOf, members.length);
-  const falls = fallSets(edges, members, into);
-  const outsideReference = externallyReferenced(adjacent, componentOf);
+  const referenced = referencedCycles(adjacent, componentOf, members.length);
+  const groups = joined(adjacent);
   const idOf = (position: number): string => graph.symbols[at[position] ?? 0]?.id ?? "";
 
-  return order(edges, members).map((group, place) => {
-    const own = members[group] ?? [];
-    const roots = own.filter((position) => {
-      // A dead member of a dead container is never a root: the container is where the
-      // deletion starts and the member falls with it.
+  return groups.map((group, place) => {
+    const roots = group.filter((position) => {
+      // A dead member's dead container is on the member's own cycle, and the container
+      // is where the deletion starts.
       const container = graph.parent[at[position] ?? 0] ?? OUTSIDE;
-      return outsideReference[position] !== true && dead[container] !== true;
+      return referenced[componentOf[position] ?? 0] !== true && dead[container] !== true;
     });
-    const fallen = falls[group] ?? [];
     return {
       id: `${ANALYZER}/c-${String(place + 1).padStart(ID_DIGITS, "0")}`,
-      members: own.map(idOf),
+      members: group.map(idOf),
       roots: roots.map(idOf),
-      falls: fallen.map(idOf),
-      deletableLines: linesSpanned(fallen.map((position) => graph.symbols[at[position] ?? 0])),
+      deletableLines: linesSpanned(group.map((position) => graph.symbols[at[position] ?? 0])),
     };
   });
 }
@@ -185,10 +178,9 @@ interface Frame {
 }
 
 /**
- * Each declaration's component and each component's members by site, by Tarjan's
+ * Each declaration's cycle and each cycle's members by site, by Tarjan's
  * algorithm in one pass. The walk keeps its own stack of frames, so a chain of any length
- * is walked without growing the call stack. Components are closed in an order in which
- * each follows every component it reaches.
+ * is walked without growing the call stack.
  */
 function connected(adjacent: readonly (readonly number[])[]): {
   readonly componentOf: readonly number[];
@@ -257,45 +249,18 @@ function connected(adjacent: readonly (readonly number[])[]): {
   return { componentOf, members };
 }
 
-/**
- * Per component, the components it reaches in one step, and how many components reach
- * it, each pair counted once. An edge inside a component is not an edge between two, so
- * the result is acyclic.
- */
-function condense(
+/** Per cycle, whether a dead declaration outside it references one of its members. */
+function referencedCycles(
   adjacent: readonly (readonly number[])[],
   componentOf: readonly number[],
   count: number,
-): { readonly edges: readonly (readonly number[])[]; readonly into: readonly number[] } {
-  const edges: number[][] = Array.from({ length: count }, () => []);
-  const into = Array.from({ length: count }, () => 0);
-  const seen = new Set<string>();
-  adjacent.forEach((targets, from) => {
-    for (const to of targets) {
-      const a = componentOf[from] ?? 0;
-      const b = componentOf[to] ?? 0;
-      const pair = `${String(a)}>${String(b)}`;
-      if (a === b || seen.has(pair)) {
-        continue;
-      }
-      seen.add(pair);
-      edges[a]?.push(b);
-      into[b] = (into[b] ?? 0) + 1;
-    }
-  });
-  return { edges, into };
-}
-
-/** Per dead declaration, whether a dead component other than its own references it. */
-function externallyReferenced(
-  adjacent: readonly (readonly number[])[],
-  componentOf: readonly number[],
 ): readonly boolean[] {
-  const referenced = adjacent.map(() => false);
+  const referenced = Array.from({ length: count }, () => false);
   adjacent.forEach((targets, from) => {
     for (const to of targets) {
-      if (componentOf[from] !== componentOf[to]) {
-        referenced[to] = true;
+      const cycle = componentOf[to] ?? 0;
+      if (componentOf[from] !== cycle) {
+        referenced[cycle] = true;
       }
     }
   });
@@ -303,70 +268,42 @@ function externallyReferenced(
 }
 
 /**
- * The components in the order a report is worked in. Tarjan closes each component after
- * every one it reaches, so reading the closing order backwards is a topological order,
- * and one pass over it gives each component its depth below the roots.
+ * The weakly connected parts of the dead subgraph, each its positions in ascending
+ * order, ordered by their first position. Positions follow the graph's declaration
+ * order, so a part's first position is its first member's site.
  */
-function order(
-  edges: readonly (readonly number[])[],
-  members: readonly (readonly number[])[],
-): readonly number[] {
-  const sequence = edges.map((_targets, component) => component).reverse();
-  const depth = edges.map(() => 0);
-  for (const from of sequence) {
-    for (const to of edges[from] ?? []) {
-      depth[to] = Math.max(depth[to] ?? 0, (depth[from] ?? 0) + 1);
+function joined(adjacent: readonly (readonly number[])[]): readonly (readonly number[])[] {
+  const leader = adjacent.map((_edges, position) => position);
+  const find = (position: number): number => {
+    let top = position;
+    while ((leader[top] ?? top) !== top) {
+      top = leader[top] ?? top;
     }
-  }
-  return sequence.sort(
-    (a, b) => (depth[a] ?? 0) - (depth[b] ?? 0) || (members[a]?.[0] ?? 0) - (members[b]?.[0] ?? 0),
-  );
-}
-
-/**
- * Per component, the dead declarations one deletion of it removes. A root of the
- * condensation carries its members and every component only it reaches; any other
- * component carries its own members alone, because what it reaches is reached through a
- * root above it as well.
- */
-function fallSets(
-  edges: readonly (readonly number[])[],
-  members: readonly (readonly number[])[],
-  into: readonly number[],
-): readonly (readonly number[])[] {
-  // Each root's walk stamps what it reaches with the root's own number, so the walks
-  // share one array rather than allocating one per root.
-  const stamp = edges.map(() => UNVISITED);
-  const reach = new Map<number, readonly number[]>();
-  const owners = edges.map(() => 0);
-  edges.forEach((_targets, root) => {
-    if (into[root] !== 0) {
-      return;
+    // Every position on the walk points at the top afterwards, so a later find is short.
+    for (let step = position; step !== top;) {
+      const next = leader[step] ?? top;
+      leader[step] = top;
+      step = next;
     }
-    const reached = [root];
-    stamp[root] = root;
-    // An array's iterator reads its length at every step, so what a step pushes is
-    // walked in the same loop.
-    for (const at of reached) {
-      for (const to of edges[at] ?? []) {
-        if (stamp[to] !== root) {
-          stamp[to] = root;
-          reached.push(to);
-        }
-      }
-    }
-    reach.set(root, reached);
-    for (const component of reached) {
-      owners[component] = (owners[component] ?? 0) + 1;
+    return top;
+  };
+  adjacent.forEach((targets, from) => {
+    for (const to of targets) {
+      const a = find(from);
+      const b = find(to);
+      // The smaller position leads, so a part's leader is its first position.
+      leader[Math.max(a, b)] = Math.min(a, b);
     }
   });
-  return members.map((own, component) => {
-    const set = [...own];
-    for (const other of reach.get(component) ?? []) {
-      if (other !== component && owners[other] === 1) {
-        set.push(...(members[other] ?? []));
-      }
+  const parts = new Map<number, number[]>();
+  adjacent.forEach((_edges, position) => {
+    const top = find(position);
+    const part = parts.get(top);
+    if (part === undefined) {
+      parts.set(top, [position]);
+    } else {
+      part.push(position);
     }
-    return set.sort((a, b) => a - b);
   });
+  return [...parts.values()];
 }

@@ -14,13 +14,14 @@ import {
   type LifecycleContract,
   type Origin,
   type Provenance,
+  type Provider,
   type Severity,
   type Sort,
   type Source,
   type TargetKind,
   type TemplateDelimiters,
 } from "./config.ts";
-import { FIXED_SEVERITY_CODES } from "./kinds.ts";
+import { FIXED_SEVERITY_CODES, LIVE_CODES } from "./kinds.ts";
 import {
   checkDocument,
   malformed,
@@ -39,6 +40,13 @@ const FAMILY_KEY_LENGTH = 4;
 const SEVERITY_KEY = /^DS[0-9]{2}([0-9]{2})?$/u;
 const EXEMPTION_CLASS = /^[a-z][a-z0-9-]*$/u;
 const CONTRACT_VERSION_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+$/u;
+const ANALYZER_NAME = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/u;
+const PROVIDER_SOURCE = /^(go|npm):[^ \t\r\n]+$/u;
+const PROVIDER_VERSION = /^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$/u;
+const PROVIDER_DIGEST = /^sha256:[0-9a-f]{64}$/u;
+
+/** The members only an acquirable provider entry carries. */
+const ACQUIRABLE_MEMBERS = ["source", "version", "digest"] as const;
 
 /** The members only a platform build configuration carries. */
 const PLATFORM_MEMBERS = ["os", "arch", "tags"] as const;
@@ -94,6 +102,7 @@ interface Doc {
   readonly cascade: Cascade | undefined;
   readonly maxFindings: number | undefined;
   readonly failOn: Severity | undefined;
+  readonly providers: readonly Provider[] | undefined;
   readonly testFiles: readonly string[] | undefined;
   readonly entryFiles: readonly string[] | undefined;
   readonly injectionRegistrations: readonly DeclarationEntry[] | undefined;
@@ -382,8 +391,8 @@ function readDelimiters(
 }
 
 /**
- * A severity key that names no setting, because the Contract fixes the severity of
- * the kind or kinds it names.
+ * A severity key that names no setting: it names no live kind, or the Contract
+ * fixes the severity of the kind or kinds it names.
  */
 function unimplementedSeverityKey(label: string, path: string, reason: string): ConfigError {
   return new ConfigError(
@@ -414,16 +423,23 @@ function spellCodes(codes: readonly string[]): string {
   return `${codes.slice(0, -1).join(", ")} and ${String(codes[codes.length - 1])}`;
 }
 
+/** Whether one severity key names a live kind: the code itself, or a family holding one. */
+function namesLiveKind(code: string): boolean {
+  return LIVE_CODES.some(
+    (candidate) =>
+      code === candidate || (code.length === FAMILY_KEY_LENGTH && candidate.startsWith(code)),
+  );
+}
+
 /**
  * The severity object, one code at a time.
  *
- * A key is one issue-kind code or one two-digit family prefix, and a key naming a
- * kind whose severity the Contract fixes, or a family prefix whose range holds
- * one, is an unimplemented key rather than a setting.
+ * A key is one issue-kind code or one two-digit family prefix. A key naming no
+ * live kind, and a key naming a kind whose severity the Contract fixes or a family
+ * prefix whose range holds one, is an unimplemented key rather than a setting.
  *
- * Whether a key names a kind this analyzer reports is not decided here. This
- * analyzer reports no issue kind, so the question has one answer for every key
- * and asking it would refuse the whole object.
+ * Whether a key names a kind this analyzer reports is not decided here: a live
+ * kind of another language is a setting the analyzer of that language reads.
  */
 function readSeverity(
   document: Record<string, unknown> | undefined,
@@ -441,6 +457,15 @@ function readSeverity(
         label,
         path,
         "a severity key is one issue-kind code or one two-digit family prefix",
+      );
+    }
+    if (!namesLiveKind(code)) {
+      throw unimplementedSeverityKey(
+        label,
+        path,
+        code.length === FAMILY_KEY_LENGTH
+          ? "the family this prefix names holds no live issue kind"
+          : "the code names no live issue kind",
       );
     }
     const fixed = fixedByContract(code);
@@ -612,6 +637,90 @@ function readLifecycleContracts(
   );
 }
 
+/** One string member a provider entry requires, refused where it fails `pattern`. */
+function readMatching(
+  entry: Record<string, unknown>,
+  name: string,
+  at: string,
+  label: string,
+  pattern: RegExp,
+): string {
+  const path = `${at}.${name}`;
+  const value = requireMember(readString(entry, name, path, label), path, label);
+  if (!pattern.test(value)) {
+    throw malformed(label, path, `${JSON.stringify(value)} does not match ${pattern.source}`);
+  }
+  return value;
+}
+
+/**
+ * One provider entry, read as the one shape its members name: a member only an
+ * acquirable analyzer carries makes it acquirable, and then it carries all three.
+ */
+function readProvider(entry: unknown, at: string, label: string): Provider {
+  if (!isRecord(entry)) {
+    throw malformed(label, at, "is not an object");
+  }
+  const name = readMatching(entry, "name", at, label, ANALYZER_NAME);
+  const languages = readStrings(entry, "languages", `${at}.languages`, label, 1, LANGUAGES);
+  if (languages === undefined) {
+    throw malformed(label, `${at}.languages`, "is required and names nothing");
+  }
+  const commandPath = `${at}.command`;
+  const command = requireMember(
+    readString(entry, "command", commandPath, label),
+    commandPath,
+    label,
+  );
+  if (!ACQUIRABLE_MEMBERS.some((member) => Object.hasOwn(entry, member))) {
+    return { shape: "installed", name, languages, command };
+  }
+  return {
+    shape: "acquirable",
+    name,
+    languages,
+    command,
+    source: readMatching(entry, "source", at, label, PROVIDER_SOURCE),
+    version: readMatching(entry, "version", at, label, PROVIDER_VERSION),
+    digest: readMatching(entry, "digest", at, label, PROVIDER_DIGEST),
+  };
+}
+
+/**
+ * The provider list. Every file a run writes for an analyzer is keyed by the
+ * entry's name, so a list naming one name twice is refused at the later entry.
+ */
+function readProviders(
+  providers: Record<string, unknown> | undefined,
+  label: string,
+): readonly Provider[] | undefined {
+  const path = "providers.analyzers";
+  const value = member(providers, "analyzers");
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(value)) {
+    throw malformed(label, path, "is not an array");
+  }
+  const read = (value as unknown[]).map((entry, index) =>
+    readProvider(entry, `${path}[${String(index)}]`, label),
+  );
+  const first = new Map<string, number>();
+  read.forEach((entry, index) => {
+    const earlier = first.get(entry.name);
+    if (earlier !== undefined) {
+      throw malformed(
+        label,
+        `${path}[${String(index)}].name`,
+        `${JSON.stringify(entry.name)} is already the name of ${path}[${String(earlier)}], ` +
+          "and every entry's name keys the files a run writes for it",
+      );
+    }
+    first.set(entry.name, index);
+  });
+  return read;
+}
+
 /**
  * Reads one already-parsed configuration document as the settings it supplies,
  * refusing every constraint the closed key list declares that a parse cannot
@@ -628,6 +737,7 @@ function readDoc(value: unknown, label: string): Doc {
   const consumers = section(value, "consumers", "consumers", label);
   const roots = section(value, "roots", "roots", label);
   const reporters = section(value, "reporters", "reporters", label);
+  const providers = section(value, "providers", "providers", label);
   const ts = section(value, "ts", "ts", label);
   section(value, "go", "go", label);
   section(value, "provenance", "provenance", label);
@@ -679,6 +789,7 @@ function readDoc(value: unknown, label: string): Doc {
     cascade: readEnum(reporters, "cascade", "reporters.cascade", label, CASCADES),
     maxFindings: readCount(reporters, "max_findings", "reporters.max_findings", label),
     failOn: readEnum(reporters, "fail_on", "reporters.fail_on", label, SEVERITIES),
+    providers: readProviders(providers, label),
     testFiles: readStrings(ts, "test_files", "ts.test_files", label, 1),
     entryFiles: readStrings(ts, "entry_files", "ts.entry_files", label, 0),
     injectionRegistrations: readDeclarations(
@@ -958,6 +1069,9 @@ function settleAll(inputs: Inputs): { config: Config; provenance: Map<string, Or
         (doc) => doc.maxFindings,
       ),
       failOn: at("reporters.fail_on", defaults.reporters.failOn, (doc) => doc.failOn),
+    },
+    providers: {
+      analyzers: at("providers.analyzers", defaults.providers.analyzers, (doc) => doc.providers),
     },
     ts: {
       testFiles: at("ts.test_files", defaults.ts.testFiles, (doc) => doc.testFiles),

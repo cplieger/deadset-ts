@@ -19,14 +19,17 @@ export type KeyKind = "leaf" | "section" | "map" | "list" | "object";
 
 /**
  * One node of the closed key list. `members` holds a section's declared members,
- * or a list entry's, and is absent otherwise.
+ * or a list entry's, and is absent otherwise. `integer` marks a leaf of the
+ * integer type, whose number the document writes as digits alone.
  */
 export interface KeyNode {
   readonly kind: KeyKind;
   readonly members?: Readonly<Record<string, KeyNode>>;
+  readonly integer?: true;
 }
 
 const leaf: KeyNode = { kind: "leaf" };
+const integer: KeyNode = { kind: "leaf", integer: true };
 
 /** A list of declarations, each entry in one of the three shapes the `ts` section states. */
 const declarations: KeyNode = {
@@ -73,8 +76,24 @@ export const SCHEMA_ROOT: KeyNode = {
         formats: leaf,
         sort: leaf,
         cascade: leaf,
-        max_findings: leaf,
+        max_findings: integer,
         fail_on: leaf,
+      },
+    },
+    providers: {
+      kind: "section",
+      members: {
+        analyzers: {
+          kind: "list",
+          members: {
+            name: leaf,
+            languages: leaf,
+            command: leaf,
+            source: leaf,
+            version: leaf,
+            digest: leaf,
+          },
+        },
       },
     },
     go: { kind: "section", members: {} },
@@ -305,6 +324,28 @@ function skipScalar(cursor: Cursor): void {
   }
 }
 
+/** A number the document writes as an optional minus sign and digits alone. */
+const INTEGER_TEXT = /^-?[0-9]+$/u;
+
+/** The start of a JSON number: a minus sign or a digit. */
+const NUMBER_START = /^[-0-9]/u;
+
+/**
+ * Refuses a number written with a fraction or an exponent where the key list
+ * declares an integer. A parse reads `100.0` and `1e2` as the integer 100, so only
+ * the text can tell them apart. A scalar that is no number is the decoder's to
+ * refuse by its type.
+ */
+function checkInteger(text: string, at: string, label: string): void {
+  if (NUMBER_START.test(text) && !INTEGER_TEXT.test(text)) {
+    throw malformed(
+      label,
+      at,
+      `${text} is written with a fraction or an exponent, and an integer is digits alone`,
+    );
+  }
+}
+
 function walkValue(cursor: Cursor, at: string, node: KeyNode, label: string): void {
   skipSpace(cursor);
   const ch = cursor.text.charCodeAt(cursor.at);
@@ -322,7 +363,11 @@ function walkValue(cursor: Cursor, at: string, node: KeyNode, label: string): vo
     readName(cursor, at, label);
     return;
   }
+  const start = cursor.at;
   skipScalar(cursor);
+  if (node.integer === true) {
+    checkInteger(cursor.text.slice(start, cursor.at), at, label);
+  }
 }
 
 function walkObject(cursor: Cursor, at: string, node: KeyNode, label: string): void {
