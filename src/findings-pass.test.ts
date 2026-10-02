@@ -5,7 +5,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
 import { fixture } from "../__test-helpers__/fixtures.ts";
 import { writeProject } from "../__test-helpers__/projects.ts";
-import { runFindings } from "./analysis.ts";
+import { runAnalysis } from "./analysis.ts";
 import { ConfigError } from "./config.ts";
 import {
   EXIT_PENDING,
@@ -34,7 +34,7 @@ function passOver(root: string, document?: string): { result: PassResult; exit: 
     repositoryLabel: path,
   });
   const engine = openEngine({ collectTiming: false });
-  const result = runFindings(engine, host, scopeForDir(host, root), config, provenance, {
+  const { result } = runAnalysis(engine, host, scopeForDir(host, root), config, provenance, {
     production: true,
   });
   return { result, exit: verdictOf(result, config) };

@@ -1,0 +1,460 @@
+{
+  "schema_version": "6.0.0",
+  "contract_version": "3.2.0",
+  "analyzer": {
+    "name": "deadset-ts",
+    "version": "0.0.0",
+    "languages": [
+      "ts"
+    ],
+    "schema_versions_accepted": [
+      "6.0.0"
+    ],
+    "conformance": {
+      "corpus_version": "1.9.0",
+      "result": "fail",
+      "digest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "target": {
+    "kind": "application",
+    "root": "fixtures/projects/interfaces",
+    "identity": "@example/interfaces"
+  },
+  "configurations": [
+    {
+      "id": "tsconfig.json",
+      "project": "tsconfig.json"
+    }
+  ],
+  "configurations_not_built": [],
+  "consumers": {
+    "declared": 0,
+    "loaded": [],
+    "unavailable": []
+  },
+  "findings": [
+    {
+      "code": "DS1201",
+      "kind": "unused-interface",
+      "language": "ts",
+      "position": {
+        "path": "src/contracts.ts",
+        "line": 4,
+        "column": 18,
+        "end_line": 7
+      },
+      "symbol": {
+        "ref": "ts://@example/interfaces/src/contracts.ts#Unused",
+        "kind": "interface",
+        "name": "Unused",
+        "size_lines": 4
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0001",
+        "root": true,
+        "symbol_count": 3,
+        "deletable_lines": 4
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "nothing in the target names the interface as a type",
+      "details": {
+        "implementations": [
+          {
+            "ref": "ts://@example/interfaces/src/classes.ts#Runner",
+            "name": "Runner",
+            "position": {
+              "path": "src/classes.ts",
+              "line": 41,
+              "column": 14,
+              "end_line": 47
+            }
+          }
+        ]
+      }
+    },
+    {
+      "code": "DS1201",
+      "kind": "unused-interface",
+      "language": "ts",
+      "position": {
+        "path": "src/contracts.ts",
+        "line": 10,
+        "column": 18,
+        "end_line": 12
+      },
+      "symbol": {
+        "ref": "ts://@example/interfaces/src/contracts.ts#OnlyDead",
+        "kind": "interface",
+        "name": "OnlyDead",
+        "size_lines": 3
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reachability",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0002",
+        "root": false,
+        "symbol_count": 3,
+        "deletable_lines": 6
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "the interface is named as a type only from declarations that are themselves dead",
+      "details": {
+        "implementations": []
+      }
+    },
+    {
+      "code": "DS1002",
+      "kind": "unused-unexported",
+      "language": "ts",
+      "position": {
+        "path": "src/contracts.ts",
+        "line": 14,
+        "column": 10,
+        "end_line": 16
+      },
+      "symbol": {
+        "ref": "ts://@example/interfaces/src/contracts.ts#orphan",
+        "kind": "function",
+        "name": "orphan",
+        "size_lines": 3
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0002",
+        "root": true,
+        "symbol_count": 3,
+        "deletable_lines": 6
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "unexported function has no reference in the target",
+      "details": {}
+    },
+    {
+      "code": "DS1203",
+      "kind": "uncalled-interface-method",
+      "language": "ts",
+      "position": {
+        "path": "src/contracts.ts",
+        "line": 28,
+        "column": 3,
+        "end_line": 28
+      },
+      "symbol": {
+        "ref": "ts://@example/interfaces/src/contracts.ts#Channel.close",
+        "kind": "interface-method",
+        "name": "Channel.close",
+        "size_lines": 1
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0003",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 1
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "manual",
+      "severity": "warn",
+      "message": "no call site invokes or selects the method through the interface",
+      "details": {
+        "implementations": [
+          {
+            "ref": "ts://@example/interfaces/src/classes.ts#Wire",
+            "name": "Wire",
+            "position": {
+              "path": "src/classes.ts",
+              "line": 11,
+              "column": 14,
+              "end_line": 21
+            }
+          },
+          {
+            "ref": "ts://@example/interfaces/src/classes.ts#Pipe",
+            "name": "Pipe",
+            "position": {
+              "path": "src/classes.ts",
+              "line": 23,
+              "column": 14,
+              "end_line": 31
+            }
+          }
+        ]
+      }
+    },
+    {
+      "code": "DS1203",
+      "kind": "uncalled-interface-method",
+      "language": "ts",
+      "position": {
+        "path": "src/contracts.ts",
+        "line": 48,
+        "column": 3,
+        "end_line": 48
+      },
+      "symbol": {
+        "ref": "ts://@example/interfaces/src/contracts.ts#Signal.raise",
+        "kind": "interface-method",
+        "name": "Signal.raise",
+        "size_lines": 1
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0007",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 1
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "manual",
+      "severity": "warn",
+      "message": "no call site invokes or selects the method through the interface",
+      "details": {
+        "implementations": [
+          {
+            "ref": "ts://@example/interfaces/src/classes.ts#Flag",
+            "name": "Flag",
+            "position": {
+              "path": "src/classes.ts",
+              "line": 55,
+              "column": 14,
+              "end_line": 57
+            }
+          },
+          {
+            "ref": "ts://@example/interfaces/src/classes.ts#Arrowed",
+            "name": "Arrowed",
+            "position": {
+              "path": "src/classes.ts",
+              "line": 59,
+              "column": 14,
+              "end_line": 61
+            }
+          }
+        ]
+      }
+    },
+    {
+      "code": "DS1203",
+      "kind": "uncalled-interface-method",
+      "language": "ts",
+      "position": {
+        "path": "src/contracts.ts",
+        "line": 53,
+        "column": 3,
+        "end_line": 53
+      },
+      "symbol": {
+        "ref": "ts://@example/interfaces/src/contracts.ts#Listener.notify",
+        "kind": "interface-method",
+        "name": "Listener.notify",
+        "size_lines": 1
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0008",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 1
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "manual",
+      "severity": "warn",
+      "message": "no call site invokes or selects the method through the interface",
+      "details": {
+        "implementations": []
+      }
+    },
+    {
+      "code": "DS1201",
+      "kind": "unused-interface",
+      "language": "ts",
+      "position": {
+        "path": "src/contracts.ts",
+        "line": 57,
+        "column": 18,
+        "end_line": 59
+      },
+      "symbol": {
+        "ref": "ts://@example/interfaces/src/contracts.ts#Probe",
+        "kind": "interface",
+        "name": "Probe",
+        "size_lines": 3
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": true,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0009",
+        "root": true,
+        "symbol_count": 3,
+        "deletable_lines": 6
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "the interface is named as a type only from test files",
+      "details": {
+        "implementations": []
+      }
+    },
+    {
+      "code": "DS1002",
+      "kind": "unused-unexported",
+      "language": "ts",
+      "position": {
+        "path": "src/contracts.ts",
+        "line": 68,
+        "column": 10,
+        "end_line": 72
+      },
+      "symbol": {
+        "ref": "ts://@example/interfaces/src/contracts.ts#resetAll",
+        "kind": "function",
+        "name": "resetAll",
+        "size_lines": 5
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0011",
+        "root": true,
+        "symbol_count": 2,
+        "deletable_lines": 6
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "unexported function has no reference in the target",
+      "details": {}
+    },
+    {
+      "code": "DS1005",
+      "kind": "test-of-dead-code",
+      "language": "ts",
+      "position": {
+        "path": "src/probe.test.ts",
+        "line": 10,
+        "column": 17,
+        "end_line": 12
+      },
+      "symbol": {
+        "ref": "ts://@example/interfaces/src/probe.test.ts#testProbe",
+        "kind": "function",
+        "name": "testProbe",
+        "size_lines": 3
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0009",
+        "root": true,
+        "symbol_count": 3,
+        "deletable_lines": 6
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "every target symbol this test references is reported dead",
+      "details": {}
+    }
+  ],
+  "edge_evaluations": [],
+  "stale_suppressions": [],
+  "declared_gaps": [],
+  "excluded_by_cgo": [],
+  "test_file_rules": [
+    {
+      "rule": "test-file-pattern-1",
+      "matched": 1
+    }
+  ],
+  "totals": {
+    "findings": 9,
+    "by_severity": {
+      "allow": 0,
+      "warn": 3,
+      "deny": 6
+    },
+    "deletable_lines": 25,
+    "suppressions_in_effect": 0,
+    "reasons_recorded": 0,
+    "stale_suppressions": 0,
+    "pending": 0,
+    "omitted": 0
+  }
+}

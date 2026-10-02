@@ -1,5 +1,17 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { randomBytes } from "node:crypto";
+import {
+  closeSync,
+  fchmodSync,
+  fsyncSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeSync,
+} from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { DirectoryEntry, Host, PathKind } from "../src/host.ts";
 
@@ -50,6 +62,34 @@ function readVersion(): string {
   }
 }
 
+/** The mode every document the command writes carries. */
+const DOCUMENT_MODE = 0o644;
+
+/**
+ * Writes one document through a temporary file in the same directory, flushed and then
+ * renamed into place, so a run that dies partway leaves no truncated document at the path.
+ */
+function writeAtomically(path: string, text: string): void {
+  const temporary = join(dirname(path), `.${basename(path)}.${randomBytes(6).toString("hex")}`);
+  const fd = openSync(temporary, "wx", DOCUMENT_MODE);
+  try {
+    try {
+      fchmodSync(fd, DOCUMENT_MODE);
+      const bytes = Buffer.from(text, "utf8");
+      for (let written = 0; written < bytes.length;) {
+        written += writeSync(fd, bytes, written);
+      }
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+    renameSync(temporary, path);
+  } catch (error: unknown) {
+    rmSync(temporary, { force: true });
+    throw error;
+  }
+}
+
 /**
  * The filesystem of the platform the command runs on, and the version of the
  * package it was installed from.
@@ -78,5 +118,6 @@ export function nodeHost(): Host {
       found ??= readVersion();
       return found;
     },
+    writeFile: writeAtomically,
   };
 }

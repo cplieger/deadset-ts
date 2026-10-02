@@ -1,0 +1,1 @@
+summary: 0 findings (0 allow, 0 warn, 0 deny), 0 deletable lines, 0 suppressions in effect, 0 reasons recorded, 0 stale suppressions, 1 pending, 0 omitted

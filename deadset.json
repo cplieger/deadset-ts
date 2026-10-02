@@ -2,5 +2,9 @@
   "target": { "kind": "library" },
   "analysis": {
     "configurations": [{ "id": "tsconfig.test.json", "project": "tsconfig.test.json" }]
+  },
+  "ts": {
+    "test_files": ["**/*.test.{ts,tsx,mts,cts}", "__test-helpers__/**/*.ts"],
+    "entry_files": ["bin/deadset-ts.ts", "scripts/calibrate-batch-cap.ts"]
   }
 }

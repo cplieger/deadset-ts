@@ -45,7 +45,7 @@ import { matrixOf, sweepMatrix, type Configured, type Matrix, type SweepResult }
 import { relativePath, resolvePath } from "./paths.ts";
 import { byPosition, type Position } from "./position.ts";
 import { reflectiveLookup } from "./reflective-lookup.ts";
-import { references } from "./references.ts";
+import { references, testFileRulesOf, type TestFileRule } from "./references.ts";
 import { roots, unmatchedEverywhere, type RootKind, type Roots } from "./roots.ts";
 import type { Scope } from "./scope.ts";
 import { serializationContract } from "./serialization-contract.ts";
@@ -119,6 +119,8 @@ function compare(a: string, b: string): number {
 /** What every stage after the root set reads of one project. */
 interface ProjectRead {
   readonly configuration: string;
+  /** The compiler configuration file the project was opened from, absolute. */
+  readonly configFile: string;
   readonly held: Inventory;
   readonly rooted: Roots;
 }
@@ -156,7 +158,7 @@ function readProjects<Answer>(
     const held = inventory(project, host, targetRoot);
     const rooted = roots(project, held, targetRoot, options);
     const configuration = ids.get(project.configFile) ?? project.configFile;
-    return stage(project, { configuration, held, rooted });
+    return stage(project, { configuration, configFile: project.configFile, held, rooted });
   });
   if (failures.length > 0) {
     throw new DiscoveryError(
@@ -253,6 +255,7 @@ const DETECTORS: Detectors = new Map<TSExemptionClass, Detector>([
 
 /** What the sweep of one run reads of each project, beside what a caller's stage adds. */
 interface SweptProject<Extra> {
+  readonly configFile: string;
   readonly configured: Configured;
   readonly exempt: readonly Exemption[];
   readonly extra: Extra;
@@ -305,7 +308,12 @@ function readRun<Extra>(
         testFiles: new Set(resolved.testFilePaths),
       },
     );
-    return { configured, exempt, extra: extra(project, projectRead) };
+    return {
+      configFile: projectRead.configFile,
+      configured,
+      exempt,
+      extra: extra(project, projectRead),
+    };
   });
   return {
     matrix: matrixOf(projects.map((one) => one.configured)),
@@ -465,6 +473,7 @@ export interface AnalysisInputs {
  * any sweep, and the run is swept once under every bound record's mark and once under
  * none, so a record is decided against the finding its code would have produced. The
  * self-check family reports the refused suppressions and the roots that named nothing.
+ * Beside the inputs it answers the projects and test-file rules a report names.
  */
 function runAnalysisInputs(
   engine: Engine,
@@ -473,8 +482,8 @@ function runAnalysisInputs(
   config: Config,
   provenance: Provenance,
   mode: Mode,
-  detectors: Detectors = DETECTORS,
-): AnalysisInputs {
+  detectors: Detectors,
+): { readonly inputs: AnalysisInputs; readonly run: RunFacts } {
   const targetRoot = scope.target.path;
   const read = readEmitterRun(engine, host, scope, config, mode, detectors);
   const symbols = read.matrix.union.symbols;
@@ -499,18 +508,51 @@ function runAnalysisInputs(
     (id) => id !== "",
   );
   return {
-    marked: emitterInputOver(host, scope, config, read, { marked, mode }, facts),
-    unmarked: emitterInputOver(host, scope, config, read, { marked: [], mode }, facts),
-    suppressions,
+    inputs: {
+      marked: emitterInputOver(host, scope, config, read, { marked, mode }, facts),
+      unmarked: emitterInputOver(host, scope, config, read, { marked: [], mode }, facts),
+      suppressions,
+    },
+    run: {
+      projects: read.projects.map((one) => ({
+        id: one.configured.configuration,
+        configFile: one.configFile,
+      })),
+      testFileRules: testFileRulesOf(
+        config.ts.testFiles,
+        read.projects.flatMap((one) => one.configured.testFiles),
+      ),
+    },
   };
 }
 
+/** One project of a run: the name the run gives it and the file it was opened from. */
+export interface RunProject {
+  readonly id: string;
+  /** The compiler configuration file, absolute. */
+  readonly configFile: string;
+}
+
+/** What a report states about the run beside its findings. */
+export interface RunFacts {
+  /** The projects the run analyzed, in the run's order. */
+  readonly projects: readonly RunProject[];
+  /** The rules that classified files as test files, each counted over every project at once. */
+  readonly testFileRules: readonly TestFileRule[];
+}
+
+/** The findings of one run, beside what a report states about the run itself. */
+export interface RunAnalysis {
+  readonly result: PassResult;
+  readonly run: RunFacts;
+}
+
 /**
- * The findings of the run the scope and the configuration describe: the run read with its
- * suppressions bound, then every family's findings with the suppressions applied and the
- * declared edges evaluated.
+ * The analysis of the run the scope and the configuration describe: the run read with its
+ * suppressions bound, every family's findings with the suppressions applied and the
+ * declared edges evaluated, and the projects and test-file rules the report names.
  */
-export function runFindings(
+export function runAnalysis(
   engine: Engine,
   host: Host,
   scope: Scope,
@@ -518,6 +560,15 @@ export function runFindings(
   provenance: Provenance,
   mode: Mode,
   detectors: Detectors = DETECTORS,
-): PassResult {
-  return findingsPass(runAnalysisInputs(engine, host, scope, config, provenance, mode, detectors));
+): RunAnalysis {
+  const { inputs, run } = runAnalysisInputs(
+    engine,
+    host,
+    scope,
+    config,
+    provenance,
+    mode,
+    detectors,
+  );
+  return { result: findingsPass(inputs), run };
 }

@@ -1,5 +1,5 @@
 import { REPOSITORY_DOCUMENT } from "../config.ts";
-import type { Finding } from "../finding.ts";
+import type { Finding, FindingDetails, SuppressionEntry } from "../finding.ts";
 import type { InventorySymbol } from "../inventory.ts";
 import type { Position } from "../position.ts";
 import {
@@ -73,12 +73,32 @@ function spelled(codes: readonly string[]): string {
 }
 
 /** A finding about one suppression, at the suppression's own site. */
-function aboutSuppression(code: string, ref: string, site: Position, message: string): Finding {
+function aboutSuppression(
+  code: string,
+  ref: string,
+  site: Position,
+  message: string,
+  details: FindingDetails,
+): Finding {
   return {
     code,
     position: { ...site, endLine: site.line },
     symbol: { ref, kind: SUPPRESSION_SUBJECT, name: ref, sizeLines: 1 },
     message,
+    details,
+  };
+}
+
+/** Whether a reason holds a character other than whitespace. */
+const STATED = /[^ \t\r\n]/u;
+
+/** A refused suppression as written: a member it lacks is absent. */
+function writtenEntry(refused: Refusal): SuppressionEntry {
+  return {
+    code: refused.code,
+    ...(refused.symbol === "" ? {} : { symbol: refused.symbol }),
+    ...(refused.path === "" ? {} : { path: refused.path }),
+    ...(STATED.test(refused.reason) ? { reason: refused.reason } : {}),
   };
 }
 
@@ -108,6 +128,7 @@ export function refusedSuppressions(
           ? "carries no reason"
           : "names a symbol and no path"
       }`,
+      { mechanism: refused.mechanism, entry: writtenEntry(refused) },
     ),
   );
 }

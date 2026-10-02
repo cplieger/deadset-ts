@@ -1,0 +1,542 @@
+{
+  "schema_version": "6.0.0",
+  "contract_version": "3.2.0",
+  "analyzer": {
+    "name": "deadset-ts",
+    "version": "0.0.0",
+    "languages": [
+      "ts"
+    ],
+    "schema_versions_accepted": [
+      "6.0.0"
+    ],
+    "conformance": {
+      "corpus_version": "1.9.0",
+      "result": "fail",
+      "digest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "target": {
+    "kind": "application",
+    "root": "fixtures/projects/non-code-artifacts-imports",
+    "identity": "@example/non-code-artifacts-imports"
+  },
+  "configurations": [
+    {
+      "id": "tsconfig.json",
+      "project": "tsconfig.json"
+    }
+  ],
+  "configurations_not_built": [],
+  "consumers": {
+    "declared": 0,
+    "loaded": [],
+    "unavailable": []
+  },
+  "findings": [
+    {
+      "code": "DS1002",
+      "kind": "unused-unexported",
+      "language": "ts",
+      "position": {
+        "path": "src/ambient.d.ts",
+        "line": 1,
+        "column": 16,
+        "end_line": 4
+      },
+      "symbol": {
+        "ref": "ts://@example/non-code-artifacts-imports/src/ambient.d.ts#'*.css'",
+        "kind": "namespace",
+        "name": "'*.css'",
+        "size_lines": 4
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0001",
+        "root": true,
+        "symbol_count": 3,
+        "deletable_lines": 4
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "unexported namespace has no reference in the target",
+      "details": {}
+    },
+    {
+      "code": "DS1502",
+      "kind": "file-never-imported",
+      "language": "ts",
+      "position": {
+        "path": "src/dead-importer.ts",
+        "line": 1,
+        "column": 1,
+        "end_line": 5
+      },
+      "symbol": {
+        "ref": "ts://@example/non-code-artifacts-imports/src/dead-importer.ts#",
+        "kind": "file",
+        "name": "src/dead-importer.ts",
+        "size_lines": 5
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0008",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 0
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "no import reaches this file and no root names it or a declaration in it",
+      "details": {}
+    },
+    {
+      "code": "DS1001",
+      "kind": "unused-exported",
+      "language": "ts",
+      "position": {
+        "path": "src/dead-importer.ts",
+        "line": 3,
+        "column": 17,
+        "end_line": 5
+      },
+      "symbol": {
+        "ref": "ts://@example/non-code-artifacts-imports/src/dead-importer.ts#deadImporter",
+        "kind": "function",
+        "name": "deadImporter",
+        "size_lines": 3
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0002",
+        "root": true,
+        "symbol_count": 2,
+        "deletable_lines": 6
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "exported function has no reference in the target and none from any loaded consumer",
+      "details": {}
+    },
+    {
+      "code": "DS1002",
+      "kind": "unused-unexported",
+      "language": "ts",
+      "position": {
+        "path": "src/globals.ts",
+        "line": 3,
+        "column": 9,
+        "end_line": 7
+      },
+      "symbol": {
+        "ref": "ts://@example/non-code-artifacts-imports/src/globals.ts#global",
+        "kind": "namespace",
+        "name": "global",
+        "size_lines": 5
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0003",
+        "root": true,
+        "symbol_count": 3,
+        "deletable_lines": 5
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "unexported namespace has no reference in the target",
+      "details": {}
+    },
+    {
+      "code": "DS1201",
+      "kind": "unused-interface",
+      "language": "ts",
+      "position": {
+        "path": "src/globals.ts",
+        "line": 4,
+        "column": 13,
+        "end_line": 6
+      },
+      "symbol": {
+        "ref": "ts://@example/non-code-artifacts-imports/src/globals.ts#global.DeadsetProbe",
+        "kind": "interface",
+        "name": "global.DeadsetProbe",
+        "size_lines": 3
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0003",
+        "root": false,
+        "symbol_count": 3,
+        "deletable_lines": 5
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "nothing in the target names the interface as a type",
+      "details": {
+        "implementations": []
+      }
+    },
+    {
+      "code": "DS1001",
+      "kind": "unused-exported",
+      "language": "ts",
+      "position": {
+        "path": "src/imported-by-dead.ts",
+        "line": 1,
+        "column": 17,
+        "end_line": 3
+      },
+      "symbol": {
+        "ref": "ts://@example/non-code-artifacts-imports/src/imported-by-dead.ts#imported",
+        "kind": "function",
+        "name": "imported",
+        "size_lines": 3
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reachability",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0002",
+        "root": false,
+        "symbol_count": 2,
+        "deletable_lines": 6
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "exported function is referenced only from declarations that are themselves dead",
+      "details": {}
+    },
+    {
+      "code": "DS1502",
+      "kind": "file-never-imported",
+      "language": "ts",
+      "position": {
+        "path": "src/lone.ts",
+        "line": 1,
+        "column": 1,
+        "end_line": 4
+      },
+      "symbol": {
+        "ref": "ts://@example/non-code-artifacts-imports/src/lone.ts#",
+        "kind": "file",
+        "name": "src/lone.ts",
+        "size_lines": 4
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0009",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 0
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "no import reaches this file and no root names it or a declaration in it",
+      "details": {}
+    },
+    {
+      "code": "DS1001",
+      "kind": "unused-exported",
+      "language": "ts",
+      "position": {
+        "path": "src/main.ts",
+        "line": 5,
+        "column": 17,
+        "end_line": 7
+      },
+      "symbol": {
+        "ref": "ts://@example/non-code-artifacts-imports/src/main.ts#start",
+        "kind": "function",
+        "name": "start",
+        "size_lines": 3
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0004",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 3
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "exported function has no reference in the target and none from any loaded consumer",
+      "details": {}
+    },
+    {
+      "code": "DS1502",
+      "kind": "file-never-imported",
+      "language": "ts",
+      "position": {
+        "path": "src/orphan.ts",
+        "line": 1,
+        "column": 1,
+        "end_line": 7
+      },
+      "symbol": {
+        "ref": "ts://@example/non-code-artifacts-imports/src/orphan.ts#",
+        "kind": "file",
+        "name": "src/orphan.ts",
+        "size_lines": 7
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0010",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 0
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "no import reaches this file and no root names it or a declaration in it",
+      "details": {}
+    },
+    {
+      "code": "DS1001",
+      "kind": "unused-exported",
+      "language": "ts",
+      "position": {
+        "path": "src/orphan.ts",
+        "line": 1,
+        "column": 17,
+        "end_line": 3
+      },
+      "symbol": {
+        "ref": "ts://@example/non-code-artifacts-imports/src/orphan.ts#orphan",
+        "kind": "function",
+        "name": "orphan",
+        "size_lines": 3
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0005",
+        "root": true,
+        "symbol_count": 2,
+        "deletable_lines": 6
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "exported function has no reference in the target and none from any loaded consumer",
+      "details": {}
+    },
+    {
+      "code": "DS1002",
+      "kind": "unused-unexported",
+      "language": "ts",
+      "position": {
+        "path": "src/orphan.ts",
+        "line": 5,
+        "column": 10,
+        "end_line": 7
+      },
+      "symbol": {
+        "ref": "ts://@example/non-code-artifacts-imports/src/orphan.ts#double",
+        "kind": "function",
+        "name": "double",
+        "size_lines": 3
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reachability",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0005",
+        "root": false,
+        "symbol_count": 2,
+        "deletable_lines": 6
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "unexported function is referenced only from declarations that are themselves dead",
+      "details": {}
+    },
+    {
+      "code": "DS1001",
+      "kind": "unused-exported",
+      "language": "ts",
+      "position": {
+        "path": "src/referenced.ts",
+        "line": 1,
+        "column": 14,
+        "end_line": 1
+      },
+      "symbol": {
+        "ref": "ts://@example/non-code-artifacts-imports/src/referenced.ts#referenced",
+        "kind": "variable",
+        "name": "referenced",
+        "size_lines": 1
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0006",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 1
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "exported variable has no reference in the target and none from any loaded consumer",
+      "details": {}
+    },
+    {
+      "code": "DS1004",
+      "kind": "test-only-use",
+      "language": "ts",
+      "position": {
+        "path": "src/tested.ts",
+        "line": 1,
+        "column": 17,
+        "end_line": 3
+      },
+      "symbol": {
+        "ref": "ts://@example/non-code-artifacts-imports/src/tested.ts#tested",
+        "kind": "function",
+        "name": "tested",
+        "size_lines": 3
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": true,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0007",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 3
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "function is referenced only from test files and never from production code",
+      "details": {}
+    }
+  ],
+  "edge_evaluations": [],
+  "stale_suppressions": [],
+  "declared_gaps": [],
+  "excluded_by_cgo": [],
+  "test_file_rules": [
+    {
+      "rule": "test-file-pattern-1",
+      "matched": 1
+    }
+  ],
+  "totals": {
+    "findings": 13,
+    "by_severity": {
+      "allow": 0,
+      "warn": 0,
+      "deny": 13
+    },
+    "deletable_lines": 28,
+    "suppressions_in_effect": 0,
+    "reasons_recorded": 0,
+    "stale_suppressions": 0,
+    "pending": 0,
+    "omitted": 0
+  }
+}

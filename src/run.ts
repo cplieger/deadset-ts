@@ -9,7 +9,9 @@ import { printConfigVerb } from "./verbs/print-config.ts";
 import { printProjectsVerb } from "./verbs/print-projects.ts";
 import { printRetainedVerb } from "./verbs/print-retained.ts";
 import { printRootsVerb } from "./verbs/print-roots.ts";
-import { EXIT_FAILURE, EXIT_USAGE, type Verb } from "./verbs/verb.ts";
+import { ANALYZE_OPTIONS, analyzeVerb } from "./verbs/analyze.ts";
+import { describeVerb } from "./verbs/describe.ts";
+import { EXIT_FAILURE, EXIT_USAGE, type Verb, type VerbOptions } from "./verbs/verb.ts";
 import { versionVerb } from "./verbs/version.ts";
 
 /** One output stream of the command line. `process.stdout` and `process.stderr` satisfy it. */
@@ -21,14 +23,18 @@ export interface Writer {
  * Every verb this command answers, in the order the usage text lists them. A verb
  * with no `run` is listed, and invoking it is a usage error.
  */
-const VERBS: readonly { readonly name: string; readonly run?: Verb }[] = [
-  { name: "analyze" },
+const VERBS: readonly {
+  readonly name: string;
+  readonly run?: Verb;
+  readonly options?: VerbOptions;
+}[] = [
+  { name: "analyze", run: analyzeVerb, options: ANALYZE_OPTIONS },
   { name: "explain" },
   { name: "print-config", run: printConfigVerb },
   { name: "print-projects", run: printProjectsVerb },
   { name: "print-roots", run: printRootsVerb },
   { name: "print-retained", run: printRetainedVerb },
-  { name: "describe" },
+  { name: "describe", run: describeVerb },
   { name: "version", run: versionVerb },
 ];
 
@@ -69,10 +75,14 @@ const INTEGER_OPTIONS: ReadonlySet<string> = new Set(["max-findings"]);
 /** An integer as an option writes it: an optional minus sign and digits alone. */
 const INTEGER_TEXT = /^-?[0-9]+$/u;
 
-/** One invocation's options, by name, with the verb's remaining arguments. */
+/** One invocation's options, by name: the last value of each, and every value of a repeatable one. */
 interface Options {
   readonly named: ReadonlyMap<string, string>;
+  readonly repeated: ReadonlyMap<string, readonly string[]>;
 }
+
+/** No option beyond the ones every verb takes. */
+const NO_OPTIONS: VerbOptions = { plain: [], repeatable: [] };
 
 /**
  * The first option whose name carries a source-edit token, because every verb
@@ -93,16 +103,22 @@ function sourceEditOption(args: readonly string[]): string | undefined {
   return undefined;
 }
 
-/** Reads one verb's options, refusing a name this command does not offer. */
-function readOptions(args: readonly string[]): Options {
+/** Reads one verb's options, refusing a name neither this command nor the verb offers. */
+function readOptions(args: readonly string[], own: VerbOptions): Options {
   const named = new Map<string, string>();
+  const repeated = new Map<string, string[]>();
   for (const arg of args) {
     if (!arg.startsWith("-")) {
       throw new ConfigError("malformed", "", `unexpected argument ${JSON.stringify(arg)}`);
     }
     const [spelled, ...rest] = arg.split("=");
     const name = (spelled ?? "").replace(/^-+/u, "");
-    if (!PLAIN_OPTIONS.has(name) && !SETTING_OPTIONS.has(name)) {
+    if (
+      !PLAIN_OPTIONS.has(name) &&
+      !SETTING_OPTIONS.has(name) &&
+      !own.plain.includes(name) &&
+      !own.repeatable.includes(name)
+    ) {
       throw new ConfigError("malformed", "", `unknown option ${JSON.stringify(spelled ?? arg)}`);
     }
     if (rest.length === 0) {
@@ -112,9 +128,11 @@ function readOptions(args: readonly string[]): Options {
         `option ${JSON.stringify(spelled ?? arg)} takes a value`,
       );
     }
-    named.set(name, rest.join("="));
+    const value = rest.join("=");
+    named.set(name, value);
+    repeated.set(name, [...(repeated.get(name) ?? []), value]);
   }
-  return { named };
+  return { named, repeated };
 }
 
 function readFileOr(host: Host, path: string, orUndefined: boolean): string | undefined {
@@ -202,7 +220,13 @@ export function run(
   const name = args[0];
   const verb = VERBS.find((listed) => listed.name === name);
   if (verb?.run !== undefined) {
-    return invoke(verb.run, args.slice(1), { out, err, host }, openClient);
+    return invoke(
+      verb.run,
+      verb.options ?? NO_OPTIONS,
+      args.slice(1),
+      { out, err, host },
+      openClient,
+    );
   }
   if (verb !== undefined) {
     err.write(`deadset-ts: ${verb.name} is not implemented\n`);
@@ -222,18 +246,22 @@ export function run(
  */
 function invoke(
   verb: Verb,
+  own: VerbOptions,
   args: readonly string[],
   streams: { readonly out: Writer; readonly err: Writer; readonly host: Host },
   openClient: (collectTiming: boolean) => Engine,
 ): number {
   let options: Options | undefined;
-  const read = (): Options => (options ??= readOptions(args));
+  const read = (): Options => (options ??= readOptions(args, own));
   let opened: Engine | undefined;
   try {
     return verb({
       ...streams,
+      args,
       inputs: () => inputsOf(streams.host, read()),
       scope: () => scopeOf(streams.host, read()),
+      option: (name) => read().named.get(name),
+      repeated: (name) => read().repeated.get(name) ?? [],
       openClient: (collectTiming) => {
         opened = openClient(collectTiming);
         return opened;

@@ -1,0 +1,10 @@
+src/generics.ts:2:23: type-parameter first<T>: type parameter first<T> is named in neither its signature nor its body [certain] (DS1303)
+src/generics.ts:19:8: type-parameter Box.open<V>: type parameter Box.open<V> is named in neither its signature nor its body [certain] (DS1303)
+src/levels.ts:9:13: enum Flag: exported enum is referenced only inside the file that declares it [certain] (DS1104)
+src/levels.ts:23:3: enum-member Mode.Write: enum member Mode.Write is named nowhere [certain] (DS1302)
+src/levels.ts:27:6: enum Unused: unexported enum has no reference in the target [certain] (DS1002)
+src/state.ts:2:5: variable written: variable written is written at 2 positions and never read [certain] (DS1301)
+src/state.ts:8:12: variable shared: variable shared is written once and never read [certain] (DS1301)
+src/state.ts:23:3: class-member Gauge.#samples: member Gauge.#samples is written at 3 positions and never read [certain] (DS1301)
+src/state.ts:52:7: variable slots: variable slots is written once and never read [certain] (DS1301)
+summary: 9 findings (0 allow, 1 warn, 8 deny), 7 deletable lines, 0 suppressions in effect, 0 reasons recorded, 0 stale suppressions, 0 pending, 0 omitted

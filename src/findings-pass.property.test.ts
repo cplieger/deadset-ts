@@ -3,7 +3,7 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
 import { writeProject } from "../__test-helpers__/projects.ts";
-import { runFindings } from "./analysis.ts";
+import { runAnalysis } from "./analysis.ts";
 import type { PassResult } from "./findings-pass.ts";
 import { resolve } from "./resolve.ts";
 import { scopeForDir } from "./scope.ts";
@@ -108,9 +108,9 @@ describe("a suppression document written from a run's findings", () => {
       const client = openEngine({ collectTiming: false });
       const shared: Engine = { ...client, close: () => undefined };
       const passOver = (root: string): PassResult =>
-        runFindings(shared, host, scopeForDir(host, root), config, provenance, {
+        runAnalysis(shared, host, scopeForDir(host, root), config, provenance, {
           production: true,
-        });
+        }).result;
       try {
         fc.assert(
           fc.property(
