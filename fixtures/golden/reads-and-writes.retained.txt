@@ -1,0 +1,5 @@
+ts://@example/reads-and-writes/src/levels.ts#Tier.Mid	enum-group	src/levels.ts:33:10	converted from number
+ts://@example/reads-and-writes/src/levels.ts#Tier.High	enum-group	src/levels.ts:33:10	converted from number
+ts://@example/reads-and-writes/src/levels.ts#Flag.On	enum-group	src/levels.ts:37:10	looked up by an element access on Flag
+ts://@example/reads-and-writes/src/levels.ts#Flag.Off	enum-group	src/levels.ts:37:10	looked up by an element access on Flag
+ts://@example/reads-and-writes/src/levels.ts#Wire.Binary	enum-group	src/levels.ts:41:25	decoded as Wire

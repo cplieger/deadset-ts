@@ -14,6 +14,11 @@ const ANALYZER = "deadset-ts";
 /** The fewest digits a component identifier's number is written with. */
 const ID_DIGITS = 4;
 
+/** The identifier of the component at one place of the run's order, counted from one. */
+export function componentId(place: number): string {
+  return `${ANALYZER}/c-${String(place).padStart(ID_DIGITS, "0")}`;
+}
+
 /** The index of a declaration the component walk has not reached. */
 const UNVISITED = -1;
 
@@ -84,7 +89,7 @@ export function componentsOf(
       return referenced[componentOf[position] ?? 0] !== true && dead[container] !== true;
     });
     return {
-      id: `${ANALYZER}/c-${String(place + 1).padStart(ID_DIGITS, "0")}`,
+      id: componentId(place + 1),
       members: group.map(idOf),
       roots: roots.map(idOf),
       deletableLines: linesSpanned(group.map((position) => graph.symbols[at[position] ?? 0])),

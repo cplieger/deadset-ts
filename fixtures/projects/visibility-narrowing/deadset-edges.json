@@ -1,0 +1,17 @@
+{
+  "description": "Each edge pairs a declaration of the package with the code in another language that uses it.",
+  "edges": [
+    {
+      "id": "wire/used-by-generated",
+      "because": "generated",
+      "provides": "go://example.com/app/wire#Wired",
+      "used_by": "ts://@example/visibility-narrowing/src/helper.ts#wired"
+    },
+    {
+      "id": "wire/provided-to-generated",
+      "because": "generated",
+      "provides": "ts://@example/visibility-narrowing/src/helper.ts#wiredUnused",
+      "used_by": "go://example.com/app/wire#Unused"
+    }
+  ]
+}

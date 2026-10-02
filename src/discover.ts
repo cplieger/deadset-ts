@@ -7,7 +7,7 @@ import type { Scope } from "./scope.ts";
 import type { Engine } from "./session.ts";
 
 /** Directory names discovery does not descend into. */
-const IGNORED_DIRECTORIES: ReadonlySet<string> = new Set(["node_modules", ".git"]);
+export const IGNORED_DIRECTORIES: ReadonlySet<string> = new Set(["node_modules", ".git"]);
 
 /** A compiler configuration file discovery recognises under a root. */
 const CONFIG_FILE = /^tsconfig.*\.json$/u;

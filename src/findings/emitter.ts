@@ -1,12 +1,32 @@
 import type { RunSweep } from "../analysis.ts";
 import type { Config } from "../config.ts";
+import type { Dependencies } from "../dependencies.ts";
+import type { FileFacts } from "../file-facts.ts";
 import type { Finding } from "../finding.ts";
+import type { Implementations } from "../implementations.ts";
+import type { Stores } from "../stores.ts";
+import type { Boundary } from "./boundary.ts";
 
-/** What every emitter reads: the configuration the run resolved and the run's sweep. */
+/**
+ * What every emitter reads: the configuration the run resolved, the run's sweep, and
+ * the facts about the run each kind family reads beside the sweep.
+ */
 export interface EmitterInput {
   readonly config: Config;
   /** The production sweep a report is built from, beside the matrix it judged. */
   readonly swept: RunSweep;
+  /** The declarations carrying the deprecation marker in any configuration of the run. */
+  readonly deprecated: ReadonlySet<string>;
+  /** The stores into the run's declarations and the reads of them, which the sweep does not keep. */
+  readonly stores: Stores;
+  /** What the target's manifest declares, and what its projects need of it. */
+  readonly dependencies: Dependencies;
+  /** How the run's interfaces are implemented by its classes. */
+  readonly implementations: Implementations;
+  /** The target's files beside the sweep: the source tree, and what a program holds by inclusion. */
+  readonly files: FileFacts;
+  /** What can reach the target from outside it: consumers, declared edges, and `exports`. */
+  readonly boundary: Boundary;
 }
 
 /**

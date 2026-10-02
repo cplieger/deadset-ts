@@ -224,7 +224,7 @@ interface Named {
  * One directory is read at most once, because a package holds many files and a
  * manifest read is a filesystem call.
  */
-function packages(host: Host, root: string): (path: string) => Module {
+export function packageScope(host: Host, root: string): (path: string) => Module {
   const named = new Map<string, Named | undefined>();
 
   const manifestName = (dir: string): string | undefined => {
@@ -480,7 +480,7 @@ export function inventory<Brand>(
 ): Inventory {
   const files = project.ownSourceFiles();
   const ownFiles = new Set(files.map((file) => file.fileName));
-  const moduleOf = packages(host, targetRoot);
+  const moduleOf = packageScope(host, targetRoot);
 
   const building: Building[] = [];
   const byNode = new Map<string, Building>();

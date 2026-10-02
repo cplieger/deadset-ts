@@ -1,0 +1,6 @@
+ts://@example/reads-and-writes-enum-group/src/levels.ts#Angle.B	enum-group	src/levels.ts:38:10	converted from number
+ts://@example/reads-and-writes-enum-group/src/levels.ts#Named.Y	enum-group	src/levels.ts:42:10	converted from string
+ts://@example/reads-and-writes-enum-group/src/levels.ts#Returned.Q	enum-group	src/levels.ts:46:10	converted from number
+ts://@example/reads-and-writes-enum-group/src/levels.ts#Keyed.K1	reflective-lookup	src/levels.ts:50:16	looked up by ["K1"]
+ts://@example/reads-and-writes-enum-group/src/levels.ts#Spaced.N1	enum-group	src/main.ts:11:3	looked up by an element access on Spaced
+ts://@example/reads-and-writes-enum-group/src/levels.ts#Spaced.N2	enum-group	src/main.ts:11:3	looked up by an element access on Spaced

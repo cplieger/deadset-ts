@@ -1,0 +1,5 @@
+{
+  "target": { "kind": "library" },
+  "roots": { "patterns": ["ts://@example/visibility-narrowing/src/helper.ts#configuredLocal"] },
+  "ts": { "entry_files": ["src/route.ts"] }
+}

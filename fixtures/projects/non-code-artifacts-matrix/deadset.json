@@ -1,0 +1,11 @@
+{
+  "target": { "kind": "application" },
+  "analysis": {
+    "configurations": [
+      { "id": "app", "project": "tsconfig.json" },
+      { "id": "scripts", "project": "tsconfig.scripts.json" }
+    ],
+    "matrix": { "complete": true }
+  },
+  "ts": { "entry_files": ["scripts/check.ts"] }
+}
