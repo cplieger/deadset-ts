@@ -105,6 +105,11 @@ describe("the reference table of every reference form", () => {
         "and a re-export a use already stepped through costs nothing more",
     ).toBe(11);
     expect(
+      [RESOLVED?.cost.patternBatches, RESOLVED?.cost.patternLookups],
+      "one pattern batch per file holding a destructuring, and one property table per " +
+        "type destructured: two files, each destructuring one object literal",
+    ).toEqual([2, 2]);
+    expect(
       RESOLVED?.cost.residueFallbacks,
       "and no name here is residue: a statement label is the form a batch leaves, and a " +
         "label names no declaration",
@@ -114,7 +119,7 @@ describe("the reference table of every reference form", () => {
       "the requests the client measured are the ones the pass accounts for: a declaration " +
         "outside the project's own files is never fetched to find out that the inventory " +
         "does not hold it",
-    ).toBe(4 + 0 + 4 + 11);
+    ).toBe(4 + 0 + 4 + 11 + 2 + 2);
   });
 
   it("records each decorator as a use of the declaration it is attached to, at the decorator", () => {
@@ -148,7 +153,9 @@ describe("the reference table of every reference form", () => {
         held.cost.fileBatches +
         held.cost.residueFallbacks +
         held.cost.shorthandLookups +
-        held.cost.aliasSteps,
+        held.cost.aliasSteps +
+        held.cost.patternBatches +
+        held.cost.patternLookups,
       0,
     );
 

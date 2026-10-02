@@ -161,6 +161,8 @@ const NO_REFERENCE_COST: ReferenceCost = {
   residueFallbacks: 0,
   shorthandLookups: 0,
   aliasSteps: 0,
+  patternBatches: 0,
+  patternLookups: 0,
 };
 
 const NO_INVENTORY_COST: InventoryCost = { batches: 0, exportTables: 0, memberTables: 0 };
@@ -217,6 +219,8 @@ function onePass(dir: string, cap: Cap): Pass {
         residueFallbacks: sum.residueFallbacks + reference.residueFallbacks,
         shorthandLookups: sum.shorthandLookups + reference.shorthandLookups,
         aliasSteps: sum.aliasSteps + reference.aliasSteps,
+        patternBatches: sum.patternBatches + reference.patternBatches,
+        patternLookups: sum.patternLookups + reference.patternLookups,
       }),
       NO_REFERENCE_COST,
     ),
