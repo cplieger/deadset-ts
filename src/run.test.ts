@@ -107,11 +107,13 @@ describe("the command line", () => {
     expect(got.err).toBe(`deadset-ts: unknown verb "analyse"\n${USAGE}`);
   });
 
-  it("names a verb it does not implement and exits 2", () => {
+  it("refuses an explanation request that names no symbol and exits 2", () => {
     const got = invoke(["explain"]);
 
     expect(got.code).toBe(2);
-    expect(got.err).toBe("deadset-ts: explain is not implemented\n");
+    expect(got.err).toBe(
+      `deadset-ts: explain explains the symbol --why, --why-live or --why-not names, and none was named\n${USAGE}`,
+    );
   });
 });
 

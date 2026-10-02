@@ -483,7 +483,11 @@ function runAnalysisInputs(
   provenance: Provenance,
   mode: Mode,
   detectors: Detectors,
-): { readonly inputs: AnalysisInputs; readonly run: RunFacts } {
+): {
+  readonly inputs: AnalysisInputs;
+  readonly run: RunFacts;
+  readonly configured: readonly Configured[];
+} {
   const targetRoot = scope.target.path;
   const read = readEmitterRun(engine, host, scope, config, mode, detectors);
   const symbols = read.matrix.union.symbols;
@@ -523,6 +527,7 @@ function runAnalysisInputs(
         read.projects.flatMap((one) => one.configured.testFiles),
       ),
     },
+    configured: read.projects.map((one) => one.configured),
   };
 }
 
@@ -545,12 +550,17 @@ export interface RunFacts {
 export interface RunAnalysis {
   readonly result: PassResult;
   readonly run: RunFacts;
+  /** The sweep the findings were decided over, under the mark of every bound record. */
+  readonly swept: RunSweep;
+  /** What each project answered, in the run's order, which the sweep was built from. */
+  readonly configured: readonly Configured[];
 }
 
 /**
  * The analysis of the run the scope and the configuration describe: the run read with its
  * suppressions bound, every family's findings with the suppressions applied and the
- * declared edges evaluated, and the projects and test-file rules the report names.
+ * declared edges evaluated, the projects and test-file rules the report names, and the sweep
+ * an explanation reads.
  */
 export function runAnalysis(
   engine: Engine,
@@ -561,7 +571,7 @@ export function runAnalysis(
   mode: Mode,
   detectors: Detectors = DETECTORS,
 ): RunAnalysis {
-  const { inputs, run } = runAnalysisInputs(
+  const { inputs, run, configured } = runAnalysisInputs(
     engine,
     host,
     scope,
@@ -570,5 +580,5 @@ export function runAnalysis(
     mode,
     detectors,
   );
-  return { result: findingsPass(inputs), run };
+  return { result: findingsPass(inputs), run, swept: inputs.marked.swept, configured };
 }

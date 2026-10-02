@@ -290,7 +290,7 @@ describe("the exit code", () => {
   });
 
   it.each([
-    ["a format this analyzer does not render", "--format=sarif"],
+    ["a format this analyzer does not render", "--format=html"],
     ["a format named twice", "--format=text --format=text"],
     ["an exit-code value outside on and off", "--exit-code=maybe"],
   ])("is 2 for %s, and writes no report", (_what, options) => {
@@ -395,6 +395,166 @@ describe("the baseline", () => {
 
       expect(analyze(tree, [`--baseline-write=${baseline}`], tmpdir()).code).toBe(3);
       expect(readFileSync(baseline, "utf8")).toBe("kept\n");
+    },
+    LOAD_TIMEOUT,
+  );
+});
+
+/** An application whose library holds two dead exports, the first adjudicated by an inline directive. */
+function adjudicated(directive: boolean): string {
+  return project({
+    ...CLEAN_APPLICATION,
+    "src/internal.ts": `export function helper(): number {\n  return 1;\n}\n\n${directive ? "// deadset:ignore DS1001 -- kept for a plugin that loads it by name\n" : ""}export function kept(): number {\n  return 2;\n}\n\nexport function dropped(): number {\n  return 3;\n}\n`,
+  });
+}
+
+/** A target whose analysis fails with 3, so a refusal with 2 is one that came before it. */
+function failingToLoad(): string {
+  return project({ ...CLEAN_APPLICATION, "src/broken.ts": "export const broken: string = 1;\n" });
+}
+
+interface SarifRun {
+  readonly results: readonly {
+    readonly ruleId: string;
+    readonly locations: readonly {
+      readonly physicalLocation: { readonly region: { readonly startLine: number } };
+    }[];
+  }[];
+  readonly properties: { readonly totals: Record<string, number> };
+}
+
+function sarifRunOf(got: Analyzed): SarifRun {
+  const log = JSON.parse(readFileSync(join(got.dir, "report.json.sarif"), "utf8")) as {
+    runs: SarifRun[];
+  };
+  const [only] = log.runs;
+  if (only === undefined || log.runs.length !== 1) {
+    throw new Error(`the SARIF log holds ${String(log.runs.length)} runs`);
+  }
+  return only;
+}
+
+describe("the renderings beside the report", () => {
+  it(
+    "omits a suppressed finding from the SARIF document while its totals count the suppression",
+    () => {
+      const open = analyze(adjudicated(false), ["--format=sarif"], tmpdir());
+      const kept = analyze(adjudicated(true), ["--format=sarif"], tmpdir());
+      const lines = (run: SarifRun): readonly number[] =>
+        run.results.map((one) => one.locations[0]?.physicalLocation.region.startLine ?? 0);
+
+      expect(lines(sarifRunOf(open))).toEqual([5, 9]);
+      expect(lines(sarifRunOf(kept))).toEqual([10]);
+      expect(totalsOf(kept)).toMatchObject({ findings: 1, suppressions_in_effect: 1 });
+      expect(sarifRunOf(kept).properties.totals).toEqual(totalsOf(kept));
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "writes every format beside the report at its suffix, one record per finding and stale suppression in each",
+    () => {
+      const dir = outputDir();
+      const template = join(dir, "codes.tmpl");
+      writeFileSync(
+        template,
+        "{{range .findings}}{{.code}}\n{{end}}{{range .stale_suppressions}}{{.code}}\n{{end}}",
+      );
+      const got = analyze(fixture("projects", "suppressions"), [
+        "--format=text",
+        "--format=github",
+        "--format=sarif",
+        "--format=template",
+        `--template=${template}`,
+      ]);
+      const records = (totalsOf(got)["findings"] ?? 0) + (totalsOf(got)["stale_suppressions"] ?? 0);
+      const rendered = (suffix: string): string =>
+        readFileSync(join(got.dir, `report.json${suffix}`), "utf8");
+
+      expect(readdirSync(got.dir).sort()).toEqual([
+        "report.json",
+        "report.json.annotations",
+        "report.json.sarif",
+        "report.json.tmpl",
+        "report.json.txt",
+      ]);
+      expect(
+        rendered(".annotations")
+          .split("\n")
+          .filter((line) => line.startsWith("::")),
+      ).toHaveLength(records);
+      expect(sarifRunOf(got).results).toHaveLength(records);
+      expect(
+        rendered(".tmpl")
+          .split("\n")
+          .filter((line) => line !== ""),
+      ).toEqual(sarifRunOf(got).results.map((one) => one.ruleId));
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "annotates a finding below the failing severity as a warning, and as an error once the failing severity reaches it",
+    () => {
+      const warnOnly = project({
+        ...CLEAN_APPLICATION,
+        "src/main.ts": 'import { run } from "./internal.js";\n\nconsole.log(run());\n',
+        "src/internal.ts":
+          "export function helper(): number {\n  return 1;\n}\n\nexport function run(): number {\n  return helper() * 2;\n}\n",
+      });
+      const level = (options: readonly string[]): string =>
+        readFileSync(
+          join(
+            analyze(warnOnly, ["--format=github", ...options], tmpdir()).dir,
+            "report.json.annotations",
+          ),
+          "utf8",
+        ).split(" ", 1)[0] ?? "";
+
+      expect(level([])).toBe("::warning");
+      expect(level(["--fail-on=warn"])).toBe("::error");
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it.each([
+    ["a template that does not parse", "{{if .findings}}never closed"],
+    ["a template naming a function it does not define", "{{upper .schema_version}}"],
+  ])("is 2 for %s, before any analysis and with no report written", (_what, source) => {
+    const dir = outputDir();
+    const template = join(dir, "broken.tmpl");
+    writeFileSync(template, source);
+    const got = analyze(failingToLoad(), ["--format=template", `--template=${template}`], tmpdir());
+
+    expect(got.code).toBe(2);
+    expect(got.err).toContain(`--template=${template}: line 1: `);
+    expect(readdirSync(got.dir)).toEqual([]);
+  });
+
+  it.each([
+    ["the template format with no template named", ["--format=template"]],
+    ["a template file that cannot be read", ["--template=/nonexistent/x.tmpl"]],
+  ])("is 2 for %s, before any analysis and with no report written", (_what, options) => {
+    const got = analyze(failingToLoad(), options, tmpdir());
+
+    expect(got.code).toBe(2);
+    expect(readdirSync(got.dir)).toEqual([]);
+  });
+
+  it(
+    "is 3 for a template naming a member the report does not carry, and writes no rendering of it",
+    () => {
+      const dir = outputDir();
+      const template = join(dir, "missing.tmpl");
+      writeFileSync(template, "{{.totals.nothing_here}}");
+      const got = analyze(fixture("projects", "unused-declarations"), [
+        "--format=template",
+        `--template=${template}`,
+      ]);
+
+      expect(got.code).toBe(3);
+      expect(got.err).toBe('deadset-ts: the document has no member "nothing_here" here\n');
+      expect(readdirSync(got.dir)).toEqual(["report.json"]);
     },
     LOAD_TIMEOUT,
   );
