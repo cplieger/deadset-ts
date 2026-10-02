@@ -3,6 +3,7 @@ import { nodeHost } from "../../bin/node-host.ts";
 import { contractDocument } from "../../__test-helpers__/fixtures.ts";
 import type { Host } from "../host.ts";
 import { run, type Writer } from "../run.ts";
+import { CONFORMANCE } from "../conformance.ts";
 import { describeDocument } from "./describe.ts";
 
 class MemoryWriter implements Writer {
@@ -22,7 +23,7 @@ function invoke(args: readonly string[], host: Host): { code: number; out: strin
 const VERSIONED: Host = { ...nodeHost(), analyzerVersion: () => "1.2.3" };
 
 describe("describe", () => {
-  it("writes the analyzer's description, with no conformance record, to the output stream alone and exits 0", () => {
+  it("writes the analyzer's description, with its conformance record, to the output stream alone and exits 0", () => {
     const got = invoke(["describe"], VERSIONED);
 
     expect(got).toEqual({
@@ -33,7 +34,12 @@ describe("describe", () => {
         '  "version": "1.2.3",\n' +
         '  "contract_version": "3.2.0",\n' +
         '  "schema_versions_accepted": [\n    "6.0.0"\n  ],\n' +
-        '  "languages": [\n    "ts"\n  ]\n' +
+        '  "languages": [\n    "ts"\n  ],\n' +
+        '  "conformance": {\n' +
+        `    "corpus_version": "${CONFORMANCE.corpusVersion}",\n` +
+        `    "result": "${CONFORMANCE.result}",\n` +
+        `    "digest": "${CONFORMANCE.digest}"\n` +
+        "  }\n" +
         "}\n",
       err: "",
     });

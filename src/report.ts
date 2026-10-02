@@ -5,7 +5,7 @@
  */
 
 import type { Severity, Sort, TargetKind } from "./config.ts";
-import type { Conformance } from "./conformance.ts";
+import type { Conformance, DeclaredGap } from "./conformance.ts";
 import type { EdgeEvaluation } from "./edges.ts";
 import type {
   CompletedFinding,
@@ -105,6 +105,13 @@ export interface WireStaleSuppression {
   readonly message: string;
 }
 
+interface WireDeclaredGap {
+  readonly fixture: string;
+  readonly symbol?: string;
+  readonly capability: string;
+  readonly reason: string;
+}
+
 export interface WireTotals {
   readonly findings: number;
   readonly by_severity: { readonly allow: number; readonly warn: number; readonly deny: number };
@@ -159,7 +166,7 @@ export interface Report {
   readonly findings: readonly WireFinding[];
   readonly edge_evaluations: readonly WireEdgeEvaluation[];
   readonly stale_suppressions: readonly WireStaleSuppression[];
-  readonly declared_gaps: readonly never[];
+  readonly declared_gaps: readonly WireDeclaredGap[];
   readonly excluded_by_cgo: readonly never[];
   readonly test_file_rules: readonly TestFileRule[];
   readonly totals: WireTotals;
@@ -170,6 +177,7 @@ export interface ReportInput {
   readonly contractVersion: string;
   readonly version: string;
   readonly conformance: Conformance;
+  readonly declaredGaps: readonly DeclaredGap[];
   readonly target: { readonly kind: TargetKind; readonly root: string; readonly identity: string };
   readonly configurations: readonly ReportConfiguration[];
   readonly unavailable: readonly UnavailableConsumer[];
@@ -318,6 +326,16 @@ function canonicalStale(a: WireStaleSuppression, b: WireStaleSuppression): numbe
   );
 }
 
+/** One declared gap as a report carries it, its members in the schema's order. */
+function wireGap(gap: DeclaredGap): WireDeclaredGap {
+  return {
+    fixture: gap.fixture,
+    ...(gap.symbol === undefined ? {} : { symbol: gap.symbol }),
+    capability: gap.capability,
+    reason: gap.reason,
+  };
+}
+
 /** Edge evaluations by edge, then side, then their compact encodings. */
 function byEdge(a: WireEdgeEvaluation, b: WireEdgeEvaluation): number {
   return (
@@ -392,7 +410,11 @@ export function buildReport(input: ReportInput): Report {
     findings,
     edge_evaluations: input.result.edgeEvaluations.map(wireEvaluation).sort(byEdge),
     stale_suppressions: input.result.staleSuppressions.map(wireStale).sort(canonicalStale),
-    declared_gaps: [],
+    // Every gap shares the one component of the canonical key a gap supplies, the analyzer's
+    // name, so the compact encodings alone order them.
+    declared_gaps: input.declaredGaps
+      .map(wireGap)
+      .sort((a, b) => compare(JSON.stringify(a), JSON.stringify(b))),
     excluded_by_cgo: [],
     test_file_rules: [...input.testFileRules]
       .sort((a, b) => compare(a.rule, b.rule) || a.matched - b.matched)

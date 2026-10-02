@@ -1,4 +1,4 @@
-import { RECORDED_CONFORMANCE, type Conformance } from "../conformance.ts";
+import { CONFORMANCE, type Conformance } from "../conformance.ts";
 import { ANALYZER_NAME, LANGUAGE, SCHEMA_VERSION } from "../report.ts";
 import { CONTRACT_VERSION } from "../version.ts";
 import { EXIT_CLEAN, EXIT_FAILURE, EXIT_USAGE, type Verb } from "./verb.ts";
@@ -6,24 +6,20 @@ import { EXIT_CLEAN, EXIT_FAILURE, EXIT_USAGE, type Verb } from "./verb.ts";
 /**
  * The document `describe` writes: the analyzer, the Contract version it implements, the
  * report schema versions it reads, the languages it claims, and its recorded result over
- * the conformance corpus, absent where it records none.
+ * the conformance corpus.
  */
-export function describeDocument(version: string, recorded: Conformance | undefined): string {
+export function describeDocument(version: string, recorded: Conformance): string {
   const document = {
     name: ANALYZER_NAME,
     version,
     contract_version: CONTRACT_VERSION,
     schema_versions_accepted: [SCHEMA_VERSION],
     languages: [LANGUAGE],
-    ...(recorded === undefined
-      ? {}
-      : {
-          conformance: {
-            corpus_version: recorded.corpusVersion,
-            result: recorded.result,
-            digest: recorded.digest,
-          },
-        }),
+    conformance: {
+      corpus_version: recorded.corpusVersion,
+      result: recorded.result,
+      digest: recorded.digest,
+    },
   };
   return `${JSON.stringify(document, null, 2)}\n`;
 }
@@ -41,6 +37,6 @@ export const describeVerb: Verb = ({ out, err, host, args }) => {
     err.write(`deadset-ts: describe: ${error instanceof Error ? error.message : String(error)}\n`);
     return EXIT_FAILURE;
   }
-  out.write(describeDocument(version, RECORDED_CONFORMANCE));
+  out.write(describeDocument(version, CONFORMANCE));
   return EXIT_CLEAN;
 };

@@ -1,6 +1,6 @@
 import { runAnalysis, type RunProject } from "../analysis.ts";
 import { ConfigError, type Format } from "../config.ts";
-import { RECORDED_CONFORMANCE, reportedConformance } from "../conformance.ts";
+import { CONFORMANCE, DECLARED_GAPS } from "../conformance.ts";
 import { analyzerProvenance, recordedFindings, verdictOf } from "../findings-pass.ts";
 import { packageScope } from "../inventory.ts";
 import { normalizePath, relativePath, resolvePath } from "../paths.ts";
@@ -175,7 +175,8 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
     const built = buildReport({
       contractVersion: CONTRACT_VERSION,
       version,
-      conformance: reportedConformance(RECORDED_CONFORMANCE),
+      conformance: CONFORMANCE,
+      declaredGaps: DECLARED_GAPS,
       target: { kind, root, identity: identityOf(scoped.target, host) },
       configurations: configurationsOf(run.projects, targetRoot),
       unavailable: scoped.consumers.map((consumer) => ({

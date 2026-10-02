@@ -1,0 +1,310 @@
+{
+  "corpus_version": "1.9.0",
+  "product": { "name": "deadset-ts", "version": "0.1.0", "language": "ts" },
+  "result": "fail",
+  "totals": { "fixtures": 9, "pass": 6, "gap": 1, "fail": 2 },
+  "fixtures": [
+    {
+      "fixture": "deprecated-and-unused",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "Counter.Live", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Counter.Old",
+          "result": "pass",
+          "actual": {
+            "report": "DS1006",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "Fresh", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Kept", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Old",
+          "result": "pass",
+          "actual": {
+            "report": "DS1006",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "Stale",
+          "result": "pass",
+          "actual": {
+            "report": "DS1006",
+            "symbol_kind": "variable",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "StaleToo",
+          "result": "pass",
+          "actual": {
+            "report": "DS1006",
+            "symbol_kind": "variable",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "entry-file-declaring-nothing",
+      "result": "pass",
+      "expectations": [{ "symbol": "Entry", "result": "pass", "actual": { "report": "none" } }],
+      "unexpected": []
+    },
+    {
+      "fixture": "enum-group-conversion",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "ModeWrite",
+          "result": "pass",
+          "actual": {
+            "report": "DS1302",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "TierHigh",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["enum-group"] }
+        },
+        {
+          "symbol": "TierMid",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["enum-group"] }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "private-member-unread",
+      "result": "gap",
+      "expectations": [
+        {
+          "symbol": "ReachedByStringIndex",
+          "result": "gap",
+          "capability": "reflective-lookup",
+          "actual": { "report": "none" },
+          "message": "want the retained listing to name [\"reflective-lookup\"] at target/registry.ts:4, got []"
+        },
+        {
+          "symbol": "UnreadPrivate",
+          "result": "pass",
+          "actual": {
+            "report": "DS1301",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "UnreferencedPrivate",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "redundant-export-keyword",
+      "result": "fail",
+      "expectations": [
+        {
+          "symbol": "Caller",
+          "result": "fail",
+          "actual": { "report": "DS1001", "confidence": "possible" },
+          "message": "want no finding at target/lib.ts:15, got DS1001"
+        },
+        {
+          "symbol": "LocalOnly",
+          "result": "gap",
+          "capability": "DS1104",
+          "actual": { "report": "none" },
+          "message": "want DS1104 as the finding at target/lib.ts:9, got none"
+        },
+        {
+          "symbol": "Published",
+          "result": "fail",
+          "actual": { "report": "DS1001", "confidence": "possible" },
+          "message": "want no finding at target/lib.ts:3, got DS1001"
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "test-of-dead-code",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "DeadOne",
+          "result": "pass",
+          "actual": {
+            "report": "DS1004",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "DeadTwo",
+          "result": "pass",
+          "actual": {
+            "report": "DS1004",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "Live", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "TestDeadOnly",
+          "result": "pass",
+          "actual": {
+            "report": "DS1005",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "TestMixed", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "assertSum", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "test-only-reference",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "OnlyTested",
+          "result": "pass",
+          "actual": {
+            "report": "DS1004",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "Production", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "unused-declaration-visibility",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "Counter.Live", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Counter.Total", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Counter.stale",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "Recurse",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reachability"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "Resolve",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "Used", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "helper",
+          "result": "pass",
+          "actual": {
+            "report": "DS1002",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "usedHelper", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "unused-exported-consumer",
+      "result": "fail",
+      "expectations": [
+        {
+          "symbol": "DeadExport",
+          "result": "gap",
+          "capability": "DS1001",
+          "actual": {
+            "report": "DS1001",
+            "confidence": "possible",
+            "reachability_class": "possible",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false },
+          "message": "confidence want \"certain\" got \"possible\"; reachability_class want \"certain\" got \"possible\""
+        },
+        {
+          "symbol": "UsedByConsumer",
+          "result": "fail",
+          "actual": { "report": "DS1001", "confidence": "possible" },
+          "message": "want no finding at target/lib.ts:7, got DS1001"
+        }
+      ],
+      "unexpected": []
+    }
+  ]
+}
