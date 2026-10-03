@@ -18,9 +18,10 @@ import {
   type TSExemptionClass,
   type TypeScriptVisibility,
 } from "./exempt-classes.ts";
-import type { Inventory, InventorySymbol, Visibility } from "./inventory.ts";
+import type { Inventory, InventorySymbol, SymbolKind, Visibility } from "./inventory.ts";
 import type { Matrix } from "./matrix.ts";
 import { byPosition, positionKey, type Position } from "./position.ts";
+import { Unanswerable } from "./query.ts";
 import type { ProjectView } from "./session.ts";
 import type { Templates } from "./template-field.ts";
 import { sweep, type Exemption, type Mode, type SweepInput } from "./sweep.ts";
@@ -101,6 +102,53 @@ function retainable(allowed: TypeScriptVisibility, visibility: Visibility | unde
 }
 
 /**
+ * The kinds of declaration each class can hold back, which a detector that stops holds
+ * back whole. A class with no row here holds back every declaration but a file.
+ */
+const RETAINABLE: ReadonlyMap<TSExemptionClass, ReadonlySet<SymbolKind>> = new Map([
+  ["interface-satisfaction", new Set<SymbolKind>(["method", "class-member"])],
+  ["enum-group", new Set<SymbolKind>(["enum-member"])],
+  ["injection-container", new Set<SymbolKind>(["method", "class-member"])],
+  ["framework-lifecycle", new Set<SymbolKind>(["method", "class-member"])],
+  [
+    "serialization-contract",
+    new Set<SymbolKind>(["method", "class-member", "interface-method", "type-member"]),
+  ],
+]);
+
+/** The detail of a record a detector that could not finish holds. */
+const UNANSWERED_DETAIL = "kept live by a question the checker did not answer";
+
+/** Whether one record is held by a detector that could not finish. */
+export function isUnansweredRecord(record: Exemption): boolean {
+  return record.detail === UNANSWERED_DETAIL;
+}
+
+/**
+ * What one detector holds back over one project. A detector that stops because the
+ * checker left a question it needs unanswered holds back every declaration of the
+ * project its class could hold back, each recorded at its own position, so the gap
+ * never yields a finding.
+ */
+function detected<Brand>(
+  exemptionClass: TSExemptionClass,
+  detect: Detector,
+  input: DetectorInput<Brand>,
+): readonly Evidence[] {
+  try {
+    return detect(input);
+  } catch (error: unknown) {
+    if (!(error instanceof Unanswerable)) {
+      throw error;
+    }
+    const kinds = RETAINABLE.get(exemptionClass);
+    return input.held.symbols
+      .filter((symbol) => (kinds === undefined ? symbol.kind !== "file" : kinds.has(symbol.kind)))
+      .map((symbol) => ({ id: symbol.id, detail: UNANSWERED_DETAIL, site: symbol.position }));
+  }
+}
+
+/**
  * The records one project's detectors found, each class in the vocabulary's order and
  * none of a switched-off class. Evidence on a private member the class's row says it
  * cannot retain is dropped first, whatever the detector found. Under a production mode
@@ -120,7 +168,7 @@ export function computeExemptions<Brand>(
       continue;
     }
     const allowed = typescriptVisibilityOf(exemptionClass);
-    for (const evidence of detect(input)) {
+    for (const evidence of detected(exemptionClass, detect, input)) {
       if (!retainable(allowed, visibility.get(evidence.id))) {
         continue;
       }

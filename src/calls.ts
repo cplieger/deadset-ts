@@ -26,7 +26,7 @@ import {
 import { SymbolFlags, type Symbol as TSSymbol } from "@typescript/native/unstable/sync";
 import type { AliasChains } from "./alias-chain.ts";
 import { nodeKey, type Inventory } from "./inventory.ts";
-import { DEFAULT_BATCH_CAP } from "./references.ts";
+import { must } from "./query.ts";
 import type { ProjectView } from "./session.ts";
 
 /** One value written where a call passes it, and the node its declaration is resolved from. */
@@ -77,7 +77,8 @@ export function decoratorsOf(node: Node): readonly Decorator[] {
 /**
  * What each of a batch of nodes resolves to, every alias followed to the declaration
  * it stands for. A node the checker resolves to nothing, and an alias that resolves
- * to nothing, are absent from the answer. Each alias is followed once.
+ * to nothing, are absent from the answer. Each alias is followed once. A question the
+ * checker does not answer stops the pass, as {@link must} stops.
  */
 export function resolvedTargets<Brand>(
   project: ProjectView<Brand>,
@@ -85,17 +86,18 @@ export function resolvedTargets<Brand>(
 ): ReadonlyMap<Node, TSSymbol> {
   const followed = new Map<number, TSSymbol | undefined>();
   const targets = new Map<Node, TSSymbol>();
-  for (let from = 0; from < nodes.length; from += DEFAULT_BATCH_CAP) {
-    const run = nodes.slice(from, from + DEFAULT_BATCH_CAP);
-    project.symbolsAt(run.map((node) => project.handle(node))).forEach((symbol, index) => {
-      const node = run[index];
+  project
+    .symbolsAt(nodes.map((node) => project.handle(node)))
+    .map(must)
+    .forEach((symbol, index) => {
+      const node = nodes[index];
       if (symbol === undefined || node === undefined) {
         return;
       }
       let target: TSSymbol | undefined = symbol;
       if ((symbol.flags & SymbolFlags.Alias) !== 0) {
         if (!followed.has(symbol.id)) {
-          const aliased = project.checker.getAliasedSymbol(symbol);
+          const aliased = must(project.queries.aliased(symbol));
           followed.set(symbol.id, aliased.declarations.length === 0 ? undefined : aliased);
         }
         target = followed.get(symbol.id);
@@ -104,7 +106,6 @@ export function resolvedTargets<Brand>(
         targets.set(node, target);
       }
     });
-  }
   return targets;
 }
 
@@ -166,7 +167,7 @@ export function classesPassed<Brand>(
   );
   const classesOf = (value: PassedValue): readonly string[] => {
     const symbol = value.shorthand
-      ? project.shorthandValueAt(project.handle(value.name))
+      ? must(project.shorthandValueAt(project.handle(value.name)))
       : targets.get(value.name);
     return symbol === undefined
       ? []

@@ -3,6 +3,11 @@ import { readFixture } from "../../__test-helpers__/fixtures.ts";
 import type { Report, WireFinding, WireStaleSuppression } from "../report.ts";
 import { text } from "./text.ts";
 
+/** The text rendering of one report, as the file holds it. */
+function textOf(of: Report): string {
+  return [...text(of)].join("");
+}
+
 /** The text line's defining expression, read from the Contract's page rather than restated. */
 function publishedExpression(): RegExp {
   const page = readFixture("contract", "grammar", "text-line.md");
@@ -87,7 +92,7 @@ function report(findings: readonly WireFinding[], stale: readonly WireStaleSuppr
 
 describe("the text reporter", () => {
   it("renders a finding as one line the published expression parses back into its fields", () => {
-    const [line] = text(report([FINDING], [])).split("\n");
+    const [line] = textOf(report([FINDING], [])).split("\n");
 
     expect(LINE.exec(line ?? "")?.groups).toEqual({
       path: "src/features/tabs/index.ts",
@@ -102,7 +107,7 @@ describe("the text reporter", () => {
   });
 
   it("renders a stale suppression after the findings, as the suppression kind at certain under DS1703", () => {
-    const lines = text(report([FINDING], [STALE])).split("\n");
+    const lines = textOf(report([FINDING], [STALE])).split("\n");
 
     expect(lines[1]).toBe(
       "src/catalog.ts:213:1: suppression ts://@example/app/src/catalog.ts#Catalog.resolveAlias: inline directive for DS1001 matches no current finding [certain] (DS1703)",
@@ -111,7 +116,7 @@ describe("the text reporter", () => {
   });
 
   it("ends with a summary of the totals that no filter for finding lines selects", () => {
-    const rendered = text(report([FINDING], [STALE]));
+    const rendered = textOf(report([FINDING], [STALE]));
     const summary = rendered.split("\n").at(-2) ?? "";
 
     expect(summary).toBe(
@@ -121,7 +126,7 @@ describe("the text reporter", () => {
   });
 
   it("writes LF-terminated lines and nothing but the findings, the stale suppressions and the summary", () => {
-    const rendered = text(report([FINDING, FINDING], [STALE]));
+    const rendered = textOf(report([FINDING, FINDING], [STALE]));
 
     expect(rendered.endsWith("\n")).toBe(true);
     expect(rendered.includes("\r")).toBe(false);
@@ -130,7 +135,7 @@ describe("the text reporter", () => {
   });
 
   it("writes the summary alone when every finding is omitted", () => {
-    expect(text(report([], []))).toBe(
+    expect(textOf(report([], []))).toBe(
       "summary: 1 finding (0 allow, 0 warn, 1 deny), 1 deletable line, 1 suppression in effect, 2 reasons recorded, 0 stale suppressions, 0 pending, 1 omitted\n",
     );
   });

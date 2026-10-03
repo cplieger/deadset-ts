@@ -32,6 +32,7 @@ import {
 import { SymbolFlags } from "@typescript/native/unstable/sync";
 import { globExpression } from "./glob.ts";
 import { dirnamePath, relativePath, resolvePath } from "./paths.ts";
+import { UNANSWERED } from "./query.ts";
 import type { ProjectView } from "./session.ts";
 import type { SourceFiles } from "./source-files.ts";
 
@@ -435,8 +436,14 @@ function workersOf<Brand>(
   const names = sites.flatMap((site) => site.platformNames);
   const symbols = project.symbolsAt(names.map((name) => project.handle(name)));
   const platform = new Set<Node>();
+  // A name the checker could not resolve is read as the platform's, so a worker it
+  // stands on is rooted rather than reported.
   names.forEach((name, index) => {
     const symbol = symbols[index];
+    if (symbol === UNANSWERED) {
+      platform.add(name);
+      return;
+    }
     if (
       symbol !== undefined &&
       (symbol.flags & SymbolFlags.Alias) === 0 &&

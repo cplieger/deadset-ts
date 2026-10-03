@@ -6,6 +6,7 @@ import { nodeHost } from "../../bin/node-host.ts";
 import { fixture } from "../../__test-helpers__/fixtures.ts";
 import { TSCONFIG, writeProject } from "../../__test-helpers__/projects.ts";
 import { run, type Writer } from "../run.ts";
+import { openEngine, type Engine } from "../session.ts";
 
 /** The bound on one case, each of which loads a whole target. */
 const LOAD_TIMEOUT = 60_000;
@@ -332,6 +333,80 @@ describe("explain", () => {
     () => {
       expect(explain(CATALOG, "--why=zzzz").err).toBe(
         'deadset-ts: "zzzz" names no one symbol of the target\n  no symbol of the target partially matches it either\n',
+      );
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "answers a declaration a failed question holds as held, and counts the question on the error stream",
+    () => {
+      const target = fixture("projects", "published-exports");
+      // The published module's export table is the one question that fails, so nothing
+      // the project declares can be judged dead.
+      const failing = (collectTiming: boolean): Engine => {
+        const engine = openEngine({ collectTiming });
+        return {
+          ...engine,
+          ask: (accessor, locations, question) => {
+            if (
+              accessor === "getExportsOfModule" &&
+              locations().some((at) => at.endsWith('/src/index"'))
+            ) {
+              throw new Error("panic: runtime error: invalid memory address");
+            }
+            return engine.ask(accessor, locations, question);
+          },
+        };
+      };
+      const out = new MemoryWriter();
+      const err = new MemoryWriter();
+
+      const code = run(
+        ["explain", `--target=${target}`, "--why=notPublished"],
+        out,
+        err,
+        nodeHost(),
+        failing,
+      );
+
+      expect({ code, out: out.text, err: err.text }).toEqual({
+        code: 0,
+        out: [
+          "symbol: ts://@example/published-exports/src/internal.ts#notPublished",
+          "declaration: variable notPublished",
+          "position: src/internal.ts:3:14",
+          "configurations: tsconfig.json",
+          "answer: held",
+          "  held by: a question the checker did not answer, which could have kept it live, so no finding names it",
+          "",
+        ].join("\n"),
+        err: `deadset-ts: the checker answered 1 question with a failure (${join(target, "tsconfig.json")}: 1); every declaration an answer could have kept live is kept live and reported by nothing\n`,
+      });
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "names on the error stream a derived configuration it dropped",
+    () => {
+      const root = writeProject({
+        "tsconfig.json": TSCONFIG,
+        "package.json": '{ "name": "@example/dropped", "private": true, "type": "module" }\n',
+        "deadset.json": '{ "target": { "kind": "library" } }\n',
+        "lib.ts": "export const kept = 1;\n",
+        "tools/tsconfig.json": '{ "include": ["none/*.ts"] }\n',
+      });
+      onTestFinished(() => {
+        rmSync(root, { recursive: true, force: true });
+      });
+
+      const got = explain(root, "--why=kept");
+
+      expect(got.code).toBe(0);
+      expect(got.out).toContain("answer: ");
+      expect(got.err).toBe(
+        "deadset-ts: the derived configuration tools/tsconfig.json was not built and is not analyzed: TS18003: No inputs were found in config file 'tools/tsconfig.json'. Specified 'include' paths were '[\"none/*.ts\"]' and 'exclude' paths were '[]'.\n",
       );
     },
     LOAD_TIMEOUT,

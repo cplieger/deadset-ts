@@ -24,10 +24,10 @@ import {
   type SourceFile,
 } from "@typescript/native/unstable/ast";
 import { TypeFlags, type Type } from "@typescript/native/unstable/sync";
-import { typesAt } from "./class-members.ts";
 import type { DetectorInput, Evidence } from "./exempt.ts";
 import { memberNames } from "./member-names.ts";
 import { renderPosition } from "./position.ts";
+import { isAnswered, UNANSWERED } from "./query.ts";
 import type { ProjectView } from "./session.ts";
 
 /** The `Reflect` methods whose second argument is a property key. */
@@ -95,14 +95,17 @@ function lookupsOf(file: SourceFile): readonly Lookup[] {
   return found;
 }
 
-/** Whether a receiver's type is not `any` and declares a string index signature. */
+/**
+ * Whether a receiver's type is not `any` and declares a string index signature. A type
+ * whose index signatures the checker did not answer for is read as declaring none, so
+ * the lookup retains what it names.
+ */
 function readsAMapping<Brand>(project: ProjectView<Brand>, type: Type): boolean {
   if ((type.flags & TypeFlags.Any) !== 0) {
     return false;
   }
-  return project.checker
-    .getIndexInfosOfType(type)
-    .some((info) => (info.keyType.flags & TypeFlags.String) !== 0);
+  const infos = project.queries.indexInfosOf(type);
+  return isAnswered(infos) && infos.some((info) => (info.keyType.flags & TypeFlags.String) !== 0);
 }
 
 /**
@@ -119,7 +122,7 @@ export function reflectiveLookup<Brand>(input: DetectorInput<Brand>): readonly E
 
   // Whether each written `Reflect` is the global one, asked in one batch: a
   // declaration of that name in one of the project's own files shadows it.
-  const ownFiles = new Set(files.map((file) => file.fileName));
+  const ownFiles = project.ownPaths();
   const reflects = lookups.flatMap((lookup) =>
     lookup.reflect === undefined ? [] : [lookup.reflect],
   );
@@ -127,9 +130,11 @@ export function reflectiveLookup<Brand>(input: DetectorInput<Brand>): readonly E
   if (reflects.length > 0) {
     project.symbolsAt(reflects.map((node) => project.handle(node))).forEach((symbol, index) => {
       const node = reflects[index];
-      const declaredHere = symbol?.declarations.some((declaration) =>
-        ownFiles.has(declaration.path),
-      );
+      // A name the checker did not answer for is read as the global, which retains.
+      const declaredHere =
+        symbol === UNANSWERED
+          ? false
+          : symbol?.declarations.some((declaration) => ownFiles.has(declaration.path));
       if (node !== undefined && declaredHere === false) {
         global.add(node);
       }
@@ -142,9 +147,14 @@ export function reflectiveLookup<Brand>(input: DetectorInput<Brand>): readonly E
     lookup.receiver === undefined ? [] : [lookup.receiver],
   );
   const mapped = new Set<Node>();
-  typesAt(project, receivers).forEach((type, index) => {
+  project.queries.typesAt(receivers).forEach((type, index) => {
     const receiver = receivers[index];
-    if (receiver !== undefined && type !== undefined && readsAMapping(project, type)) {
+    if (
+      receiver !== undefined &&
+      type !== undefined &&
+      isAnswered(type) &&
+      readsAMapping(project, type)
+    ) {
       mapped.add(receiver);
     }
   });

@@ -24,6 +24,22 @@ export const EMITTERS: Emitters = new Map<string, Emitter>([
   ["intra-function", intraFunction],
 ]);
 
+/**
+ * The references of every declaration an unanswered question could have kept live, which
+ * the run reports nothing about: a finding about one would be computed from the gap.
+ */
+function heldRefs(input: EmitterInput): ReadonlySet<string> {
+  const held = new Set(input.swept.heldByUnanswered);
+  if (held.size === 0) {
+    return held;
+  }
+  return new Set(
+    input.swept.matrix.union.symbols
+      .filter((symbol) => held.has(symbol.id))
+      .map((symbol) => symbol.ref),
+  );
+}
+
 /** What the suppressions of a run swept under their marks are decided against. */
 export interface Suppressed {
   /** The same run swept with no mark, which is where a kind about liveness reports a marked declaration. */
@@ -92,9 +108,10 @@ export function decidedFindings(
     suppressed.records.length === 0 ? [] : completedOver(suppressed.unmarked, fallenMembers);
   const would = [...unmarked, ...found];
   const ledger = ledgerOf(suppressed.records, would, dialsOver(input, found, suppressed, unmarked));
+  const unanswered = heldRefs(input);
   const kept = reportable(
     input,
-    found.filter((finding) => !ledger.withheld(finding)),
+    found.filter((finding) => !ledger.withheld(finding) && !unanswered.has(finding.symbol.ref)),
   );
   const evaluated = evaluateEdges(kept, input.boundary.edges, input.swept.matrix.union.symbols);
   return {

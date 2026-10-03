@@ -22,7 +22,7 @@ function deprecatedIn(files: Readonly<Record<string, string>>): {
     const { projects } = runSession(engine, configFiles, (project) => {
       const held = inventory(project, host, root);
       const before = engine.getTimingInfo().totals.requestCount;
-      const ids = new Set(deprecatedDeclarations(project, held));
+      const ids = new Set(deprecatedDeclarations(project, held).deprecated);
       requests += engine.getTimingInfo().totals.requestCount - before;
       return held.symbols.filter((symbol) => ids.has(symbol.id)).map((symbol) => symbol.name);
     });

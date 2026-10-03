@@ -5,12 +5,15 @@ import { moduleIdentity } from "../consumers.ts";
 import { analyzerProvenance, verdictOf } from "../findings-pass.ts";
 import { joinPath, normalizePath, relativePath, resolvePath } from "../paths.ts";
 import type { Host } from "../host.ts";
+import type { NotBuilt } from "../discover.ts";
+import { partialNotes } from "../partial.ts";
 import {
   buildReport,
   capFindings,
   sortFindings,
   type Report,
   type ReportConfiguration,
+  type ReportNotBuilt,
 } from "../report.ts";
 import { json } from "../reporters/json.ts";
 import { RENDERINGS } from "../reporters/reporters.ts";
@@ -79,6 +82,19 @@ function runRelative(invoked: string, path: string): string {
     );
   }
   return below;
+}
+
+/** Each project the run dropped as a report names it, by its configuration file below the target. */
+function notBuiltOf(dropped: readonly NotBuilt[], targetRoot: string): readonly ReportNotBuilt[] {
+  return dropped.map((one) => {
+    const project = relativePath(targetRoot, one.configFile);
+    if (project === undefined) {
+      throw new ReportPathError(
+        `the project ${one.id} would be opened from ${one.configFile}, which is not below the target ${targetRoot}, so no report can name it`,
+      );
+    }
+    return { id: one.id, project, error: one.error };
+  });
 }
 
 /** Each project of the run as a report names it, by its configuration file below the target. */
@@ -203,6 +219,7 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
   let report: Report;
   let recorded: readonly Recorded[];
   let verdict: number;
+  let partial: readonly string[];
   try {
     const root = runRelative(invoked, targetRoot);
     const mode = { production: true };
@@ -225,6 +242,7 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
       recorded = write.rows;
     }
     const { result, run } = analysis;
+    partial = partialNotes({ notBuilt: run.notBuilt, unanswered: run.unanswered });
     const built = buildReport({
       contractVersion: CONTRACT_VERSION,
       version,
@@ -232,6 +250,7 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
       declaredGaps: DECLARED_GAPS,
       target: { kind, root, identity: moduleIdentity(host, scoped.target) },
       configurations: configurationsOf(run.projects, targetRoot),
+      notBuilt: notBuiltOf(run.notBuilt, targetRoot),
       loaded: run.consumers.map((consumer) => ({
         id: consumer.id,
         path: runRelative(invoked, consumer.path),
@@ -251,7 +270,7 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
   }
 
   try {
-    host.writeFile(documents.report, json(report));
+    host.writeDocument(documents.report, json(report));
     const options = {
       failOn: config.reporters.failOn,
       readSource: (path: string) => host.readFile(joinPath(targetRoot, path)),
@@ -260,17 +279,20 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
     for (const format of documents.formats) {
       const rendering = RENDERINGS.get(format);
       if (rendering !== undefined) {
-        host.writeFile(documents.report + rendering.suffix, rendering.render(report, options));
+        host.writeDocument(documents.report + rendering.suffix, rendering.render(report, options));
       }
     }
     if (documents.baseline !== undefined) {
-      host.writeFile(documents.baseline, writeBaseline(recorded, analyzerProvenance(version)));
+      host.writeDocument(documents.baseline, writeBaseline(recorded, analyzerProvenance(version)));
     }
   } catch (error: unknown) {
     err.write(`deadset-ts: ${error instanceof Error ? error.message : String(error)}\n`);
     return EXIT_FAILURE;
   }
 
+  for (const note of partial) {
+    err.write(`deadset-ts: ${note}\n`);
+  }
   if (report.totals.pending > 0) {
     err.write(
       `deadset-ts: ${counted(report.totals.pending, "pending finding")}: the report names a declared cross-language edge, and no merge has resolved it\n`,

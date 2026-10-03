@@ -287,6 +287,36 @@ describe("print-projects", () => {
     expect(got.err).toContain("broken.ts");
   });
 
+  it("prints the projects that load and names on the error stream a derived one that names no input", () => {
+    const target = matrixTree({
+      "fixtures/broken/tsconfig.json": '{ "include": ["none/*.ts"] }\n',
+      "tools/tsconfig.json": '{ "include": ["none/*.ts"] }\n',
+    });
+
+    const got = invoke(["print-projects", `--target=${target}`]);
+
+    expect(got.code, got.err).toBe(0);
+    expect(got.out).toBe("packages/app/tsconfig.json\ntsconfig.json\n");
+    expect(got.err.split("\n").filter((line) => line !== "")).toEqual([
+      "deadset-ts: the derived configuration fixtures/broken/tsconfig.json was not built and is not analyzed: TS18003: No inputs were found in config file 'fixtures/broken/tsconfig.json'. Specified 'include' paths were '[\"none/*.ts\"]' and 'exclude' paths were '[]'.",
+      "deadset-ts: the derived configuration tools/tsconfig.json was not built and is not analyzed: TS18003: No inputs were found in config file 'tools/tsconfig.json'. Specified 'include' paths were '[\"none/*.ts\"]' and 'exclude' paths were '[]'.",
+    ]);
+  });
+
+  it("names on the error stream the derived project print-roots dropped", () => {
+    const target = matrixTree({
+      "deadset.json": '{ "target": { "kind": "application" } }\n',
+      "fixtures/broken/tsconfig.json": '{ "include": ["none/*.ts"] }\n',
+    });
+
+    const got = invoke(["print-roots", `--target=${target}`]);
+
+    expect(got.code, got.err).toBe(0);
+    expect(got.err).toContain(
+      "deadset-ts: the derived configuration fixtures/broken/tsconfig.json was not built and is not analyzed",
+    );
+  });
+
   it("exits 3 naming a declared project whose configuration does not exist", () => {
     const target = matrixTree({
       "deadset.json":

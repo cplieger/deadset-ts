@@ -131,8 +131,14 @@ function unusedMessage(candidate: Candidate): string {
     : UNUSED_MESSAGE;
 }
 
-/** Whether one interface method has implementations and every one has an empty body. */
+/**
+ * Whether one interface method has implementations and every one has an empty body, or
+ * is one whose implementations the run could not read in full.
+ */
 function marker(input: EmitterInput, method: string): boolean {
+  if (input.implementations.unknown.has(method)) {
+    return true;
+  }
   const bodies = [...(input.implementations.bodies.get(method)?.values() ?? [])];
   return bodies.length > 0 && bodies.every((empty) => empty);
 }

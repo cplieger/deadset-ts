@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, onTestFinished } from "vitest";
 import { DiagnosticCategory } from "@typescript/native/unstable/sync";
+import type { RootedFilePath } from "@typescript/native/unstable/ast";
 import { nodeHost } from "../bin/node-host.ts";
 import { fixture } from "../__test-helpers__/fixtures.ts";
 import type { BuildConfiguration } from "./config.ts";
@@ -147,6 +148,21 @@ describe("project discovery", () => {
       join(root, "tsconfig.build.json"),
       join(root, "tsconfig.json"),
     ]);
+  });
+
+  it("drops a configuration the walk reached and the compiler cannot read, and names it", () => {
+    const root = scratch();
+    write(root, { "tsconfig.json": '{ "include": [], "references": [{ "path": "./gone" }] }\n' });
+
+    const found = discoverProjects(engine(), HOST, scopeForDir(HOST, root));
+
+    expect(found.configFiles).toEqual([join(root, "tsconfig.json")]);
+    expect(found.notBuilt.map((one) => [one.id, one.configFile])).toEqual([
+      ["gone/tsconfig.json", join(root, "gone", "tsconfig.json")],
+    ]);
+    expect(found.notBuilt[0]?.error, "the error names no path above the target").not.toContain(
+      root,
+    );
   });
 
   it("ends the run naming a configuration file the compiler cannot read", () => {
@@ -310,16 +326,34 @@ describe("a derived matrix", () => {
 });
 
 describe("a diagnostic", () => {
-  it("renders as its position, its code and its message", () => {
+  it("renders as its line and column, its code and its message", () => {
     expect(
       renderDiagnostic({
-        fileName: "/src/a.ts",
-        pos: 12,
-        end: 20,
-        code: 2322,
-        category: DiagnosticCategory.Error,
-        text: "Type 'number' is not assignable to type 'string'.",
+        diagnostic: {
+          fileName: "/src/a.ts" as RootedFilePath,
+          pos: 12,
+          end: 20,
+          code: 2322,
+          category: DiagnosticCategory.Error,
+          text: "Type 'number' is not assignable to type 'string'.",
+        },
+        at: { line: 2, column: 5 },
       }),
-    ).toBe("/src/a.ts:12: TS2322: Type 'number' is not assignable to type 'string'.");
+    ).toBe("/src/a.ts:2:5: TS2322: Type 'number' is not assignable to type 'string'.");
+  });
+
+  it("renders the file alone where it names no position", () => {
+    expect(
+      renderDiagnostic({
+        diagnostic: {
+          fileName: "/src/tsconfig.json" as RootedFilePath,
+          pos: 0,
+          end: 0,
+          code: 18003,
+          category: DiagnosticCategory.Error,
+          text: "No inputs were found in config file.",
+        },
+      }),
+    ).toBe("/src/tsconfig.json: TS18003: No inputs were found in config file.");
   });
 });

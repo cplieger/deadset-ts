@@ -142,6 +142,15 @@ export interface ReportConfiguration {
   readonly project: string;
 }
 
+/** One project configuration the run derived and could not build, with why. */
+export interface ReportNotBuilt {
+  readonly id: string;
+  /** The compiler configuration file below the target root. */
+  readonly project: string;
+  /** The first line of the error that dropped it, naming no path outside the target. */
+  readonly error: string;
+}
+
 /** One consumer the run loaded, at the directory a report names it by. */
 interface ReportConsumer {
   readonly id: string;
@@ -172,7 +181,7 @@ export interface Report {
   };
   readonly target: { readonly kind: TargetKind; readonly root: string; readonly identity: string };
   readonly configurations: readonly ReportConfiguration[];
-  readonly configurations_not_built: readonly never[];
+  readonly configurations_not_built: readonly ReportNotBuilt[];
   readonly consumers: {
     readonly declared: number;
     readonly loaded: readonly {
@@ -203,6 +212,7 @@ export interface ReportInput {
   readonly declaredGaps: readonly DeclaredGap[];
   readonly target: { readonly kind: TargetKind; readonly root: string; readonly identity: string };
   readonly configurations: readonly ReportConfiguration[];
+  readonly notBuilt: readonly ReportNotBuilt[];
   readonly loaded: readonly ReportConsumer[];
   readonly unavailable: readonly UnavailableConsumer[];
   readonly result: PassResult;
@@ -436,7 +446,9 @@ export function buildReport(input: ReportInput): Report {
     configurations: [...input.configurations]
       .sort((a, b) => compare(a.id, b.id))
       .map((one) => ({ id: one.id, project: one.project })),
-    configurations_not_built: [],
+    configurations_not_built: [...input.notBuilt]
+      .sort((a, b) => compare(a.id, b.id))
+      .map((one) => ({ id: one.id, project: one.project, error: one.error })),
     consumers: { declared: loaded.length + unavailable.length, loaded, unavailable },
     findings,
     edge_evaluations: input.result.edgeEvaluations.map(wireEvaluation).sort(byEdge),

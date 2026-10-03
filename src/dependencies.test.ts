@@ -16,7 +16,7 @@ function hostWith(files: Readonly<Record<string, string>>): Host {
     readDirectory: () => [],
     kindOf: () => "absent",
     analyzerVersion: () => "0.0.0",
-    writeFile: (path) => {
+    writeDocument: (path) => {
       throw new Error(`${path}: this host writes nothing`);
     },
   };
@@ -93,6 +93,7 @@ describe("dependenciesOf", () => {
     const project = (uses: Record<string, string[]>): ProjectNeeds => ({
       packages: new Set(Object.values(uses).flat()),
       uses: new Map(Object.entries(uses).map(([id, named]) => [id, new Set(named)])),
+      unanswered: false,
     });
     const perProject = [
       project({ "x.ts:1:1": ["a", "b", "undeclared"] }),

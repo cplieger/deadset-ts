@@ -127,16 +127,16 @@ describe("interface satisfaction", () => {
     ]);
   });
 
-  it("asks the client one question per interface and per pair once the conversion set is read", () => {
+  it("asks the client one batch for the positions, one for the pairs, and one question per interface", () => {
     const { requests } = measure();
     // Reading the conversion set: one batched type lookup over the class names, the
     // clause and the values; one target lookup for the first array type a value
-    // carries, the project declaring a generic class; one contextual lookup for each
-    // of the seven values whose type is a class of the target.
-    const reading = 1 + 1 + 7;
-    // The pairs: Assigned, Stored and Shape; Passed, Derived, Boxed<number>, Pushed,
-    // Declared and Named; Returned and Sized.
-    const pairs = 8;
+    // carries, the project declaring a generic class; one batch of contextual lookups
+    // over the seven values whose type is a class of the target.
+    const reading = 1 + 1 + 1;
+    // The eight pairs, asked in one batch: Assigned, Stored and Shape; Passed, Derived,
+    // Boxed<number>, Pushed, Declared and Named; Returned and Sized.
+    const pairs = 1;
     // One property list for each of Shape, Named and Sized.
     const interfaces = 3;
     // One property list for each class of a satisfied pair, naming its members.

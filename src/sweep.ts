@@ -51,6 +51,11 @@ export interface SweepInput {
    * holds nothing back.
    */
   readonly exempt?: readonly Exemption[];
+  /**
+   * The declarations a question the checker did not answer could have kept live. Each
+   * is held as an exempt declaration is. Absent, the sweep holds nothing back for one.
+   */
+  readonly unanswered?: readonly string[];
   readonly mode: Mode;
 }
 
@@ -94,10 +99,10 @@ export interface Liveness {
  */
 export function sweep(graph: Graph, input: SweepInput): Liveness {
   const marked = flagged(graph, input.marked);
-  const exempt = flagged(
-    graph,
-    (input.exempt ?? []).map((record) => record.id),
-  );
+  const exempt = flagged(graph, [
+    ...(input.exempt ?? []).map((record) => record.id),
+    ...(input.unanswered ?? []),
+  ]);
   const held = marked.map((mark, at) => mark || exempt[at] === true);
   // Every root, every mark and every exemption seeds reachability. A root of a kind that
   // names a caller, and a mark, are live under reference counting as well; a root that

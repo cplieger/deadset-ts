@@ -7,7 +7,7 @@
 import { isClassDeclaration, isClassExpression, type Node } from "@typescript/native/unstable/ast";
 import type { Symbol as TSSymbol, SymbolFlags, Type } from "@typescript/native/unstable/sync";
 import { nodeKey, type Inventory, type InventorySymbol } from "./inventory.ts";
-import { DEFAULT_BATCH_CAP } from "./references.ts";
+import { must } from "./query.ts";
 import type { ProjectView } from "./session.ts";
 
 /** One member of a class's value that the target declares. */
@@ -44,16 +44,15 @@ export function classNames<Brand>(
   return names;
 }
 
-/** The types of a batch of nodes, asked in capped batches. */
+/**
+ * The types of a batch of nodes, for a pass that cannot go on past a type the checker
+ * did not answer: it stops there, as {@link must} stops.
+ */
 export function typesAt<Brand>(
   project: ProjectView<Brand>,
   nodes: readonly Node[],
 ): (Type | undefined)[] {
-  const types: (Type | undefined)[] = [];
-  for (let from = 0; from < nodes.length; from += DEFAULT_BATCH_CAP) {
-    types.push(...project.checker.getTypeAtLocation(nodes.slice(from, from + DEFAULT_BATCH_CAP)));
-  }
-  return types;
+  return project.queries.typesAt(nodes).map(must);
 }
 
 /**
@@ -68,9 +67,9 @@ function sideTypes<Brand>(
   if (side === "instance") {
     return typesAt(project, nodes);
   }
-  const symbols = project.symbolsAt(nodes.map((node) => project.handle(node)));
+  const symbols = project.symbolsAt(nodes.map((node) => project.handle(node))).map(must);
   const present = symbols.filter((symbol): symbol is TSSymbol => symbol !== undefined);
-  const types = present.length === 0 ? [] : project.checker.getTypeOfSymbol(present);
+  const types = project.queries.typesOfSymbols(present).map(must);
   let next = 0;
   return symbols.map((symbol) => (symbol === undefined ? undefined : types[next++]));
 }
@@ -87,7 +86,7 @@ export function classMembers<Brand>(
   side: ClassSide,
 ): ReadonlyMap<string, readonly ClassMember[]> {
   const named = [...classNames(project, held)].filter(([id]) => classIds.has(id));
-  const own = new Set(project.ownSourceFiles().map((file) => file.fileName));
+  const own = project.ownPaths();
   const types = sideTypes(
     project,
     named.map(([, node]) => node),
@@ -100,7 +99,7 @@ export function classMembers<Brand>(
       return;
     }
     const found: ClassMember[] = [];
-    for (const property of project.checker.getPropertiesOfType(type)) {
+    for (const property of must(project.queries.propertiesOf(type))) {
       for (const handle of property.declarations) {
         if (!own.has(handle.path)) {
           continue;

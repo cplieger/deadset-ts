@@ -17,6 +17,7 @@ import {
 } from "@typescript/native/unstable/sync";
 import { classNames, typesAt } from "./class-members.ts";
 import type { Inventory } from "./inventory.ts";
+import { must } from "./query.ts";
 import type { ProjectView } from "./session.ts";
 
 /** The object types whose members the walk reads whatever declares them. */
@@ -46,11 +47,11 @@ const CONVERSION_NAMES: ReadonlySet<string> = new Set(["toJSON", "toString"]);
 
 /** The global array types, whose element type is what an array value carries. */
 function arrayTargets<Brand>(project: ProjectView<Brand>): ReadonlySet<number> {
-  const checker = project.checker;
+  const queries = project.queries;
   return new Set(
     ["Array", "ReadonlyArray"].flatMap((name) => {
-      const symbol = checker.resolveName(name, SymbolFlags.Type, undefined, false);
-      return symbol === undefined ? [] : [checker.getDeclaredTypeOfSymbol(symbol).id];
+      const symbol = must(queries.resolveName(name, SymbolFlags.Type, undefined, false));
+      return symbol === undefined ? [] : [must(queries.declaredTypeOf(symbol)).id];
     }),
   );
 }
@@ -60,7 +61,7 @@ function arrayTargets<Brand>(project: ProjectView<Brand>): ReadonlySet<number> {
  * project's inventory.
  */
 export function valueReach<Brand>(project: ProjectView<Brand>, held: Inventory): ValueReach {
-  const checker = project.checker;
+  const queries = project.queries;
   const names = [...classNames(project, held)];
   const declared = typesAt(
     project,
@@ -74,14 +75,12 @@ export function valueReach<Brand>(project: ProjectView<Brand>, held: Inventory):
     }
   });
   const arrays = arrayTargets(project);
-  const own = new Set(project.ownSourceFiles().map((file) => file.fileName));
+  const own = project.ownPaths();
   const children = new Map<number, readonly Type[]>();
 
   /** The generic target of a type reference, and the type itself otherwise. */
   const targetOf = (type: ObjectType): Type =>
-    (type.objectFlags & ObjectFlags.Reference) !== 0 && type.isTypeReference()
-      ? type.getTarget()
-      : type;
+    (type.objectFlags & ObjectFlags.Reference) !== 0 ? must(queries.targetOf(type)) : type;
 
   const classOf = (type: Type): string | undefined => {
     if (!type.isObjectType()) {
@@ -95,7 +94,7 @@ export function valueReach<Brand>(project: ProjectView<Brand>, held: Inventory):
     if ((type.objectFlags & WRITTEN) !== 0) {
       return true;
     }
-    const symbol: TSSymbol | undefined = type.getSymbol();
+    const symbol: TSSymbol | undefined = must(queries.symbolOfType(type));
     if (symbol === undefined) {
       return false;
     }
@@ -110,13 +109,13 @@ export function valueReach<Brand>(project: ProjectView<Brand>, held: Inventory):
 
   /** The types a value of one object type holds in its data members. */
   const memberTypes = (type: Type): readonly Type[] => {
-    const properties = checker
-      .getPropertiesOfType(type)
-      .filter((property) => (property.flags & SymbolFlags.Property) !== 0);
-    const types = properties.length === 0 ? [] : checker.getTypeOfSymbol(properties);
+    const properties = must(queries.propertiesOf(type)).filter(
+      (property) => (property.flags & SymbolFlags.Property) !== 0,
+    );
+    const types = queries.typesOfSymbols(properties).map(must);
     return [
       ...types.filter((held): held is Type => held !== undefined),
-      ...checker.getIndexInfosOfType(type).map((info) => info.valueType),
+      ...must(queries.indexInfosOf(type)).map((info) => info.valueType),
     ];
   };
 
@@ -135,13 +134,11 @@ export function valueReach<Brand>(project: ProjectView<Brand>, held: Inventory):
 
   /** The data members and conversion methods of one written object type. */
   const carried = (type: Type): readonly TSSymbol[] =>
-    checker
-      .getPropertiesOfType(type)
-      .filter(
-        (property) =>
-          (property.flags & SymbolFlags.Property) !== 0 ||
-          ((property.flags & SymbolFlags.Method) !== 0 && CONVERSION_NAMES.has(property.name)),
-      );
+    must(queries.propertiesOf(type)).filter(
+      (property) =>
+        (property.flags & SymbolFlags.Property) !== 0 ||
+        ((property.flags & SymbolFlags.Method) !== 0 && CONVERSION_NAMES.has(property.name)),
+    );
 
   /** The types a value of one type holds, read once per type. */
   const childrenOf = (type: Type): readonly Type[] => {
@@ -151,7 +148,7 @@ export function valueReach<Brand>(project: ProjectView<Brand>, held: Inventory):
     }
     let found: readonly Type[] = [];
     if (type.isUnionType() || type.isIntersectionType()) {
-      found = type.getTypes();
+      found = must(queries.constituents(type));
     } else if (type.isObjectType()) {
       const target = targetOf(type);
       const isList =
@@ -161,7 +158,7 @@ export function valueReach<Brand>(project: ProjectView<Brand>, held: Inventory):
       if (classOf(type) !== undefined || (!isList && isWritten(type))) {
         found = memberTypes(type);
       } else if (isList && type.isTypeReference()) {
-        found = checker.getTypeArguments(type);
+        found = must(queries.typeArguments(type));
       }
     }
     children.set(type.id, found);

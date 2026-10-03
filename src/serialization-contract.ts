@@ -57,6 +57,7 @@ import {
 import type { DetectorInput, Evidence } from "./exempt.ts";
 import { nodeKey, type Inventory } from "./inventory.ts";
 import { renderPosition } from "./position.ts";
+import { must } from "./query.ts";
 import type { ProjectView } from "./session.ts";
 import { valueReach, type Reached } from "./value-reach.ts";
 
@@ -316,12 +317,13 @@ function erasedParameters<Brand>(
     if (!parameter.rest) {
       return (type.flags & ERASED) !== 0;
     }
-    const [element] = type.isTypeReference() ? project.checker.getTypeArguments(type) : [];
+    const [element] = must(project.queries.typeArguments(type));
     return element !== undefined && (element.flags & ERASED) !== 0;
   });
   const bySymbol = new Map<number, Parameter>();
   project
     .symbolsAt(erased.map((parameter) => project.handle(parameter.name)))
+    .map(must)
     .forEach((symbol, index) => {
       const parameter = erased[index];
       if (symbol !== undefined && parameter !== undefined) {
@@ -347,11 +349,11 @@ function handedOn<Brand>(
     ),
   );
   const plain = candidates.filter((one) => !one.value.shorthand);
-  const resolved = project.symbolsAt(plain.map((one) => project.handle(one.value.name)));
+  const resolved = project.symbolsAt(plain.map((one) => project.handle(one.value.name))).map(must);
   const symbolOf = new Map(plain.map((one, index) => [one, resolved[index]]));
   return candidates.flatMap((one) => {
     const symbol = one.value.shorthand
-      ? project.shorthandValueAt(project.handle(one.value.name))
+      ? must(project.shorthandValueAt(project.handle(one.value.name)))
       : symbolOf.get(one);
     const parameter = symbol === undefined ? undefined : erased.get(symbol.id);
     return parameter === undefined ? [] : [{ parameter, site: one.site, argument: one.argument }];
@@ -382,8 +384,8 @@ function destinations<Brand>(
   walked: Walked,
 ): Destinations {
   const { project, held } = input;
-  const checker = project.checker;
-  const own = new Set(project.ownSourceFiles().map((file) => file.fileName));
+  const queries = project.queries;
+  const own = project.ownPaths();
   const named = resolveEntries(project, held, [JSON_STRINGIFY, ...input.ts.serializers]).filter(
     namesADeclaration,
   );
@@ -422,7 +424,7 @@ function destinations<Brand>(
       form !== undefined &&
       method !== undefined &&
       outside(method) &&
-      FUNCTION_INTERFACES.has(method.getParent()?.name ?? "")
+      FUNCTION_INTERFACES.has(must(project.queries.parentOf(method))?.name ?? "")
     ) {
       return form.invocation;
     }
@@ -439,16 +441,16 @@ function destinations<Brand>(
       const invoked = invocation(call);
       // Through a method of the prototype the resolved signature is the method's, so
       // the parameters are read off the callee's own signatures, any one erasing.
-      const type = invoked.indirect ? checker.getTypeAtLocation(invoked.callee) : undefined;
+      const type = invoked.indirect ? must(queries.typeAt(invoked.callee)) : undefined;
       const signatures = invoked.indirect
         ? type === undefined
           ? []
-          : checker.getSignaturesOfType(type, SignatureKind.Call)
-        : [checker.getResolvedSignature(call)].filter((one) => one !== undefined);
+          : must(queries.signaturesOf(type, SignatureKind.Call))
+        : [must(queries.resolvedSignature(call))].filter((one) => one !== undefined);
       indexes = new Set(
         invoked.arguments.flatMap((_unused, index) =>
           signatures.some((signature) => {
-            const parameter = checker.getParameterType(signature, index);
+            const parameter = must(queries.parameterType(signature, index));
             return parameter !== undefined && (parameter.flags & ERASED) !== 0;
           })
             ? [index]

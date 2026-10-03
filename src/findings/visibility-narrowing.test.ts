@@ -257,7 +257,18 @@ describe("the references a narrowing reads", () => {
       repository: JSON.stringify({ target: { kind: "application" } }),
       repositoryLabel: "deadset.json",
     });
-    return named(emitted(sweepOnly(config, { matrix, sweep, retained: [] })));
+    return named(
+      emitted(
+        sweepOnly(config, {
+          matrix,
+          sweep,
+          retained: [],
+          notBuilt: [],
+          unanswered: [],
+          heldByUnanswered: [],
+        }),
+      ),
+    );
   };
 
   it("make an export its own file alone references a redundant export keyword", () => {

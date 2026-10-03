@@ -7,6 +7,7 @@
 
 import type { Host } from "./host.ts";
 import type { InventorySymbol } from "./inventory.ts";
+import { jsonChunks } from "./json-chunks.ts";
 import { joinPath } from "./paths.ts";
 import { positionAt, walkDocument } from "./json-document.ts";
 import type { Position } from "./position.ts";
@@ -292,7 +293,10 @@ export function rowReason(provenance: Provenance): string {
  * identity missing its name or version, are refused rather than written, because the
  * grammar requires a reason on every row.
  */
-export function writeBaseline(findings: readonly Recorded[], provenance: Provenance): string {
+export function writeBaseline(
+  findings: readonly Recorded[],
+  provenance: Provenance,
+): Iterable<string> {
   if (provenance.analyzer === "" || provenance.version === "") {
     throw new Error(
       `a baseline row would carry no reason: the analyzer identity names ${JSON.stringify(provenance.analyzer)} at version ${JSON.stringify(provenance.version)}`,
@@ -307,5 +311,5 @@ export function writeBaseline(findings: readonly Recorded[], provenance: Provena
     }
     return { code: found.code, symbol: found.symbol, path: found.path, reason };
   });
-  return `${JSON.stringify({ description: BASELINE_DESCRIPTION, baseline }, null, 2)}\n`;
+  return jsonChunks({ description: BASELINE_DESCRIPTION, baseline }, 2);
 }

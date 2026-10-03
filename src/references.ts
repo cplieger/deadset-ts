@@ -28,12 +28,13 @@ import {
   type SourceFile,
 } from "@typescript/native/unstable/ast";
 import type { Symbol as TSSymbol } from "@typescript/native/unstable/sync";
-import { aliasChains } from "./alias-chain.ts";
+import { aliasChains, type ChainTarget } from "./alias-chain.ts";
 import { destructuring, propertyReadsOf, type PropertyRead } from "./destructuring.ts";
 import { globExpression } from "./glob.ts";
-import { nodeKey, type Inventory } from "./inventory.ts";
+import { declarationsByName, nodeKey, type Inventory } from "./inventory.ts";
 import { relativePath } from "./paths.ts";
 import { byPosition, renderPosition, type Position } from "./position.ts";
+import { DEFAULT_BATCH_CAP, UNANSWERED, type Answer } from "./query.ts";
 import type { ProjectView } from "./session.ts";
 
 /**
@@ -63,21 +64,15 @@ import type { ProjectView } from "./session.ts";
 export type Use = "read" | "write" | "evaluation" | "decorator";
 
 /**
- * Which accessor answered for one reference, so that the cost of a run is attributable
- * and a table of references shows the path each row took.
- *
- * - `batch` is the batched lookup over a file's name nodes, which answers for almost
- *   every one of them.
- * - `resolved-symbol` is the per-node lookup for the residue a batch left.
- * - `shorthand` is the per-node lookup for `{ a }`, whose name resolves to the property
- *   the literal declares rather than to the declaration that name reads.
- * - `alias` is a step along an import or export chain, from one link to what it names.
- * - `syntax` is the tree alone, which says what a decorator is attached to.
- * - `destructured` is the property a pattern names, looked up on the type of the value
- *   the pattern destructures.
+ * Which path answered for one reference: `batch`, the batched lookup over a file's name
+ * nodes; `resolved-symbol`, the per-node lookup for the residue a batch left;
+ * `shorthand`, the lookup for the value `{ a }` reads; `alias`, a step along an import
+ * or export chain; `syntax`, the tree alone, which says what a decorator is attached to;
+ * `destructured`, the property a pattern names, on the destructured value's type; and
+ * `by-name`, every declaration bearing the name a site spells, where the checker failed.
  */
 export type Resolution =
-  "batch" | "resolved-symbol" | "shorthand" | "alias" | "syntax" | "destructured";
+  "batch" | "resolved-symbol" | "shorthand" | "alias" | "syntax" | "destructured" | "by-name";
 
 /** One use of one declaration by one declaration. */
 export interface Reference {
@@ -186,13 +181,6 @@ export interface ReferenceOptions {
    */
   readonly consumer?: ConsumerSide;
 }
-
-/**
- * The batch cap a run takes when the configuration names none. It bounds the size of
- * one answer rather than the work: the median file is one batch at this cap and the
- * largest production file a handful.
- */
-export const DEFAULT_BATCH_CAP = 4096;
 
 /**
  * The operators whose left side one assignment stores into. A compound assignment is
@@ -564,6 +552,53 @@ export function testFileRulesOf(
     .sort((a, b) => compare(a.rule, b.rule));
 }
 
+const importedCache = new WeakMap<
+  SourceFile,
+  ReadonlyMap<string, readonly (string | undefined)[]>
+>();
+
+/**
+ * Each local name one file's imports bind, mapped to the names it imports: the
+ * exported name of a named import, `default` for a default import, and `undefined` for
+ * a namespace import or an import assignment, which binds a whole module.
+ */
+function importedNames(file: SourceFile): ReadonlyMap<string, readonly (string | undefined)[]> {
+  const known = importedCache.get(file);
+  if (known !== undefined) {
+    return known;
+  }
+  const names = new Map<string, (string | undefined)[]>();
+  const bind = (local: string, imported: string | undefined): void => {
+    names.set(local, [...(names.get(local) ?? []), imported]);
+  };
+  for (const statement of file.statements) {
+    if (isImportEqualsDeclaration(statement)) {
+      bind(statement.name.text, undefined);
+      continue;
+    }
+    const clause = isImportDeclaration(statement) ? statement.importClause : undefined;
+    if (clause === undefined) {
+      continue;
+    }
+    if (clause.name !== undefined) {
+      bind(clause.name.text, "default");
+    }
+    const bindings = clause.namedBindings;
+    if (bindings === undefined) {
+      continue;
+    }
+    if (bindings.kind === SyntaxKind.NamespaceImport) {
+      bind(bindings.name.text, undefined);
+    } else {
+      for (const element of bindings.elements) {
+        bind(element.name.text, element.propertyName?.text ?? element.name.text);
+      }
+    }
+  }
+  importedCache.set(file, names);
+  return names;
+}
+
 /** Two strings ordered bytewise, which is the order every set of a run is read in. */
 function compare(a: string, b: string): number {
   if (a === b) {
@@ -633,17 +668,42 @@ export function references<Brand>(
    * Each later link is a declaration of its own that references the next, so one link
    * per re-export is what lets a chain be followed one declaration at a time.
    */
-  const carriedBy = (link: Link, symbol: TSSymbol): readonly string[] =>
-    link.alias ? chains.nextDeclared(symbol) : chains.declarationsOf(symbol);
+  const carriedBy = (link: Link, symbol: TSSymbol): readonly ChainTarget[] =>
+    link.alias
+      ? chains.nextDeclared(symbol)
+      : chains.declarationsOf(symbol).map((id) => ({ id, stepped: false, guessed: false }));
+
+  /**
+   * Every declaration bearing the name one node spells, or the name an import of its
+   * file binds that name to, which is what a reference the checker could not resolve is
+   * counted as: it may be a use of any of them, and a declaration it may use is kept
+   * live. A name a namespace import binds may be a use of any file.
+   */
+  const named = (node: Node): readonly string[] => {
+    const byName = declarationsByName(held);
+    const text = node.getText();
+    const imported = importedNames(node.getSourceFile()).get(text) ?? [];
+    return [
+      ...new Set([
+        ...(byName.get(text) ?? []),
+        ...imported.flatMap((name) =>
+          name === undefined ? [...fileIds] : (byName.get(name) ?? []),
+        ),
+      ]),
+    ];
+  };
 
   /** The symbol one site resolves to, asking only the accessor the site's form names. */
-  const symbolFor = (site: Site, answered: ReadonlyMap<Node, TSSymbol>): TSSymbol | undefined => {
+  const symbolFor = (
+    site: Site,
+    answered: ReadonlyMap<Node, Answer<TSSymbol>>,
+  ): Answer<TSSymbol | undefined> => {
     if (site.shorthand !== undefined) {
       shorthandLookups += 1;
       return project.shorthandValueAt(project.handle(site.shorthand));
     }
     const batched = answered.get(site.node);
-    if (batched !== undefined) {
+    if (batched === UNANSWERED || typeof batched === "object") {
       return batched;
     }
     residueFallbacks += 1;
@@ -688,11 +748,14 @@ export function references<Brand>(
         ...evaluations.map((evaluation) => evaluation.node),
       ]),
     ];
-    const answered = new Map<Node, TSSymbol>();
+    const answered = new Map<Node, Answer<TSSymbol>>();
     batched += batching.length;
     for (let from = 0; from < batching.length; from += cap) {
       const run = batching.slice(from, from + cap);
-      const answers = project.symbolsAt(run.map((node) => project.handle(node)));
+      const answers = project.symbolsAt(
+        run.map((node) => project.handle(node)),
+        cap,
+      );
       fileBatches += 1;
       run.forEach((node, index) => {
         const symbol = answers[index];
@@ -708,13 +771,17 @@ export function references<Brand>(
         continue;
       }
       const position = renderPosition(file, root, link.at.getStart());
-      for (const id of carriedBy(link, symbol)) {
+      const carried =
+        symbol === UNANSWERED
+          ? named(link.at).map((id) => ({ id, stepped: false, guessed: true }))
+          : carriedBy(link, symbol);
+      for (const target of carried) {
         found.push({
           from: link.from,
-          to: id,
+          to: target.id,
           position,
           use: "read",
-          resolution: link.alias ? "alias" : "batch",
+          resolution: target.guessed ? "by-name" : link.alias ? "alias" : "batch",
           test,
         });
       }
@@ -726,14 +793,16 @@ export function references<Brand>(
         continue;
       }
       const position = renderPosition(file, root, evaluation.node.getStart());
-      for (const id of chains.declarationsOf(module)) {
+      // A module the checker could not resolve may be any file of the target.
+      const evaluated = module === UNANSWERED ? [...fileIds] : chains.declarationsOf(module);
+      for (const id of evaluated) {
         if (fileIds.has(id)) {
           found.push({
             from: evaluation.from,
             to: id,
             position,
             use: "evaluation",
-            resolution: "batch",
+            resolution: module === UNANSWERED ? "by-name" : "batch",
             test,
           });
         }
@@ -748,13 +817,21 @@ export function references<Brand>(
         return;
       }
       const position = renderPosition(file, root, read.key.getStart());
-      for (const target of chains.chainOf(symbol)) {
+      const targets =
+        symbol === UNANSWERED
+          ? (declarationsByName(held).get(read.name) ?? []).map((id) => ({
+              id,
+              stepped: false,
+              guessed: true,
+            }))
+          : chains.chainOf(symbol);
+      for (const target of targets) {
         found.push({
           from: read.from,
           to: target.id,
           position,
           use: "read",
-          resolution: "destructured",
+          resolution: target.guessed ? "by-name" : "destructured",
           test,
         });
       }
@@ -764,7 +841,7 @@ export function references<Brand>(
       const direct: Resolution =
         site.shorthand !== undefined
           ? "shorthand"
-          : answered.has(site.node)
+          : typeof answered.get(site.node) === "object"
             ? "batch"
             : "resolved-symbol";
       const symbol = symbolFor(site, answered);
@@ -774,13 +851,17 @@ export function references<Brand>(
       const position = renderPosition(file, root, site.node.getStart());
       // A re-export something imports is used and so is the declaration behind it, so
       // the use names every link of the chain its name stands at the head of.
-      for (const target of chains.chainOf(symbol)) {
+      const targets =
+        symbol === UNANSWERED
+          ? named(site.node).map((id) => ({ id, stepped: false, guessed: true }))
+          : chains.chainOf(symbol);
+      for (const target of targets) {
         found.push({
           from: site.from,
           to: target.id,
           position,
           use: site.use,
-          resolution: target.stepped ? "alias" : direct,
+          resolution: target.guessed ? "by-name" : target.stepped ? "alias" : direct,
           test,
         });
       }

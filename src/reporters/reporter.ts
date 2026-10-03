@@ -12,8 +12,8 @@ export interface RenderOptions {
   readonly template: Template | undefined;
 }
 
-/** One rendering of a report, as the text of the file it is written to. */
-type Reporter = (report: Report, options: RenderOptions) => string;
+/** One rendering of a report, as the pieces of the file it is written to, in order. */
+type Reporter = (report: Report, options: RenderOptions) => Iterable<string>;
 
 /**
  * One format this analyzer renders: its reporter, and the suffix appended to the report's

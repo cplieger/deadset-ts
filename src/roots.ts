@@ -15,6 +15,7 @@ import { globExpression } from "./glob.ts";
 import { nodeKey, type Inventory, type InventorySymbol } from "./inventory.ts";
 import type { Manifest, ManifestEntry } from "./manifest.ts";
 import { byPosition } from "./position.ts";
+import { UNANSWERED } from "./query.ts";
 import type { ProjectView } from "./session.ts";
 import { sourceFilesOf } from "./source-files.ts";
 
@@ -70,6 +71,12 @@ export interface Roots {
    * {@link unmatchedEverywhere} is what turns one into the other.
    */
   readonly unmatched: readonly string[];
+  /**
+   * Every declaration of the project, where the checker left the module or export table
+   * of an entry or a published file unanswered, and none otherwise: which of them that
+   * file exports is unknown.
+   */
+  readonly unanswered: readonly string[];
 }
 
 /** What decides the roots beside the declarations themselves. */
@@ -225,7 +232,7 @@ export function roots<Brand>(
     enter(point.file, point.rule, point.source, point.exports);
   }
 
-  const exportsOf = exportTables(project, held, [
+  const { tables: exportsOf, answered } = exportTables(project, held, [
     ...entered.filter((entry) => entry.exports).map((entry) => entry.file),
     ...published,
   ]);
@@ -258,47 +265,62 @@ export function roots<Brand>(
     return site || compare(a.kind, b.kind) || compare(a.source, b.source);
   });
 
-  return { configFile: project.configFile, liveUnderReachability: ordered, unmatched };
+  return {
+    configFile: project.configFile,
+    liveUnderReachability: ordered,
+    unmatched,
+    unanswered: answered ? [] : held.symbols.map((symbol) => symbol.id),
+  };
 }
 
 /**
  * Every declaration each file's module exports, by the file's name: the declaration
  * each name of the export table is, and every link of a re-export's chain. A name
- * whose declaration is outside the project's own files belongs to another program
- * and names nothing here.
- *
- * One batch resolves every file to its module and one request per module reads
- * its export table, star re-exports resolved into it. A file that is no module
- * exports nothing.
+ * whose declaration is outside the project's own files names nothing here. One batch
+ * resolves every file to its module and one request per module reads its export
+ * table, star re-exports resolved into it. A file that is no module exports nothing.
+ * `answered` is false where the checker left a table or a link of a chain unanswered.
  */
 function exportTables<Brand>(
   project: ProjectView<Brand>,
   held: Inventory,
   wanted: readonly SourceFile[],
-): ReadonlyMap<string, readonly string[]> {
+): { readonly tables: ReadonlyMap<string, readonly string[]>; readonly answered: boolean } {
   const unique = [...new Map(wanted.map((file) => [file.fileName, file])).values()];
   const tables = new Map<string, readonly string[]>();
+  let answered = true;
   if (unique.length === 0) {
-    return tables;
+    return { tables, answered };
   }
   const modules = project.symbolsAt(unique.map((file) => project.handle(file)));
   const chains = aliasChains(project, held);
 
+  const topLevel = (file: SourceFile): readonly string[] => {
+    const fileId = held.declarations.get(nodeKey(file, file));
+    return held.symbols.filter((symbol) => symbol.parent === fileId).map((symbol) => symbol.id);
+  };
   unique.forEach((file, index) => {
     const module = modules[index];
     if (module === undefined) {
       tables.set(file.fileName, []);
       return;
     }
+    const table = module === UNANSWERED ? UNANSWERED : project.queries.exportsOfModule(module);
+    if (table === UNANSWERED) {
+      answered = false;
+      tables.set(file.fileName, topLevel(file));
+      return;
+    }
     const ids = new Set<string>();
-    for (const exported of project.checker.getExportsOfModule(module)) {
+    for (const exported of table) {
       for (const target of chains.chainOf(exported)) {
+        answered &&= !target.guessed;
         ids.add(target.id);
       }
     }
     tables.set(file.fileName, [...ids]);
   });
-  return tables;
+  return { tables, answered };
 }
 
 /** The kinds of container whose export table, not its members' visibility, says what it publishes. */

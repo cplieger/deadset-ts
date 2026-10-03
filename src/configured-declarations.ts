@@ -25,6 +25,7 @@ import type { AliasChains } from "./alias-chain.ts";
 import { resolvedTargets } from "./calls.ts";
 import type { Config, DeclarationEntry } from "./config.ts";
 import type { Inventory } from "./inventory.ts";
+import { must, Unanswerable } from "./query.ts";
 import { nameComponent } from "./ref.ts";
 import type { ProjectView } from "./session.ts";
 
@@ -90,7 +91,7 @@ function unaliased<Brand>(project: ProjectView<Brand>, symbol: TSSymbol): TSSymb
   if ((symbol.flags & SymbolFlags.Alias) === 0) {
     return symbol;
   }
-  const target = project.checker.getAliasedSymbol(symbol);
+  const target = must(project.queries.aliased(symbol));
   return target.declarations.length === 0 ? undefined : target;
 }
 
@@ -105,14 +106,18 @@ function isClassMember(symbol: TSSymbol): boolean {
  * with the static suffix names one of the first and a component without it names an
  * instance member or one of the second.
  */
-function candidatesOf(container: TSSymbol, isStatic: boolean): readonly TSSymbol[] {
-  const exported = [...container.getExports().values()];
+function candidatesOf<Brand>(
+  project: ProjectView<Brand>,
+  container: TSSymbol,
+  isStatic: boolean,
+): readonly TSSymbol[] {
+  const exported = [...must(project.queries.exportsOf(container)).values()];
   if (isStatic) {
     return exported.filter(isClassMember);
   }
   const isClass = (container.flags & SymbolFlags.Class) !== 0;
   return [
-    ...container.getMembers().values(),
+    ...must(project.queries.membersOf(container)).values(),
     ...exported.filter((member) => !isClass || !isClassMember(member)),
   ];
 }
@@ -124,7 +129,7 @@ function memberOf<Brand>(
   component: string,
   isStatic: boolean,
 ): TSSymbol | undefined {
-  const member = candidatesOf(container, isStatic).find(
+  const member = candidatesOf(project, container, isStatic).find(
     (candidate) => nameComponent(candidate.name) === component,
   );
   return member === undefined ? undefined : unaliased(project, member);
@@ -190,7 +195,7 @@ function modulesNamed<Brand>(
     file.forEachChild(visit);
   }
   const specified = [...written];
-  const symbols = project.symbolsAt(specified.map(([, node]) => project.handle(node)));
+  const symbols = project.symbolsAt(specified.map(([, node]) => project.handle(node))).map(must);
   const modules = new Map<string, TSSymbol>();
   specified.forEach(([name], index) => {
     const symbol = symbols[index];
@@ -238,7 +243,7 @@ export function resolveEntries<Brand>(
       const module = modules.get(entry.module);
       start = module === undefined ? undefined : memberOf(project, module, first, false);
     } else if (nameComponent(first) === first) {
-      const global = project.checker.resolveName(first, ANY_MEANING, undefined, false);
+      const global = must(project.queries.resolveName(first, ANY_MEANING, undefined, false));
       start = global === undefined ? undefined : unaliased(project, global);
     }
     const declared = walkPath(project, start, rest, isStatic);
@@ -334,17 +339,28 @@ export function configuredDeclarations(config: Config): readonly ConfiguredDecla
   ];
 }
 
-/** Whether each configured entry names a declaration in one project, in the entries' order. */
+/**
+ * Whether each configured entry names a declaration in one project, in the entries'
+ * order. Where the checker leaves a question of the resolution unanswered, every entry
+ * counts as naming one, so no entry is reported as naming nothing on a gap.
+ */
 export function declarationsNamed<Brand>(
   project: ProjectView<Brand>,
   held: Inventory,
   configured: readonly ConfiguredDeclaration[],
 ): readonly boolean[] {
-  return resolveEntries(
-    project,
-    held,
-    configured.map((one) => one.entry),
-  ).map(namesADeclaration);
+  try {
+    return resolveEntries(
+      project,
+      held,
+      configured.map((one) => one.entry),
+    ).map(namesADeclaration);
+  } catch (error: unknown) {
+    if (!(error instanceof Unanswerable)) {
+      throw error;
+    }
+    return configured.map(() => true);
+  }
 }
 
 /**

@@ -33,6 +33,7 @@ import type { Host } from "./host.ts";
 import { dirnamePath, joinPath, relativePath } from "./paths.ts";
 import { byPosition, positionKey, renderPosition, type Position } from "./position.ts";
 import { computedComponent, nameComponent, renderRef, type Component, type Module } from "./ref.ts";
+import { isAnswered, UNANSWERED } from "./query.ts";
 import type { Handle, ProjectView } from "./session.ts";
 
 /**
@@ -160,6 +161,17 @@ export interface Inventory {
    * that the omission is a number rather than a silence.
    */
   readonly outsideOwnFiles: number;
+  /**
+   * The declarations whose module, namespace or container table the checker did not
+   * answer, in position order: whether each is exported, and which members a table
+   * would have added, are unknown.
+   */
+  readonly unanswered: readonly string[];
+  /**
+   * Every declaration other than a file by each name a use may spell it with: its
+   * component, its declared name where that differs, and a type parameter's own name.
+   */
+  readonly byName: ReadonlyMap<string, readonly string[]>;
 }
 
 /** A declaration under construction, before its reference is rendered. */
@@ -758,12 +770,28 @@ export function inventory<Brand>(
   const handles: Handle<Brand>[] = batched.map((node) => project.handle(node));
   const resolved = project.symbolsAt(handles);
   const symbolOf = new Map<Node, TSSymbol>();
+  // A scope or a container whose symbol or table went unanswered keeps what its syntax
+  // declares, and everything under it is recorded unanswered.
+  const unansweredOwners = new Set<Building>();
   batched.forEach((node, index) => {
     const symbol = resolved[index];
-    if (symbol !== undefined) {
+    if (typeof symbol === "object") {
       symbolOf.set(node, symbol);
     }
   });
+  resolved.slice(0, exportScopes.length).forEach((symbol, index) => {
+    const scope = exportScopes[index];
+    if (symbol === UNANSWERED && scope !== undefined) {
+      unansweredOwners.add(scope.owner);
+    }
+  });
+  containers
+    .filter((container) => container.nameNode !== undefined)
+    .forEach((container, index) => {
+      if (resolved[exportScopes.length + index] === UNANSWERED) {
+        unansweredOwners.add(container.owner);
+      }
+    });
 
   let exportTables = 0;
   for (const scope of exportScopes) {
@@ -772,7 +800,11 @@ export function inventory<Brand>(
       continue;
     }
     exportTables += 1;
-    for (const [, exported] of symbol.getExports()) {
+    const table = project.queries.exportsOf(symbol);
+    if (!isAnswered(table)) {
+      unansweredOwners.add(scope.owner);
+    }
+    for (const [, exported] of isAnswered(table) ? table : []) {
       for (const declaration of exported.declarations) {
         const held = project.declarationAt(declaration);
         if (held === undefined) {
@@ -794,11 +826,21 @@ export function inventory<Brand>(
     if (symbol !== undefined) {
       if (!container.membersAreExports) {
         memberTables += 1;
-        outsideOwnFiles += readTable(container, symbol.getMembers(), seen, false);
+        const table = project.queries.membersOf(symbol);
+        if (isAnswered(table)) {
+          outsideOwnFiles += readTable(container, table, seen, false);
+        } else {
+          unansweredOwners.add(container.owner);
+        }
       }
       if (container.membersAreExports || container.isClass) {
         memberTables += 1;
-        outsideOwnFiles += readTable(container, symbol.getExports(), seen, container.isClass);
+        const table = project.queries.exportsOf(symbol);
+        if (isAnswered(table)) {
+          outsideOwnFiles += readTable(container, table, seen, container.isClass);
+        } else {
+          unansweredOwners.add(container.owner);
+        }
       }
     }
     completeFromTree(container, seen);
@@ -919,6 +961,7 @@ export function inventory<Brand>(
     return undefined;
   }
 
+  const byId = new Map(building.map((record) => [positionKey(record.position), record]));
   const symbols = building
     .map(render)
     .sort((a, b) => byPosition(a.position, b.position) || (a.ref < b.ref ? -1 : 1));
@@ -932,7 +975,48 @@ export function inventory<Brand>(
     cost: { batches: 1, exportTables, memberTables },
     starReExports,
     outsideOwnFiles,
+    unanswered: symbols
+      .filter((symbol) => underUnanswered(byId.get(symbol.id), unansweredOwners))
+      .map((symbol) => symbol.id),
+    byName: namesOf(building),
   };
+}
+
+/** Whether one declaration is, or is declared under, a scope or container left unanswered. */
+function underUnanswered(record: Building | undefined, owners: ReadonlySet<Building>): boolean {
+  for (let at = record; at !== undefined; at = at.parent) {
+    if (owners.has(at)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Every declaration but a file, by each name a use may spell it with. */
+function namesOf(building: readonly Building[]): ReadonlyMap<string, readonly string[]> {
+  const byName = new Map<string, string[]>();
+  for (const record of building) {
+    if (record.kind === "file") {
+      continue;
+    }
+    const id = positionKey(record.position);
+    const names =
+      record.typeParameter === undefined
+        ? [record.component.text, record.localName]
+        : [record.typeParameter];
+    for (const name of new Set(names)) {
+      if (name === undefined) {
+        continue;
+      }
+      const ids = byName.get(name);
+      if (ids === undefined) {
+        byName.set(name, [id]);
+      } else if (!ids.includes(id)) {
+        ids.push(id);
+      }
+    }
+  }
+  return byName;
 }
 
 /** The chain of components that names one declaration, read from the module inward. */
@@ -983,4 +1067,13 @@ function refOf(record: Building, chain: readonly Component[]): string {
     static: record.static,
     ...(record.typeParameter === undefined ? {} : { typeParameter: record.typeParameter }),
   });
+}
+
+/**
+ * Every declaration of an inventory other than a file, by each name a use may spell it
+ * with. It is how a reference the checker could not resolve is still counted, as a
+ * reference to every declaration that bears the name it spells.
+ */
+export function declarationsByName(held: Inventory): ReadonlyMap<string, readonly string[]> {
+  return held.byName;
 }

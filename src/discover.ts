@@ -4,7 +4,7 @@ import type { BuildConfiguration, ProjectConfiguration } from "./config.ts";
 import type { Host } from "./host.ts";
 import { dirnamePath, isAbsolutePath, joinPath, relativePath, resolvePath } from "./paths.ts";
 import type { Scope } from "./scope.ts";
-import type { Engine } from "./session.ts";
+import type { Engine, ProjectDiagnostics } from "./session.ts";
 
 /** Directory names discovery does not descend into. */
 export const IGNORED_DIRECTORIES: ReadonlySet<string> = new Set(["node_modules", ".git"]);
@@ -20,24 +20,60 @@ const CONFIG_FILE = /^tsconfig.*\.json$/u;
  */
 export class DiscoveryError extends Error {
   /** The diagnostics the compiler reported, in the order it reported them. */
-  readonly diagnostics: readonly Diagnostic[];
+  readonly diagnostics: readonly LocatedDiagnostic[];
 
-  constructor(message: string, diagnostics: readonly Diagnostic[]) {
+  constructor(message: string, diagnostics: readonly LocatedDiagnostic[]) {
     super(message);
     this.name = "DiscoveryError";
     this.diagnostics = diagnostics;
   }
 }
 
+/** The category an error diagnostic carries, which the protocol sends as a number. */
+const ERROR_CATEGORY: number = DiagnosticCategory.Error;
+
 /** Whether one diagnostic is an error, which is what fails a run closed. */
 export function isError(diagnostic: Diagnostic): boolean {
-  return diagnostic.category === DiagnosticCategory.Error;
+  return diagnostic.category === ERROR_CATEGORY;
 }
 
-/** One diagnostic as a line naming its position, its code and its message. */
-export function renderDiagnostic(diagnostic: Diagnostic): string {
-  const where = diagnostic.fileName ?? "<no file>";
-  return `${where}:${String(diagnostic.pos)}: TS${String(diagnostic.code)}: ${diagnostic.text}`;
+/** One diagnostic, with the line and column its offset falls on where it names a file. */
+export interface LocatedDiagnostic {
+  readonly diagnostic: Diagnostic;
+  /** Where the diagnostic starts, counted from one; absent where it names no position. */
+  readonly at?: { readonly line: number; readonly column: number } | undefined;
+}
+
+/**
+ * One diagnostic as a line naming its file, its line and column, its code and its
+ * message: `path:line:column: TScode: message`, the position left out where the
+ * diagnostic names none and the file where it names none. `display` spells the
+ * file's path; it answers the path itself where it is not given.
+ */
+export function renderDiagnostic(
+  located: LocatedDiagnostic,
+  display: (path: string) => string = (path) => path,
+): string {
+  const { diagnostic, at } = located;
+  const message = `TS${String(diagnostic.code)}: ${diagnostic.text}`;
+  if (diagnostic.fileName === undefined) {
+    return message;
+  }
+  const where = display(diagnostic.fileName);
+  return at === undefined
+    ? `${where}: ${message}`
+    : `${where}:${String(at.line)}:${String(at.column)}: ${message}`;
+}
+
+/** Each diagnostic with the line and column its offset falls on. */
+function locatedIn(
+  diagnostics: readonly Diagnostic[],
+  locate: (fileName: string, offset: number) => { line: number; column: number } | undefined,
+): readonly LocatedDiagnostic[] {
+  return diagnostics.map((diagnostic) => ({
+    diagnostic,
+    at: diagnostic.fileName === undefined ? undefined : locate(diagnostic.fileName, diagnostic.pos),
+  }));
 }
 
 /**
@@ -55,6 +91,26 @@ export function diagnosticErrors(sets: {
   return [...sets.configParsing, ...sets.syntactic, ...sets.semantic].filter(isError);
 }
 
+/** Why one open project cannot be analyzed, split by whether it loaded at all. */
+interface ProjectErrors {
+  /**
+   * The errors in the configuration itself: no input matched, an option that does not
+   * parse. A project carrying one did not load, whatever its files say.
+   */
+  readonly load: readonly LocatedDiagnostic[];
+  /** The errors in the files of a project that loaded: their syntax and their types. */
+  readonly check: readonly LocatedDiagnostic[];
+}
+
+/** The errors one open project carries, each located in the file it names. */
+export function projectErrors(sets: ProjectDiagnostics): ProjectErrors {
+  const load = sets.configParsing.filter(isError);
+  return {
+    load: locatedIn(load, sets.locate),
+    check: load.length > 0 ? [] : locatedIn(diagnosticErrors(sets), sets.locate),
+  };
+}
+
 /** One project a run analyzes. */
 export interface DiscoveredProject {
   /**
@@ -68,10 +124,54 @@ export interface DiscoveredProject {
   readonly configFile: string;
 }
 
+/**
+ * One project discovery derived and the run could not build, with the first line of
+ * the error that dropped it.
+ */
+export interface NotBuilt {
+  /** The name the project would have carried, as {@link DiscoveredProject.id} spells it. */
+  readonly id: string;
+  /** The compiler configuration file, absolute. */
+  readonly configFile: string;
+  /**
+   * The error's first line, every path below the target root spelled relative to it, so
+   * a report naming it carries no path of the machine it ran on.
+   */
+  readonly error: string;
+}
+
+/**
+ * The first line of one error about the target, every mention of the target root
+ * spelled relative to it: a path below the root loses the root and its separator, and
+ * the root itself is `.`.
+ */
+export function targetRelative(text: string, targetRoot: string): string {
+  const root = targetRoot.endsWith("/") ? targetRoot.slice(0, -1) : targetRoot;
+  const [first = ""] = text.split(/\r?\n/u);
+  const spelled = first.split(`${root}/`).join("").split(root).join(".").trim();
+  return spelled === "" ? "the configuration could not be built" : spelled;
+}
+
+/**
+ * Whether one configuration is the analyzer's own guess: discovery derived it and the
+ * scope did not name it. A guess that does not load is dropped; any other ends the run.
+ */
+export function isGuess(discovery: Discovery, configFile: string): boolean {
+  return discovery.derived && !discovery.fromScope.includes(configFile);
+}
+
 /** Every project discovery found, and where each came from. */
 export interface Discovery {
   /** The projects, in discovery order, each once. */
   readonly projects: readonly DiscoveredProject[];
+  /**
+   * Whether discovery derived the projects rather than reading them from a declared
+   * matrix. A derived project that fails to load is dropped and named in
+   * {@link Discovery.notBuilt}; a declared one ends the run.
+   */
+  readonly derived: boolean;
+  /** The derived configurations the compiler could not read, in discovery order. */
+  readonly notBuilt: readonly NotBuilt[];
   /** The configuration file of each project, in the same order. */
   readonly configFiles: readonly string[];
   /**
@@ -174,9 +274,16 @@ function scopeConfigFiles(host: Host, scope: Scope): string[] {
 /**
  * Every configuration file reached from `pending`, in the order discovery reads them:
  * each once, each followed by the configurations it references, transitively. A
- * configuration the compiler cannot read ends the run naming it.
+ * configuration the compiler cannot read ends the run naming it, unless `unreadable`
+ * is given, which is then told the configuration and why, and the walk goes on
+ * without it.
  */
-function derivedFrom(engine: Engine, host: Host, pending: string[]): string[] {
+function derivedFrom(
+  engine: Engine,
+  host: Host,
+  pending: string[],
+  unreadable?: (configFile: string, reason: string) => void,
+): string[] {
   const seen = new Set<string>();
   const found: string[] = [];
   while (pending.length > 0) {
@@ -189,7 +296,17 @@ function derivedFrom(engine: Engine, host: Host, pending: string[]): string[] {
       continue;
     }
     seen.add(path);
-    parseOrRefuse(engine, path, path);
+    const reason = unreadableReason(engine, path);
+    if (reason !== undefined) {
+      if (unreadable === undefined) {
+        throw new DiscoveryError(
+          `${path} cannot be read as a compiler configuration: ${reason}`,
+          [],
+        );
+      }
+      unreadable(path, reason);
+      continue;
+    }
     found.push(path);
     pending.push(...referencesOf(host, path));
   }
@@ -232,20 +349,25 @@ function derivedId(targetRoot: string, configFile: string): string {
   return relativePath(targetRoot, configFile) ?? configFile;
 }
 
+/** Why the compiler cannot read one configuration file, or undefined where it can. */
+function unreadableReason(engine: Engine, configFile: string): string | undefined {
+  try {
+    engine.parseConfigFile(configFile);
+    return undefined;
+  } catch (error: unknown) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
+
 /**
  * Resolves one compiler configuration file, or ends the run naming it: a project
  * opened from a configuration the compiler cannot read would be analyzed with no
  * type information.
  */
 function parseOrRefuse(engine: Engine, configFile: string, named: string): void {
-  try {
-    engine.parseConfigFile(configFile);
-  } catch (error: unknown) {
-    throw new DiscoveryError(
-      `${named} cannot be read as a compiler configuration: ` +
-        (error instanceof Error ? error.message : String(error)),
-      [],
-    );
+  const reason = unreadableReason(engine, configFile);
+  if (reason !== undefined) {
+    throw new DiscoveryError(`${named} cannot be read as a compiler configuration: ${reason}`, []);
   }
 }
 
@@ -299,26 +421,50 @@ function declaredProjects(
       );
     }
   }
-  return { projects, configFiles: projects.map((project) => project.configFile), fromScope: [] };
+  return {
+    projects,
+    derived: false,
+    notBuilt: [],
+    configFiles: projects.map((project) => project.configFile),
+    fromScope: [],
+  };
 }
 
 /**
  * The projects a run derives where the matrix declares none, in the order discovery
  * reads them: the paths the scope names, then every compiler configuration under
  * the target root that is not inside an ignored directory, then the configurations
- * each of those references, transitively. Each configuration appears once.
+ * each of those references, transitively. Each configuration appears once. A
+ * configuration the scope names directly is the caller's own and ends the run where
+ * it cannot be read; one the walk found is dropped and named.
  */
 function derivedProjects(engine: Engine, host: Host, scope: Scope): Discovery {
+  const targetRoot = scope.target.path;
   const fromScope = scopeConfigFiles(host, scope);
-  const configFiles = derivedFrom(engine, host, [
-    ...fromScope,
-    ...configFilesUnder(host, scope.target.path),
-  ]);
+  const notBuilt: NotBuilt[] = [];
+  const configFiles = derivedFrom(
+    engine,
+    host,
+    [...fromScope, ...configFilesUnder(host, targetRoot)],
+    (configFile, reason) => {
+      if (fromScope.includes(configFile)) {
+        throw new DiscoveryError(
+          `${configFile} cannot be read as a compiler configuration: ${reason}`,
+          [],
+        );
+      }
+      notBuilt.push({
+        id: derivedId(targetRoot, configFile),
+        configFile,
+        error: targetRelative(reason, resolvePath(host.workingDirectory(), targetRoot)),
+      });
+    },
+  );
   const projects = configFiles.map((configFile) => ({
-    id: derivedId(scope.target.path, configFile),
+    id: derivedId(targetRoot, configFile),
     configFile,
   }));
-  return { projects, configFiles, fromScope };
+  return { projects, derived: true, notBuilt, configFiles, fromScope };
 }
 
 /**
@@ -331,12 +477,10 @@ function derivedProjects(engine: Engine, host: Host, scope: Scope): Discovery {
  * scope and the target tree. A platform entry names a configuration of another
  * language and plays no part here.
  *
- * A configuration file the compiler cannot read ends the run with the failure code,
- * so a project that would have been analyzed with no type information is never
- * analyzed at all, whether the matrix declared it or discovery derived it. What a
- * configuration's own contents say is refused once its project is open, by
- * {@link diagnosticErrors} over the three sets a program reports, because a
- * resolution carries no diagnostics.
+ * A configuration file the compiler cannot read is never analyzed. One the matrix or
+ * the scope names ends the run with the failure code; a guess is dropped and named in
+ * {@link Discovery.notBuilt}. What a configuration's own contents say is read once its
+ * project is open, by {@link diagnosticErrors}, because a resolution carries none.
  *
  * Nothing reads a build output: a project is the files its configuration names, so a
  * package whose sources ship as TypeScript is analyzed as it stands.
