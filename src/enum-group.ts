@@ -33,7 +33,8 @@ import { aliasChains } from "./alias-chain.ts";
 import type { DetectorInput, Evidence } from "./exempt.ts";
 import { nodeKey } from "./inventory.ts";
 import { renderPosition } from "./position.ts";
-import { DEFAULT_BATCH_CAP } from "./references.ts";
+import { isAnswered, UNANSWERED, type Answer } from "./query.ts";
+import type { ProjectView } from "./session.ts";
 
 /** The operand types a conversion produces an enum value from. */
 const NUMBER = TypeFlags.NumberLike;
@@ -146,10 +147,15 @@ function sitesOf(file: SourceFile): readonly Site[] {
  * union, and itself otherwise. An enum's own value, or one of its members, is a value the
  * source names, whichever number or string it also is.
  */
-function partsOf(type: Type): readonly Type[] {
-  const parts = type.isUnionType() ? type.getTypes() : [type];
-  return parts.filter((part) => (part.flags & TypeFlags.EnumLike) === 0);
+function partsOf<Brand>(project: ProjectView<Brand>, type: Type): Answer<readonly Type[]> {
+  const parts = type.isUnionType() ? project.queries.constituents(type) : [type];
+  return isAnswered(parts)
+    ? parts.filter((part) => (part.flags & TypeFlags.EnumLike) === 0)
+    : parts;
 }
+
+/** The detail a site records whose operand's type the checker could not answer. */
+const UNTYPED_DETAIL = "converted from a value of unanswered type";
 
 /**
  * The detail one site records about the enum it produces, or undefined where the
@@ -157,14 +163,22 @@ function partsOf(type: Type): readonly Type[] {
  * converted, a value of type `any` or `unknown` is decoded, and a value of an enum is one
  * the source names.
  */
-function detailOf(site: Site, enumName: string, operand: Type | undefined): string | undefined {
+function detailOf<Brand>(
+  project: ProjectView<Brand>,
+  site: Site,
+  enumName: string,
+  operand: Answer<Type> | undefined,
+): string | undefined {
   if (site.form === "lookup") {
     return `looked up by an element access on ${enumName}`;
   }
   if (operand === undefined) {
     return undefined;
   }
-  const parts = partsOf(operand);
+  const parts = operand === UNANSWERED ? UNANSWERED : partsOf(project, operand);
+  if (parts === UNANSWERED) {
+    return UNTYPED_DETAIL;
+  }
   if (parts.some((part) => (part.flags & NUMBER) !== 0)) {
     return "converted from number";
   }
@@ -204,35 +218,37 @@ export function enumGroup<Brand>(input: DetectorInput<Brand>): readonly Evidence
   }
 
   const sites = files.flatMap(sitesOf);
-  const named = new Map<Site, string>();
+  const named = new Map<Site, readonly string[]>();
   const chains = aliasChains(project, held);
-  for (let from = 0; from < sites.length; from += DEFAULT_BATCH_CAP) {
-    const run = sites.slice(from, from + DEFAULT_BATCH_CAP);
-    project.symbolsAt(run.map((site) => project.handle(site.name))).forEach((symbol, index) => {
-      const site = run[index];
-      if (symbol === undefined || site === undefined) {
-        return;
+  // A name the checker could not resolve may stand for any enum of the target it spells.
+  const enumsNamed = (text: string): readonly string[] =>
+    [...enums].flatMap(([id, name]) => (name === text ? [id] : []));
+  project.symbolsAt(sites.map((site) => project.handle(site.name))).forEach((symbol, index) => {
+    const site = sites[index];
+    if (symbol === undefined || site === undefined) {
+      return;
+    }
+    if (symbol === UNANSWERED) {
+      const ids = enumsNamed(site.name.getText());
+      if (ids.length > 0) {
+        named.set(site, ids);
       }
-      const target = chains.chainOf(symbol).find((link) => enums.has(link.id));
-      if (target !== undefined) {
-        named.set(site, target.id);
-      }
-    });
-  }
+      return;
+    }
+    const target = chains.chainOf(symbol).find((link) => enums.has(link.id));
+    if (target !== undefined) {
+      named.set(site, [target.id]);
+    }
+  });
 
   const typed = sites.filter((site) => named.has(site) && site.operand !== undefined);
-  const operandType = new Map<Site, Type>();
-  for (let from = 0; from < typed.length; from += DEFAULT_BATCH_CAP) {
-    const run = typed.slice(from, from + DEFAULT_BATCH_CAP);
-    project.checker
-      .getTypeAtLocation(run.map((site) => site.operand ?? site.at))
-      .forEach((type, index) => {
-        const site = run[index];
-        if (type !== undefined && site !== undefined) {
-          operandType.set(site, type);
-        }
-      });
-  }
+  const operandType = new Map<Site, Answer<Type>>();
+  project.queries.typesAt(typed.map((site) => site.operand ?? site.at)).forEach((type, index) => {
+    const site = typed[index];
+    if (type !== undefined && site !== undefined) {
+      operandType.set(site, type);
+    }
+  });
 
   const members = new Map<string, string[]>();
   for (const symbol of held.symbols) {
@@ -248,17 +264,15 @@ export function enumGroup<Brand>(input: DetectorInput<Brand>): readonly Evidence
 
   const found: Evidence[] = [];
   for (const site of sites) {
-    const enumId = named.get(site);
-    if (enumId === undefined) {
-      continue;
-    }
-    const detail = detailOf(site, enums.get(enumId) ?? "", operandType.get(site));
-    if (detail === undefined) {
-      continue;
-    }
-    const position = renderPosition(site.at.getSourceFile(), targetRoot, site.at.getStart());
-    for (const id of members.get(enumId) ?? []) {
-      found.push({ id, detail, site: position });
+    for (const enumId of named.get(site) ?? []) {
+      const detail = detailOf(project, site, enums.get(enumId) ?? "", operandType.get(site));
+      if (detail === undefined) {
+        continue;
+      }
+      const position = renderPosition(site.at.getSourceFile(), targetRoot, site.at.getStart());
+      for (const id of members.get(enumId) ?? []) {
+        found.push({ id, detail, site: position });
+      }
     }
   }
   return found;

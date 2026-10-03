@@ -1,5 +1,6 @@
 import { runSweep } from "../analysis.ts";
 import { retainedLines } from "../exempt.ts";
+import { partialNotes } from "../partial.ts";
 import { resolve } from "../resolve.ts";
 import { EXIT_CLEAN, type Verb } from "./verb.ts";
 
@@ -8,9 +9,9 @@ import { EXIT_CLEAN, type Verb } from "./verb.ts";
  * built from, one per line, and nothing where no exemption held one back. One fact
  * several configurations found is one record, so the line names no configuration. The
  * line shape is this command's own rather than a Contract format, so that sort and cut
- * read it.
+ * read it. Where the analysis was partial, the error stream says so.
  */
-export const printRetainedVerb: Verb = ({ out, host, inputs, scope, openClient }) => {
+export const printRetainedVerb: Verb = ({ out, err, host, inputs, scope, openClient }) => {
   const { config } = resolve(inputs());
   const scoped = scope();
   const swept = runSweep(openClient(false), host, scoped, config, {
@@ -19,6 +20,9 @@ export const printRetainedVerb: Verb = ({ out, host, inputs, scope, openClient }
   });
   for (const line of retainedLines(swept.matrix.union.symbols, swept.retained)) {
     out.write(`${line}\n`);
+  }
+  for (const note of partialNotes({ notBuilt: swept.notBuilt, unanswered: swept.unanswered })) {
+    err.write(`deadset-ts: ${note}\n`);
   }
   return EXIT_CLEAN;
 };

@@ -20,6 +20,7 @@ import { scopeForDir } from "./scope.ts";
 import { openEngine } from "./session.ts";
 import { BASELINE_FILE, writeBaseline } from "./suppress-file.ts";
 import { EXIT_CLEAN, EXIT_FINDINGS } from "./verbs/verb.ts";
+import { whole } from "../__test-helpers__/whole.ts";
 
 const SUPPRESSIONS = fixture("projects", "suppressions");
 const EDGES = fixture("projects", "edge-evaluation");
@@ -262,9 +263,8 @@ describe("a baseline", () => {
   const root = copyOf(SUPPRESSIONS);
   rmSync(join(root, "deadset-ignore.json"));
   const first = passOver(root);
-  const written = writeBaseline(
-    recordedFindings(first.result.findings),
-    analyzerProvenance("1.2.3"),
+  const written = whole(
+    writeBaseline(recordedFindings(first.result.findings), analyzerProvenance("1.2.3")),
   );
   writeFileSync(join(root, BASELINE_FILE), written);
   const again = passOver(root);
@@ -421,10 +421,12 @@ describe("the published baseline vectors", () => {
       findings: RecordableFinding[];
     };
     const expected = baselineCase(name, "expected.json") as { baseline: unknown[] };
-    const written = writeBaseline(recordedFindings(report.findings), {
-      analyzer: report.analyzer.name,
-      version: report.analyzer.version,
-    });
+    const written = whole(
+      writeBaseline(recordedFindings(report.findings), {
+        analyzer: report.analyzer.name,
+        version: report.analyzer.version,
+      }),
+    );
 
     expect((JSON.parse(written) as { baseline: unknown[] }).baseline).toEqual(expected.baseline);
   });

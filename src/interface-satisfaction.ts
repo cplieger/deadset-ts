@@ -52,7 +52,7 @@ import { aliasChains } from "./alias-chain.ts";
 import type { DetectorInput, Evidence } from "./exempt.ts";
 import { nodeKey } from "./inventory.ts";
 import { renderPosition } from "./position.ts";
-import { DEFAULT_BATCH_CAP } from "./references.ts";
+import { must } from "./query.ts";
 
 /** One class the inventory holds, by its declaration. */
 interface ClassAt {
@@ -246,7 +246,7 @@ function walk(files: readonly SourceFile[], declarations: ReadonlyMap<string, st
  */
 export function interfaceSatisfaction<Brand>(input: DetectorInput<Brand>): readonly Evidence[] {
   const { project, held, targetRoot } = input;
-  const checker = project.checker;
+  const queries = project.queries;
   const files = project.ownSourceFiles();
   const { classes, clauses, flows } = walk(files, held.declarations);
   if (classes.length === 0) {
@@ -261,15 +261,13 @@ export function interfaceSatisfaction<Brand>(input: DetectorInput<Brand>): reado
     ...flows.filter((flow) => flow.self === undefined).map((flow) => flow.value),
   ];
   const typeAt = new Map<Node, Type>();
-  for (let from = 0; from < asked.length; from += DEFAULT_BATCH_CAP) {
-    const run = asked.slice(from, from + DEFAULT_BATCH_CAP);
-    checker.getTypeAtLocation(run).forEach((type, index) => {
-      const node = run[index];
-      if (type !== undefined && node !== undefined) {
-        typeAt.set(node, type);
-      }
-    });
-  }
+  queries.typesAt(asked).forEach((answer, index) => {
+    const type = must(answer);
+    const node = asked[index];
+    if (type !== undefined && node !== undefined) {
+      typeAt.set(node, type);
+    }
+  });
 
   const classOfType = new Map<number, ClassAt>();
   const instanceOf = new Map<string, Type>();
@@ -289,7 +287,7 @@ export function interfaceSatisfaction<Brand>(input: DetectorInput<Brand>): reado
     }
     let parts = constituents.get(type.id);
     if (parts === undefined) {
-      parts = type.getTypes();
+      parts = must(queries.constituents(type));
       constituents.set(type.id, parts);
     }
     return parts;
@@ -307,7 +305,7 @@ export function interfaceSatisfaction<Brand>(input: DetectorInput<Brand>): reado
         return [];
       }
       if (!targets.has(part.id)) {
-        targets.set(part.id, classOfType.get(part.getTarget().id));
+        targets.set(part.id, classOfType.get(must(queries.targetOf(part)).id));
       }
       const generic = targets.get(part.id);
       return generic === undefined ? [] : [{ owner: generic, type: part }];
@@ -318,7 +316,7 @@ export function interfaceSatisfaction<Brand>(input: DetectorInput<Brand>): reado
   const interfacesOf = (type: Type): readonly { type: Type; name: string }[] =>
     partsOf(type).flatMap((part) => {
       if (!interfaceNames.has(part.id)) {
-        const symbol = part.isObjectType() ? part.getSymbol() : undefined;
+        const symbol = part.isObjectType() ? must(queries.symbolOfType(part)) : undefined;
         interfaceNames.set(
           part.id,
           symbol !== undefined && (symbol.flags & SymbolFlags.Interface) !== 0
@@ -352,7 +350,8 @@ export function interfaceSatisfaction<Brand>(input: DetectorInput<Brand>): reado
     }
   }
 
-  for (const flow of flows) {
+  // The positions of every flow carrying a class are asked for at once.
+  const carrying = flows.flatMap((flow) => {
     const self = flow.self === undefined ? undefined : instanceOf.get(flow.self.id);
     const valueType = typeAt.get(flow.value);
     const sources =
@@ -361,32 +360,35 @@ export function interfaceSatisfaction<Brand>(input: DetectorInput<Brand>): reado
         : valueType === undefined
           ? []
           : classesOf(valueType);
-    if (sources.length === 0) {
-      continue;
-    }
-    const position = checker.getContextualType(flow.value);
+    return sources.length === 0 ? [] : [{ flow, sources }];
+  });
+  const positions = queries.contextualTypes(carrying.map((one) => one.flow.value));
+  carrying.forEach(({ flow, sources }, index) => {
+    const position = must(positions[index]);
     if (position === undefined) {
-      continue;
+      return;
     }
     for (const reached of interfacesOf(position)) {
       for (const source of sources) {
         reach(source.owner, source.type, reached.type, reached.name, flow.value);
       }
     }
-  }
+  });
 
   const chains = aliasChains(project, held);
   const required = new Map<number, ReadonlySet<string>>();
   const members = new Map<string, ReadonlyMap<string, readonly string[]>>();
   const found: Evidence[] = [];
-  for (const pair of pairs.values()) {
-    if (!checker.isTypeAssignableTo(pair.source, pair.target)) {
+  const asking = [...pairs.values()];
+  const assignable = queries.assignableEach(asking);
+  for (const [index, pair] of asking.entries()) {
+    if (!must(assignable[index] ?? false)) {
       continue;
     }
     let names = required.get(pair.target.id);
     if (names === undefined) {
       names = new Set(
-        checker.getPropertiesOfType(pair.target).map((property) => property.escapedName),
+        must(queries.propertiesOf(pair.target)).map((property) => property.escapedName),
       );
       required.set(pair.target.id, names);
     }
@@ -394,9 +396,10 @@ export function interfaceSatisfaction<Brand>(input: DetectorInput<Brand>): reado
     if (answering === undefined) {
       const instance = instanceOf.get(pair.owner.id) ?? pair.source;
       answering = new Map(
-        checker
-          .getPropertiesOfType(instance)
-          .map((property) => [property.escapedName, chains.declarationsOf(property)]),
+        must(queries.propertiesOf(instance)).map((property) => [
+          property.escapedName,
+          chains.declarationsOf(property),
+        ]),
       );
       members.set(pair.owner.id, answering);
     }

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { fixture } from "../../__test-helpers__/fixtures.ts";
 import { RenderError } from "./reporter.ts";
 import { parseTemplate, renderTemplate, TemplateError } from "./template.ts";
+import { whole } from "../../__test-helpers__/whole.ts";
 
 /** A document shaped like a report's members, by the names the JSON report gives them. */
 const DOCUMENT = {
@@ -26,7 +27,7 @@ const DOCUMENT = {
 };
 
 function render(source: string, document: unknown = DOCUMENT): string {
-  return renderTemplate(parseTemplate(source), document);
+  return whole(renderTemplate(parseTemplate(source), document));
 }
 
 describe("a template over the report document", () => {
@@ -155,7 +156,9 @@ function outcomeOf(name: string): string {
     throw error;
   }
   try {
-    return renderTemplate(template, JSON.parse(caseFile(name, "report.json") ?? "") as unknown);
+    return whole(
+      renderTemplate(template, JSON.parse(caseFile(name, "report.json") ?? "") as unknown),
+    );
   } catch (error: unknown) {
     if (error instanceof RenderError) {
       return "exit 3";

@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 
 import { nodeHost } from "../bin/node-host.ts";
 import { defaultConfig } from "../src/config.ts";
-import { diagnosticErrors, discoverProjects, renderDiagnostic } from "../src/discover.ts";
+import { discoverProjects, projectErrors, renderDiagnostic } from "../src/discover.ts";
 import { inventory, type InventoryCost } from "../src/inventory.ts";
 import { references, type ReferenceCost, type ReferenceOptions } from "../src/references.ts";
 import { scopeForDir } from "../src/scope.ts";
@@ -192,7 +192,8 @@ function onePass(dir: string, cap: Cap): Pass {
     throw error;
   }
   const { projects, timing } = runSession(engine, configFiles, (project) => {
-    const errors = diagnosticErrors(diagnosticsOf(project));
+    const found = projectErrors(diagnosticsOf(project));
+    const errors = [...found.load, ...found.check];
     const first = errors[0];
     if (first !== undefined) {
       throw new Refused(

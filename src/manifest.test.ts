@@ -15,7 +15,7 @@ function hostWith(manifest: string | undefined): Host {
     readDirectory: () => [],
     kindOf: () => "absent",
     analyzerVersion: () => "0.0.0",
-    writeFile: (path) => {
+    writeDocument: (path) => {
       throw new Error(`${path}: this host writes nothing`);
     },
   };

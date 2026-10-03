@@ -8,9 +8,8 @@
  */
 
 import { isVariableStatement, SyntaxKind, type Node } from "@typescript/native/unstable/ast";
-import type { Symbol as TSSymbol } from "@typescript/native/unstable/sync";
 import { nodeKey, type Inventory } from "./inventory.ts";
-import { DEFAULT_BATCH_CAP } from "./references.ts";
+import { isAnswered, UNANSWERED } from "./query.ts";
 import type { Handle, ProjectView } from "./session.ts";
 
 /** The tag the TypeScript tools recognize as marking a declaration deprecated. */
@@ -31,19 +30,31 @@ function nameNode(node: Node): Node {
   return (node as { readonly name?: Node }).name ?? node;
 }
 
+/** Which declarations of one project carry the deprecation marker. */
+export interface Deprecation {
+  /** Every declaration that carries it, in the inventory's order. */
+  readonly deprecated: readonly string[];
+  /**
+   * Every declaration whose symbol or tags the checker left unanswered where the
+   * project's files hold the tag, in the inventory's order: whether it carries the
+   * marker is unknown.
+   */
+  readonly unanswered: readonly string[];
+}
+
 /**
- * The identifiers of every declaration of one project that carries the deprecation
- * marker, in the inventory's order.
+ * The declarations of one project that carry the deprecation marker.
  *
  * The checker is asked only for a symbol with a declaration in a file whose tree holds
  * the tag, so a project whose files hold none costs no round trip, and one that does
- * costs one batch per file and one request per symbol that could carry the tag.
+ * costs one batch per file and one for the tags of the symbols that could carry it.
  */
 export function deprecatedDeclarations<Brand>(
   project: ProjectView<Brand>,
   held: Inventory,
-): readonly string[] {
+): Deprecation {
   const marked = new Set<string>();
+  const unknown = new Set<string>();
   const markedPaths = new Set<string>();
   const declared: { readonly id: string; readonly handle: Handle<Brand> }[][] = [];
 
@@ -72,30 +83,45 @@ export function deprecatedDeclarations<Brand>(
   }
 
   if (markedPaths.size > 0) {
-    const asked = new Map<number, boolean>();
-    const carriesTag = (symbol: TSSymbol): boolean => {
-      const known = asked.get(symbol.id);
-      if (known !== undefined) {
-        return known;
+    const pairs = declared.flatMap((named) => {
+      const symbols = project.symbolsAt(named.map((one) => one.handle));
+      return named.flatMap((one, at) => {
+        const symbol = symbols[at];
+        if (symbol === UNANSWERED) {
+          unknown.add(one.id);
+        }
+        return typeof symbol === "object" &&
+          symbol.declarations.some((declaration) => markedPaths.has(declaration.path))
+          ? [{ id: one.id, symbol }]
+          : [];
+      });
+    });
+    const distinct = [...new Map(pairs.map((one) => [one.symbol.id, one.symbol])).values()];
+    const tags = project.queries.jsDocTags(distinct);
+    const unread = new Set(
+      distinct.filter((_, at) => tags[at] === UNANSWERED).map((one) => one.id),
+    );
+    const carries = new Set(
+      distinct.flatMap((symbol, at) => {
+        const read = tags[at];
+        return read !== undefined &&
+          isAnswered(read) &&
+          read.some((tag) => tag.name === DEPRECATED_TAG)
+          ? [symbol.id]
+          : [];
+      }),
+    );
+    for (const one of pairs) {
+      if (carries.has(one.symbol.id)) {
+        marked.add(one.id);
       }
-      const carries =
-        symbol.declarations.some((declaration) => markedPaths.has(declaration.path)) &&
-        symbol.getJsDocTags(project.checker).some((tag) => tag.name === DEPRECATED_TAG);
-      asked.set(symbol.id, carries);
-      return carries;
-    };
-    for (const named of declared) {
-      for (let start = 0; start < named.length; start += DEFAULT_BATCH_CAP) {
-        const batch = named.slice(start, start + DEFAULT_BATCH_CAP);
-        project.symbolsAt(batch.map((one) => one.handle)).forEach((symbol, at) => {
-          const one = batch[at];
-          if (symbol !== undefined && one !== undefined && carriesTag(symbol)) {
-            marked.add(one.id);
-          }
-        });
+      if (unread.has(one.symbol.id)) {
+        unknown.add(one.id);
       }
     }
   }
 
-  return held.symbols.filter((symbol) => marked.has(symbol.id)).map((symbol) => symbol.id);
+  const inOrder = (ids: ReadonlySet<string>): readonly string[] =>
+    held.symbols.filter((symbol) => ids.has(symbol.id)).map((symbol) => symbol.id);
+  return { deprecated: inOrder(marked), unanswered: inOrder(unknown) };
 }

@@ -38,12 +38,14 @@ import {
   isParenthesizedExpression,
   isPrefixUnaryExpression,
   isPropertyAccessExpression,
+  isQualifiedName,
   isReturnStatement,
   isShorthandPropertyAssignment,
   isStringLiteral,
   isSwitchStatement,
   isThrowStatement,
   isTypeAliasDeclaration,
+  isTypeReferenceNode,
   isVariableStatement,
   isVoidExpression,
   NodeFlags,
@@ -58,7 +60,8 @@ import {
 import type { FindingPosition } from "./finding.ts";
 import { nodeKey, type Inventory } from "./inventory.ts";
 import { positionKey, renderPosition } from "./position.ts";
-import { DEFAULT_BATCH_CAP, type Reference } from "./references.ts";
+import { isAnswered, UNANSWERED, type Answer } from "./query.ts";
+import type { Reference } from "./references.ts";
 import type { ProjectView } from "./session.ts";
 import { signatureOf, type SignatureNode } from "./signatures.ts";
 
@@ -318,8 +321,14 @@ function extendedNames(files: readonly SourceFile[]): ReadonlySet<string> {
   const visit = (node: Node): void => {
     if (isHeritageClause(node) && node.token === SyntaxKind.ExtendsKeyword) {
       for (const type of node.types) {
-        const expression = unwrapped(type.expression);
-        const named = isPropertyAccessExpression(expression) ? expression.name : expression;
+        // A class's clause holds expressions; an interface's holds type references.
+        let named: Node;
+        if (isTypeReferenceNode(type)) {
+          named = isQualifiedName(type.typeName) ? type.typeName.right : type.typeName;
+        } else {
+          const expression = unwrapped(type.expression);
+          named = isPropertyAccessExpression(expression) ? expression.name : expression;
+        }
         if (isIdentifier(named)) {
           names.add(named.text);
         }
@@ -364,39 +373,41 @@ interface Declared {
   readonly signature: SignatureNode;
 }
 
-/** The symbol identifier each of a batch of identifiers resolves to, where the batch answers. */
+/**
+ * The symbol identifier each of a batch of identifiers resolves to, where the batch
+ * resolves it, and {@link UNANSWERED} where the checker did not answer.
+ */
 function resolvedIds<Brand>(
   project: ProjectView<Brand>,
   nodes: readonly Identifier[],
-): ReadonlyMap<Node, number> {
-  const ids = new Map<Node, number>();
-  for (let from = 0; from < nodes.length; from += DEFAULT_BATCH_CAP) {
-    const run = nodes.slice(from, from + DEFAULT_BATCH_CAP);
-    project.symbolsAt(run.map((node) => project.handle(node))).forEach((symbol, index) => {
-      const node = run[index];
-      if (symbol !== undefined && node !== undefined) {
-        ids.set(node, symbol.id);
-      }
-    });
-  }
+): ReadonlyMap<Node, Answer<number>> {
+  const ids = new Map<Node, Answer<number>>();
+  project.symbolsAt(nodes.map((node) => project.handle(node))).forEach((symbol, index) => {
+    const node = nodes[index];
+    if (node !== undefined && symbol !== undefined) {
+      ids.set(node, symbol === UNANSWERED ? UNANSWERED : symbol.id);
+    }
+  });
   return ids;
 }
 
 /**
  * Whether one identifier reads the binding a name node declares: it resolves to the
- * same symbol, or the checker resolves it to nothing, which is read as a use rather than
- * risk a finding; a shorthand property reads the binding of its own name.
+ * same symbol, or the checker resolves it to nothing or does not answer for either
+ * name, which is read as a use rather than risk a finding; a shorthand property reads
+ * the binding of its own name.
  */
 function readsBinding(
   use: Identifier,
   declared: Identifier,
-  ids: ReadonlyMap<Node, number>,
+  ids: ReadonlyMap<Node, Answer<number>>,
 ): boolean {
   if (isShorthandPropertyAssignment(use.parent)) {
     return true;
   }
   const at = ids.get(use);
-  return at === undefined || at === ids.get(declared);
+  const own = ids.get(declared);
+  return at === undefined || at === UNANSWERED || own === UNANSWERED || at === own;
 }
 
 /** What one file's walk collects before the batch that resolves its names. */
@@ -587,7 +598,7 @@ function parameterParts(
   root: string,
   one: Declared,
   uses: readonly Identifier[],
-  ids: ReadonlyMap<Node, number>,
+  ids: ReadonlyMap<Node, Answer<number>>,
 ): PartFact[] {
   const signature = one.signature;
   // A function that reads `arguments` reads every parameter by position.
@@ -676,7 +687,7 @@ function deadStores(
   block: Block,
   holder: string,
   locals: readonly Local[],
-  ids: ReadonlyMap<Node, number>,
+  ids: ReadonlyMap<Node, Answer<number>>,
 ): PartFact[] {
   const found: PartFact[] = [];
   for (const local of locals) {
@@ -779,10 +790,17 @@ function resultParts<Brand>(
     if (!discardedAt.has(id) || generator || !returnsAValue(signature)) {
       continue;
     }
-    const typed = project.checker.getSignatureFromDeclaration(signature);
-    const result =
-      typed === undefined ? undefined : project.checker.getReturnTypeOfSignature(typed);
-    if (result === undefined || NO_VALUE.has(project.checker.typeToString(result))) {
+    // A question the checker leaves unanswered withholds the finding.
+    const typed = project.queries.signatureOf(signature);
+    if (typed === undefined || !isAnswered(typed)) {
+      continue;
+    }
+    const result = project.queries.returnTypeOf(typed);
+    if (result === undefined || !isAnswered(result)) {
+      continue;
+    }
+    const spelled = project.queries.typeToString(result);
+    if (!isAnswered(spelled) || NO_VALUE.has(spelled)) {
       continue;
     }
     const at = signature.type ?? (node as { readonly name?: Node }).name ?? node;

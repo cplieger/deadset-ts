@@ -10,7 +10,8 @@ import { findingsOf } from "./emitters.ts";
 /**
  * One iteration writes a project and sweeps it in a fresh snapshot of one shared client,
  * with the standard library limited to one edition and no ambient type packages, so the
- * draws fit the suite's time bound.
+ * draws fit the suite's time bound. The case's own timeout is raised above that bound, so
+ * the property's interrupt is what reports a draw that grew too expensive.
  */
 const RUNS = 30;
 
@@ -181,5 +182,5 @@ describe("an unreferenced declaration with no exemption", () => {
     } finally {
       client.close();
     }
-  });
+  }, 20_000);
 });

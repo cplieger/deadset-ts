@@ -9,6 +9,7 @@ import type { RenderOptions } from "./reporter.ts";
 import { RENDERINGS } from "./reporters.ts";
 import { KINDS } from "../kinds.ts";
 import { parseTemplate } from "./template.ts";
+import { whole } from "../../__test-helpers__/whole.ts";
 
 /** The text line's defining expression, read from the Contract's page. */
 const LINE = new RegExp(
@@ -143,7 +144,7 @@ function render(format: "text" | "json" | "github" | "sarif" | "template", of: R
   if (rendering === undefined) {
     throw new Error(`no rendering for ${format}`);
   }
-  return rendering.render(of, OPTIONS);
+  return whole(rendering.render(of, OPTIONS));
 }
 
 /** Every record each format names, read back from its own rendering. */
@@ -262,13 +263,15 @@ describe("every reporter", () => {
       fc.property(fc.array(findingArb, { minLength: 1, maxLength: 8 }), (findings) => {
         const rows = (
           JSON.parse(
-            writeBaseline(
-              findings.map((one) => ({
-                code: one.code,
-                symbol: one.symbol.ref,
-                path: one.position.path,
-              })),
-              { analyzer: "deadset-ts", version: "0.0.0" },
+            whole(
+              writeBaseline(
+                findings.map((one) => ({
+                  code: one.code,
+                  symbol: one.symbol.ref,
+                  path: one.position.path,
+                })),
+                { analyzer: "deadset-ts", version: "0.0.0" },
+              ),
             ),
           ) as { baseline: { code: string }[] }
         ).baseline;

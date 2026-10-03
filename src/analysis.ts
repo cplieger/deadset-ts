@@ -8,7 +8,6 @@
  * project's checker, and that holds only for views the session itself hands out.
  */
 
-import type { Diagnostic } from "@typescript/native/unstable/sync";
 import type { Config, Provenance } from "./config.ts";
 import {
   consumerLoads,
@@ -23,14 +22,24 @@ import {
 } from "./configured-declarations.ts";
 import { decorator } from "./decorator.ts";
 import { dependenciesOf, projectNeeds } from "./dependencies.ts";
-import { deprecatedDeclarations } from "./deprecation.ts";
-import { diagnosticErrors, discoverProjects, DiscoveryError } from "./discover.ts";
+import { deprecatedDeclarations, type Deprecation } from "./deprecation.ts";
+import {
+  discoverProjects,
+  DiscoveryError,
+  isGuess,
+  projectErrors,
+  renderDiagnostic,
+  targetRelative,
+  type LocatedDiagnostic,
+  type NotBuilt,
+} from "./discover.ts";
 import { readEdgeSides } from "./edges.ts";
 import { enumGroup } from "./enum-group.ts";
 import {
   computeExemptions,
   disabledClasses,
   exemptionsOf,
+  isUnansweredRecord,
   retainedIn,
   type Detector,
   type Detectors,
@@ -62,6 +71,7 @@ import {
   type SweepResult,
 } from "./matrix.ts";
 import { relativePath, resolvePath } from "./paths.ts";
+import type { UnansweredQuestion } from "./query.ts";
 import { byPosition, type Position } from "./position.ts";
 import { reflectiveLookup } from "./reflective-lookup.ts";
 import { references, testFileRulesOf, type Reference, type TestFileRule } from "./references.ts";
@@ -105,6 +115,10 @@ export interface RunRoots {
   readonly roots: readonly RunRoot[];
   /** One finding per configured root or pattern that named nothing in any project. */
   readonly findings: readonly Finding[];
+  /** The derived configurations the run dropped. */
+  readonly notBuilt: readonly NotBuilt[];
+  /** Every question the checker could not answer, each once. */
+  readonly unanswered: readonly UnansweredQuestion[];
 }
 
 /**
@@ -156,15 +170,19 @@ interface ConsumerReads {
 interface ReadProjects<Answer> {
   readonly answers: readonly Answer[];
   readonly consumers: ConsumerReads;
+  /** The derived configurations the run dropped, in the order it met them. */
+  readonly notBuilt: readonly NotBuilt[];
+  /** Every question the checker could not answer, each once. */
+  readonly unanswered: readonly UnansweredQuestion[];
 }
 
 /**
- * Reads every project the scope discovers, and every project of every consumer it
- * declares, in one snapshot. Each is checked for errors first. A target project is then
- * enumerated and rooted, and `stage` reads the rest of what it needs from the project
- * while its view is open; a consumer project is read for its references to the target's
- * declarations. A project carrying an error fails the run with no answer, as every verb
- * that reads declarations does, and so does a declared consumer that cannot be loaded.
+ * Reads every project the scope discovers, and every project of each consumer it
+ * declares, in one snapshot, each checked for errors first. A target project is
+ * enumerated, rooted and handed to `stage`; a consumer project is read for its references
+ * to the target. A guess that does not load is dropped into `notBuilt` (see
+ * {@link isGuess}); any other project that does not load or carries an error fails the
+ * run, as does a run whose every guess was dropped.
  */
 function readProjects<Answer>(
   engine: Engine,
@@ -189,18 +207,39 @@ function readProjects<Answer>(
     testFiles: config.ts.testFiles,
     publishedAPI: config.targetKind === "library",
   };
-  const failures: Diagnostic[] = [];
+  const absoluteRoot = resolvePath(host.workingDirectory(), targetRoot);
+  const notBuilt: NotBuilt[] = [...discovered.notBuilt];
+  const dropped = (configFile: string, error: string): void => {
+    notBuilt.push({
+      id: ids.get(configFile) ?? configFile,
+      configFile,
+      error: targetRelative(error, absoluteRoot),
+    });
+  };
+  const failures: LocatedDiagnostic[] = [];
   const consumed = new Map<string, Reference>();
-  const { projects } = runSession(
+  const session = runSession(
     engine,
     [...discovered.configFiles, ...consumerOf.keys()],
     (project) => {
-      const errors = diagnosticErrors(diagnosticsOf(project));
-      if (errors.length > 0) {
-        failures.push(...errors);
+      const errors = projectErrors(diagnosticsOf(project));
+      const consumer = consumerOf.get(project.configFile);
+      const [unloaded] = errors.load;
+      if (
+        unloaded !== undefined &&
+        consumer === undefined &&
+        isGuess(discovered, project.configFile)
+      ) {
+        dropped(
+          project.configFile,
+          renderDiagnostic(unloaded, (path) => relativePath(absoluteRoot, path) ?? path),
+        );
         return undefined;
       }
-      const consumer = consumerOf.get(project.configFile);
+      if (errors.load.length > 0 || errors.check.length > 0) {
+        failures.push(...errors.load, ...errors.check);
+        return undefined;
+      }
       if (consumer !== undefined) {
         for (const reference of consumerReferences(
           project,
@@ -221,19 +260,36 @@ function readProjects<Answer>(
       const configuration = ids.get(project.configFile) ?? project.configFile;
       return stage(project, { configuration, configFile: project.configFile, held, rooted });
     },
+    discovered.derived ? "record" : "refuse",
   );
+  for (const configFile of session.unopened) {
+    if (consumerOf.has(configFile) || !isGuess(discovered, configFile)) {
+      throw new DiscoveryError(`${configFile} opened no project`, []);
+    }
+    dropped(configFile, "the compiler opened no project for the configuration");
+  }
   if (failures.length > 0) {
     throw new DiscoveryError(
       `${String(failures.length)} error(s); no answer was produced`,
       failures,
     );
   }
+  const answers = session.projects.filter((answer): answer is Answer => answer !== undefined);
+  const [first] = notBuilt;
+  if (answers.length === 0 && first !== undefined) {
+    throw new DiscoveryError(
+      `no configuration discovery derived could be built; ${first.id}: ${first.error}`,
+      [],
+    );
+  }
   return {
-    answers: projects.filter((answer): answer is Answer => answer !== undefined),
+    answers,
     consumers: {
       loaded: loads.map((load) => load.consumer),
       references: [...consumed.values()],
     },
+    notBuilt,
+    unanswered: session.unanswered,
   };
 }
 
@@ -251,7 +307,8 @@ export function runRoots(
   provenance: Provenance,
 ): RunRoots {
   const targetRoot = scope.target.path;
-  const projects = readProjects(engine, host, scope, config, (_project, read) => read).answers;
+  const read = readProjects(engine, host, scope, config, (_project, projectRead) => projectRead);
+  const projects = read.answers;
 
   const configurations: string[] = [];
   const merged = new Map<string, Omit<RunRoot, "configurations"> & { configurations: string[] }>();
@@ -295,6 +352,8 @@ export function runRoots(
       unmatched,
       documentOf(host, provenance, ROOTS_SETTING, targetRoot),
     ),
+    notBuilt: read.notBuilt,
+    unanswered: read.unanswered,
   };
 }
 
@@ -307,6 +366,15 @@ export interface RunSweep {
    * would otherwise judge dead, in the declarations' site order.
    */
   readonly retained: readonly Exemption[];
+  /** The derived configurations the run dropped. */
+  readonly notBuilt: readonly NotBuilt[];
+  /** Every question the checker could not answer, each once. */
+  readonly unanswered: readonly UnansweredQuestion[];
+  /**
+   * Every declaration an unanswered question could have kept live, and every one only
+   * such a declaration keeps live. The run reports none of them.
+   */
+  readonly heldByUnanswered: readonly string[];
 }
 
 /** The exemption classes this analyzer detects, each by its detector; any other retains nothing. */
@@ -326,6 +394,8 @@ interface SweptProject<Extra> {
   readonly configFile: string;
   readonly configured: Configured;
   readonly exempt: readonly Exemption[];
+  /** The declarations of the project an unanswered question could have kept live. */
+  readonly unanswered: readonly string[];
   readonly extra: Extra;
 }
 
@@ -333,9 +403,15 @@ interface SweptProject<Extra> {
 interface ReadRun<Extra> {
   readonly matrix: Matrix;
   readonly exempt: readonly Exemption[];
+  /** The declarations of the run an unanswered question could have kept live, each once. */
+  readonly unansweredHeld: readonly string[];
   readonly projects: readonly SweptProject<Extra>[];
   /** Every declared consumer, each loaded, in the scope's order. */
   readonly consumers: readonly LoadedConsumer[];
+  /** The derived configurations the run dropped. */
+  readonly notBuilt: readonly NotBuilt[];
+  /** Every question the checker could not answer, each once. */
+  readonly unanswered: readonly UnansweredQuestion[];
 }
 
 /**
@@ -363,33 +439,48 @@ function readRun<Extra>(
     ? { delimiters: config.analysis.templateDelimiters, files: [] }
     : readTemplates(host, targetRoot, config.analysis);
   const consumers = scope.consumers.map((consumer) => consumer.path);
-  const read = readProjects(engine, host, scope, config, (project, projectRead) => {
-    const resolved = references(project, projectRead.held, targetRoot, {
-      testFiles: config.ts.testFiles,
-    });
-    const configured: Configured = {
-      configuration: projectRead.configuration,
-      symbols: projectRead.held.symbols,
-      references: resolved.references,
-      roots: projectRead.rooted.liveUnderReachability,
-      testFiles: resolved.testFilePaths,
-    };
-    const exempt = computeExemptions(
-      { project, held: projectRead.held, targetRoot, templates, ts: config.ts, consumers },
-      detectors,
-      {
-        disabled,
-        mode,
-        testFiles: new Set(resolved.testFilePaths),
-      },
-    );
-    return {
-      configFile: projectRead.configFile,
-      configured,
-      exempt,
-      extra: extra(project, projectRead, resolved.references),
-    };
-  });
+  const read = readProjects<SweptProject<Extra>>(
+    engine,
+    host,
+    scope,
+    config,
+    (project, projectRead) => {
+      const resolved = references(project, projectRead.held, targetRoot, {
+        testFiles: config.ts.testFiles,
+      });
+      const configured: Configured = {
+        configuration: projectRead.configuration,
+        symbols: projectRead.held.symbols,
+        references: resolved.references,
+        roots: projectRead.rooted.liveUnderReachability,
+        testFiles: resolved.testFilePaths,
+      };
+      const exempt = computeExemptions(
+        { project, held: projectRead.held, targetRoot, templates, ts: config.ts, consumers },
+        detectors,
+        {
+          disabled,
+          mode,
+          testFiles: new Set(resolved.testFilePaths),
+        },
+      );
+      const unanswered = [
+        ...projectRead.held.unanswered,
+        ...projectRead.rooted.unanswered,
+        ...resolved.references
+          .filter((reference) => reference.resolution === "by-name")
+          .map((reference) => reference.to),
+        ...exempt.filter(isUnansweredRecord).map((record) => record.id),
+      ];
+      return {
+        configFile: projectRead.configFile,
+        configured,
+        exempt,
+        unanswered,
+        extra: extra(project, projectRead, resolved.references),
+      };
+    },
+  );
   const consumed = read.consumers.references;
   const projects = read.answers.map((one) =>
     consumed.length === 0
@@ -405,21 +496,72 @@ function readRun<Extra>(
   return {
     matrix: matrixOf(projects.map((one) => one.configured)),
     exempt: exemptionsOf(projects.flatMap((one) => one.exempt)),
+    unansweredHeld: [
+      ...new Set([
+        ...read.answers.flatMap((one) => one.unanswered),
+        ...consumed.filter((one) => one.resolution === "by-name").map((one) => one.to),
+      ]),
+    ],
     projects,
     consumers: read.consumers.loaded,
+    notBuilt: read.notBuilt,
+    unanswered: read.unanswered,
   };
 }
 
-/** The sweep of a run read once, under one set of marks. */
+/**
+ * The sweep of a run read once, under one set of marks. Where a question went unanswered,
+ * the run is swept once more without what that question could have kept live and without
+ * the references that stood in for its answer, and every declaration that sweep judges
+ * dead and this one judges live, or dead by another rule, is held by the gap too, as is
+ * every declaration that makes such a reference.
+ */
 function sweptOf<Extra>(
   read: ReadRun<Extra>,
   input: Pick<SweepInput, "marked" | "mode">,
 ): RunSweep {
-  const swept: SweepInput = { ...input, exempt: read.exempt };
+  const swept: SweepInput = { ...input, exempt: read.exempt, unanswered: read.unansweredHeld };
+  const result = sweepMatrix(read.matrix, swept);
+  const held = new Set(read.unansweredHeld);
+  if (held.size > 0) {
+    // What a declaration reads where the checker did not answer is unknown, so a rule
+    // over what it reads, the test of dead code among them, cannot judge it.
+    for (const { configured } of read.projects) {
+      for (const reference of configured.references) {
+        if (reference.resolution === "by-name") {
+          held.add(reference.from);
+        }
+      }
+    }
+    const dead = new Map(result.candidates.map((candidate) => [candidate.id, candidate]));
+    const answered = matrixOf(
+      read.projects.map(({ configured }) => ({
+        ...configured,
+        references: configured.references.filter((one) => one.resolution !== "by-name"),
+      })),
+    );
+    const bare: SweepInput = {
+      ...swept,
+      exempt: read.exempt.filter((record) => !isUnansweredRecord(record)),
+      unanswered: [],
+    };
+    for (const candidate of sweepMatrix(answered, bare).candidates) {
+      const kept = dead.get(candidate.id);
+      if (
+        kept?.testOfDeadCode !== candidate.testOfDeadCode ||
+        kept.relation !== candidate.relation
+      ) {
+        held.add(candidate.id);
+      }
+    }
+  }
   return {
     matrix: read.matrix,
-    sweep: sweepMatrix(read.matrix, swept),
+    sweep: result,
     retained: retainedIn(read.matrix, swept),
+    notBuilt: read.notBuilt,
+    unanswered: read.unanswered,
+    heldByUnanswered: [...held],
   };
 }
 
@@ -449,7 +591,7 @@ export function runSweep(
 
 /** What each project contributes to the facts every emitter reads beside the sweep. */
 interface EmitterExtra {
-  readonly deprecated: readonly string[];
+  readonly deprecation: Deprecation;
   readonly accessors: ReturnType<typeof accessorsOf>;
   readonly needs: ReturnType<typeof projectNeeds>;
   readonly implementations: ReturnType<typeof implementations>;
@@ -470,17 +612,31 @@ function readEmitterRun(
   detectors: Detectors,
 ): ReadRun<EmitterExtra> {
   const targetRoot = scope.target.path;
-  return readRun(engine, host, scope, config, mode, detectors, (project, read, references) => ({
-    deprecated: deprecatedDeclarations(project, read.held),
-    accessors: accessorsOf(project, read.held),
-    needs: projectNeeds(project, read.held, host),
-    implementations: implementations(project, read.held),
-    heldByInclusion: heldByInclusion(project, targetRoot),
-    rooted: read.rooted,
-    directives: inlineDirectives(project, read.held, targetRoot),
-    declarationsNamed: declarationsNamed(project, read.held, configuredDeclarations(config)),
-    parts: projectParts(project, read.held, references, targetRoot),
-  }));
+  const run = readRun(
+    engine,
+    host,
+    scope,
+    config,
+    mode,
+    detectors,
+    (project, read, references) => ({
+      deprecation: deprecatedDeclarations(project, read.held),
+      accessors: accessorsOf(project, read.held),
+      needs: projectNeeds(project, read.held, host),
+      implementations: implementations(project, read.held),
+      heldByInclusion: heldByInclusion(project, targetRoot),
+      rooted: read.rooted,
+      directives: inlineDirectives(project, read.held, targetRoot),
+      declarationsNamed: declarationsNamed(project, read.held, configuredDeclarations(config)),
+      parts: projectParts(project, read.held, references, targetRoot),
+    }),
+  );
+  // Whether a declaration carries the marker decides its code, so one whose marker went
+  // unread is reported by nothing.
+  const unread = run.projects.flatMap((one) => one.extra.deprecation.unanswered);
+  return unread.length === 0
+    ? run
+    : { ...run, unansweredHeld: [...new Set([...run.unansweredHeld, ...unread])] };
 }
 
 /**
@@ -501,7 +657,7 @@ function emitterInputOver(
   return {
     config,
     swept,
-    deprecated: new Set(projects.flatMap((one) => one.extra.deprecated)),
+    deprecated: new Set(projects.flatMap((one) => one.extra.deprecation.deprecated)),
     stores: storesOf(
       projects.map((one) => ({
         references: one.configured.references,
@@ -533,7 +689,7 @@ function emitterInputOver(
     intraFunction: intraFunctionFacts(
       projects.map((one) => one.extra.parts),
       projects.flatMap((one) => one.configured.references),
-      new Set(read.exempt.map((one) => one.id)),
+      new Set([...read.exempt.map((one) => one.id), ...swept.heldByUnanswered]),
     ),
   };
 }
@@ -614,6 +770,8 @@ function readAnalysis(
         read.projects.flatMap((one) => one.configured.testFiles),
       ),
       consumers: read.consumers,
+      notBuilt: read.notBuilt,
+      unanswered: read.unanswered,
     },
     configured: read.projects.map((one) => one.configured),
     symbols,
@@ -680,6 +838,10 @@ export interface RunFacts {
   readonly testFileRules: readonly TestFileRule[];
   /** Every consumer the run loaded beside the target, in the scope's order. */
   readonly consumers: readonly LoadedConsumer[];
+  /** The derived configurations the run dropped. */
+  readonly notBuilt: readonly NotBuilt[];
+  /** Every question the checker could not answer, each once. */
+  readonly unanswered: readonly UnansweredQuestion[];
 }
 
 /** The findings of one run, beside what a report states about the run itself. */

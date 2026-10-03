@@ -30,6 +30,7 @@ import {
 import type { DetectorInput, Evidence } from "./exempt.ts";
 import { nodeKey, type Inventory } from "./inventory.ts";
 import { renderPosition } from "./position.ts";
+import { must } from "./query.ts";
 import type { ProjectView } from "./session.ts";
 
 /** One class that is a component of one contract, and what says it is. */
@@ -182,7 +183,7 @@ function byBases<Brand>(
   if (classes.length === 0) {
     return [];
   }
-  const checker = project.checker;
+  const queries = project.queries;
   const ancestry = new Map<number, readonly Type[]>();
   const ancestorsOf = (type: Type, seen: Set<number>): readonly Type[] => {
     const known = ancestry.get(type.id);
@@ -192,15 +193,16 @@ function byBases<Brand>(
     const declared = type.isClassOrInterface()
       ? type
       : type.isTypeReference()
-        ? type.getTarget()
+        ? must(queries.targetOf(type))
         : undefined;
     if (declared === undefined || !declared.isClassOrInterface() || seen.has(declared.id)) {
       return [];
     }
     seen.add(declared.id);
-    const found = checker
-      .getBaseTypes(declared)
-      .flatMap((base) => [base, ...ancestorsOf(base, seen)]);
+    const found = must(queries.baseTypes(declared)).flatMap((base) => [
+      base,
+      ...ancestorsOf(base, seen),
+    ]);
     ancestry.set(type.id, found);
     return found;
   };
@@ -215,7 +217,9 @@ function byBases<Brand>(
     if (type === undefined) {
       return;
     }
-    const ancestors = ancestorsOf(type, new Set()).flatMap((base) => base.getSymbol() ?? []);
+    const ancestors = ancestorsOf(type, new Set()).flatMap(
+      (base) => must(queries.symbolOfType(base)) ?? [],
+    );
     for (const contract of based) {
       for (const entry of contract.bases) {
         if (ancestors.some((symbol) => names(entry, symbol, chains))) {

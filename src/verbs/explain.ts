@@ -6,6 +6,7 @@ import type { CompletedFinding } from "../finding.ts";
 import { OUTSIDE, swept as judged } from "../graph.ts";
 import type { InventorySymbol } from "../inventory.ts";
 import { referenceKey, type Configured } from "../matrix.ts";
+import { partialNotes } from "../partial.ts";
 import { positionKey } from "../position.ts";
 import type { Reference } from "../references.ts";
 import { resolve } from "../resolve.ts";
@@ -344,6 +345,9 @@ function explanation(analysis: RunAnalysis, subject: InventorySymbol, cascade: C
     for (const one of retained) {
       text += `  class: ${one.class}\t${positionKey(one.site)}\t${one.detail}\n`;
     }
+  } else if (analysis.swept.heldByUnanswered.includes(subject.id)) {
+    text +=
+      "answer: held\n  held by: a question the checker did not answer, which could have kept it live, so no finding names it\n";
   } else {
     text += liveness(analysis, subject, cascade);
   }
@@ -351,12 +355,12 @@ function explanation(analysis: RunAnalysis, subject: InventorySymbol, cascade: C
 }
 
 /**
- * Explains one symbol from the analysis the report is built from, so an explanation cannot
- * disagree with a finding: why a reported symbol is reported, which exemption classes held a
- * retained one back, and for any other declaration the relations that hold it live and the
- * shortest path of references from a root or a loaded consumer, or the references it has where
- * no path reaches it. A request naming no one declaration exits with the usage code and names
- * what partially matches it.
+ * Explains one symbol from the analysis the report is built from: why a reported symbol is
+ * reported, which exemption classes held a retained one back, that an unanswered question held
+ * a held one, and for any other declaration the relations that hold it live and the shortest
+ * path from a root or a loaded consumer, or the references it has where no path reaches it. A
+ * request naming no one declaration exits with the usage code and names what partially
+ * matches it. Where the analysis was partial, the error stream says so.
  */
 export const explainVerb: Verb = ({ out, err, host, inputs, scope, openClient, option }) => {
   const named = namedSymbol(option);
@@ -365,6 +369,10 @@ export const explainVerb: Verb = ({ out, err, host, inputs, scope, openClient, o
     production: true,
   });
   const { subject, candidates } = subjectOf(analysis.swept.matrix.union.symbols, named);
+  const notes = partialNotes({
+    notBuilt: analysis.run.notBuilt,
+    unanswered: analysis.run.unanswered,
+  });
   if (subject === undefined) {
     err.write(`deadset-ts: ${JSON.stringify(named)} names no one symbol of the target\n`);
     for (const candidate of candidates) {
@@ -373,8 +381,11 @@ export const explainVerb: Verb = ({ out, err, host, inputs, scope, openClient, o
     if (candidates.length === 0) {
       err.write("  no symbol of the target partially matches it either\n");
     }
-    return EXIT_USAGE;
+  } else {
+    out.write(explanation(analysis, subject, config.reporters.cascade));
   }
-  out.write(explanation(analysis, subject, config.reporters.cascade));
-  return EXIT_CLEAN;
+  for (const note of notes) {
+    err.write(`deadset-ts: ${note}\n`);
+  }
+  return subject === undefined ? EXIT_USAGE : EXIT_CLEAN;
 };

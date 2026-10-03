@@ -4,6 +4,7 @@ import { nodeHost } from "../bin/node-host.ts";
 import { fixture } from "../__test-helpers__/fixtures.ts";
 import { diagnosticErrors, discoverProjects, DiscoveryError } from "./discover.ts";
 import { scopeForDir } from "./scope.ts";
+import { isAnswered } from "./query.ts";
 import {
   diagnosticsOf,
   openEngine,
@@ -34,17 +35,21 @@ function recordingEngine(real: Engine): { engine: Engine; recorded: Recorded } {
   const recorded: Recorded = { snapshotsOpened: 0, disposals: 0, closes: 0, opened: [] };
   const engine: Engine = {
     parseConfigFile: (file) => real.parseConfigFile(file),
-    updateSnapshot: (openProjects) => {
+    createSnapshot: (openProjects) => {
       recorded.snapshotsOpened += 1;
       recorded.opened.push([...openProjects]);
-      const snapshot = real.updateSnapshot(openProjects);
-      const recording: Snapshot = Object.create(snapshot) as Snapshot;
-      recording.dispose = () => {
-        recorded.disposals += 1;
-        snapshot.dispose();
-      };
-      return recording;
+      const snapshot = real.createSnapshot(openProjects);
+      return Object.create(snapshot, {
+        dispose: {
+          value: () => {
+            recorded.disposals += 1;
+            snapshot.dispose();
+          },
+        },
+      }) as Snapshot;
     },
+    batch: (questions) => real.batch(questions),
+    ask: (accessor, locations, question) => real.ask(accessor, locations, question),
     getTimingInfo: () => real.getTimingInfo(),
     close: () => {
       recorded.closes += 1;
@@ -105,8 +110,8 @@ describe("the run lifetime", () => {
     const configFiles = discoverProjects(real, HOST, scopeForDir(HOST, TWO_PROJECTS)).configFiles;
     const engine: Engine = {
       ...real,
-      updateSnapshot: (openProjects) => {
-        const snapshot = real.updateSnapshot(openProjects);
+      createSnapshot: (openProjects) => {
+        const snapshot = real.createSnapshot(openProjects);
         const short: Snapshot = Object.create(snapshot) as Snapshot;
         short.getProjects = () => snapshot.getProjects().slice(1);
         return short;
@@ -200,6 +205,9 @@ describe("a symbol's declaration", () => {
         return [];
       }
       const [module] = project.symbolsAt([project.handle(file)]);
+      if (!isAnswered(module)) {
+        throw new Error("the checker did not answer for the module");
+      }
       return [...(module?.getExports() ?? [])].flatMap(([, symbol]) =>
         symbol.declarations.map((handle) => {
           const held = project.declarationAt(handle);

@@ -1,4 +1,5 @@
 import { runRoots, type RunRoot } from "../analysis.ts";
+import { partialNotes } from "../partial.ts";
 import { resolve } from "../resolve.ts";
 import { EXIT_CLEAN, EXIT_FINDINGS, type Verb } from "./verb.ts";
 
@@ -20,7 +21,7 @@ function rootLine(root: RunRoot, several: boolean): string {
 /**
  * Writes the root set of the run, one root per line, and then names on the error
  * stream, by its issue kind, every configured root or pattern that named nothing;
- * one such string fails the run. The line shape is this command's own rather than a
+ * one such string fails the run, and then where the analysis was partial. The line shape is this command's own rather than a
  * Contract format, so that sort and cut read it.
  */
 export const printRootsVerb: Verb = ({ out, err, host, inputs, scope, openClient }) => {
@@ -33,6 +34,9 @@ export const printRootsVerb: Verb = ({ out, err, host, inputs, scope, openClient
   }
   for (const finding of answer.findings) {
     err.write(`${finding.code}: roots.patterns names nothing: ${finding.symbol.ref}\n`);
+  }
+  for (const note of partialNotes({ notBuilt: answer.notBuilt, unanswered: answer.unanswered })) {
+    err.write(`deadset-ts: ${note}\n`);
   }
   return answer.findings.length > 0 ? EXIT_FINDINGS : EXIT_CLEAN;
 };

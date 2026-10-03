@@ -28,7 +28,7 @@
     "lint:fix": "eslint . --fix && prettier --write ."
   },
   "dependencies": {
-    "@typescript/native": "npm:typescript@7.0.2"
+    "@typescript/native": "npm:typescript@7.1.0-dev.20261003.1"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

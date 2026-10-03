@@ -5,6 +5,11 @@ import type { Report, WireFinding, WireStaleSuppression } from "../report.ts";
 import { RenderError, type RenderOptions } from "./reporter.ts";
 import { sarif } from "./sarif.ts";
 
+/** The SARIF log one report renders to, as the file holds it. */
+function sarifText(of: Report, with_: RenderOptions): string {
+  return [...sarif(of, with_)].join("");
+}
+
 const WRITE_ONLY: WireFinding = {
   code: "DS1301",
   kind: "write-only-symbol",
@@ -113,7 +118,7 @@ interface Log {
 }
 
 function rendered(of: Report): Log {
-  return JSON.parse(sarif(of, options())) as Log;
+  return JSON.parse(sarifText(of, options())) as Log;
 }
 
 function onlyRun(log: Log): Log["runs"][number] {
@@ -263,7 +268,7 @@ describe("the SARIF rendering", () => {
 
   it("refuses to render where it cannot read the file a result is in", () => {
     expect(() =>
-      sarif(
+      sarifText(
         report([NARROWING], []),
         options(() => {
           throw new Error("no such file");
@@ -275,7 +280,7 @@ describe("the SARIF rendering", () => {
   it("refuses to render a result at a line its file does not hold", () => {
     const past: WireFinding = { ...NARROWING, position: { ...NARROWING.position, line: 9 } };
 
-    expect(() => sarif(report([past], []), options())).toThrow(
+    expect(() => sarifText(report([past], []), options())).toThrow(
       new RenderError("a:b/x.ts holds 3 lines and a record names line 9"),
     );
   });
@@ -283,8 +288,8 @@ describe("the SARIF rendering", () => {
   it("writes the same bytes for the same report", () => {
     const one = report([WRITE_ONLY, NARROWING], [STALE]);
 
-    expect(sarif(one, options())).toBe(sarif(structuredClone(one), options()));
-    expect(sarif(one, options()).endsWith("}\n")).toBe(true);
+    expect(sarifText(one, options())).toBe(sarifText(structuredClone(one), options()));
+    expect(sarifText(one, options()).endsWith("}\n")).toBe(true);
   });
 });
 
@@ -327,7 +332,7 @@ describe("the published SARIF vectors", () => {
       const sources = (caseDocument(name, "sources.json") as { files: Record<string, string> })
         .files;
       const render = (): string =>
-        sarif(
+        sarifText(
           report,
           options((path) => {
             if (!Object.hasOwn(sources, path)) {

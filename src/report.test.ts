@@ -90,6 +90,7 @@ function input(pass: PassResult, overrides: Partial<ReportInput> = {}): ReportIn
     declaredGaps: [],
     target: { kind: "application", root: ".", identity: "@example/app" },
     configurations: [{ id: "tsconfig.json", project: "tsconfig.json" }],
+    notBuilt: [],
     loaded: [],
     unavailable: [],
     result: pass,

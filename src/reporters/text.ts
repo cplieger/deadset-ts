@@ -1,3 +1,4 @@
+import { coalesced } from "../json-chunks.ts";
 import type { Report, WireTotals } from "../report.ts";
 
 /** The kind token and the confidence a stale suppression is rendered with, both fixed. */
@@ -29,16 +30,15 @@ function summary(totals: WireTotals): string {
  * summary is deliberately not in that shape, so a filter for finding lines yields exactly
  * them. Nothing else is written: no timestamp, duration or host detail.
  */
-export const text = (report: Report): string => {
-  const lines = report.findings.map(
-    (found) =>
-      `${found.position.path}:${String(found.position.line)}:${String(found.position.column)}: ${found.symbol.kind} ${found.symbol.name}: ${found.message} [${found.confidence}] (${found.code})`,
+export const text = (report: Report): Iterable<string> =>
+  coalesced(
+    (function* lines(): Generator<string, void, undefined> {
+      for (const found of report.findings) {
+        yield `${found.position.path}:${String(found.position.line)}:${String(found.position.column)}: ${found.symbol.kind} ${found.symbol.name}: ${found.message} [${found.confidence}] (${found.code})\n`;
+      }
+      for (const stale of report.stale_suppressions) {
+        yield `${stale.position.path}:${String(stale.position.line)}:${String(stale.position.column)}: ${STALE_KIND} ${stale.symbol}: ${stale.message} [${STALE_CONFIDENCE}] (${stale.code})\n`;
+      }
+      yield `${summary(report.totals)}\n`;
+    })(),
   );
-  for (const stale of report.stale_suppressions) {
-    lines.push(
-      `${stale.position.path}:${String(stale.position.line)}:${String(stale.position.column)}: ${STALE_KIND} ${stale.symbol}: ${stale.message} [${STALE_CONFIDENCE}] (${stale.code})`,
-    );
-  }
-  lines.push(summary(report.totals));
-  return `${lines.join("\n")}\n`;
-};

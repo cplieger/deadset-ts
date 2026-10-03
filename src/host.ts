@@ -35,8 +35,10 @@ export interface Host {
    */
   analyzerVersion(): string;
   /**
-   * Writes one document whole, or a throw naming why it cannot. The write is atomic: a
-   * reader of the path sees the previous document or this one and never a part of it.
+   * Writes one document from its pieces, in order, or a throw naming why it cannot. The
+   * pieces are written as they come, so the document is never held as one string. The
+   * write is atomic: a reader of the path sees the previous document or this one and
+   * never a part of it.
    */
-  writeFile(path: string, text: string): void;
+  writeDocument(path: string, pieces: Iterable<string>): void;
 }

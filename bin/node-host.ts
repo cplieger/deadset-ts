@@ -66,18 +66,21 @@ function readVersion(): string {
 const DOCUMENT_MODE = 0o644;
 
 /**
- * Writes one document through a temporary file in the same directory, flushed and then
- * renamed into place, so a run that dies partway leaves no truncated document at the path.
+ * Writes one document through a temporary file in the same directory, piece by piece,
+ * flushed and then renamed into place, so a run that dies partway leaves no truncated
+ * document at the path.
  */
-function writeAtomically(path: string, text: string): void {
+function writeAtomically(path: string, pieces: Iterable<string>): void {
   const temporary = join(dirname(path), `.${basename(path)}.${randomBytes(6).toString("hex")}`);
   const fd = openSync(temporary, "wx", DOCUMENT_MODE);
   try {
     try {
       fchmodSync(fd, DOCUMENT_MODE);
-      const bytes = Buffer.from(text, "utf8");
-      for (let written = 0; written < bytes.length;) {
-        written += writeSync(fd, bytes, written);
+      for (const piece of pieces) {
+        const bytes = Buffer.from(piece, "utf8");
+        for (let written = 0; written < bytes.length;) {
+          written += writeSync(fd, bytes, written);
+        }
       }
       fsyncSync(fd);
     } finally {
@@ -118,6 +121,6 @@ export function nodeHost(): Host {
       found ??= readVersion();
       return found;
     },
-    writeFile: writeAtomically,
+    writeDocument: writeAtomically,
   };
 }

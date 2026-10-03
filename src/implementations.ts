@@ -17,7 +17,7 @@ import {
 import { SymbolFlags, type Symbol as TSSymbol, type Type } from "@typescript/native/unstable/sync";
 import { aliasChains } from "./alias-chain.ts";
 import { nodeKey, type Inventory } from "./inventory.ts";
-import { DEFAULT_BATCH_CAP } from "./references.ts";
+import { must, Unanswerable } from "./query.ts";
 import type { ProjectView } from "./session.ts";
 
 /** What one run knows about how its interfaces are implemented. */
@@ -29,6 +29,13 @@ export interface Implementations {
    * class's implementation is a method whose body holds no statement.
    */
   readonly bodies: ReadonlyMap<string, ReadonlyMap<string, boolean>>;
+  /**
+   * The interface methods whose implementations a project could not read in full,
+   * because the checker left a question about them unanswered. Each is treated as a
+   * marker, whose every implementation is empty, so none is reported for want of an
+   * answer.
+   */
+  readonly unknown: ReadonlySet<string>;
 }
 
 /** One interface or class the inventory holds, by its declaration. */
@@ -97,24 +104,22 @@ function walk<Brand>(
   return { interfaces, classes, clauses };
 }
 
-/** The type at each node, asked in capped batches. */
+/** The type at each node. */
 function typesAt<Brand>(project: ProjectView<Brand>, nodes: readonly Node[]): Map<Node, Type> {
   const typeAt = new Map<Node, Type>();
-  for (let from = 0; from < nodes.length; from += DEFAULT_BATCH_CAP) {
-    const run = nodes.slice(from, from + DEFAULT_BATCH_CAP);
-    project.checker.getTypeAtLocation(run).forEach((type, index) => {
-      const node = run[index];
-      if (type !== undefined && node !== undefined) {
-        typeAt.set(node, type);
-      }
-    });
-  }
+  project.queries.typesAt(nodes).forEach((answer, index) => {
+    const type = must(answer);
+    const node = nodes[index];
+    if (type !== undefined && node !== undefined) {
+      typeAt.set(node, type);
+    }
+  });
   return typeAt;
 }
 
 /** Whether one class member is a method whose every written body holds no statement. */
 function emptyImplementation<Brand>(project: ProjectView<Brand>, member: TSSymbol): boolean {
-  const own = new Set(project.ownSourceFiles().map((file) => file.fileName));
+  const own = project.ownPaths();
   let bodies = 0;
   for (const handle of member.declarations) {
     // A body outside the target is one this analysis cannot read, so it is not empty.
@@ -135,19 +140,41 @@ function emptyImplementation<Brand>(project: ProjectView<Brand>, member: TSSymbo
   return bodies > 0;
 }
 
-/** How one project's interfaces are implemented by its classes. */
+/**
+ * How one project's interfaces are implemented by its classes. Where the checker leaves
+ * a question unanswered, what was read stands and every interface method of the project
+ * is named in {@link Implementations.unknown}.
+ */
 export function implementations<Brand>(
   project: ProjectView<Brand>,
   held: Inventory,
 ): Implementations {
   const classes = new Map<string, Set<string>>();
   const bodies = new Map<string, Map<string, boolean>>();
+  try {
+    implementedIn(project, held, classes, bodies);
+    return { classes, bodies, unknown: new Set() };
+  } catch (error: unknown) {
+    if (!(error instanceof Unanswerable)) {
+      throw error;
+    }
+    const methods = held.symbols.filter((symbol) => symbol.kind === "interface-method");
+    return { classes, bodies, unknown: new Set(methods.map((symbol) => symbol.id)) };
+  }
+}
+
+function implementedIn<Brand>(
+  project: ProjectView<Brand>,
+  held: Inventory,
+  classes: Map<string, Set<string>>,
+  bodies: Map<string, Map<string, boolean>>,
+): void {
   const walked = walk(project, held);
   if (walked.interfaces.length === 0 || walked.classes.length === 0) {
-    return { classes, bodies };
+    return;
   }
 
-  const checker = project.checker;
+  const queries = project.queries;
   const typeAt = typesAt(project, [
     ...walked.interfaces.map((one) => one.nameNode),
     ...walked.classes.map((one) => one.nameNode),
@@ -178,10 +205,10 @@ export function implementations<Brand>(
   }
 
   const membersOf = (at: InterfaceAt): readonly TSSymbol[] =>
-    (at.members ??= checker.getPropertiesOfType(at.type));
+    (at.members ??= must(queries.propertiesOf(at.type)));
   const classMembers = (at: ClassAt): ReadonlyMap<string, TSSymbol> =>
     (at.members ??= new Map(
-      checker.getPropertiesOfType(at.type).map((member) => [member.escapedName, member]),
+      must(queries.propertiesOf(at.type)).map((member) => [member.escapedName, member]),
     ));
 
   const methodIds = new Set(
@@ -233,12 +260,14 @@ export function implementations<Brand>(
     if (entry === undefined || implementer === undefined) {
       continue;
     }
-    const at = byType.get(entry.isTypeReference() ? entry.getTarget().id : entry.id);
+    const at = byType.get(must(queries.targetOf(entry)).id);
     if (at !== undefined) {
       pair(at, implementer);
     }
   }
 
+  // Every pair whose names line up is asked about at once.
+  const candidates: { readonly at: InterfaceAt; readonly implementer: ClassAt }[] = [];
   for (const at of byType.values()) {
     const members = at.generic ? [] : membersOf(at);
     if (members.length === 0) {
@@ -252,18 +281,25 @@ export function implementations<Brand>(
       const written = classMembers(implementer);
       if (
         required.every((member) => written.has(member.escapedName)) &&
-        members.some((member) => written.has(member.escapedName)) &&
-        checker.isTypeAssignableTo(implementer.type, at.type)
+        members.some((member) => written.has(member.escapedName))
       ) {
-        pair(at, implementer);
+        candidates.push({ at, implementer });
       }
     }
   }
-  return { classes, bodies };
+  const assignable = queries.assignableEach(
+    candidates.map((one) => ({ source: one.implementer.type, target: one.at.type })),
+  );
+  candidates.forEach((one, index) => {
+    if (must(assignable[index] ?? false)) {
+      pair(one.at, one.implementer);
+    }
+  });
 }
 
 /** Every project's answers as one run's, each implementation once. */
 export function mergeImplementations(per: readonly Implementations[]): Implementations {
+  const unknown = new Set(per.flatMap((one) => [...one.unknown]));
   const classes = new Map<string, Set<string>>();
   const bodies = new Map<string, Map<string, boolean>>();
   for (const one of per) {
@@ -282,5 +318,5 @@ export function mergeImplementations(per: readonly Implementations[]): Implement
       }
     }
   }
-  return { classes, bodies };
+  return { classes, bodies, unknown };
 }

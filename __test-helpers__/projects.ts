@@ -107,7 +107,7 @@ function recordingView<Brand>(project: ProjectView<Brand>, tally: Tally): Projec
     symbolsAt: (handles) =>
       project
         .symbolsAt(handles)
-        .map((symbol) => (symbol === undefined ? undefined : recordingSymbol(symbol, tally))),
+        .map((symbol) => (typeof symbol === "object" ? recordingSymbol(symbol, tally) : symbol)),
   };
 }
 

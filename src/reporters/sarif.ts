@@ -1,4 +1,5 @@
 import type { Confidence, Severity } from "../config.ts";
+import { jsonChunks } from "../json-chunks.ts";
 import { KINDS, type KindRow } from "../kinds.ts";
 import type { Report, WireFinding, WireStaleSuppression } from "../report.ts";
 import { lineHashes, symbolFingerprint } from "./fingerprint.ts";
@@ -260,7 +261,7 @@ function staleResult(
  * count it. A file the rendering cannot read, or a line it does not hold, fails the
  * rendering, because a line fingerprint computed from other bytes opens a second alert.
  */
-export function sarif(report: Report, options: RenderOptions): string {
+export function sarif(report: Report, options: RenderOptions): Iterable<string> {
   const kinds = kindsOf(report.analyzer.languages);
   const ruleList = rules(kinds);
   const index = new Map(kinds.map((kind, at) => [kind.code, at]));
@@ -291,5 +292,5 @@ export function sarif(report: Report, options: RenderOptions): string {
       },
     ],
   };
-  return `${JSON.stringify(log, null, INDENT)}\n`;
+  return jsonChunks(log, INDENT);
 }

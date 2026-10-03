@@ -7,6 +7,7 @@
  * and a member the document does not carry fails the rendering.
  */
 
+import { CHUNK_LENGTH } from "../json-chunks.ts";
 import { RenderError } from "./reporter.ts";
 import { utf8Bytes } from "./sha256.ts";
 
@@ -849,10 +850,22 @@ function call(name: string, args: readonly Value[]): Value {
 /** One execution of a template over a document. */
 class Execution {
   private readonly scopes: Map<string, Value>[];
-  out = "";
+  /** The rendering so far, in pieces of about {@link CHUNK_LENGTH}, the last still growing. */
+  readonly pieces: string[] = [""];
 
   constructor(root: Value) {
     this.scopes = [new Map([["$", root]])];
+  }
+
+  private write(text: string): void {
+    const last = this.pieces.length - 1;
+    const held = (this.pieces[last] ?? "") + text;
+    if (held.length >= CHUNK_LENGTH) {
+      this.pieces[last] = held;
+      this.pieces.push("");
+    } else {
+      this.pieces[last] = held;
+    }
   }
 
   private lookup(name: string): Value {
@@ -963,12 +976,12 @@ class Execution {
     for (const node of nodes) {
       switch (node.k) {
         case "text":
-          this.out += node.text;
+          this.write(node.text);
           break;
         case "action": {
           const value = this.pipeline(node.pipe, dot, true);
           if (node.pipe.vars.length === 0) {
-            this.out += formatted(value, false);
+            this.write(formatted(value, false));
           }
           break;
         }
@@ -1041,12 +1054,41 @@ class Execution {
 }
 
 /**
- * The template's rendering of one document. The rendering is built whole, so a template
- * that fails partway renders nothing, and the failure names what it could not evaluate.
+ * One document as the JSON value it encodes: what `JSON.stringify` would write for it,
+ * read back, without writing it. A member holding nothing is left out, and an array
+ * element holding nothing, like a number that is not finite, is null.
  */
-export function renderTemplate(template: Template, document: unknown): string {
-  const root = JSON.parse(JSON.stringify(document)) as Value;
+function plainOf(value: unknown): Value | undefined {
+  if (Array.isArray(value)) {
+    return value.map((element: unknown) => plainOf(element) ?? null);
+  }
+  if (typeof value === "object" && value !== null) {
+    const held: Record<string, Value> = {};
+    for (const [key, member] of Object.entries(value)) {
+      const plain = plainOf(member);
+      if (plain !== undefined) {
+        held[key] = plain;
+      }
+    }
+    return held;
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === "string" || typeof value === "boolean" || value === null) {
+    return value;
+  }
+  return undefined;
+}
+
+/**
+ * The template's rendering of one document, in pieces of about {@link CHUNK_LENGTH}.
+ * The rendering is complete before it is answered, so a template that fails partway
+ * renders nothing, and the failure names what it could not evaluate.
+ */
+export function renderTemplate(template: Template, document: unknown): readonly string[] {
+  const root = plainOf(document) ?? null;
   const execution = new Execution(root);
   execution.run(template.nodes, root);
-  return execution.out;
+  return execution.pieces.filter((piece) => piece !== "");
 }

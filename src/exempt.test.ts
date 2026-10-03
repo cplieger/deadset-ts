@@ -13,11 +13,13 @@ import {
   type TSExemptionClass,
 } from "./exempt-classes.ts";
 import {
+  computeExemptions,
   disabledClasses,
   exemptionsOf,
   retainedIn,
   retainedLines,
   type Detector,
+  type DetectorInput,
   type Detectors,
   type Evidence,
 } from "./exempt.ts";
@@ -26,6 +28,7 @@ import type { Inventory, InventorySymbol } from "./inventory.ts";
 import { matrixOf, sweepMatrix, type Configured } from "./matrix.ts";
 import type { Position } from "./position.ts";
 import type { Reference } from "./references.ts";
+import { Unanswerable } from "./query.ts";
 import { resolve } from "./resolve.ts";
 import type { Root } from "./roots.ts";
 import { run, type Writer } from "./run.ts";
@@ -129,6 +132,83 @@ function record(
 ): Exemption {
   return { id, class: exemptionClass, detail, site: { path, line, column: 1 } };
 }
+
+describe("a detector the checker leaves without an answer", () => {
+  /** One declaration of the given kind at its own line of `src/a.ts`. */
+  const ofKind = (name: string, kind: InventorySymbol["kind"], line: number): InventorySymbol => ({
+    id: `src/a.ts:${String(line)}:1`,
+    ref: `ts://@example/memory/src/a.ts#${name}`,
+    name,
+    kind,
+    position: { path: "src/a.ts", line, column: 1 },
+    endLine: line,
+    parent: "src/a.ts:1:1",
+    exported: false,
+    visibility: "public",
+    static: false,
+  });
+
+  it("holds back every declaration of the project its class could hold back", () => {
+    const symbols = [
+      ofKind("run", "function", 2),
+      ofKind("Shape.area", "method", 3),
+      ofKind("Shape.label", "class-member", 4),
+      ofKind("Color.Red", "enum-member", 5),
+    ];
+    const stopped: Detector = () => {
+      throw new Unanswerable();
+    };
+    // A test fake: the detector stops before it reads the project, so only the
+    // declarations are read.
+    const input = { held: { symbols } } as unknown as DetectorInput<never>;
+
+    const held = computeExemptions(input, new Map([["interface-satisfaction", stopped]]), {
+      disabled: new Set(),
+      mode: PLAIN,
+      testFiles: new Set(),
+    });
+
+    expect(held.map((one) => `${one.id} ${one.class} ${one.detail}`)).toEqual([
+      "src/a.ts:3:1 interface-satisfaction kept live by a question the checker did not answer",
+      "src/a.ts:4:1 interface-satisfaction kept live by a question the checker did not answer",
+    ]);
+  });
+
+  it("holds back every declaration but a file where its class names no kinds", () => {
+    const symbols = [
+      ofKind("src/a.ts", "file", 1),
+      ofKind("run", "function", 2),
+      ofKind("Shape.area", "method", 3),
+    ];
+    const stopped: Detector = () => {
+      throw new Unanswerable();
+    };
+    const input = { held: { symbols } } as unknown as DetectorInput<never>;
+
+    const held = computeExemptions(input, new Map([["decorator", stopped]]), {
+      disabled: new Set(),
+      mode: PLAIN,
+      testFiles: new Set(),
+    });
+
+    expect(held.map((one) => one.id)).toEqual(["src/a.ts:2:1", "src/a.ts:3:1"]);
+  });
+
+  it("lets any other failure end the run", () => {
+    const broken: Detector = () => {
+      throw new Error("the compiler server closed its channel");
+    };
+    const input = { held: { symbols: [] } } as unknown as DetectorInput<never>;
+
+    expect(() =>
+      computeExemptions(input, new Map([["enum-group", broken]]), {
+        disabled: new Set(),
+        mode: PLAIN,
+        testFiles: new Set(),
+      }),
+    ).toThrow("closed its channel");
+  });
+});
 
 describe("the records a run holds", () => {
   it("keeps one record per declaration, class and detail, the one at the first site", () => {

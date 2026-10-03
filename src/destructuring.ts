@@ -25,6 +25,7 @@ import {
   type Node,
 } from "@typescript/native/unstable/ast";
 import { TypeFlags, type Symbol as TSSymbol, type Type } from "@typescript/native/unstable/sync";
+import { isAnswered, UNANSWERED, type Answer } from "./query.ts";
 import type { ProjectView } from "./session.ts";
 
 /** One property one object pattern reads. */
@@ -212,11 +213,15 @@ interface DestructuringCost {
 interface Destructuring {
   /**
    * The property symbol each read names, in the order given, `undefined` where the
-   * destructured value's type declares no property of that name or is not known.
+   * destructured value's type declares no property of that name or is not known, and
+   * {@link UNANSWERED} where a question about the value's type went unanswered.
    */
-  resolve(reads: readonly PropertyRead[]): readonly (TSSymbol | undefined)[];
+  resolve(reads: readonly PropertyRead[]): readonly Answer<TSSymbol | undefined>[];
   readonly cost: DestructuringCost;
 }
+
+/** A type along a destructuring, or the mark that a question about it went unanswered. */
+type Found = Answer<Type | undefined>;
 
 /**
  * The resolution over one project, its batches capped at `cap`. Property tables are
@@ -224,85 +229,86 @@ interface Destructuring {
  * places and a table answers every name of it.
  */
 export function destructuring<Brand>(project: ProjectView<Brand>, cap: number): Destructuring {
-  const checker = project.checker;
-  const tables = new Map<number, ReadonlyMap<string, TSSymbol>>();
+  const queries = project.queries;
+  const tables = new Map<number, Answer<ReadonlyMap<string, TSSymbol>>>();
   let patternBatches = 0;
   let patternLookups = 0;
 
-  const typesAt = (nodes: readonly Node[]): (Type | undefined)[] => {
-    const types: (Type | undefined)[] = [];
-    for (let from = 0; from < nodes.length; from += cap) {
-      types.push(...checker.getTypeAtLocation(nodes.slice(from, from + cap)));
-      patternBatches += 1;
-    }
-    return types;
-  };
-
-  const tableOf = (type: Type): ReadonlyMap<string, TSSymbol> => {
+  const tableOf = (type: Type): Answer<ReadonlyMap<string, TSSymbol>> => {
     const known = tables.get(type.id);
     if (known !== undefined) {
       return known;
     }
-    const table = new Map<string, TSSymbol>();
+    let table: Answer<ReadonlyMap<string, TSSymbol>> = new Map<string, TSSymbol>();
     if ((type.flags & TypeFlags.AnyOrUnknown) === 0) {
       patternLookups += 1;
-      for (const property of checker.getPropertiesOfType(type)) {
-        table.set(property.name, property);
-      }
+      const properties = queries.propertiesOf(type);
+      table = isAnswered(properties)
+        ? new Map(properties.map((property) => [property.name, property]))
+        : UNANSWERED;
     }
     tables.set(type.id, table);
     return table;
   };
 
-  const definedOf = (type: Type): Type | undefined => {
+  const definedOf = (type: Type): Found => {
     if ((type.flags & TypeFlags.Union) === 0) {
       return type;
     }
     patternLookups += 1;
-    return checker.getNonNullableType(type);
+    return queries.nonNullable(type);
   };
 
   /**
    * The type one element of an array or tuple value has: a tuple's element at `index`,
    * an array's element type at any index, and `undefined` for a tuple iterated whole.
    */
-  const elementOf = (type: Type, index: number | undefined): Type | undefined => {
+  const elementOf = (type: Type, index: number | undefined): Found => {
     if (!type.isTypeReference()) {
       return undefined;
     }
-    patternLookups += 1;
-    if (checker.isTupleType(type)) {
+    if (type.isTupleType()) {
       if (index === undefined) {
         return undefined;
       }
       patternLookups += 1;
-      return checker.getTypeArguments(type)[index];
+      const elements = queries.typeArguments(type);
+      return isAnswered(elements) ? elements[index] : UNANSWERED;
     }
     patternLookups += 1;
-    if (!checker.isArrayType(type)) {
+    const array = queries.isArray(type);
+    if (!isAnswered(array)) {
+      return UNANSWERED;
+    }
+    if (!array) {
       return undefined;
     }
     patternLookups += 1;
-    return checker.getTypeArguments(type)[0];
+    const elements = queries.typeArguments(type);
+    return isAnswered(elements) ? elements[0] : UNANSWERED;
   };
 
-  const step = (type: Type, next: Step): Type | undefined => {
+  const step = (type: Type, next: Step): Found => {
     const defined = definedOf(type);
-    if (defined === undefined) {
-      return undefined;
+    if (defined === undefined || defined === UNANSWERED) {
+      return defined;
     }
     if (next.kind === "property") {
-      const property = tableOf(defined).get(next.name);
+      const table = tableOf(defined);
+      if (!isAnswered(table)) {
+        return UNANSWERED;
+      }
+      const property = table.get(next.name);
       if (property === undefined) {
         return undefined;
       }
       patternLookups += 1;
-      return checker.getTypeOfSymbol(property);
+      return queries.typeOfSymbol(property);
     }
     return elementOf(defined, next.kind === "element" ? next.index : undefined);
   };
 
-  const resolve = (reads: readonly PropertyRead[]): readonly (TSSymbol | undefined)[] => {
+  const resolve = (reads: readonly PropertyRead[]): readonly Answer<TSSymbol | undefined>[] => {
     const patterns = [...new Set(reads.map((read) => read.pattern))];
     const sources = new Map<Node, Source | undefined>();
     const asking = new Set<Node>();
@@ -317,15 +323,16 @@ export function destructuring<Brand>(project: ProjectView<Brand>, cap: number): 
         asking.add(source.expression);
       }
     }
-    const answered = new Map<Node, Type>();
     const asked = [...asking];
-    typesAt(asked).forEach((type, index) => {
+    patternBatches += Math.ceil(asked.length / cap);
+    const answered = new Map<Node, Found>();
+    queries.typesAt(asked, cap).forEach((type, index) => {
       const node = asked[index];
-      if (type !== undefined && node !== undefined) {
+      if (node !== undefined) {
         answered.set(node, type);
       }
     });
-    const patternTypes = new Map<Node, Type | undefined>();
+    const patternTypes = new Map<Node, Found>();
     for (const pattern of patterns) {
       const source = sources.get(pattern);
       if (source === undefined) {
@@ -334,13 +341,17 @@ export function destructuring<Brand>(project: ProjectView<Brand>, cap: number): 
       }
       let type = answered.get(source.expression);
       for (const next of source.steps) {
-        type = type === undefined ? undefined : step(type, next);
+        type = type === undefined || type === UNANSWERED ? type : step(type, next);
       }
-      patternTypes.set(pattern, type === undefined ? undefined : definedOf(type));
+      patternTypes.set(pattern, type === undefined || type === UNANSWERED ? type : definedOf(type));
     }
     return reads.map((read) => {
       const type = patternTypes.get(read.pattern);
-      return type === undefined ? undefined : tableOf(type).get(read.name);
+      if (type === undefined || type === UNANSWERED) {
+        return type;
+      }
+      const table = tableOf(type);
+      return isAnswered(table) ? table.get(read.name) : UNANSWERED;
     });
   };
 

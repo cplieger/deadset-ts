@@ -222,6 +222,68 @@ describe("the order and the cap", () => {
   );
 });
 
+/** The compiler's error for the configuration that names no input, spelled below the target. */
+const NO_INPUTS =
+  "TS18003: No inputs were found in config file 'tools/tsconfig.json'. Specified 'include' paths were '[\"none/*.ts\"]' and 'exclude' paths were '[]'.";
+
+/** The clean application beside a configuration whose include pattern names no file. */
+const WITH_EMPTY_PROJECT = {
+  ...CLEAN_APPLICATION,
+  "tools/tsconfig.json": '{ "compilerOptions": { "strict": true }, "include": ["none/*.ts"] }\n',
+};
+
+describe("a configuration that names no input", () => {
+  it(
+    "is dropped and named in the report where discovery derived it, and the rest is analyzed",
+    () => {
+      const got = analyze(project(WITH_EMPTY_PROJECT), [], tmpdir());
+      const report = reportOf(got);
+
+      expect(got.code, got.err).toBe(0);
+      expect(validate(report)).toEqual([]);
+      expect(report["configurations"]).toEqual([{ id: "tsconfig.json", project: "tsconfig.json" }]);
+      expect(report["configurations_not_built"]).toEqual([
+        {
+          id: "tools/tsconfig.json",
+          project: "tools/tsconfig.json",
+          error: NO_INPUTS,
+        },
+      ]);
+      expect(got.err).toBe(
+        `deadset-ts: the derived configuration tools/tsconfig.json was not built and is not analyzed: ${NO_INPUTS}\n`,
+      );
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "ends the run with the configuration exit code where the matrix names it",
+    () => {
+      const got = analyze(
+        project({
+          ...WITH_EMPTY_PROJECT,
+          "deadset.json": JSON.stringify({
+            target: { kind: "application" },
+            ts: { entry_files: ["src/main.ts"] },
+            analysis: {
+              configurations: [
+                { id: "main", project: "tsconfig.json" },
+                { id: "tools", project: "tools/tsconfig.json" },
+              ],
+            },
+          }),
+        }),
+        [],
+        tmpdir(),
+      );
+
+      expect(got.code).toBe(3);
+      expect(got.err).toContain("TS18003");
+    },
+    LOAD_TIMEOUT,
+  );
+});
+
 describe("the exit code", () => {
   it(
     "is 0 for a report holding no finding at or above the failing severity",

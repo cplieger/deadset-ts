@@ -17,16 +17,16 @@ import {
   isStringLiteral,
   isNoSubstitutionTemplateLiteral,
   SyntaxKind,
+  type Identifier,
   type Node,
   type SourceFile,
 } from "@typescript/native/unstable/ast";
-import type { Symbol as TSSymbol } from "@typescript/native/unstable/sync";
 import type { FindingPosition } from "./finding.ts";
 import type { Host } from "./host.ts";
 import { nodeKey, packageScope, type Inventory } from "./inventory.ts";
 import { dirnamePath, isAbsolutePath, joinPath, resolvePath } from "./paths.ts";
 import type { DependencySection, Module } from "./ref.ts";
-import { DEFAULT_BATCH_CAP } from "./references.ts";
+import { UNANSWERED } from "./query.ts";
 import type { Handle, ProjectView } from "./session.ts";
 
 const MANIFEST = "package.json";
@@ -70,6 +70,11 @@ export interface ProjectNeeds {
    * compiler configuration names, which no deletion removes.
    */
   readonly uses: ReadonlyMap<string, ReadonlySet<string>>;
+  /**
+   * Whether the checker left a module specifier unanswered, so the project may use any
+   * dependency the manifest declares.
+   */
+  readonly unanswered: boolean;
 }
 
 /** The run's dependency evidence. */
@@ -299,10 +304,11 @@ export function projectNeeds<Brand>(
   };
   use([PROJECT_OWNER], packages);
 
+  let unanswered = false;
   for (const file of project.ownSourceFiles()) {
-    fileNeeds(project, held, file, programPackages, use);
+    unanswered = fileNeeds(project, held, file, programPackages, use) || unanswered;
   }
-  return { packages, uses };
+  return { packages, uses, unanswered };
 }
 
 /** The declarations of the inventory a use written at one node belongs to. */
@@ -329,13 +335,14 @@ function ownersOf(file: SourceFile, held: Inventory, node: Node): readonly strin
   return [PROJECT_OWNER];
 }
 
+/** Records the needs of one file, and answers whether a specifier of it went unanswered. */
 function fileNeeds<Brand>(
   project: ProjectView<Brand>,
   held: Inventory,
   file: SourceFile,
   programPackages: ReadonlySet<string>,
   use: (owners: readonly string[], named: Iterable<string>) => void,
-): void {
+): boolean {
   const specifiers = [...file.imports, ...file.moduleAugmentations].filter(isLiteralText);
   const bindings: { readonly node: Texted; readonly specifier: Texted }[] = [];
   const bound = new Set<Node>();
@@ -351,7 +358,7 @@ function fileNeeds<Brand>(
     }
   }
   const names = new Set(bindings.map(({ node }) => node.text));
-  const candidates: Node[] = [];
+  const candidates: Identifier[] = [];
   const visit = (node: Node): void => {
     if (isIdentifier(node) && names.has(node.text) && !bound.has(node)) {
       candidates.push(node);
@@ -363,13 +370,8 @@ function fileNeeds<Brand>(
   }
 
   const asked = [...specifiers, ...bindings.map(({ node }) => node), ...candidates];
-  const resolved: (TSSymbol | undefined)[] = [];
-  for (let at = 0; at < asked.length; at += DEFAULT_BATCH_CAP) {
-    const handles: Handle<Brand>[] = asked
-      .slice(at, at + DEFAULT_BATCH_CAP)
-      .map((node) => project.handle(node));
-    resolved.push(...project.symbolsAt(handles));
-  }
+  const handles: Handle<Brand>[] = asked.map((node) => project.handle(node));
+  const resolved = project.symbolsAt(handles);
 
   const packagesOf = new Map<Node, readonly string[]>();
   specifiers.forEach((specifier, index) => {
@@ -378,7 +380,8 @@ function fileNeeds<Brand>(
     if (byName !== undefined) {
       named.add(byName);
     }
-    for (const declaration of resolved[index]?.declarations ?? []) {
+    const symbol = resolved[index];
+    for (const declaration of typeof symbol === "object" ? symbol.declarations : []) {
       const byPath = packageOfPath(declaration.path);
       if (byPath !== undefined) {
         named.add(byPath);
@@ -387,11 +390,19 @@ function fileNeeds<Brand>(
     packagesOf.set(specifier, [...named]);
   });
 
+  // A name the checker could not resolve counts as a use of every package a binding of
+  // that name brings in, so a gap never makes a dependency read as unused.
   const bySymbol = new Map<number, readonly string[]>();
-  bindings.forEach(({ specifier }, index) => {
+  const byName = new Map<string, string[]>();
+  const unresolvedNames = new Set<string>();
+  bindings.forEach(({ node, specifier }, index) => {
+    const packages = packagesOf.get(specifier) ?? [];
+    byName.set(node.text, [...(byName.get(node.text) ?? []), ...packages]);
     const symbol = resolved[specifiers.length + index];
-    if (symbol !== undefined) {
-      bySymbol.set(symbol.id, packagesOf.get(specifier) ?? []);
+    if (symbol === UNANSWERED) {
+      unresolvedNames.add(node.text);
+    } else if (symbol !== undefined) {
+      bySymbol.set(symbol.id, packages);
     }
   });
 
@@ -409,7 +420,13 @@ function fileNeeds<Brand>(
     if (parent !== undefined && isShorthandPropertyAssignment(parent) && parent.name === node) {
       symbol = project.shorthandValueAt(project.handle(node));
     }
-    const named = symbol === undefined ? undefined : bySymbol.get(symbol.id);
+    const named =
+      symbol === UNANSWERED || (unresolvedNames.has(node.text) && symbol === undefined)
+        ? byName.get(node.text)
+        : symbol === undefined
+          ? undefined
+          : (bySymbol.get(symbol.id) ??
+            (unresolvedNames.has(node.text) ? byName.get(node.text) : undefined));
     if (named !== undefined) {
       use(ownersOf(file, held, node), named);
     }
@@ -418,6 +435,7 @@ function fileNeeds<Brand>(
   for (const reference of file.typeReferenceDirectives) {
     use(ownersOf(file, held, file), typePackages(reference.fileName, programPackages));
   }
+  return resolved.slice(0, specifiers.length).includes(UNANSWERED);
 }
 
 /** The offset just past the JSON value that starts at `at` in text the parser has accepted. */
@@ -591,12 +609,16 @@ export function dependenciesOf(
   const needed = new Set<string>();
   const uses = new Map<string, Set<string>>();
   for (const project of perProject) {
-    project.packages.forEach((one) => needed.add(one));
-    for (const [id, used] of project.uses) {
+    // A specifier the checker left unanswered may resolve to any declared dependency,
+    // and what the configuration needs is never deleted, so it is needed there.
+    const unknown = project.unanswered ? declared.map((dependency) => dependency.name) : [];
+    const held = unknown.length === 0 ? [] : [[PROJECT_OWNER, new Set(unknown)] as const];
+    for (const [id, used] of [...project.uses, ...held]) {
       const merged = uses.get(id) ?? new Set<string>();
       used.forEach((one) => merged.add(one));
       uses.set(id, merged);
     }
+    [...project.packages, ...unknown].forEach((one) => needed.add(one));
   }
   const users = new Map<string, number>();
   for (const used of uses.values()) {

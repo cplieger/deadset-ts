@@ -294,6 +294,35 @@ describe("the intra-function family", () => {
   );
 
   it(
+    "reports no parameter of a method whose class an interface extends",
+    () => {
+      const files = {
+        "package.json": '{ "name": "@example/widened", "private": true, "type": "module" }\n',
+        "src/main.ts": [
+          "class Base {",
+          "  handle(event: string, extra: number): void {",
+          "    console.log(event);",
+          "  }",
+          "}",
+          "",
+          "interface Wider extends Base {",
+          "  more(): void;",
+          "}",
+          "",
+          "const wide: Wider = { handle: (event) => console.log(event), more: () => undefined };",
+          'new Base().handle("event", 1);',
+          'wide.handle("event", 1);',
+          "wide.more();",
+          "",
+        ].join("\n"),
+      };
+
+      expect(partsOf(files, ENTRY)).toEqual([]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
     "withholds the one kind a severity key turns off and leaves the other four reported",
     () => {
       expect(

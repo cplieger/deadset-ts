@@ -11,6 +11,7 @@ import {
   readIgnoreFile,
   writeBaseline,
 } from "./suppress-file.ts";
+import { whole } from "../__test-helpers__/whole.ts";
 
 /** One case of the published suppression token corpus. */
 interface CorpusCase {
@@ -37,7 +38,7 @@ function hostWith(documents: Readonly<Record<string, string>>): Host {
     readDirectory: () => [],
     kindOf: (path) => (at(path) === undefined ? "absent" : "file"),
     analyzerVersion: () => "0.0.0-devel",
-    writeFile: (path) => {
+    writeDocument: (path) => {
       throw new Error(`${path}: this host writes nothing`);
     },
   };
@@ -186,7 +187,7 @@ describe("a written baseline", () => {
   const recorded = [{ code: ENTRY.code, symbol: ENTRY.symbol, path: ENTRY.path }];
 
   it("is read back as one bound row per recorded finding, each carrying its provenance", () => {
-    const text = writeBaseline(recorded, { analyzer: "deadset-ts", version: "1.2.3" });
+    const text = whole(writeBaseline(recorded, { analyzer: "deadset-ts", version: "1.2.3" }));
     const held = readBaseline(hostWith({ [BASELINE_FILE]: text }), ROOT, [
       declaration(ENTRY.symbol, ENTRY.path),
     ]);
@@ -202,7 +203,9 @@ describe("a written baseline", () => {
   it("is the same bytes for the same findings", () => {
     const provenance = { analyzer: "deadset-ts", version: "1.2.3" };
 
-    expect(writeBaseline(recorded, provenance)).toBe(writeBaseline(recorded, provenance));
+    expect(whole(writeBaseline(recorded, provenance))).toBe(
+      whole(writeBaseline(recorded, provenance)),
+    );
   });
 
   it("is refused where a row could carry no reason", () => {

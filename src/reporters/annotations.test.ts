@@ -4,6 +4,11 @@ import type { Report, WireFinding, WireStaleSuppression } from "../report.ts";
 import { annotations } from "./annotations.ts";
 import type { RenderOptions } from "./reporter.ts";
 
+/** The annotations one report renders to, as the file holds them. */
+function annotationsOf(of: Report, with_: RenderOptions): string {
+  return [...annotations(of, with_)].join("");
+}
+
 function finding(severity: Severity, message = "exported function has no reference"): WireFinding {
   return {
     code: "DS1001",
@@ -66,7 +71,7 @@ function options(failOn: Severity): RenderOptions {
 
 describe("annotations", () => {
   it("annotates a finding at the failing severity as an error naming its span, code and kind", () => {
-    expect(annotations(report([finding("deny")]), options("deny"))).toBe(
+    expect(annotationsOf(report([finding("deny")]), options("deny"))).toBe(
       "::error file=src/catalog.ts,line=12,col=17,endLine=20,title=DS1001 unused-exported::exported function has no reference\n",
     );
   });
@@ -75,13 +80,13 @@ describe("annotations", () => {
     ["below the failing severity is a warning", "warn", "deny", "warning"],
     ["at a lowered failing severity is an error", "warn", "warn", "error"],
   ] as const)("annotates a finding %s", (_what, severity, failOn, level) => {
-    expect(annotations(report([finding(severity)]), options(failOn))).toMatch(
+    expect(annotationsOf(report([finding(severity)]), options(failOn))).toMatch(
       new RegExp(`^::${level} `, "u"),
     );
   });
 
   it("annotates a stale suppression after the findings as an error at its own line, whatever the failing severity", () => {
-    const lines = annotations(report([finding("warn")], [STALE]), options("deny")).split("\n");
+    const lines = annotationsOf(report([finding("warn")], [STALE]), options("deny")).split("\n");
 
     expect(lines[1]).toBe(
       "::error file=deadset-ignore.json,line=4,col=5,endLine=4,title=DS1703 stale-suppression::ignore entry for DS1001 matches no current finding",
@@ -94,12 +99,12 @@ describe("annotations", () => {
       position: { path: "src/a:b,c%.ts", line: 1, column: 1, end_line: 1 },
     };
 
-    expect(annotations(report([odd]), options("deny"))).toBe(
+    expect(annotationsOf(report([odd]), options("deny"))).toBe(
       "::error file=src/a%3Ab%2Cc%25.ts,line=1,col=1,endLine=1,title=DS1001 unused-exported::100%25 dead%0Asee: a, b\n",
     );
   });
 
   it("writes nothing for a report holding no finding and no stale suppression", () => {
-    expect(annotations(report([]), options("deny"))).toBe("");
+    expect(annotationsOf(report([]), options("deny"))).toBe("");
   });
 });

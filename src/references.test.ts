@@ -5,7 +5,8 @@ import { fixture, ROOT } from "../__test-helpers__/fixtures.ts";
 import { analyzeRoot } from "../__test-helpers__/projects.ts";
 import type { InventorySymbol } from "./inventory.ts";
 import { positionKey } from "./position.ts";
-import { DEFAULT_BATCH_CAP, testFileRulesOf, type Reference } from "./references.ts";
+import { DEFAULT_BATCH_CAP } from "./query.ts";
+import { testFileRulesOf, type Reference } from "./references.ts";
 
 /**
  * The fixture holding one instance of every reference form, resolved once for every

@@ -1,4 +1,5 @@
 import { fails } from "../config.ts";
+import { coalesced } from "../json-chunks.ts";
 import { KINDS } from "../kinds.ts";
 import type { Report } from "../report.ts";
 import type { RenderOptions } from "./reporter.ts";
@@ -42,26 +43,27 @@ function command(
  * failing severity is an error and one below it a warning; a stale suppression is an error,
  * because its kind is fixed on at the failing severity.
  */
-export function annotations(report: Report, options: RenderOptions): string {
-  const lines = report.findings.map((found) =>
-    command(
-      fails(found.severity, options.failOn) ? "error" : "warning",
-      found.position,
-      found.position.end_line,
-      `${found.code} ${found.kind}`,
-      found.message,
-    ),
+export function annotations(report: Report, options: RenderOptions): Iterable<string> {
+  return coalesced(
+    (function* lines(): Generator<string, void, undefined> {
+      for (const found of report.findings) {
+        yield `${command(
+          fails(found.severity, options.failOn) ? "error" : "warning",
+          found.position,
+          found.position.end_line,
+          `${found.code} ${found.kind}`,
+          found.message,
+        )}\n`;
+      }
+      for (const stale of report.stale_suppressions) {
+        yield `${command(
+          "error",
+          stale.position,
+          stale.position.line,
+          `${stale.code} ${kindName(stale.code)}`,
+          stale.message,
+        )}\n`;
+      }
+    })(),
   );
-  for (const stale of report.stale_suppressions) {
-    lines.push(
-      command(
-        "error",
-        stale.position,
-        stale.position.line,
-        `${stale.code} ${kindName(stale.code)}`,
-        stale.message,
-      ),
-    );
-  }
-  return lines.map((line) => `${line}\n`).join("");
 }

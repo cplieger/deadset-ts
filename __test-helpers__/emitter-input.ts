@@ -50,7 +50,7 @@ export function sweepOnly(config: Config, swept: RunSweep): EmitterInput {
       needed: new Set(),
       lastUses: new Map(),
     },
-    implementations: { classes: new Map(), bodies: new Map() },
+    implementations: { classes: new Map(), bodies: new Map(), unknown: new Set() },
     files: { tree: [], heldByInclusion: new Set() },
     boundary: { consumers: { declared: [], loaded: [] }, encapsulated: false, edges: [] },
     selfCheck: NO_SELF_CHECK,

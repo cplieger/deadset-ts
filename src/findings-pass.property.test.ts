@@ -10,6 +10,7 @@ import { scopeForDir } from "./scope.ts";
 import { openEngine, type Engine } from "./session.ts";
 import type { Mechanism } from "./suppress.ts";
 import { BASELINE_FILE, IGNORE_FILE, writeBaseline } from "./suppress-file.ts";
+import { whole } from "../__test-helpers__/whole.ts";
 
 /**
  * One iteration writes a project and runs the pass over it twice, each run sweeping the
@@ -159,10 +160,12 @@ describe("a suppression document written from a run's findings", () => {
                     }),
                   baseline: () =>
                     files(libraryOf(drawn, new Set()), {
-                      [BASELINE_FILE]: writeBaseline(entries, {
-                        analyzer: "deadset-ts",
-                        version: "1.0.0",
-                      }),
+                      [BASELINE_FILE]: whole(
+                        writeBaseline(entries, {
+                          analyzer: "deadset-ts",
+                          version: "1.0.0",
+                        }),
+                      ),
                     }),
                 }[mechanism];
                 roots.push(writeProject(next()));
