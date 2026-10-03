@@ -2,13 +2,22 @@
 
 [![npm](https://img.shields.io/npm/v/@cplieger/deadset-ts)](https://www.npmjs.com/package/@cplieger/deadset-ts) [![JSR](https://jsr.io/badges/@cplieger/deadset-ts)](https://jsr.io/@cplieger/deadset-ts)
 
-> Deterministic dead-code analysis for TypeScript, class and type members included.
+deadset-ts finds dead code in TypeScript projects, down to class members, type members and dead stores inside functions, and writes a report your CI can fail on.
 
-deadset-ts is a command-line analyzer for TypeScript and JavaScript projects. It builds the program from your `tsconfig.json` files through the TypeScript 7 compiler API, resolves every reference in one pass, and reports the declarations nothing reaches: unused exports, type-only exports without a consumer, unused class members (private, protected, static and accessors), unused interface, type-alias, enum and namespace members, exports that can be narrowed to a smaller visibility, whole groups of declarations that only keep each other alive, and inside a function the unused parameters, results nobody reads, unreachable statements, dead stores and unreachable cases. Every finding carries an issue code, a confidence and a stable symbol reference from the [deadset Contract](https://github.com/cplieger/deadset-spec), so the same report shape works for a Go analyzer and for a merged multi-language report. The analysis is deterministic: the same tree gives the same report, with no cache and no text search.
+It reads your `tsconfig.json` projects, `allowJs` JavaScript included, with the type information of TypeScript 7.1.0-dev.20261003.1, its one dependency. Your project keeps its own TypeScript version and must also compile under that version. deadset-ts reports and never edits your code. It is pre-release, tested only on Linux, needs Node.js 24 or later and is licensed under GPL-3.0-or-later.
 
-deadset-ts is report-only. It never edits source, and it refuses any `--fix` flag.
+## Why use it
 
-**Status: pre-release.** This version implements contract 4.0.0 and ships the analyzer's foundation: one compiler session per run over the projects `analysis.configurations` declares, in the order it lists them, each a compiler configuration file below the target, or, where it declares none, every `tsconfig` project discovered under the target (the explicit scope, every `tsconfig*.json`, each project's `references`), a fail-closed read of every project's diagnostics, where a discovered project whose configuration names no input, carries an option the compiler refuses or cannot be read is dropped, named in the report's `configurations_not_built` with its error and on standard error, and the rest analyzed, while a project `analysis.configurations` or the scope names ends the run with exit code 3, configuration decoding against the contract's closed key list with `print-config` and its provenance, `print-projects`, the report-only guard, the symbol inventory of every declaration a project's own files hold down to its class and type members, the one-pass reference resolution over that inventory, which resolves each file's identifiers in batches ([batch-cap calibration](docs/batch-cap-calibration.md) is the measurement behind the batch size), and the root set `print-roots` prints. A root is a declaration the analysis keeps live without a reference: what a file exports when the manifest names it through `main`, `module`, `types`, `bin` or `exports`, or when `ts.entry_files` matches it; a library target's published API; the configuration, setup and test files of Vitest, Stryker and Playwright, the flat configuration of ESLint, and a worker or service worker a call addresses by a string literal; and every declaration a `roots.patterns` entry names. An entry that names nothing is reported as `DS1704` and fails the run. The entry-point conventions of other tools are not read, and `DECLINED_CONVENTIONS` lists each one with the reason. Seven exemption classes hold a declaration back from the sweep, and `print-retained` lists what each one held back: `interface-satisfaction`, a member an interface requires of a class whose value reaches that interface; `decorator`, a decorated member and every member of a decorated class; `injection-container`, a decorated property of a class a dependency-injection container constructs, being a class passed to a call `ts.injection_registrations` names or one a parameter of whose constructor carries a decorator; `framework-lifecycle`, a member a `ts.lifecycle_contracts` entry lists, on a class that is the entry's component by a decorator or a call the entry names or by extending a class it names; `serialization-contract`, the properties of a class whose values reach `JSON.stringify` or a declaration `ts.serializers` names, and those and its `toJSON` and `toString` where a value is passed to an `unknown` or `any` parameter of a function outside the analysis; and, at the lowest confidence, `template-field`, a member an action of a template under `analysis.template_dirs` names, and `reflective-lookup`, a member a literal key of an element access or of `Reflect.get`, `Reflect.set` or `Reflect.has` names. None of them holds back a `#private` member. `analyze` writes the report the Contract's report schema declares, with text, JSON, GitHub annotation, SARIF 2.1.0 and template renderings beside it on request. A scope document passed with `--scope` names the consumers loaded beside the target, each a directory whose compiler configurations open in the same session; a reference from a consumer keeps a target declaration live, the report names every consumer it loaded, and a consumer that is absent or does not load ends the run with exit code 3. A library target's published API is `certain` once every declared consumer loads and `possible` with no consumer information, and in that second case `DS1001` defaults to `allow` and the narrowing kinds report only in files no manifest export reaches. `explain` answers why one declaration is reported, retained, held by an unanswered question, live or dead, from the same analysis the report is built from. `describe` prints the analyzer's description with its conformance record over the published corpus and the declared gaps `conformance.json` lists. The analysis is reached through the command, and through `run()` for a caller that runs the command in-process. Every question the analysis asks the compiler is guarded: a question the compiler server fails on is answered as unknown, every declaration that answer could have kept live is kept live and reported by nothing, as is every declaration only those keep live or whose own references went unanswered, and standard error counts the unanswered questions by project. The one runtime dependency is the `typescript` package at exactly 7.1.0-dev.20261003.1, installed under the `@typescript/native` name.
+deadset-ts is built for a CI gate on dead code. Each finding names code to delete, an `export` to drop or a setting to fix.
+
+- It reports unused exports, files and dependencies, and unused members of classes, interfaces, type aliases, enums and namespaces, private and static included.
+- Inside a function, it reports unused parameters and results, unreachable statements and cases, and dead stores.
+- It reports an `export` only its own file uses, and declarations that only reference each other.
+- It keeps what decorators, reflective lookups, `JSON.stringify` and the frameworks, containers, serializers and templates you name in `deadset.json` use.
+- The same tree gives the same report, and a baseline keyed on code and symbol survives moved lines.
+- It writes text, JSON, GitHub annotations, SARIF 2.1.0 or a custom template.
+
+Consider [Knip](https://knip.dev) if you want issues fixed with `--fix`, plugins for over 100 tools, or Astro, MDX, Svelte and Vue files checked.
 
 ## Install
 
@@ -20,70 +29,79 @@ npx jsr add -D @cplieger/deadset-ts
 npx @cplieger/deadset-ts version
 ```
 
-The npm package carries the command and the library as JavaScript that the compiler emits at publish, so `npx deadset-ts` and `import("@cplieger/deadset-ts")` both run on plain Node.js 24 or later, with no loader and no flag. It carries the TypeScript source as well, which is what a TypeScript consumer's own compiler resolves. That consumer sets `allowImportingTsExtensions`, because the source names each import with its `.ts` extension. The JSR package ships source only, and Deno compiles it: a Deno program imports and type-checks the library, but the compiler's synchronous session does not open under Deno, so running an analysis needs Node.
-
 ## Usage
 
+Create a `deadset.json` at the project root that says whether the project is an `application` or a `library`, then run `analyze`. A run reads every `tsconfig` project under that folder, project references included, and reports a declaration only when it is dead in all of them.
+
 ```sh
-npx deadset-ts version
+echo '{ "target": { "kind": "application" } }' > deadset.json
+npx @cplieger/deadset-ts analyze --report=deadset-report.json
 ```
 
-`version` prints the analyzer version and the Contract version it implements, and exits 0. `print-config`, `print-projects`, `print-roots` and `print-retained` print what their row of the table says and exit 0, or 1 when `print-roots` reports a `DS1704`, and `print-retained` exits 2 when an `exemptions.disabled` entry is not an exemption class or an `analysis.template_dirs` entry is not a directory below the target root. `analyze --report=PATH` writes the JSON report to `PATH` through a temporary file renamed into place, each `--format` rendering at `PATH` with its suffix appended (`text` as `.txt`, `json` as `.json`, `github` as `.annotations` in GitHub workflow-command form, `sarif` as `.sarif`, and `template` as `.tmpl`, rendering the file `--template=FILE` names, written in a subset of Go's `text/template` action grammar over the report's JSON member names), and with `--baseline-write=FILE` a baseline of every finding; it writes nothing to standard output and exits with the Contract's exit-code table: 0 clean, 1 for a finding at or above `reporters.fail_on` or a stale suppression, 2 for a usage error, including a template that cannot be read or does not parse, 3 for a failed load or a rendering that cannot be written, and 4 for a pending finding, which outranks 1. `--exit-code=off` exits 0 whatever the verdict and names the verdict on standard error. The report names the target relative to the directory the run is invoked from, so a target outside that directory fails with 3. `describe` writes its JSON document to standard output and exits 0. `explain --why=SYM`, or the same request spelled `--why-live=SYM` or `--why-not=SYM`, prints why that one declaration is reported, retained, held by an unanswered question, live or dead, with the shortest reference path from a root or a loaded consumer for a live one, and exits 0; a request that names no one declaration exits 2 and lists up to 20 declarations it partially matches. Any other invocation and no arguments print the usage line and exit 2.
+`analyze` writes the JSON report to `deadset-report.json` and a text rendering beside it as `deadset-report.json.txt`. Take this `src/greet.ts`, where the rest of the project calls only `greet` and `Counter.increment`:
 
-| Verb             | Job                                                                                |
-| ---------------- | ---------------------------------------------------------------------------------- |
-| `analyze`        | Analyze a project and write the report, its renderings and a baseline              |
-| `explain`        | Explain one declaration: the relation, the roots and the references that decide it |
-| `print-config`   | Print the resolved configuration and where each setting came from                  |
-| `print-projects` | Print the identifier of every project a run analyzes                               |
-| `print-roots`    | Print every declaration the analysis keeps live without a reference, and why       |
-| `print-retained` | Print every declaration an exemption held back: each class, its site and detail    |
-| `describe`       | Describe the analyzer: versions, accepted report schemas, languages, conformance   |
-| `version`        | Print the analyzer and Contract versions                                           |
+```ts
+export function greet(name: string): string {
+  return `hello ${name}`;
+}
+export function farewell(name: string): string {
+  return `bye ${name}`;
+}
+export class Counter {
+  private count = 0;
+  increment(): void {
+    this.count += 1;
+  }
+  reset(): void {
+    this.count = 0;
+  }
+}
+```
 
-## Requirements
+The text rendering lists three findings:
 
-- Node.js 24 or later. The npm command is JavaScript the compiler emits at publish, so it runs with no loader and no flag; a clone of this repository runs the same command from its TypeScript sources through Node's own type stripping, which is what needs the version.
-- TypeScript 7. The analyzer is written against the `typescript` package at exactly version 7.1.0-dev.20261003.1 and its `unstable/*` API. It does not run on TypeScript 6, whose compiler API TypeScript 7 removed, and it does not fall back to it.
-- Linux. Other platforms are untested.
+```text
+src/greet.ts:4:17: function farewell: exported function has no reference in the target and none from any loaded consumer [certain] (DS1001)
+src/greet.ts:8:11: class-member Counter.count: member Counter.count is written at 2 positions and never read [certain] (DS1301)
+src/greet.ts:12:3: method Counter.reset: method has no reference in the target [certain] (DS1003)
+summary: 3 findings (0 allow, 0 warn, 3 deny), 6 deletable lines, 0 suppressions in effect, 0 reasons recorded, 0 stale suppressions, 0 pending, 0 omitted
+```
+
+The run exits 1 because the report holds a finding at `deny` severity, and 0 when it holds none. Three common next steps:
+
+- Add `--format=sarif` or `--format=github` for a SARIF file or GitHub workflow annotations. Naming any format turns off the default text rendering, so add `--format=text` as well to keep it.
+- Run `npx @cplieger/deadset-ts explain --why=farewell` to see why one declaration is reported, retained, held by an unanswered question, live or dead.
+- Add `--baseline-write=deadset-baseline.json` to record today's findings. Later runs fail on a new finding and on a baseline row whose finding has gone. To keep one declaration, put `// deadset:ignore DS1001 -- <reason>` on the line above it.
+
+[Commands and exit codes](docs/commands.md) covers every verb and option, and [Configuration](docs/configuration.md) covers every setting.
 
 ## API
 
-The package exports the command line, for callers that run it in-process, and the vocabularies and helpers its output is spelled with. The command line reads the platform through a `Host`: the filesystem, the directory relative paths resolve against, and the version of the package the analyzer was installed from. `bin/node-host.ts` is the Node one the command line binds; a caller embedding the analyzer, or running it on another platform, supplies its own and supplies its own version with it.
+The package exports the command line as a function, and the helpers that spell the positions and symbol references in a report.
 
-The command line:
+- `run` runs the command line and returns its exit code, without exiting the process. `Writer` is its output stream, and `SETTING_OPTIONS` maps each option to the setting it sets.
+- `Host`, `DirectoryEntry` and `PathKind` describe the filesystem, working directory and version a run reads.
+- `renderPosition`, `positionKey`, `byPosition`, `PositionError` and `Position` render and order positions.
+- `renderRef`, `nameComponent`, `computedComponent`, `isRef`, `REF_EXPRESSIONS`, `Module`, `Component`, `Fragment` and `DependencySection` spell stable symbol references.
+- `DECLINED_CONVENTIONS` and `DeclinedConvention` list the entry-point conventions of other tools the analysis does not read.
+- `CONTRACT_VERSION` is the version of the [deadset Contract](https://github.com/cplieger/deadset-spec) this analyzer implements.
 
-- `run(args, out, err, host, openClient?)`: runs the command line over `args` (the arguments after the program name), writing to the two `Writer` streams, and returns the exit code. It never exits the process.
-- `SETTING_OPTIONS`: the configuration setting each command-line option supplies, by option name.
-- `Writer`: `{ write(text: string): void }`. `process.stdout` and `process.stderr` satisfy it.
+A TypeScript caller that imports the source sets `allowImportingTsExtensions`, because each import in it ends in `.ts`. [Using deadset-ts as a library](docs/library.md) covers the packages and in-process runs, and [JSR](https://jsr.io/@cplieger/deadset-ts/doc) has the full reference.
 
-The platform:
+## Related projects
 
-- `Host`: the filesystem a run reads, the directory it reads relative paths against, and the analyzer's own version.
-- `DirectoryEntry`, `PathKind`: one entry of a directory read, and what one path names.
+deadset-ts implements the [deadset Contract](https://github.com/cplieger/deadset-spec), which fixes the issue codes, the report schema and the exit codes. It passes the Contract's conformance corpus except one reflective-lookup fixture, the gap [`conformance.json`](conformance.json) declares.
 
-Positions:
+- [deadset-go](https://github.com/cplieger/deadset-go) is the same analysis for Go modules.
+- [deadset](https://github.com/cplieger/deadset) runs both analyzers as one command and merges their reports, resolving the edges between Go and TypeScript code.
 
-- `renderPosition(file, root, offset)`: one compiler offset as a path, a line and a column, the column counting UTF-16 code units.
-- `positionKey(position)`, `byPosition(a, b)`: the string one position is keyed by, and the order positions are reported in.
-- `PositionError`: the refusal for a position that cannot be rendered against the target root.
-- `Position`: one rendered position.
+## Documentation
 
-Stable symbol references:
-
-- `renderRef(module, fragment)`: one symbol's stable reference, in the canonical spelling the contract's grammar fixes.
-- `nameComponent(name)`, `computedComponent(text)`: the canonical spelling of one component of that reference, from a declared name or from a computed key.
-- `isRef(value)`: whether one string is a reference of this language's grammar.
-- `REF_EXPRESSIONS`: one regular expression per form the grammar defines.
-- `Module`, `Component`, `Fragment`, `DependencySection`: the module half of a reference, one component of its fragment, what the fragment names, and the manifest section a dependency was declared in.
-
-Entry points:
-
-- `DECLINED_CONVENTIONS`, `DeclinedConvention`: the entry-point conventions of other tools the analysis does not read, one row per tool or convention with the reason.
-
-Versions:
-
-- `CONTRACT_VERSION`: the contract version this analyzer implements.
+- [Commands and exit codes](docs/commands.md) lists every verb, option, rendering and exit code.
+- [Configuration](docs/configuration.md) lists every setting, the suppression files and the scope document.
+- [How deadset-ts works](docs/how-it-works.md) explains the projects it loads, the roots it starts from and what it holds back.
+- [Using deadset-ts as a library](docs/library.md) covers the npm and JSR packages and running the analyzer in-process.
+- [Batch-cap calibration](docs/batch-cap-calibration.md) is the measurement behind the batch size of the reference pass.
 
 ## Contributing
 

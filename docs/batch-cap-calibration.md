@@ -1,37 +1,22 @@
 # Batch-cap calibration
 
-The reference pass resolves a file's name nodes in batches. One batch is answered by
-an array of its own length, so an uncapped batch over a large file makes one answer
-proportional to that file, and the pass caps the batch at `ReferenceOptions.batchCap`,
-whose default is `DEFAULT_BATCH_CAP`. This page is the measurement that set that
-default, and the numbers a reader can check it against.
+The reference pass resolves a file's name nodes in batches. One batch is answered by an array of its own length, so an uncapped batch over a large file makes one answer proportional to that file. The pass caps the batch at `ReferenceOptions.batchCap`, whose default is `DEFAULT_BATCH_CAP`. This page is the measurement that set that default, and the numbers a reader can check it against.
 
 ## What the sweep measured
 
-`scripts/calibrate-batch-cap.ts` opens one compiler client per measurement with the
-client's timing collection on, runs the inventory and then the reference pass over
-every project a package holds, and reports what the run cost. Each package was
-measured at five cap values, `256`, `1024`, `4096`, `16384` and uncapped, five times
-each; every number below is the median of the five. Uncapped means one batch per
-file, whatever the file's name-node count.
+`scripts/calibrate-batch-cap.ts` opens one compiler client per measurement with the client's timing collection on, runs the inventory and then the reference pass over every project a package holds, and reports what the run cost. Each package was measured at five cap values, `256`, `1024`, `4096`, `16384` and uncapped, five times each. Every number below is the median of the five. Uncapped means one batch per file, whatever the file's name-node count.
 
-Each row carries seven numbers. **File batches** is one batched lookup per capped run
-of a file's name nodes, summed over the package's files. **Round trips** is every
-request the client made, the two per-node accessors and the inventory's own lookups
-included. **Round-trip latency** and **server time** are the client's own totals, the
-second being the time the server spent handling those requests. **Bytes sent** and
-**bytes received** are the request and response payloads. **Median wall clock** covers
-discovery, the snapshot and both passes.
+Each row carries seven numbers:
 
-Nine packages were swept and seven are in the numbers. Each is named by the label the
-command below gives its target. `marotte-static-src` and `web-terminal-kiro-static-src`
-have no manifest `name`, so their labels join the repository's name to the directory
-the package sits in. Both packages not in the numbers are refused by the same rule,
-that a target the compiler reports an error for is not analyzed.
-`@cplieger/deadset-ts` holds a project whose sources carry a deliberate type error.
-`marotte-static-src` holds a compiler configuration that names no input file, because
-every path its `include` list names is also named by the `exclude` list it inherits
-from the configuration it extends.
+- File batches count one batched lookup per capped run of a file's name nodes, summed over the package's files.
+- Round trips count every request the client made, the two per-node accessors and the inventory's own lookups included.
+- Round-trip latency and server time are the client's own totals, the second being the time the server spent handling those requests.
+- Bytes sent and bytes received measure the request and response payloads.
+- Median wall clock covers discovery, the snapshot and both passes.
+
+Nine packages were swept and seven are in the numbers. Each is named by the label the command below gives its target. `marotte-static-src` and `web-terminal-kiro-static-src` have no manifest `name`, so their labels join the repository's name to the directory the package sits in.
+
+Both packages not in the numbers are refused by one rule. A target the compiler reports an error for is not analyzed. `@cplieger/deadset-ts` holds a project whose sources carry a deliberate type error. `marotte-static-src` holds a compiler configuration that names no input file, because every path its `include` list names is also named by the `exclude` list it inherits from the configuration it extends.
 
 ## The numbers
 
@@ -107,12 +92,7 @@ from the configuration it extends.
 
 ## The bound on a run's round trips
 
-Three terms bound the round trips a run makes: the file batches, one per capped run of
-a file's name nodes; the residue fallbacks, one per name node a batch left unresolved;
-and the pair assignability calls, one declared-type read per interface of the
-conversion set plus one assignability check per class-and-interface pair in it. The
-third is zero in every row below, because the calls are made by the
-interface-satisfaction pass, which this version does not run.
+Three terms bound the round trips a run makes. The file batches are one per capped run of a file's name nodes. The residue fallbacks are one per name node a batch left unresolved. The pair assignability calls are one declared-type read per interface of the conversion set, plus one assignability check per class-and-interface pair in it. The third is zero in every row below, because the interface-satisfaction pass makes those calls and the sweep runs only the inventory and the reference pass.
 
 | Package                       | File batches at `4096` | Residue fallbacks | Pair assignability calls |
 | ----------------------------- | ---------------------- | ----------------- | ------------------------ |
@@ -128,40 +108,19 @@ interface-satisfaction pass, which this version does not run.
 
 `DEFAULT_BATCH_CAP` is 4096.
 
-The cap changes the round-trip count and nothing else. Between `256` and uncapped the
-bytes a run transfers move by less than one part in two thousand on every package, and
-the largest package reads 44,787,239 bytes at `256` against 44,787,037 uncapped: the
-answers are the same answers, split into a different number of messages. What the cap
-does move is the count of those messages, and that count reaches its floor at `4096`.
-Every package makes the same number of round trips at `4096`, at `16384` and uncapped
-to within two requests, while `256` costs 6 per cent more on the largest package and
-`1024` one per cent more. Above `4096` there is nothing left to win: no file in the
-sweep holds more than 16384 name nodes, so `16384` is already one batch per file
-everywhere.
+The cap changes the round-trip count and nothing else. Between `256` and uncapped, the bytes a run transfers move by less than one part in two thousand on every package. The largest package reads 44,787,239 bytes at `256` against 44,787,037 uncapped. The answers are the same answers, split into a different number of messages.
 
-The wall clock does not rank the caps and is not what chose the default. Its spread
-across the five repeats of one row reaches 114 per cent, and two independent runs of
-the whole sweep reproduced every round-trip count and file-batch count exactly while
-their wall-clock medians differed by between 0.59 and 2.34 times. A
-difference of two round trips in 2913 is far below that noise, so the wall clock can
-neither confirm nor refuse a cap in this range.
+What the cap does move is the count of those messages, and that count reaches its floor at `4096`. Every package makes the same number of round trips at `4096`, at `16384` and uncapped, to within two requests. On the largest package, `256` costs 6 per cent more and `1024` one per cent more. Above `4096` there is nothing left to win. No file in the sweep holds more than 16384 name nodes, so `16384` is already one batch per file everywhere.
 
-So `4096` stays, and it stays for the reason the cap exists. The cap bounds the size of
-one answer, and the measurement says that bound costs at most two extra round trips out
-of about 2900 on the largest package here: two of its files hold more than 4096 name
-nodes, and each of those costs one extra batch. Dropping the cap to buy those two
-requests back would let one answer grow with the largest file in the tree, which is the
-cost the cap exists to refuse. A lower cap is measurably worse, and a higher one buys
-nothing this sweep can see.
+The wall clock does not rank the caps and is not what chose the default. Its spread across the five repeats of one row reaches 114 per cent. Two independent runs of the whole sweep reproduced every round-trip count and file-batch count exactly, while their wall-clock medians differed by between 0.59 and 2.34 times. A difference of two round trips in 2913 is far below that noise, so the wall clock can neither confirm nor refuse a cap in this range.
+
+So `4096` stays, and it stays for the reason the cap exists. The cap bounds the size of one answer, and the measurement says that bound costs at most two extra round trips out of about 2900 on the largest package here. Two of its files hold more than 4096 name nodes, and each of those costs one extra batch.
+
+Dropping the cap to buy those two requests back would let one answer grow with the largest file in the tree, which is the cost the cap exists to refuse. A lower cap is measurably worse, and a higher one buys nothing this sweep can see.
 
 ## Regenerating this page
 
-The numbers come from one run of the harness over the nine targets this command names,
-and the document it wrote is committed beside this page as `batch-cap-calibration.json`.
-It holds every sample, not only the medians, and the tables above are its medians. The
-command runs from this checkout, with each of the other repositories cloned beside it
-under one parent directory, so every path is relative to this checkout. Each target has
-its dependencies installed, because the analysis resolves the types its sources import:
+The numbers come from one run of the harness over the nine targets this command names, and the document it wrote is committed beside this page as `batch-cap-calibration.json`. It holds every sample, not only the medians, and the tables above are its medians. The command runs from this checkout, with each of the other repositories cloned beside it under one parent directory, so every path is relative to this checkout. Each target has its dependencies installed, because the analysis resolves the types its sources import:
 
 ```sh
 node scripts/calibrate-batch-cap.ts \
@@ -179,24 +138,12 @@ node scripts/calibrate-batch-cap.ts \
 npx prettier --write docs/batch-cap-calibration.json
 ```
 
-`--target` is repeatable and takes a package root and the name every row of that package
-carries, spelled `<path>=<label>`. A target with no label is refused. `--chosen-default`
-is the cap the record reports as chosen, and a test refuses a record whose chosen
-default is not `DEFAULT_BATCH_CAP`, so the two cannot drift apart.
+`--target` is repeatable and takes a package root and the name every row of that package carries, spelled `<path>=<label>`. A target with no label is refused. `--chosen-default` is the cap the record reports as chosen, and a test refuses a record whose chosen default is not `DEFAULT_BATCH_CAP`, so the two cannot drift apart.
 
-The samples were measured on 2026-09-20. How closely a run of the command over the same
-sources reproduces a number depends on what the number measures:
+The samples were measured on 2026-09-20. How closely a run of the command over the same sources reproduces a number depends on what the number measures:
 
 - File batches, residue fallbacks and round trips reproduce exactly.
-- Bytes sent and bytes received also count the path of every file the run asks about,
-  in the requests and in the answers, so a target read from a longer path transfers
-  more bytes. From a path of the same length, both reproduce to within two parts in ten
-  thousand.
-- Round-trip latency, server time and the wall clock follow the load on the machine,
-  and no bound holds for them.
+- Bytes sent and bytes received also count the path of every file the run asks about, in the requests and in the answers, so a target read from a longer path transfers more bytes. From a path of the same length, both reproduce to within two parts in ten thousand.
+- Round-trip latency, server time and the wall clock follow the load on the machine, and no bound holds for them.
 
-A run on 2026-10-01 over `@cplieger/fetch` and `web-terminal-kiro-static-src`, from the
-same sources at paths as long as the record's, reproduced every file batch, residue
-fallback, round trip and median of bytes sent in their ten rows exactly. Its medians of
-bytes received were within 46 bytes of the record's, and its wall-clock medians read
-between 0.35 and 1.07 times the record's.
+A run on 2026-10-01 over `@cplieger/fetch` and `web-terminal-kiro-static-src` read the same sources from paths as long as the record's. It reproduced every file batch, residue fallback, round trip and median of bytes sent in their ten rows exactly. Its medians of bytes received were within 46 bytes of the record's, and its wall-clock medians read between 0.35 and 1.07 times the record's.
