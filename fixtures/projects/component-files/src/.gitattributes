@@ -1,0 +1,2 @@
+# Line endings are the subject of this fixture: keep them byte for byte.
+Crlf.vue -text
