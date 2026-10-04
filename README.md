@@ -105,7 +105,7 @@ deadset-ts implements the [deadset Contract](https://github.com/cplieger/deadset
 
 ## Contributing
 
-See [CONTRIBUTING.md](https://github.com/cplieger/.github/blob/main/CONTRIBUTING.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Disclaimer
 
