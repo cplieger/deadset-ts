@@ -270,7 +270,7 @@ function readProjects<Answer>(
   }
   if (failures.length > 0) {
     throw new DiscoveryError(
-      `${String(failures.length)} error(s); no answer was produced`,
+      `${String(failures.length)} error(s), so no answer was produced`,
       failures,
     );
   }

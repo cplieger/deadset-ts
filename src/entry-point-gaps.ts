@@ -249,7 +249,7 @@ const PARTLY_ENTERED: readonly DeclinedConvention[] = [
     tool: "vite",
     convention: "its configuration and every entry point it names",
     reason:
-      "Only a worker a call addresses by a literal is entered; no rule reads the " +
+      "Only a worker a call addresses by a literal is entered. No rule reads the " +
       "configuration, so a file only it names is reported as never imported.",
   },
   {
@@ -284,7 +284,7 @@ const PARTLY_ENTERED: readonly DeclinedConvention[] = [
     tool: "webpack",
     convention: "its configuration and every entry point it names",
     reason:
-      "Only a worker a call addresses by a literal is entered; no rule reads the " +
+      "Only a worker a call addresses by a literal is entered. No rule reads the " +
       "configuration, so a file only it names is reported as never imported.",
   },
 ];

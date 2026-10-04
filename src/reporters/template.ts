@@ -893,7 +893,7 @@ class Execution {
     let held = value;
     for (const name of names) {
       if (!isObject(held)) {
-        throw new RenderError(`can't evaluate field ${name} in a ${kindOf(held)}`);
+        throw new RenderError(`cannot evaluate field ${name} in a ${kindOf(held)}`);
       }
       if (!Object.hasOwn(held, name)) {
         throw new RenderError(`the document has no member ${JSON.stringify(name)} here`);
@@ -927,7 +927,7 @@ class Execution {
     }
     if (head.k !== "func") {
       if (rest.length > 0 || piped !== undefined) {
-        throw new RenderError("can't give an argument to a non-function");
+        throw new RenderError("cannot give an argument to a non-function");
       }
       return this.arg(head, dot);
     }
@@ -1021,7 +1021,7 @@ class Execution {
           .sort()
           .map((key) => [key, value[key] ?? null]);
       } else {
-        throw new RenderError(`range can't iterate over a ${kindOf(value)}`);
+        throw new RenderError(`range cannot iterate over a ${kindOf(value)}`);
       }
       if (entries.length === 0) {
         this.run(node.otherwise, dot);

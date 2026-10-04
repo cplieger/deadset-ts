@@ -176,7 +176,7 @@ describe("the document walk", () => {
 
     expect(got.kind).toBe("unimplemented-key");
     expect(got.key).toBe("reporters.fail_under");
-    expect(got.message).toContain('the nearest implemented key is "reporters.fail_on"');
+    expect(got.message).toContain('The nearest implemented key is "reporters.fail_on"');
   });
 
   it("accepts a member name a value merely contains", () => {

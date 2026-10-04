@@ -261,9 +261,9 @@ export function unimplementedKey(label: string, path: string): ConfigError {
   const nearest = nearestKey(path);
   let hint = "";
   if (nearest === path) {
-    hint = `; ${JSON.stringify(path)} is one setting written as nested objects, not as one key`;
+    hint = `. ${JSON.stringify(path)} is one setting written as nested objects, not as one key`;
   } else if (nearest !== "") {
-    hint = `; the nearest implemented key is ${JSON.stringify(nearest)}`;
+    hint = `. The nearest implemented key is ${JSON.stringify(nearest)}`;
   }
   return new ConfigError(
     "unimplemented-key",
