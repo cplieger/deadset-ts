@@ -415,7 +415,7 @@ function declaredProjects(
     if (unnamed !== undefined) {
       throw new DiscoveryError(
         `the project ${JSON.stringify(project.id)} (${project.configFile}) references ` +
-          `${unnamed}, which the build matrix does not name; a referenced project is built ` +
+          `${unnamed}, which the build matrix does not name. A referenced project is built ` +
           "into the program that references it, so the matrix names it too",
         [],
       );

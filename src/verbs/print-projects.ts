@@ -60,7 +60,7 @@ export const printProjectsVerb: Verb = ({ out, err, host, inputs, scope, openCli
     for (const line of failures) {
       err.write(`${line}\n`);
     }
-    err.write(`deadset-ts: ${String(failures.length)} error(s); no answer was produced\n`);
+    err.write(`deadset-ts: ${String(failures.length)} error(s), so no answer was produced\n`);
     return EXIT_FAILURE;
   }
   const projects = session.projects.filter((id): id is string => id !== undefined);
