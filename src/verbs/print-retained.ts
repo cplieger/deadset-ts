@@ -15,7 +15,7 @@ import { EXIT_CLEAN, type Verb } from "./verb.ts";
 export const printRetainedVerb: Verb = ({ out, err, host, inputs, scope, openClient }) => {
   const { config } = resolve(inputs());
   const scoped = scope();
-  const swept = runSweep(openClient(false), host, scoped, config, {
+  const swept = runSweep(openClient(config), host, scoped, config, {
     marked: [],
     mode: { production: true },
   });

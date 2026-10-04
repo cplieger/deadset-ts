@@ -8,6 +8,7 @@
  * project's checker, and that holds only for views the session itself hands out.
  */
 
+import { lineOf, readComponent } from "./component-files.ts";
 import type { Config, Provenance } from "./config.ts";
 import {
   consumerLoads,
@@ -39,6 +40,7 @@ import {
   computeExemptions,
   disabledClasses,
   exemptionsOf,
+  holdingWhile,
   isUnansweredRecord,
   retainedIn,
   type Detector,
@@ -63,6 +65,7 @@ import { intraFunctionFacts, projectParts, type ProjectParts } from "./intra-fun
 import { inventory, type Inventory, type InventorySymbol } from "./inventory.ts";
 import { readManifest } from "./manifest.ts";
 import {
+  liveFilesAt,
   matrixOf,
   referenceKey,
   sweepMatrix,
@@ -72,7 +75,7 @@ import {
 } from "./matrix.ts";
 import { relativePath, resolvePath } from "./paths.ts";
 import type { UnansweredQuestion } from "./query.ts";
-import { byPosition, type Position } from "./position.ts";
+import { byPosition, isComponentFile, type Position } from "./position.ts";
 import type { TypeErrorSkip, UnansweredCount } from "./report.ts";
 import { SetupError, setupLine, type SetupFailure } from "./setup-failure.ts";
 import {
@@ -201,16 +204,17 @@ interface ReadProjects<Answer> {
   readonly notBuilt: readonly NotBuilt[];
   /** Every question the checker could not answer, each once. */
   readonly unanswered: readonly UnansweredQuestion[];
+  /** Per configuration whose component files the run cannot read, the reason. */
+  readonly componentsUnread: readonly ComponentsUnread[];
 }
 
 /**
- * Reads every project the scope discovers, and every project of each consumer it
- * declares, in one snapshot, each checked for errors first. A target project is handed to
- * `stage`, which enumerates and roots it if it reads it; a consumer project is read for
- * its references to the target. A type error in an own file skips the unit holding it. A guess that does
- * not load or meets a setup failure is dropped into `notBuilt` (see {@link isGuess}); any
- * other project that does not load or meets a setup failure fails the run, as does a run
- * whose every guess was dropped.
+ * Reads every project the scope discovers, and each declared consumer's, in one snapshot,
+ * each checked for errors first. `stage` is handed a target project and enumerates and roots
+ * it if it reads it; a consumer project is read for its references to the target. A type error
+ * in an own file skips the unit holding it. A guess that does not load or meets a setup failure
+ * is dropped into `notBuilt` (see {@link isGuess}); any other such project fails the run, as
+ * does a run whose every guess was dropped.
  */
 function readProjects<Answer>(
   engine: Engine,
@@ -280,7 +284,7 @@ function readProjects<Answer>(
       const referenceOnly =
         workspace === undefined || consumer !== undefined
           ? () => false
-          : workspace.referenceOnly(opened.configFile);
+          : workspace.referenceOnly(opened.configFile, opened.rootFiles);
       const project =
         workspace === undefined || consumer !== undefined
           ? opened
@@ -412,6 +416,7 @@ function readProjects<Answer>(
     },
     notBuilt,
     unanswered: session.unanswered,
+    componentsUnread: workspace?.componentsUnread ?? [],
   };
 }
 
@@ -509,6 +514,8 @@ export function runRoots(
 export interface RunSweep {
   readonly matrix: Matrix;
   readonly sweep: SweepResult;
+  /** The exemption records that hold under the sweep. */
+  readonly exempt: readonly Exemption[];
   /**
    * The exemption records that held back a declaration some configuration of the run
    * would otherwise judge dead, in the declarations' site order.
@@ -525,6 +532,16 @@ export interface RunSweep {
   readonly heldByUnanswered: readonly string[];
   /** The lines of the units type errors skipped, on which the run reports nothing. */
   readonly skipped: readonly SkippedUnit[];
+  /** The component files the run read, by path below the target root, each once. */
+  readonly componentFiles: readonly string[];
+}
+
+/** One `<script` start tag of a component file the run read no block for. */
+export interface ComponentWarning {
+  /** The file, below the target root. */
+  readonly path: string;
+  readonly line: number;
+  readonly reason: string;
 }
 
 /** The exemption classes this analyzer detects, each by its detector; any other retains nothing. */
@@ -548,6 +565,9 @@ interface SweptProject<Extra> {
   readonly unanswered: readonly string[];
   readonly typeErrorSkips: readonly TypeErrorSkip[];
   readonly skipped: readonly SkippedUnit[];
+  /** The component files the project holds of its own, by path below the target root. */
+  readonly componentFiles: readonly string[];
+  readonly componentWarnings: readonly ComponentWarning[];
   readonly extra: Extra;
 }
 
@@ -564,6 +584,8 @@ interface ReadRun<Extra> {
   readonly notBuilt: readonly NotBuilt[];
   /** Every question the checker could not answer, each once. */
   readonly unanswered: readonly UnansweredQuestion[];
+  /** Per configuration whose component files the run cannot read, the reason. */
+  readonly componentsUnread: readonly ComponentsUnread[];
 }
 
 /**
@@ -631,6 +653,9 @@ function readRun<Extra>(
         .map((reference) => reference.to),
       ...exempt.filter(isUnansweredRecord).map((record) => record.id),
     ];
+    const components = project.ownSourceFiles().filter(isComponentFile);
+    const pathOf = (file: (typeof components)[number]): string =>
+      relativePath(targetRoot, file.fileName) ?? file.fileName;
     return {
       configFile: projectRead.configFile,
       configured,
@@ -638,6 +663,14 @@ function readRun<Extra>(
       unanswered,
       typeErrorSkips: projectRead.typeErrorSkips,
       skipped: projectRead.skipped,
+      componentFiles: components.map(pathOf),
+      componentWarnings: components.flatMap((file) =>
+        readComponent(file.originalText).warnings.map((warning) => ({
+          path: pathOf(file),
+          line: lineOf(file.originalText, warning.offset),
+          reason: warning.reason,
+        })),
+      ),
       extra: extra(project, projectRead, made),
     };
   });
@@ -666,7 +699,35 @@ function readRun<Extra>(
     consumers: read.consumers.loaded,
     notBuilt: read.notBuilt,
     unanswered: read.unanswered,
+    componentsUnread: read.componentsUnread,
   };
+}
+
+/**
+ * The run swept under one set of marks with the records that hold. A record a component
+ * file's markup holds counts only while the file is live, and what it holds may be what
+ * keeps the file live, so each file's markup joins only once a sweep without it finds the
+ * file live, until a sweep finds no further file live.
+ */
+function holdingSweep<Extra>(
+  read: ReadRun<Extra>,
+  input: Pick<SweepInput, "marked" | "mode">,
+): { readonly swept: SweepInput; readonly result: SweepResult } {
+  const paths = new Set(read.exempt.flatMap((record) => record.whileLive ?? []));
+  let live = new Set<string>();
+  for (;;) {
+    const swept: SweepInput = {
+      ...input,
+      exempt: holdingWhile(read.exempt, live),
+      unanswered: read.unansweredHeld,
+    };
+    const result = sweepMatrix(read.matrix, swept);
+    const next = new Set(liveFilesAt(read.matrix, result, paths).map((one) => one.position.path));
+    if (next.size === live.size) {
+      return { swept, result };
+    }
+    live = next;
+  }
 }
 
 /**
@@ -680,8 +741,8 @@ function sweptOf<Extra>(
   read: ReadRun<Extra>,
   input: Pick<SweepInput, "marked" | "mode">,
 ): RunSweep {
-  const swept: SweepInput = { ...input, exempt: read.exempt, unanswered: read.unansweredHeld };
-  const result = sweepMatrix(read.matrix, swept);
+  const { swept, result } = holdingSweep(read, input);
+  const exempt = swept.exempt ?? [];
   const held = new Set(read.unansweredHeld);
   if (held.size > 0) {
     // What a declaration reads where the checker did not answer is unknown, so a rule
@@ -702,7 +763,7 @@ function sweptOf<Extra>(
     );
     const bare: SweepInput = {
       ...swept,
-      exempt: read.exempt.filter((record) => !isUnansweredRecord(record)),
+      exempt: exempt.filter((record) => !isUnansweredRecord(record)),
       unanswered: [],
     };
     for (const candidate of sweepMatrix(answered, bare).candidates) {
@@ -718,11 +779,13 @@ function sweptOf<Extra>(
   return {
     matrix: read.matrix,
     sweep: result,
+    exempt,
     retained: retainedIn(read.matrix, swept),
     notBuilt: read.notBuilt,
     unanswered: read.unanswered,
     heldByUnanswered: [...held],
     skipped: read.projects.flatMap((one) => one.skipped),
+    componentFiles: [...new Set(read.projects.flatMap((one) => one.componentFiles))].sort(compare),
   };
 }
 
@@ -826,7 +889,7 @@ function emitterInputOver(
         references: one.configured.references,
         accessors: one.extra.accessors,
       })),
-      read.exempt,
+      swept.exempt,
       input.mode,
     ),
     dependencies: dependenciesOf(
@@ -852,7 +915,7 @@ function emitterInputOver(
     intraFunction: intraFunctionFacts(
       projects.map((one) => one.extra.parts),
       projects.flatMap((one) => one.configured.references),
-      new Set([...read.exempt.map((one) => one.id), ...swept.heldByUnanswered]),
+      new Set([...swept.exempt.map((one) => one.id), ...swept.heldByUnanswered]),
     ),
   };
 }
@@ -934,9 +997,17 @@ function readAnalysis(
         read.projects.flatMap((one) => one.configured.supportFiles ?? []),
       ),
       typeErrorSkips: read.projects.flatMap((one) => one.typeErrorSkips),
+      componentWarnings: [
+        ...new Map(
+          read.projects
+            .flatMap((one) => one.componentWarnings)
+            .map((one) => [`${one.path}:${String(one.line)}:${one.reason}`, one] as const),
+        ).values(),
+      ],
       consumers: read.consumers,
       notBuilt: read.notBuilt,
       unanswered: read.unanswered,
+      componentsUnread: read.componentsUnread,
     },
     configured: read.projects.map((one) => one.configured),
     symbols,
@@ -1009,6 +1080,16 @@ export interface RunFacts {
   readonly unanswered: readonly UnansweredQuestion[];
   /** Every type error that skipped a unit, in the run's order. */
   readonly typeErrorSkips: readonly TypeErrorSkip[];
+  /** Every `<script` start tag a component file holds that no block was read for, each once. */
+  readonly componentWarnings: readonly ComponentWarning[];
+  /** Per configuration whose component files the run cannot read, the reason. */
+  readonly componentsUnread: readonly ComponentsUnread[];
+}
+
+/** One configuration whose component files a run cannot read. */
+export interface ComponentsUnread {
+  readonly configFile: string;
+  readonly reason: string;
 }
 
 /** The findings of one run, beside what a report states about the run itself. */

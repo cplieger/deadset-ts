@@ -5,7 +5,7 @@ import type { Host } from "./host.ts";
 import { joinPath, resolvePath } from "./paths.ts";
 import { readScope, ScopeError, scopeForDir, type Scope } from "./scope.ts";
 import { SetupError, setupLine } from "./setup-failure.ts";
-import { openEngine, type Engine } from "./session.ts";
+import { openEngine, type Engine, type EngineOptions } from "./session.ts";
 import { printConfigVerb } from "./verbs/print-config.ts";
 import { printProjectsVerb } from "./verbs/print-projects.ts";
 import { printRetainedVerb } from "./verbs/print-retained.ts";
@@ -205,7 +205,7 @@ export function run(
   out: Writer,
   err: Writer,
   host: Host,
-  openClient: (collectTiming: boolean) => Engine = (collectTiming) => openEngine({ collectTiming }),
+  openClient: (options: EngineOptions) => Engine = openEngine,
 ): number {
   const editing = sourceEditOption(args);
   if (editing !== undefined) {
@@ -244,7 +244,7 @@ function invoke(
   own: VerbOptions,
   args: readonly string[],
   streams: { readonly out: Writer; readonly err: Writer; readonly host: Host },
-  openClient: (collectTiming: boolean) => Engine,
+  openClient: (options: EngineOptions) => Engine,
 ): number {
   let options: Options | undefined;
   const read = (): Options => (options ??= readOptions(args, own));
@@ -257,8 +257,11 @@ function invoke(
       scope: () => scopeOf(streams.host, read()),
       option: (name) => read().named.get(name),
       repeated: (name) => read().repeated.get(name) ?? [],
-      openClient: (collectTiming) => {
-        opened = openClient(collectTiming);
+      openClient: (config) => {
+        opened = openClient({
+          collectTiming: false,
+          components: { extensions: config.ts.componentExtensions, host: streams.host },
+        });
         return opened;
       },
       emitters: EMITTERS,

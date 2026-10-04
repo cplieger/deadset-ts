@@ -5,6 +5,10 @@
   },
   "ts": {
     "test_files": ["**/*.test.{ts,tsx,mts,cts}", "__test-helpers__/**/*.ts"],
-    "entry_files": ["bin/deadset-ts.ts", "scripts/calibrate-batch-cap.ts"]
+    "entry_files": [
+      "bin/deadset-ts.ts",
+      "bin/component-mapper.ts",
+      "scripts/calibrate-batch-cap.ts"
+    ]
   }
 }

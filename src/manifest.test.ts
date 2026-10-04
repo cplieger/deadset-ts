@@ -16,6 +16,10 @@ function hostWith(manifest: string | undefined): Host {
     kindOf: () => "absent",
     realPath: (path) => path,
     analyzerVersion: () => "0.0.0",
+    temporaryDirectory: () => {
+      throw new Error("no temporary directory");
+    },
+    componentMapperCommand: () => [],
     writeDocument: (path) => {
       throw new Error(`${path}: this host writes nothing`);
     },

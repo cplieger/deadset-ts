@@ -1,4 +1,4 @@
-import type { Inputs } from "../config.ts";
+import type { Config, Inputs } from "../config.ts";
 import type { Emitters } from "../findings/emitter.ts";
 import type { Host } from "../host.ts";
 import type { Writer } from "../run.ts";
@@ -24,8 +24,11 @@ export interface Invocation {
   readonly inputs: () => Inputs;
   /** The scope the options name: the document `--scope` names, or the target. */
   readonly scope: () => Scope;
-  /** Opens the compiler client. A client the verb opened is closed if the verb throws. */
-  readonly openClient: (collectTiming: boolean) => Engine;
+  /**
+   * Opens the compiler client for a run under `config`. A client the verb opened is
+   * closed if the verb throws.
+   */
+  readonly openClient: (config: Config) => Engine;
   /** The emitter of every kind family, which a verb that reports findings runs. */
   readonly emitters: Emitters;
   /** The arguments after the verb's name, as written. */

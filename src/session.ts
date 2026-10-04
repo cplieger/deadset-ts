@@ -14,7 +14,11 @@ import type {
   TimingInfo,
 } from "@typescript/native/unstable/sync";
 import type { Node, SourceFile } from "@typescript/native/unstable/ast";
+import { componentLayer, mapperManifest } from "./component-layer.ts";
 import { DiscoveryError } from "./discover.ts";
+import type { Host, TemporaryDirectory } from "./host.ts";
+import type { WorkspaceProgram } from "./workspace-programs.ts";
+import { joinPath } from "./paths.ts";
 import {
   queriesOf,
   UnansweredLog,
@@ -39,14 +43,24 @@ export interface Engine {
    * the compiler package returns here is not one of its exported names.
    */
   parseConfigFile(file: DocumentIdentifier): ReturnType<API["parseConfigFile"]>;
+  /** Resolves one configuration's JSON as if `configFile` held it, which no file need. */
+  parseConfigJson(json: unknown, configFile: string): ReturnType<API["parseConfigFile"]>;
   /**
    * Opens one snapshot holding every project named and every program described, the
-   * programs in the order given in the snapshot's operation.
+   * programs in the order given in the snapshot's operation. A project named in
+   * `configurations` is opened from that configuration text, which the snapshot alone
+   * holds.
    */
   createSnapshot(
     openProjects: readonly string[],
     createPrograms?: readonly CreateSnapshotProgramParams[],
+    configurations?: ReadonlyMap<string, string>,
   ): Snapshot;
+  /**
+   * Whether the snapshots read component files. A described program reads none, because
+   * the compiler gives a program no content mapper.
+   */
+  readonly readsComponents: boolean;
   /**
    * A module resolver answering each entry's import with the entry's file, and every
    * other import as the compiler resolves it.
@@ -73,6 +87,20 @@ export interface Engine {
 export interface EngineOptions {
   /** Collect per-request timing, which the calibration record reads. */
   readonly collectTiming: boolean;
+  /**
+   * The component files every snapshot reads. Present, every configuration a snapshot opens
+   * takes this analyzer's mapper in place of its own, or no mapper where no extension is
+   * listed, and with an extension the client runs that mapper from a temporary directory the
+   * close removes. Absent, the configurations are opened as they are and no mapper runs.
+   */
+  readonly components?: ComponentReading;
+}
+
+/** Which files a run reads as component files, and the host that runs their mapper. */
+export interface ComponentReading {
+  /** The file name extensions of component files, `ts.component_extensions`. */
+  readonly extensions: readonly string[];
+  readonly host: Host;
 }
 
 /**
@@ -83,15 +111,49 @@ export interface EngineOptions {
  * second call has nothing left to do.
  */
 export function openEngine(options: EngineOptions): Engine {
-  const api = new API({ collectTiming: options.collectTiming });
+  const { components } = options;
+  let mapper: TemporaryDirectory | undefined;
+  if (components !== undefined && components.extensions.length > 0) {
+    const made = components.host.temporaryDirectory();
+    try {
+      components.host.writeDocument(joinPath(made.path, "package.json"), [
+        mapperManifest(components.host.componentMapperCommand()),
+      ]);
+    } catch (error: unknown) {
+      made.remove();
+      throw error;
+    }
+    mapper = made;
+  }
+  const api = new API({
+    collectTiming: options.collectTiming,
+    ...(mapper === undefined ? {} : { runExternalCode: true }),
+  });
   let closed = false;
   return {
     parseConfigFile: (file) => api.parseConfigFile(file),
-    createSnapshot: (openProjects, createPrograms) =>
+    parseConfigJson: (json, configFile) =>
+      api.parseJsonConfigFileContent(json, { configFileName: configFile }),
+    createSnapshot: (openProjects, createPrograms, configurations = new Map()) =>
       api.createSnapshot({
         openProjects: [...openProjects],
         ...(createPrograms === undefined ? {} : { createPrograms: [...createPrograms] }),
+        ...(components === undefined
+          ? configurations.size === 0
+            ? {}
+            : { fileSystem: { kind: "layer", files: Object.fromEntries(configurations) } }
+          : {
+              fileSystem: componentLayer(
+                components.host,
+                openProjects,
+                mapper === undefined
+                  ? undefined
+                  : { extensions: components.extensions, packageDirectory: mapper.path },
+                configurations,
+              ),
+            }),
       }),
+    readsComponents: mapper !== undefined,
     createModuleResolver: (options, entries) =>
       api.createModuleResolver(options, {
         moduleResolutions: { fallback: "resolve", entries: [...entries] },
@@ -105,7 +167,11 @@ export function openEngine(options: EngineOptions): Engine {
         return;
       }
       closed = true;
-      api.close();
+      try {
+        api.close();
+      } finally {
+        mapper?.remove();
+      }
     },
   };
 }
@@ -137,6 +203,11 @@ export interface ProjectView<Brand> {
    * trip, and one may go unanswered.
    */
   readonly queries: Queries;
+  /**
+   * The files the project's configuration names, as the project reads them, so a
+   * component file a mapper reads is among them.
+   */
+  readonly rootFiles: readonly string[];
   /** The source files the program holds that are the target's own. */
   ownSourceFiles(): readonly SourceFile[];
   /**
@@ -245,6 +316,7 @@ function viewOf<Brand>(
   return {
     configFile,
     program: project.program,
+    rootFiles: project.parsedCommandLine.fileNames,
     queries,
     ownSourceFiles,
     ownPaths: () => {
@@ -372,12 +444,20 @@ export interface SessionResult<Result> {
 /** What a run does about a configuration the snapshot opened no project for. */
 type Unopened = "refuse" | "record";
 
-/** The projects one snapshot holds for the configurations named, by configuration file. */
-function projectsOf(snapshot: Snapshot, built: readonly string[]): ReadonlyMap<string, Project> {
+/**
+ * The projects one snapshot holds for the configurations named, by configuration file. A
+ * project opened from a written configuration is the project of the configuration
+ * `written` maps it to.
+ */
+function projectsOf(
+  snapshot: Snapshot,
+  built: readonly string[],
+  written: ReadonlyMap<string, string>,
+): ReadonlyMap<string, Project> {
   const opened = new Map<string, Project>();
   for (const project of snapshot.getProjects()) {
     if (project.configFileName !== undefined) {
-      opened.set(project.configFileName, project);
+      opened.set(written.get(project.configFileName) ?? project.configFileName, project);
     }
   }
   (snapshot.operation.createdPrograms ?? []).forEach((program, at) => {
@@ -391,30 +471,42 @@ function projectsOf(snapshot: Snapshot, built: readonly string[]): ReadonlyMap<s
 }
 
 /**
- * Runs `visit` over every project the compiler configurations name, inside one never
- * updated snapshot of one client, and answers in the order they are named. A
- * configuration `programs` describes is built as that program instead of opened as a
- * project. A configuration the snapshot holds nothing for ends the run under `"refuse"`
- * and is named in the result under `"record"`. The snapshot is disposed after the last
- * visit and the client released after it, whether the visit completed or threw.
+ * Runs `visit` over every project the compiler configurations name, inside one never updated
+ * snapshot of one client, and answers in their order. A configuration `programs` describes is
+ * built as that program, or opened from the configuration it writes, instead of as a project.
+ * One the snapshot holds nothing for ends the run under `"refuse"` and is named in the result
+ * under `"record"`. The snapshot is disposed after the last visit and the client released
+ * after it, whether the visit completed or threw.
  */
 export function runSession<Result>(
   engine: Engine,
   configFiles: readonly string[],
   visit: ProjectVisitor<Result>,
   unopened: Unopened = "refuse",
-  programs: ReadonlyMap<string, CreateSnapshotProgramParams> = new Map(),
+  programs: ReadonlyMap<string, WorkspaceProgram> = new Map(),
 ): SessionResult<Result> {
   try {
-    const built = configFiles.filter((configFile) => programs.has(configFile));
+    const built: string[] = [];
+    const params: CreateSnapshotProgramParams[] = [];
+    const written = new Map<string, string>();
+    const texts = new Map<string, string>();
+    for (const configFile of configFiles) {
+      const program = programs.get(configFile);
+      if (program?.kind === "program") {
+        built.push(configFile);
+        params.push(program.params);
+      } else if (program?.kind === "configuration") {
+        written.set(program.file, configFile);
+        texts.set(program.file, program.text);
+      }
+    }
     const snapshot = engine.createSnapshot(
-      configFiles.filter((configFile) => !programs.has(configFile)),
-      built.length === 0
-        ? undefined
-        : built.flatMap((configFile) => programs.get(configFile) ?? []),
+      [...configFiles.filter((configFile) => !programs.has(configFile)), ...written.keys()],
+      params.length === 0 ? undefined : params,
+      texts,
     );
     try {
-      const opened = projectsOf(snapshot, built);
+      const opened = projectsOf(snapshot, built, written);
       const log = new UnansweredLog();
       const projects: Result[] = [];
       const missing: string[] = [];

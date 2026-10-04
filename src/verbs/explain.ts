@@ -367,7 +367,7 @@ export const explainVerb: Verb = ({ out, err, host, inputs, scope, openClient, o
   const named = namedSymbol(option);
   const { config, provenance } = resolve(inputs());
   const scoped = scope();
-  const analysis = runAnalysis(openClient(false), host, scoped, config, provenance, {
+  const analysis = runAnalysis(openClient(config), host, scoped, config, provenance, {
     production: true,
   });
   const { subject, candidates } = subjectOf(analysis.swept.matrix.union.symbols, named);

@@ -208,6 +208,23 @@ export function sweepMatrix(matrix: Matrix, input: SweepInput): SweepResult {
   };
 }
 
+/**
+ * The file declarations at `paths`, below the target root, that one sweep holds live
+ * under both relations, the rule a judged declaration is live by.
+ */
+export function liveFilesAt(
+  matrix: Matrix,
+  result: SweepResult,
+  paths: ReadonlySet<string>,
+): readonly InventorySymbol[] {
+  return matrix.union.symbols.filter(
+    (symbol) =>
+      symbol.kind === "file" &&
+      paths.has(symbol.position.path) &&
+      (result.liveUnder.get(symbol.id)?.length ?? 0) === RELATIONS.length,
+  );
+}
+
 /** The relations in the order a declaration's entry lists them. */
 const RELATIONS: readonly Relation[] = ["reference-counting", "reachability"];
 

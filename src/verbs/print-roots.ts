@@ -28,7 +28,7 @@ function rootLine(root: RunRoot, several: boolean): string {
 export const printRootsVerb: Verb = ({ out, err, host, inputs, scope, openClient }) => {
   const { config, provenance } = resolve(inputs());
   const scoped = scope();
-  const answer = runRoots(openClient(false), host, scoped, config, provenance);
+  const answer = runRoots(openClient(config), host, scoped, config, provenance);
   const several = answer.configurations.length > 1;
   for (const root of answer.roots) {
     out.write(`${rootLine(root, several)}\n`);

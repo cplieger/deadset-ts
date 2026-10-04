@@ -1,5 +1,6 @@
 import { evaluateEdges, type EdgeEvaluation } from "../edges.ts";
 import type { CompletedFinding } from "../finding.ts";
+import { liveFilesAt } from "../matrix.ts";
 import { ledgerOf, type Dials, type Ledger, type SuppressionRecord } from "../suppress.ts";
 import { insideSkipped } from "../type-errors.ts";
 import { completed, dialsOf, reportable } from "./completion.ts";
@@ -37,6 +38,28 @@ function heldRefs(input: EmitterInput): ReadonlySet<string> {
   return new Set(
     input.swept.matrix.union.symbols
       .filter((symbol) => held.has(symbol.id))
+      .map((symbol) => symbol.ref),
+  );
+}
+
+/**
+ * The references of every top-level declaration of a live component file. The file's
+ * markup may use each of them, which no analysis of the markup can rule out, so the run
+ * reports nothing about one while the file is live.
+ */
+function markupRefs(input: EmitterInput): ReadonlySet<string> {
+  const { swept } = input;
+  if (swept.componentFiles.length === 0) {
+    return new Set();
+  }
+  const live = new Set(
+    liveFilesAt(swept.matrix, swept.sweep, new Set(swept.componentFiles)).map(
+      (symbol) => symbol.id,
+    ),
+  );
+  return new Set(
+    swept.matrix.union.symbols
+      .filter((symbol) => live.has(symbol.parent))
       .map((symbol) => symbol.ref),
   );
 }
@@ -110,12 +133,14 @@ export function decidedFindings(
   const would = [...unmarked, ...found];
   const ledger = ledgerOf(suppressed.records, would, dialsOver(input, found, suppressed, unmarked));
   const unanswered = heldRefs(input);
+  const markup = markupRefs(input);
   const kept = reportable(
     input,
     found.filter(
       (finding) =>
         !ledger.withheld(finding) &&
         !unanswered.has(finding.symbol.ref) &&
+        !markup.has(finding.symbol.ref) &&
         !insideSkipped(input.swept.skipped, finding.position),
     ),
   );

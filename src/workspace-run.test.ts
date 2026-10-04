@@ -4,7 +4,9 @@ import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
 import { runAnalysis, type RunAnalysis } from "./analysis.ts";
+import type { Host } from "./host.ts";
 import { resolve } from "./resolve.ts";
+import { run } from "./run.ts";
 import { scopeForDir } from "./scope.ts";
 import { openEngine, type Engine } from "./session.ts";
 
@@ -64,11 +66,19 @@ function writeWorkspace(
   return root;
 }
 
+/** An engine that reads `.vue` files as component files, as the command reads them by default. */
+function componentEngine(): Engine {
+  return openEngine({
+    collectTiming: false,
+    components: { extensions: [".vue"], host: nodeHost() },
+  });
+}
+
 /** The analysis of one target under one repository configuration. */
 function analyze(
   target: string,
   repository: Record<string, unknown> = {},
-  engine: Engine = openEngine({ collectTiming: false }),
+  engine: Engine = componentEngine(),
 ): RunAnalysis {
   const { config, provenance } = resolve({
     repository: JSON.stringify({ target: { kind: "application" }, ...repository }),
@@ -327,10 +337,164 @@ describe("a workspace package imported by name", () => {
     expect(new Set(runs.map((findings) => JSON.stringify(findings))).size).toBe(1);
   });
 
+  it("is read from the same source by a run that reads no component file", () => {
+    const root = writeWorkspace(UNBUILT);
+
+    expect(found(analyze(root, {}, openEngine({ collectTiming: false })))).toEqual([
+      "DS1001 packages/a/src/index.ts usedByNobody",
+    ]);
+  });
+
   it("is resolved from the target's workspace when the target is one of its packages", () => {
     const root = writeWorkspace(UNBUILT);
 
     expect(found(analyze(join(root, "packages/b")))).toEqual([]);
+  });
+});
+
+/**
+ * What the last snapshot of one run opens, which is the session's: the configurations
+ * written for it, the programs built, and every file its projects hold.
+ */
+function sessionKinds(): {
+  readonly engine: Engine;
+  readonly opened: { written: number; built: number };
+  readonly files: string[];
+} {
+  const real = componentEngine();
+  const opened = { written: 0, built: 0 };
+  const files: string[] = [];
+  const engine: Engine = {
+    ...real,
+    createSnapshot: (openProjects, createPrograms, configurations) => {
+      opened.written = configurations?.size ?? 0;
+      opened.built = createPrograms?.length ?? 0;
+      const snapshot = real.createSnapshot(openProjects, createPrograms, configurations);
+      files.splice(
+        0,
+        files.length,
+        ...snapshot.getProjects().flatMap((project) => project.program.getSourceFileNames()),
+      );
+      return snapshot;
+    },
+  };
+  return { engine, opened, files };
+}
+
+describe("a component file of a workspace package", () => {
+  /** `b`'s component is the only importer of `a`, and `b`'s own source imports the component. */
+  const COMPONENT: Readonly<Record<string, string>> = {
+    ...UNBUILT,
+    "packages/b/src/main.ts": 'import Widget from "./Widget.vue";\n\nconsole.log(Widget);\n',
+    "packages/b/src/Widget.vue":
+      '<script setup lang="ts">\nimport { usedBySibling } from "a";\nconst count = usedBySibling();\n</script>\n\n<template>{{ count }}</template>\n',
+  };
+
+  it("is read, and the workspace imports only it makes are read from source", () => {
+    const root = writeWorkspace(COMPONENT);
+    const { engine, opened } = sessionKinds();
+    const analysis = analyze(root, {}, engine);
+
+    expect(found(analysis)).toEqual(["DS1001 packages/a/src/index.ts usedByNobody"]);
+    expect(analysis.swept.componentFiles).toEqual(["packages/b/src/Widget.vue"]);
+    expect(analysis.run.typeErrorSkips).toEqual([]);
+    expect(opened).toEqual({ written: 1, built: 0 });
+  });
+
+  it("is judged as the package's own file where its file list names it, its markup holding the member it names", () => {
+    const root = writeWorkspace({
+      ...COMPONENT,
+      "packages/b/tsconfig.json": tsconfig({}, { include: ["src/**/*.ts", "src/**/*.vue"] }),
+      "packages/b/src/Widget.vue":
+        '<script setup lang="ts">\nimport { usedBySibling } from "a";\ninterface Row {\n  label: number;\n  spare: number;\n}\nconst row: Row = { label: usedBySibling(), spare: 0 };\n</script>\n\n<template>{{ row.label }}</template>\n',
+    });
+    const analysis = analyze(root);
+
+    expect(found(analysis)).toEqual([
+      "DS1001 packages/a/src/index.ts usedByNobody",
+      "DS1003 packages/b/src/Widget.vue Row.spare",
+    ]);
+  });
+
+  it("is read beside the workspace imports the package's own source makes", () => {
+    const root = writeWorkspace({
+      ...COMPONENT,
+      "packages/b/src/main.ts":
+        'import { usedBySibling } from "a";\nimport Widget from "./Widget.vue";\n\nconsole.log(usedBySibling, Widget);\n',
+      "packages/b/src/Widget.vue":
+        '<script setup lang="ts">\nimport { usedByNobody } from "a";\nconst count = usedByNobody();\n</script>\n\n<template>{{ count }}</template>\n',
+    });
+    const analysis = analyze(root);
+
+    expect(found(analysis)).toEqual([]);
+    expect(analysis.swept.componentFiles).toEqual(["packages/b/src/Widget.vue"]);
+  });
+
+  it("leaves the configuration's file list as it was when its output directory sits under its files", () => {
+    const root = writeWorkspace({
+      ...COMPONENT,
+      "packages/b/tsconfig.json": tsconfig({ outDir: "dist" }, { include: undefined }),
+      "packages/b/dist/stale.ts": "export const stale = 1;\n",
+    });
+    const { engine, opened, files } = sessionKinds();
+    const analysis = analyze(root, {}, engine);
+
+    expect(files.filter((file) => file.includes("/packages/b/dist/"))).toEqual([]);
+    expect(found(analysis)).toEqual(["DS1001 packages/a/src/index.ts usedByNobody"]);
+    expect(analysis.swept.componentFiles).toEqual(["packages/b/src/Widget.vue"]);
+    expect(opened).toEqual({ written: 1, built: 0 });
+  });
+
+  /**
+   * `vendor/` links `a` to a package outside the workspace, so the configuration reads
+   * `a` as the member's source from `src/` and as that package from `vendor/`.
+   */
+  function twoFilesForOneSpecifier(): string {
+    return writeWorkspace(
+      {
+        ...COMPONENT,
+        "packages/b/tsconfig.json": tsconfig({}, { include: ["src/**/*.ts", "vendor/**/*.ts"] }),
+        "packages/b/src/main.ts":
+          'import { usedBySibling } from "a";\nimport Widget from "./Widget.vue";\n\nconsole.log(usedBySibling, Widget);\n',
+        "packages/b/vendor/legacy.ts": 'import { legacy } from "a";\n\nconsole.log(legacy);\n',
+        "other/a/package.json": manifest({ name: "a", types: "./index.d.ts" }),
+        "other/a/index.d.ts": "export declare const legacy: number;\n",
+      },
+      { "packages/b/vendor/node_modules/a": "other/a" },
+    );
+  }
+
+  it("is not read, and the reason is named, where one specifier is read as two files", () => {
+    const root = twoFilesForOneSpecifier();
+    const { engine, opened } = sessionKinds();
+    const analysis = analyze(root, {}, engine);
+
+    expect(analysis.run.componentsUnread).toEqual([
+      {
+        configFile: join(root, "packages/b/tsconfig.json"),
+        reason:
+          "the imports of a are read as 2 different files, which a configuration cannot state",
+      },
+    ]);
+    expect(opened).toEqual({ written: 0, built: 1 });
+    expect(analysis.swept.componentFiles).toEqual([]);
+  });
+
+  it("names on standard error the configuration whose component files are not read", () => {
+    const root = twoFilesForOneSpecifier();
+    writeFileSync(join(root, "deadset.json"), JSON.stringify({ target: { kind: "application" } }));
+    const err: string[] = [];
+    const host: Host = { ...nodeHost(), workingDirectory: () => root };
+    run(
+      ["analyze", "--target=.", `--report=${join(root, "report.json")}`],
+      { write: () => undefined },
+      { write: (text) => err.push(text) },
+      host,
+    );
+
+    expect(err).toContain(
+      "deadset-ts: packages/b/tsconfig.json: its component files are not read: the imports of a are read as 2 different files, which a configuration cannot state\n",
+    );
   });
 });
 

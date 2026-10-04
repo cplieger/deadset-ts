@@ -483,7 +483,10 @@ function analyzeRendering(at: CorpusRun, phase: string): Answered {
       ? scopeForDir(host, join("rendering", TARGET))
       : readScope(host, join(at.dir, "scope.json"));
   const { config } = resolve({ repository: at.config, repositoryLabel: "deadset.json" });
-  const engine = openEngine({ collectTiming: false });
+  const engine = openEngine({
+    collectTiming: false,
+    components: { extensions: config.ts.componentExtensions, host },
+  });
   let swept: ReturnType<typeof runSweep>;
   try {
     swept = runSweep(engine, host, scope, config, { marked: [], mode: { production: true } });

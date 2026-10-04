@@ -12,13 +12,14 @@
  * type, because nothing ties the name to a type.
  */
 
+import { readComponent } from "./component-files.ts";
 import { ConfigError, type Analysis, type TemplateDelimiters } from "./config.ts";
 import type { DetectorInput, Evidence } from "./exempt.ts";
 import type { Host } from "./host.ts";
 import type { SymbolKind } from "./inventory.ts";
 import { memberNames } from "./member-names.ts";
-import { isAbsolutePath, joinPath, normalizePath } from "./paths.ts";
-import type { Position } from "./position.ts";
+import { isAbsolutePath, joinPath, normalizePath, relativePath } from "./paths.ts";
+import { isComponentFile, type Position } from "./position.ts";
 
 /** One template, by its path below the target root. */
 export interface TemplateFile {
@@ -39,6 +40,12 @@ const READ_BY_A_TEMPLATE: ReadonlySet<SymbolKind> = new Set([
   "interface-method",
   "type-member",
 ]);
+
+/**
+ * The kinds of declaration a component file's markup can name. Its expressions are the
+ * language's own, so a static member and an enum member are reachable by name too.
+ */
+const READ_BY_MARKUP: ReadonlySet<SymbolKind> = new Set([...READ_BY_A_TEMPLATE, "enum-member"]);
 
 /** One identifier, as the grammar of the analyzed language spells one. */
 const IDENTIFIER = /[\p{ID_Start}$_][\p{ID_Continue}$\u200C\u200D]*/uy;
@@ -173,6 +180,17 @@ function namesOf(text: string, delimiters: TemplateDelimiters): readonly Named[]
   }
 }
 
+/** Every identifier the markup of one component file writes in an action. */
+function markupNamesOf(text: string): readonly Named[] {
+  return readComponent(text).markup.flatMap((one) =>
+    identifiersOf(one.text).map(({ name, offset }) => ({
+      name,
+      offset: one.start + offset,
+      action: one.action,
+    })),
+  );
+}
+
 /** Where one offset of a template is, its column counted in UTF-16 code units. */
 function positionIn(file: TemplateFile, offset: number): Position {
   const before = file.text.slice(0, offset);
@@ -187,25 +205,42 @@ function positionIn(file: TemplateFile, offset: number): Position {
 /**
  * The template-field detector: every instance member of a class and every member of
  * an interface or an object type whose name an action of a configured template
- * writes, recorded at the identifier.
+ * writes, and every member of those and of an enum whose name a component file's
+ * markup writes, recorded at the identifier and held while that file is live.
  */
 export function templateField<Brand>(input: DetectorInput<Brand>): readonly Evidence[] {
   const { templates } = input;
-  if (templates.files.length === 0) {
+  const components = input.project.ownSourceFiles().flatMap((file) => {
+    const path = isComponentFile(file) ? relativePath(input.targetRoot, file.fileName) : undefined;
+    return path === undefined ? [] : [{ path, text: file.originalText }];
+  });
+  if (templates.files.length === 0 && components.length === 0) {
     return [];
   }
   const members = memberNames(input.project.ownSourceFiles(), input.held);
   const found: Evidence[] = [];
-  for (const file of templates.files) {
-    for (const named of namesOf(file.text, templates.delimiters)) {
+  const scanned = [
+    ...templates.files.map((file) => ({
+      file,
+      names: namesOf(file.text, templates.delimiters),
+      markup: false,
+    })),
+    ...components.map((file) => ({ file, names: markupNamesOf(file.text), markup: true })),
+  ];
+  for (const { file, names, markup } of scanned) {
+    for (const named of names) {
       for (const member of members.get(named.name) ?? []) {
-        if (!READ_BY_A_TEMPLATE.has(member.kind) || member.static) {
+        const readable = markup
+          ? READ_BY_MARKUP.has(member.kind)
+          : READ_BY_A_TEMPLATE.has(member.kind) && !member.static;
+        if (!readable) {
           continue;
         }
         found.push({
           id: member.id,
           detail: `named by ${named.action}`,
           site: positionIn(file, named.offset),
+          ...(markup ? { whileLive: file.path } : {}),
         });
       }
     }

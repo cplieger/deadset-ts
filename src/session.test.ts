@@ -35,10 +35,11 @@ function recordingEngine(real: Engine): { engine: Engine; recorded: Recorded } {
   const recorded: Recorded = { snapshotsOpened: 0, disposals: 0, closes: 0, opened: [] };
   const engine: Engine = {
     parseConfigFile: (file) => real.parseConfigFile(file),
-    createSnapshot: (openProjects, createPrograms) => {
+    parseConfigJson: (json, configFile) => real.parseConfigJson(json, configFile),
+    createSnapshot: (openProjects, createPrograms, configurations) => {
       recorded.snapshotsOpened += 1;
       recorded.opened.push([...openProjects]);
-      const snapshot = real.createSnapshot(openProjects, createPrograms);
+      const snapshot = real.createSnapshot(openProjects, createPrograms, configurations);
       return Object.create(snapshot, {
         dispose: {
           value: () => {
@@ -49,6 +50,7 @@ function recordingEngine(real: Engine): { engine: Engine; recorded: Recorded } {
       }) as Snapshot;
     },
     createModuleResolver: (options, entries) => real.createModuleResolver(options, entries),
+    readsComponents: real.readsComponents,
     batch: (questions) => real.batch(questions),
     ask: (accessor, locations, question) => real.ask(accessor, locations, question),
     getTimingInfo: () => real.getTimingInfo(),

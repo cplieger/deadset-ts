@@ -33,6 +33,8 @@ export interface Evidence {
   /** One clause naming the relation, then the thing it relates to. */
   readonly detail: string;
   readonly site: Position;
+  /** The component file, below the target root, whose markup holds the evidence. */
+  readonly whileLive?: string;
 }
 
 /** What a detector reads of one project, while the project's view is open. */
@@ -180,6 +182,7 @@ export function computeExemptions<Brand>(
         class: exemptionClass,
         detail: evidence.detail,
         site: evidence.site,
+        ...(evidence.whileLive === undefined ? {} : { whileLive: evidence.whileLive }),
       });
     }
   }
@@ -196,8 +199,8 @@ function compare(a: string, b: string): number {
 
 /**
  * Records as a run holds them: ordered by site, then class, then declaration, and one
- * per declaration, class and detail, the one at the first site. A fact found at many
- * sites, or by several projects, is one record.
+ * per declaration, class, detail and file it holds while live, the one at the first
+ * site. A fact found at many sites, or by several projects, is one record.
  */
 export function exemptionsOf(found: readonly Exemption[]): readonly Exemption[] {
   const ordered = [...found].sort(
@@ -205,13 +208,28 @@ export function exemptionsOf(found: readonly Exemption[]): readonly Exemption[] 
   );
   const seen = new Set<string>();
   return ordered.filter((record) => {
-    const fact = [record.id, record.class, record.detail].join("\u0000");
+    const fact = [record.id, record.class, record.detail, record.whileLive ?? ""].join("\u0000");
     if (seen.has(fact)) {
       return false;
     }
     seen.add(fact);
     return true;
   });
+}
+
+/**
+ * The records that hold while the component files at `live` are live: every record that
+ * holds whatever is live, and each one a live file's markup holds, as a record of the run.
+ */
+export function holdingWhile(
+  records: readonly Exemption[],
+  live: ReadonlySet<string>,
+): readonly Exemption[] {
+  return exemptionsOf(
+    records.flatMap(({ whileLive, ...record }) =>
+      whileLive === undefined || live.has(whileLive) ? [record] : [],
+    ),
+  );
 }
 
 /** The records per declaration, each declaration's in the order given. */

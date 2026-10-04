@@ -6,7 +6,7 @@ import { nodeHost } from "../../bin/node-host.ts";
 import { fixture } from "../../__test-helpers__/fixtures.ts";
 import { TSCONFIG, writeProject } from "../../__test-helpers__/projects.ts";
 import { run, type Writer } from "../run.ts";
-import { openEngine, type Engine } from "../session.ts";
+import { openEngine, type Engine, type EngineOptions } from "../session.ts";
 
 /** The bound on one case, each of which loads a whole target. */
 const LOAD_TIMEOUT = 60_000;
@@ -344,8 +344,8 @@ describe("explain", () => {
       const target = fixture("projects", "published-exports");
       // The published module's export table is the one question that fails, so nothing
       // the project declares can be judged dead.
-      const failing = (collectTiming: boolean): Engine => {
-        const engine = openEngine({ collectTiming });
+      const failing = (options: EngineOptions): Engine => {
+        const engine = openEngine(options);
         return {
           ...engine,
           ask: (accessor, locations, question) => {

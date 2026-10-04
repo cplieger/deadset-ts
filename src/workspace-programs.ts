@@ -16,7 +16,8 @@ import type {
 } from "@typescript/native/unstable/sync";
 import { isStringLiteralLikeNode } from "@typescript/native/unstable/ast";
 import type { StringLiteralLikeNode } from "@typescript/native/unstable/ast";
-import { dirnamePath, joinPath } from "./paths.ts";
+import type { Host } from "./host.ts";
+import { dirnamePath, joinPath, resolvePath } from "./paths.ts";
 import type { Engine } from "./session.ts";
 import type { WorkspaceResolver } from "./workspace-resolution.ts";
 
@@ -38,12 +39,23 @@ export interface MemberReading {
   /** The static resolutions its program is built with; none for a configuration opened as a project. */
   readonly entries: readonly ModuleResolutionEntry[];
   readonly unresolved: readonly UnresolvedImport[];
+  /**
+   * Why the configuration's component files are not read, where the snapshots read
+   * component files and its program reads none.
+   */
+  readonly componentsUnread: string | undefined;
 }
+
+/** How a snapshot reads one configuration that imports a member. */
+export type WorkspaceProgram =
+  | { readonly kind: "program"; readonly params: CreateSnapshotProgramParams }
+  /** A configuration only the snapshot holds, at a path no file has. */
+  | { readonly kind: "configuration"; readonly file: string; readonly text: string };
 
 /** The programs one run builds instead of opening projects, with what reading them did. */
 export interface WorkspacePrograms {
-  /** Per configuration that imports a member, the program to build for it. */
-  readonly programs: ReadonlyMap<string, CreateSnapshotProgramParams>;
+  /** Per configuration that imports a member, how the snapshot reads it. */
+  readonly programs: ReadonlyMap<string, WorkspaceProgram>;
   readonly readings: readonly MemberReading[];
 }
 
@@ -123,7 +135,103 @@ interface Reading {
   readonly references: NonNullable<Parsed["projectReferences"]>;
   readonly entries: ModuleResolutionEntry[];
   readonly seen: Set<string>;
+  /** Per member specifier, every file an import of it is read as. */
+  readonly bound: Map<string, Set<string>>;
   readonly unresolved: UnresolvedImport[];
+}
+
+/** The directories the compiler leaves out of a configuration that names no `exclude`. */
+const DEFAULT_EXCLUDES = ["node_modules", "bower_components", "jspm_packages"];
+
+/** Why one configuration's answers cannot be `paths`: a specifier read as two files. */
+function unstatable(reading: Reading): string | undefined {
+  const answered = new Set(reading.entries.map((entry) => entry.moduleName));
+  for (const [specifier, files] of reading.bound) {
+    if (answered.has(specifier) && files.size > 1) {
+      return `the imports of ${specifier} are read as ${String(files.size)} different files, which a configuration cannot state`;
+    }
+  }
+  return undefined;
+}
+
+/** The path beside `configFile` its written configuration takes, which no file has. */
+function writtenPath(host: Host, configFile: string): string {
+  const stem = configFile.replace(/\.json$/u, "");
+  for (let counter = 0; ; counter += 1) {
+    const path = `${stem}.deadset-ts${counter === 0 ? "" : `-${String(counter)}`}.json`;
+    if (host.kindOf(path) === "absent") {
+      return path;
+    }
+  }
+}
+
+/**
+ * The configuration that reads as one configuration's program: it extends it, lays out
+ * no output for the reason {@link analysisOptions} gives, maps each answered specifier
+ * to its file, and carries the references the program does. The compiler's default
+ * `exclude` names the output directories this drops, so where the file list moves it is
+ * restated; a list that still differs, or answers `paths` cannot state, are a reason.
+ */
+function configurationOf(
+  engine: Engine,
+  host: Host,
+  reading: Reading,
+): WorkspaceProgram | { readonly kind: "unread"; readonly reason: string } {
+  const reason = unstatable(reading);
+  if (reason !== undefined) {
+    return { kind: "unread", reason };
+  }
+  const { options } = reading.parsed;
+  const raw: unknown = (options as Record<string, unknown>)["pathsBasePath"];
+  const base = typeof raw === "string" ? raw : dirnamePath(reading.configFile);
+  const paths: Record<string, string[]> = {};
+  for (const [key, targets] of Object.entries(options.paths ?? {})) {
+    paths[key] = targets.map((target) => resolvePath(base, target));
+  }
+  for (const entry of reading.entries) {
+    const [file] = reading.bound.get(entry.moduleName) ?? [];
+    if (file !== undefined) {
+      paths[entry.moduleName] = [file];
+    }
+  }
+  const json = (exclude: readonly string[] | undefined): Record<string, unknown> => ({
+    extends: reading.configFile,
+    compilerOptions: {
+      rootDir: null,
+      outDir: null,
+      declarationDir: null,
+      tsBuildInfoFile: null,
+      ...(options.composite === true ? { composite: false, declaration: true } : {}),
+      paths,
+    },
+    ...(reading.references.length > 0
+      ? { references: reading.references.map((reference) => ({ path: reference.path })) }
+      : {}),
+    ...(exclude === undefined ? {} : { exclude }),
+  });
+  const file = writtenPath(host, reading.configFile);
+  const expected = [...reading.parsed.fileNames].sort().join("\u0000");
+  const listed = (value: Record<string, unknown>): string | undefined => {
+    try {
+      return [...engine.parseConfigJson(value, file).fileNames].sort().join("\u0000");
+    } catch {
+      return undefined;
+    }
+  };
+  let value = json(undefined);
+  if (listed(value) !== expected) {
+    value = json([
+      ...DEFAULT_EXCLUDES,
+      ...[options.outDir, options.declarationDir].filter((dir) => dir !== undefined),
+    ]);
+    if (listed(value) !== expected) {
+      return {
+        kind: "unread",
+        reason: "its file list cannot be restated without its output directories",
+      };
+    }
+  }
+  return { kind: "configuration", file, text: `${JSON.stringify(value, null, 2)}\n` };
 }
 
 /** The program one configuration is built as, under the answers it holds so far. */
@@ -213,14 +321,21 @@ function scan(
     const answered = answers[at];
     const specifier = usage.node.text;
     const containingDirectory = dirnamePath(usage.file);
+    const compiled =
+      answered?.resolvedFileName === undefined || answered.resolvedFileName === ""
+        ? undefined
+        : answered;
     const answer = resolver.resolve(
       specifier,
       containingDirectory,
       conditionsOf(reading.parsed, mode),
-      answered?.resolvedFileName === undefined || answered.resolvedFileName === ""
-        ? undefined
-        : answered,
+      compiled,
     );
+    if (answer.kind !== "unresolved") {
+      const bound = reading.bound.get(specifier) ?? new Set<string>();
+      bound.add(answer.kind === "source" ? answer.file : (compiled?.resolvedFileName ?? ""));
+      reading.bound.set(specifier, bound);
+    }
     if (answer.kind === "source") {
       reading.entries.push({
         moduleName: specifier,
@@ -242,12 +357,70 @@ function scan(
   return added;
 }
 
+/** One configuration as one round builds it. */
+type Built =
+  | {
+      readonly kind: "program";
+      readonly params: CreateSnapshotProgramParams;
+      readonly resolver: ModuleResolver;
+    }
+  | { readonly kind: "configuration"; readonly file: string; readonly text: string };
+
 /**
- * Reads every configuration's member imports, round by round, all the configurations
- * still adding answers built in one snapshot per round.
+ * Answers the member imports of every reading `build` describes, round by round, all
+ * the readings still adding answers built in one snapshot per round. A reading `build`
+ * gives no description for leaves the rounds.
+ */
+function readRounds(
+  engine: Engine,
+  readings: readonly Reading[],
+  resolver: WorkspaceResolver,
+  build: (reading: Reading) => Built | undefined,
+): void {
+  let pending = readings;
+  while (pending.length > 0) {
+    const built = pending.flatMap((reading) => {
+      const one = build(reading);
+      return one === undefined ? [] : [{ reading, one }];
+    });
+    const programs = built.flatMap(({ one }) => (one.kind === "program" ? [one.params] : []));
+    const written = new Map(
+      built.flatMap(({ one }) =>
+        one.kind === "configuration" ? [[one.file, one.text] as const] : [],
+      ),
+    );
+    const snapshot = engine.createSnapshot([...written.keys()], programs, written);
+    try {
+      const created = snapshot.operation.createdPrograms ?? [];
+      const opened = new Map<string | undefined, Program>(
+        snapshot.getProjects().map((project) => [project.configFileName, project.program]),
+      );
+      let at = 0;
+      pending = built.flatMap(({ reading, one }) => {
+        const program = one.kind === "program" ? created[at++] : opened.get(one.file);
+        return program !== undefined && scan(engine, program, reading, resolver) > 0
+          ? [reading]
+          : [];
+      });
+    } finally {
+      snapshot.dispose();
+      for (const { one } of built) {
+        if (one.kind === "program") {
+          one.resolver[Symbol.dispose]();
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Reads every configuration's member imports. Where the snapshots read component files,
+ * the rounds go on over each reading's configuration, which reads them, for the imports
+ * only they make.
  */
 export function workspacePrograms(
   engine: Engine,
+  host: Host,
   configFiles: readonly string[],
   resolver: WorkspaceResolver,
 ): WorkspacePrograms {
@@ -266,34 +439,38 @@ export function workspacePrograms(
         references: carriedReferences(engine, parsed),
         entries: [],
         seen: new Set<string>(),
+        bound: new Map<string, Set<string>>(),
         unresolved: [],
       },
     ];
   });
-  let pending: readonly Reading[] = readings;
-  while (pending.length > 0) {
-    const built = pending.map((reading) => programOf(engine, reading));
-    const snapshot = engine.createSnapshot(
-      [],
-      built.map((one) => one.params),
-    );
-    try {
-      const created = snapshot.operation.createdPrograms ?? [];
-      pending = pending.filter((reading, at) => {
-        const program = created[at];
-        return program !== undefined && scan(engine, program, reading, resolver) > 0;
-      });
-    } finally {
-      snapshot.dispose();
-      for (const one of built) {
-        one.resolver[Symbol.dispose]();
-      }
-    }
+  readRounds(engine, readings, resolver, (reading) => ({
+    kind: "program",
+    ...programOf(engine, reading),
+  }));
+  if (engine.readsComponents) {
+    readRounds(engine, readings, resolver, (reading) => {
+      const one = configurationOf(engine, host, reading);
+      return one.kind === "configuration" ? one : undefined;
+    });
   }
-  const programs = new Map<string, CreateSnapshotProgramParams>();
+  const programs = new Map<string, WorkspaceProgram>();
+  const unread = new Map<string, string>();
   for (const reading of readings) {
-    if (reading.entries.length > 0) {
-      programs.set(reading.configFile, programOf(engine, reading).params);
+    if (reading.entries.length === 0) {
+      continue;
+    }
+    const one = engine.readsComponents ? configurationOf(engine, host, reading) : undefined;
+    if (one !== undefined && one.kind !== "unread") {
+      programs.set(reading.configFile, one);
+      continue;
+    }
+    programs.set(reading.configFile, {
+      kind: "program",
+      params: programOf(engine, reading).params,
+    });
+    if (one !== undefined) {
+      unread.set(reading.configFile, one.reason);
     }
   }
   return {
@@ -303,6 +480,7 @@ export function workspacePrograms(
       fileNames: reading.parsed.fileNames,
       entries: reading.entries,
       unresolved: reading.unresolved,
+      componentsUnread: unread.get(reading.configFile),
     })),
   };
 }

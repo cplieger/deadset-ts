@@ -4,7 +4,7 @@
 
 deadset-ts finds dead code in TypeScript projects, down to class members, type members and dead stores inside functions, and writes a report your CI can fail on.
 
-It reads your `tsconfig.json` projects, `allowJs` JavaScript included, with the type information of TypeScript 7.1.0-dev.20261003.1, its one dependency. Your project keeps its own TypeScript version. A type error under that version skips the function or statement that holds it. deadset-ts reports and never edits your code. It is pre-release, tested only on Linux, needs Node.js 24 or later and is licensed under GPL-3.0-or-later.
+It reads your `tsconfig.json` projects, `allowJs` JavaScript and Vue, Svelte and Astro scripts included, with the type information of TypeScript 7.1.0-dev.20261003.1, its one dependency. Your project keeps its own TypeScript version. A type error under that version skips the function or statement that holds it. deadset-ts reports and never edits your code. It is pre-release, tested only on Linux, needs Node.js 24 or later and is licensed under GPL-3.0-or-later.
 
 ## Why use it
 
@@ -17,7 +17,7 @@ deadset-ts is built for a CI gate on dead code. Each finding names code to delet
 - The same tree gives the same report, and a baseline keyed on code and symbol survives moved lines.
 - It writes text, JSON, GitHub annotations, SARIF 2.1.0 or a custom template.
 
-Consider [Knip](https://knip.dev) if you want issues fixed with `--fix`, plugins for over 100 tools, or Astro, MDX, Svelte and Vue files checked.
+Consider [Knip](https://knip.dev) if you want issues fixed with `--fix`, plugins for over 100 tools, or MDX files checked.
 
 ## Install
 
@@ -90,7 +90,7 @@ A TypeScript caller that imports the source sets `allowImportingTsExtensions`, b
 
 ## Related projects
 
-deadset-ts implements the [deadset Contract](https://github.com/cplieger/deadset-spec), which fixes the issue codes, the report schema and the exit codes. It fails four fixtures of the Contract's conformance corpus, for component files, configuration files, `package.json` scripts and type-query aliases, whose rules it does not apply. Every other fixture passes except one reflective-lookup fixture, the gap [`conformance.json`](conformance.json) declares.
+deadset-ts implements the [deadset Contract](https://github.com/cplieger/deadset-spec), which fixes the issue codes, the report schema and the exit codes. It fails three fixtures of the Contract's conformance corpus, for configuration files, `package.json` scripts and type-query aliases, whose rules it does not apply. Every other fixture passes except one reflective-lookup fixture, the gap [`conformance.json`](conformance.json) declares.
 
 - [deadset-go](https://github.com/cplieger/deadset-go) is the same analysis for Go modules.
 - [deadset](https://github.com/cplieger/deadset) runs both analyzers as one command and merges their reports, resolving the edges between Go and TypeScript code.

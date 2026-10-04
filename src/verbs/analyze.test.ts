@@ -8,7 +8,7 @@ import { schemaValidator } from "../../__test-helpers__/json-schema.ts";
 import { TSCONFIG, writeProject } from "../../__test-helpers__/projects.ts";
 import type { Host } from "../host.ts";
 import { run, type Writer } from "../run.ts";
-import { openEngine, type Engine } from "../session.ts";
+import { openEngine, type Engine, type EngineOptions } from "../session.ts";
 
 /** The bound on one case, each of which loads a whole target. */
 const LOAD_TIMEOUT = 60_000;
@@ -827,8 +827,8 @@ describe("a question the checker does not answer", () => {
     "is counted on the error stream under its configuration's path below the target",
     () => {
       const target = fixture("projects", "published-exports");
-      const failing = (collectTiming: boolean): Engine => {
-        const engine = openEngine({ collectTiming });
+      const failing = (options: EngineOptions): Engine => {
+        const engine = openEngine(options);
         return {
           ...engine,
           ask: (accessor, locations, question) => {

@@ -2,6 +2,7 @@ import {
   runAnalysis,
   runBaselineWrite,
   unansweredCounts,
+  type ComponentWarning,
   type RunAnalysis,
   type RunProject,
 } from "../analysis.ts";
@@ -226,17 +227,19 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
   let recorded: readonly Recorded[];
   let verdict: number;
   let partial: readonly string[];
+  let warnings: readonly ComponentWarning[];
+  let unread: readonly string[];
   try {
     const root = runRelative(invoked, targetRoot);
     const mode = { production: true };
     let analysis: RunAnalysis;
     if (documents.baseline === undefined) {
-      analysis = runAnalysis(openClient(false), host, scoped, config, provenance, mode);
+      analysis = runAnalysis(openClient(config), host, scoped, config, provenance, mode);
       recorded = [];
     } else {
       const reason = rowReason(analyzerProvenance(version));
       const write = runBaselineWrite(
-        openClient(false),
+        openClient(config),
         host,
         scoped,
         config,
@@ -248,6 +251,11 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
       recorded = write.rows;
     }
     const { result, run } = analysis;
+    warnings = run.componentWarnings;
+    unread = run.componentsUnread.map(
+      ({ configFile, reason }) =>
+        `${relativePath(resolvePath(invoked, targetRoot), configFile) ?? configFile}: its component files are not read: ${reason}`,
+    );
     partial = partialNotes({
       notBuilt: run.notBuilt,
       unanswered: run.unanswered,
@@ -304,6 +312,14 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
 
   for (const note of partial) {
     err.write(`deadset-ts: ${note}\n`);
+  }
+  for (const line of unread) {
+    err.write(`deadset-ts: ${line}\n`);
+  }
+  for (const warning of warnings) {
+    err.write(
+      `deadset-ts: ${warning.path}:${String(warning.line)}: a <script> start tag that begins a line is not read as a block: ${warning.reason}\n`,
+    );
   }
   for (const skip of report.type_error_skips) {
     err.write(

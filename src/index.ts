@@ -1,5 +1,5 @@
 export { run, SETTING_OPTIONS, type Writer } from "./run.ts";
-export type { DirectoryEntry, Host, PathKind } from "./host.ts";
+export type { DirectoryEntry, Host, PathKind, TemporaryDirectory } from "./host.ts";
 export { DECLINED_CONVENTIONS, type DeclinedConvention } from "./entry-point-gaps.ts";
 export {
   byPosition,
