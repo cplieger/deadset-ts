@@ -1,6 +1,7 @@
 {
   "name": "@sveltejs/kit",
   "version": "2.70.3",
+  "private": true,
   "type": "module",
   "exports": {
     "./vite": {

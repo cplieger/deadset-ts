@@ -1,6 +1,7 @@
 {
   "name": "eslint",
   "version": "10.11.0",
+  "private": true,
   "bin": {
     "eslint": "./cli.js"
   }
