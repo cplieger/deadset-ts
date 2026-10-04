@@ -47,4 +47,21 @@ export interface Host {
    * never a part of it.
    */
   writeDocument(path: string, pieces: Iterable<string>): void;
+  /**
+   * A new empty directory of its own, outside every tree the run reads, or a throw naming
+   * why it cannot be made. The run removes it before it ends.
+   */
+  temporaryDirectory(): TemporaryDirectory;
+  /**
+   * The command that runs this analyzer's mapper for component files, under the runtime
+   * the analyzer itself runs under. The compiler starts it to read a component file.
+   */
+  componentMapperCommand(): readonly string[];
+}
+
+/** One directory a run made for itself. */
+export interface TemporaryDirectory {
+  readonly path: string;
+  /** Removes the directory and everything in it; removing it twice removes it once. */
+  remove(): void;
 }

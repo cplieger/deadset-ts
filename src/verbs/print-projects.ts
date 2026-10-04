@@ -14,7 +14,7 @@ import { EXIT_CLEAN, type Verb } from "./verb.ts";
 export const printProjectsVerb: Verb = ({ out, err, host, inputs, scope, openClient }) => {
   const config = resolveUnkinded(inputs());
   const scoped = scope();
-  const answer = runProjects(openClient(false), host, scoped, config);
+  const answer = runProjects(openClient(config), host, scoped, config);
   for (const id of answer.configurations) {
     out.write(`${id}\n`);
   }

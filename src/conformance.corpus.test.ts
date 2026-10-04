@@ -53,21 +53,10 @@ function recordSource(results: string, document: Results): string {
 
 /**
  * Every failure line of the fixtures of the analysis rules this analyzer does not
- * implement, which no declared gap can cover: component files, configuration files and
- * the strings they hold, script entries, and type-query aliases.
+ * implement, which no declared gap can cover: configuration files and the strings they
+ * hold, script entries, and type-query aliases.
  */
 const UNIMPLEMENTED = [
-  "component-files: type-error skip at target/main.ts:1, which no name resolves to; type-error skip at target/main.ts:2, which no name resolves to",
-  "component-files format: want no finding at target/format.ts:2, got DS1001",
-  "component-files heading: want no finding at target/heading.ts:2, got DS1001",
-  "component-files summary: want DS1003 as the finding at target/model.ts:9, got none",
-  'component-files title: want the retained listing to name ["template-field"] at target/model.ts:4, got []',
-  "component-files: DS1502 at target/format.ts:1, which no expectation names",
-  "component-files: DS1001 at target/format.ts:2, which no expectation names",
-  "component-files: DS1502 at target/heading.ts:1, which no expectation names",
-  "component-files: DS1001 at target/heading.ts:2, which no expectation names",
-  "component-files: DS1502 at target/model.ts:1, which no expectation names",
-  "component-files: DS1001 at target/model.ts:2, which no expectation names",
   "configuration-files-and-strings UsedByJSON: want no finding at target/package.json:9, got DS1601",
   "configuration-files-and-strings UsedByModule: want no finding at target/package.json:8, got DS1601",
   "configuration-files-and-strings prepare: want no finding at target/setup/prepare.ts:2, got DS1001",

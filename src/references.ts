@@ -34,9 +34,9 @@ import type { Symbol as TSSymbol } from "@typescript/native/unstable/sync";
 import { aliasChains, type ChainTarget } from "./alias-chain.ts";
 import { destructuring, propertyReadsOf, type PropertyRead } from "./destructuring.ts";
 import { globExpression } from "./glob.ts";
-import { declarationsByName, nodeKey, type Inventory } from "./inventory.ts";
+import { declarationsByName, nodeKey, type Inventory, type InventorySymbol } from "./inventory.ts";
 import { relativePath } from "./paths.ts";
-import { byPosition, renderPosition, type Position } from "./position.ts";
+import { byPosition, isComponentFile, renderPosition, type Position } from "./position.ts";
 import { DEFAULT_BATCH_CAP, UNANSWERED, type Answer } from "./query.ts";
 import type { ProjectView } from "./session.ts";
 
@@ -67,11 +67,11 @@ import type { ProjectView } from "./session.ts";
 export type Use = "read" | "write" | "evaluation" | "decorator";
 
 /**
- * Which path answered for one reference: `batch`, the batched lookup over a file's name
- * nodes; `resolved-symbol`, the per-node lookup for the residue a batch left;
- * `shorthand`, the lookup for the value `{ a }` reads; `alias`, a step along an import
- * or export chain; `syntax`, the tree alone, which says what a decorator is attached to;
- * `destructured`, the property a pattern names, on the destructured value's type; and
+ * Which path answered for one reference: `batch`, the batched lookup over a file's name nodes;
+ * `resolved-symbol`, the per-node lookup for the residue a batch left; `shorthand`, the lookup
+ * for the value `{ a }` reads; `alias`, a step along an import or export chain; `syntax`, the
+ * tree alone, which says what a decorator is attached to and what a component's markup may
+ * read; `destructured`, the property a pattern names, on the destructured value's type; and
  * `by-name`, every declaration bearing the name a site spells, where the checker failed.
  */
 export type Resolution =
@@ -654,6 +654,37 @@ function importedNames(file: SourceFile): ReadonlyMap<string, readonly (string |
   return names;
 }
 
+/**
+ * The name node of every import binding one file's top level declares, and whether it
+ * binds a whole module.
+ */
+function importBindings(file: SourceFile): readonly { node: Node; whole: boolean }[] {
+  const found: { node: Node; whole: boolean }[] = [];
+  for (const statement of file.statements) {
+    if (isImportEqualsDeclaration(statement)) {
+      found.push({ node: statement.name, whole: true });
+      continue;
+    }
+    const clause = isImportDeclaration(statement) ? statement.importClause : undefined;
+    if (clause === undefined) {
+      continue;
+    }
+    if (clause.name !== undefined) {
+      found.push({ node: clause.name, whole: false });
+    }
+    const bindings = clause.namedBindings;
+    if (bindings === undefined) {
+      continue;
+    }
+    if (bindings.kind === SyntaxKind.NamespaceImport) {
+      found.push({ node: bindings.name, whole: true });
+    } else {
+      found.push(...bindings.elements.map((element) => ({ node: element.name, whole: false })));
+    }
+  }
+  return found;
+}
+
 /** Two strings ordered bytewise, which is the order every set of a run is read in. */
 function compare(a: string, b: string): number {
   if (a === b) {
@@ -711,6 +742,20 @@ export function references<Brand>(
   const fileIds = new Set(
     held.symbols.filter((symbol) => symbol.kind === "file").map((symbol) => symbol.id),
   );
+  let topLevel: ReadonlyMap<string, readonly InventorySymbol[]> | undefined;
+  /** The declarations one file's top level holds. */
+  const declaredIn = (fileId: string): readonly InventorySymbol[] => {
+    if (topLevel === undefined) {
+      const byParent = new Map<string, InventorySymbol[]>();
+      for (const symbol of held.symbols) {
+        if (fileIds.has(symbol.parent)) {
+          byParent.set(symbol.parent, [...(byParent.get(symbol.parent) ?? []), symbol]);
+        }
+      }
+      topLevel = byParent;
+    }
+    return topLevel.get(fileId) ?? [];
+  };
 
   /** The identifier of the declaration one node of this program is, where it is one. */
   const declaredAt = (node: Node): string | undefined =>
@@ -771,11 +816,11 @@ export function references<Brand>(
     if (test) {
       tests.push(path);
     }
-    const { uses, reads, links, evaluations, decorated } = sitesOf(
-      file,
-      declarations,
-      declaredAt(file) ?? "",
-    );
+    const fileId = declaredAt(file) ?? "";
+    const { uses, reads, links, evaluations, decorated } = sitesOf(file, declarations, fileId);
+    // A component file's markup may use any binding its blocks declare at the top level.
+    const markup = isComponentFile(file);
+    const bindings = markup ? importBindings(file) : [];
 
     // A decorator is written inside the declaration it is attached to and receives it,
     // so the declaration is used where the decorator is written, whatever the
@@ -801,6 +846,7 @@ export function references<Brand>(
         ...uses.filter((site) => site.shorthand === undefined).map((site) => site.node),
         ...links.map((link) => link.node),
         ...evaluations.map((evaluation) => evaluation.node),
+        ...bindings.map((binding) => binding.node),
       ]),
     ];
     const answered = new Map<Node, Answer<TSSymbol>>();
@@ -858,6 +904,49 @@ export function references<Brand>(
             position,
             use: "evaluation",
             resolution: module === UNANSWERED ? "by-name" : "batch",
+            test,
+          });
+        }
+      }
+    }
+
+    if (markup) {
+      for (const symbol of declaredIn(fileId)) {
+        found.push({
+          from: fileId,
+          to: symbol.id,
+          position: symbol.position,
+          use: "read",
+          resolution: "syntax",
+          test,
+        });
+      }
+      for (const binding of bindings) {
+        const symbol = answered.get(binding.node);
+        if (symbol === undefined) {
+          continue;
+        }
+        const position = renderPosition(file, root, binding.node.getStart());
+        const chained =
+          symbol === UNANSWERED
+            ? named(binding.node).map((id) => ({ id, stepped: false, guessed: true }))
+            : chains.chainOf(symbol);
+        // The markup may name any export of a module a binding holds whole.
+        const targets = binding.whole
+          ? chained.flatMap((target) => [
+              target,
+              ...declaredIn(target.id)
+                .filter((one) => one.exported)
+                .map((one) => ({ ...target, id: one.id })),
+            ])
+          : chained;
+        for (const target of targets) {
+          found.push({
+            from: fileId,
+            to: target.id,
+            position,
+            use: "read",
+            resolution: target.guessed ? "by-name" : target.stepped ? "alias" : "batch",
             test,
           });
         }

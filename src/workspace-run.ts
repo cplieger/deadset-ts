@@ -5,7 +5,6 @@
  * the members' manifests name. A target in no workspace reads none of it.
  */
 
-import type { CreateSnapshotProgramParams } from "@typescript/native/unstable/sync";
 import type { LocatedDiagnostic } from "./discover.ts";
 import type { Host } from "./host.ts";
 import type { Manifest, ManifestEntry } from "./manifest.ts";
@@ -13,20 +12,33 @@ import { relativePath } from "./paths.ts";
 import type { Engine } from "./session.ts";
 import { findWorkspace, referenceOnlyIn, type ParsedLayout } from "./workspace.ts";
 import { memberEntries, targetManifestIn } from "./workspace-manifests.ts";
-import { workspacePrograms, type MemberReading } from "./workspace-programs.ts";
+import {
+  workspacePrograms,
+  type MemberReading,
+  type WorkspaceProgram,
+} from "./workspace-programs.ts";
 import { workspaceResolver } from "./workspace-resolution.ts";
 
 /** One run's workspace. */
 export interface WorkspaceRun {
-  /** Per configuration that imports a member, the program it is built as. */
-  readonly programs: ReadonlyMap<string, CreateSnapshotProgramParams>;
+  /** Per configuration that imports a member, how the snapshot reads it. */
+  readonly programs: ReadonlyMap<string, WorkspaceProgram>;
+  /**
+   * Per configuration whose component files the run cannot read, the reason, in the
+   * order the configurations are named.
+   */
+  readonly componentsUnread: readonly { readonly configFile: string; readonly reason: string }[];
   /**
    * Why one configuration cannot be analyzed, a member it imports having no source, or
    * `undefined` where every member import it makes has one.
    */
   unbuildable(configFile: string): string | undefined;
-  /** Whether one configuration holds one file only for the references it makes. */
-  referenceOnly(configFile: string): (file: string) => boolean;
+  /**
+   * Whether one configuration holds one file only for the references it makes: a
+   * member's file neither its parsed file list nor `compiled` names, the files its
+   * project names once opened.
+   */
+  referenceOnly(configFile: string, compiled?: readonly string[]): (file: string) => boolean;
   /**
    * Whether one file a target configuration's program holds is the target's own. A
    * workspace package's file is by its path alone, whichever import reached it: the
@@ -91,12 +103,21 @@ export function workspaceRun(
     return undefined;
   }
   const resolver = workspaceResolver(host, workspace);
-  const read = workspacePrograms(engine, configFiles, resolver);
+  const read = workspacePrograms(engine, host, configFiles, resolver);
   const readings = new Map(read.readings.map((reading) => [reading.configFile, reading]));
-  const referenceOnly = (configFile: string): ((file: string) => boolean) =>
-    referenceOnlyIn(workspace, new Set(readings.get(configFile)?.fileNames ?? []));
+  const referenceOnly = (
+    configFile: string,
+    compiled: readonly string[] = [],
+  ): ((file: string) => boolean) =>
+    referenceOnlyIn(
+      workspace,
+      new Set([...(readings.get(configFile)?.fileNames ?? []), ...compiled]),
+    );
   return {
     programs: read.programs,
+    componentsUnread: read.readings.flatMap(({ configFile, componentsUnread }) =>
+      componentsUnread === undefined ? [] : [{ configFile, reason: componentsUnread }],
+    ),
     unbuildable: (configFile) => {
       const reading = readings.get(configFile);
       return reading === undefined

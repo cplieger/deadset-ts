@@ -31,7 +31,13 @@ import {
 import type { Symbol as TSSymbol } from "@typescript/native/unstable/sync";
 import type { Host } from "./host.ts";
 import { dirnamePath, joinPath, relativePath } from "./paths.ts";
-import { byPosition, positionKey, renderPosition, type Position } from "./position.ts";
+import {
+  byPosition,
+  positionKey,
+  renderPosition,
+  writtenLength,
+  type Position,
+} from "./position.ts";
 import { computedComponent, nameComponent, renderRef, type Component, type Module } from "./ref.ts";
 import { isAnswered, UNANSWERED } from "./query.ts";
 import type { Handle, ProjectView } from "./session.ts";
@@ -534,7 +540,12 @@ export function inventory<Brand>(
       typeParameter: undefined,
     });
     exportScopes.push({ owner: fileRecord, nameNode: file });
-    walkStatements(file.statements, fileRecord);
+    // A statement a component file's module appends is not written in the file.
+    const written = writtenLength(file);
+    walkStatements(
+      file.statements.filter((statement) => statement.end <= written),
+      fileRecord,
+    );
   }
 
   /** One declaration of a module, a namespace or a container body. */

@@ -262,11 +262,13 @@ describe("the references a narrowing reads", () => {
         sweepOnly(config, {
           matrix,
           sweep,
+          exempt: [],
           retained: [],
           notBuilt: [],
           unanswered: [],
           heldByUnanswered: [],
           skipped: [],
+          componentFiles: [],
         }),
       ),
     );

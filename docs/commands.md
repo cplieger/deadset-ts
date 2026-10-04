@@ -67,7 +67,7 @@ The report names the target relative to the directory the run is invoked from. R
 
 ## The print verbs, describe and version
 
-`print-config`, `print-projects`, `print-roots` and `print-retained` print what their row of the verb table says and exit 0. `print-roots` exits 1 when it reports a `DS1704`, a `roots.patterns` entry that matches nothing.
+`print-config`, `print-projects`, `print-roots` and `print-retained` print what their row of the verb table says and exit 0. The last three read the projects as `analyze` does, so a setup failure or a named project that does not load ends them with exit code 3. `print-roots` exits 1 when it reports a `DS1704`, a `roots.patterns` entry that matches nothing.
 
 `describe` writes its JSON document to standard output and exits 0. It names the analyzer and Contract versions, the report schema versions it accepts, its language and its result over the Contract's conformance corpus. The gaps that result allows for are listed in [`conformance.json`](../conformance.json).
 

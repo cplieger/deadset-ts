@@ -8,6 +8,10 @@ A run opens one compiler session over the project entries of `analysis.configura
 
 JavaScript files are analyzed too, in a project that sets `allowJs`.
 
+A file whose extension `ts.component_extensions` lists is a component file, `.vue`, `.svelte` and `.astro` by default. Its `<script>` elements that start a line outside every other element are its blocks. So is a frontmatter block fenced by `---` lines at the start of the file. The blocks are analyzed as one module, in the strongest language any of them names, and an import of the file resolves to that module. A project that reads one workspace import as two files reads no component file, and standard error names it.
+
+The markup of a component file is not parsed. Every binding a block declares or imports at the top level is kept while the file is live. A member whose name an expression or attribute of the markup writes is kept by the `template-field` exemption while the file is live. A `<script src>` element imports the file it names. A line-start `<script>` tag not read as a block is named on standard error, and the file is analyzed without it.
+
 The run reads every project's diagnostics and fails closed for the projects you name. A project that `analysis.configurations` or the scope names and that does not load ends the run with exit code 3. A discovered project is dropped instead when it meets a setup failure or its configuration names no input, carries a refused option or is unreadable. The report names it in `configurations_not_built` with its error, standard error names it too, and the other projects are analyzed. Configuration is decoded against the Contract's closed key list, and `print-config` shows each setting with its source.
 
 A target can sit in a workspace that `pnpm-workspace.yaml` or the `workspaces` field of a `package.json` declares. An import of another workspace package is then read from that package's TypeScript source, so a monorepo needs no build before a run.
@@ -48,7 +52,7 @@ An exemption holds a declaration back from the report when something the compile
 | `injection-container`    | A decorated property of a class a dependency-injection container constructs: one passed to a call `ts.injection_registrations` names, or one with a decorated constructor parameter                        |
 | `framework-lifecycle`    | A member a `ts.lifecycle_contracts` entry lists, on a class the entry's decorator, call or base class makes a component                                                                                    |
 | `serialization-contract` | The properties of a class whose values reach `JSON.stringify` or a `ts.serializers` declaration, and its `toJSON` and `toString` when a value reaches an `unknown` or `any` parameter outside the analysis |
-| `template-field`         | A member that an action of a template under `analysis.template_dirs` names                                                                                                                                 |
+| `template-field`         | A member that an action of a template under `analysis.template_dirs`, or a live component file's markup, names                                                                                             |
 | `reflective-lookup`      | A member that a literal key of an element access, or of `Reflect.get`, `Reflect.set` or `Reflect.has`, names                                                                                               |
 
 `template-field` and `reflective-lookup` hold back at the lowest confidence, `possible`. The others hold back at `certain`. No class holds back a `#private` member. `exemptions.disabled` switches a class off.

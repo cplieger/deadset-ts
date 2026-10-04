@@ -22,6 +22,11 @@ export interface Exemption {
   readonly detail: string;
   /** Where the evidence is written. */
   readonly site: Position;
+  /**
+   * The component file, below the target root, whose markup holds the evidence. The
+   * record holds only while that file is live.
+   */
+  readonly whileLive?: string;
 }
 
 /**

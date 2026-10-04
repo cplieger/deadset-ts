@@ -34,18 +34,39 @@ export class PositionError extends Error {
   }
 }
 
+/** Whether the compiler read one file through a content mapper, which makes it a component file. */
+export function isComponentFile(file: SourceFile): boolean {
+  return file.contentMapper !== undefined;
+}
+
+/**
+ * The length of the file as it is written. A component file's module holds the file's
+ * text at its own offsets and appends what it needs past its end.
+ */
+export function writtenLength(file: SourceFile): number {
+  return isComponentFile(file) ? file.originalText.length : file.text.length;
+}
+
 /**
  * The position of one offset of one file, rendered against the target root.
  *
  * `offset` is a UTF-16 code unit offset into the file's text, which is what every
- * node of the tree carries.
+ * node of the tree carries. An offset a component file's module appends renders where
+ * the module's span map places it in the file.
  */
 export function renderPosition(file: SourceFile, root: string, offset: number): Position {
   const path = relativePath(root, file.fileName);
   if (path === undefined) {
     throw new PositionError(file.fileName, root);
   }
-  const { line, character } = file.getLineAndCharacterOfPosition(offset);
+  const written =
+    isComponentFile(file) && offset >= file.originalText.length
+      ? Math.min(
+          file.spanMap?.virtualToOriginalPosition(offset).position ?? offset,
+          file.originalText.length,
+        )
+      : offset;
+  const { line, character } = file.getLineAndCharacterOfPosition(written);
   return { path, line: line + 1, column: character + 1 };
 }
 

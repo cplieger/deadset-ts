@@ -2,36 +2,29 @@
   "corpus_version": "2.1.1",
   "product": { "name": "deadset-ts", "version": "0.1.0", "language": "ts" },
   "result": "fail",
-  "totals": { "fixtures": 34, "pass": 29, "gap": 1, "fail": 4 },
+  "totals": { "fixtures": 34, "pass": 30, "gap": 1, "fail": 3 },
   "fixtures": [
     {
       "fixture": "component-files",
-      "result": "fail",
+      "result": "pass",
       "expectations": [
-        {
-          "symbol": "format",
-          "result": "fail",
-          "actual": { "report": "DS1001", "confidence": "certain" },
-          "message": "want no finding at target/format.ts:2, got DS1001"
-        },
-        {
-          "symbol": "heading",
-          "result": "fail",
-          "actual": { "report": "DS1001", "confidence": "certain" },
-          "message": "want no finding at target/heading.ts:2, got DS1001"
-        },
+        { "symbol": "format", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "heading", "result": "pass", "actual": { "report": "none" } },
         { "symbol": "localHelper", "result": "pass", "actual": { "report": "none" } },
         {
           "symbol": "summary",
-          "result": "fail",
-          "actual": { "report": "none" },
-          "message": "want DS1003 as the finding at target/model.ts:9, got none"
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
         },
         {
           "symbol": "title",
-          "result": "fail",
-          "actual": { "report": "none" },
-          "message": "want the retained listing to name [\"template-field\"] at target/model.ts:4, got []"
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["template-field"] }
         },
         {
           "symbol": "unusedFormat",
@@ -56,15 +49,7 @@
           "suppression": { "suppressed": true, "stale": false }
         }
       ],
-      "unexpected": [
-        { "file": "target/format.ts", "line": 1, "report": "DS1502" },
-        { "file": "target/format.ts", "line": 2, "report": "DS1001" },
-        { "file": "target/heading.ts", "line": 1, "report": "DS1502" },
-        { "file": "target/heading.ts", "line": 2, "report": "DS1001" },
-        { "file": "target/model.ts", "line": 1, "report": "DS1502" },
-        { "file": "target/model.ts", "line": 2, "report": "DS1001" }
-      ],
-      "message": "type-error skip at target/main.ts:1, which no name resolves to; type-error skip at target/main.ts:2, which no name resolves to"
+      "unexpected": []
     },
     {
       "fixture": "configuration-files-and-strings",

@@ -3,6 +3,7 @@ import {
   closeSync,
   fchmodSync,
   fsyncSync,
+  mkdtempSync,
   openSync,
   readdirSync,
   readFileSync,
@@ -12,9 +13,10 @@ import {
   statSync,
   writeSync,
 } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { tmpdir } from "node:os";
+import { basename, dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { DirectoryEntry, Host, PathKind } from "../src/host.ts";
+import type { DirectoryEntry, Host, PathKind, TemporaryDirectory } from "../src/host.ts";
 
 /** The name the manifest of this package declares. */
 const PACKAGE_NAME = "@cplieger/deadset-ts";
@@ -94,6 +96,26 @@ function writeAtomically(path: string, pieces: Iterable<string>): void {
   }
 }
 
+/** A new directory under the platform's temporary directory. */
+function temporaryDirectory(): TemporaryDirectory {
+  const path = mkdtempSync(join(tmpdir(), "deadset-ts-mapper-"));
+  return {
+    path,
+    remove: () => {
+      rmSync(path, { recursive: true, force: true });
+    },
+  };
+}
+
+/**
+ * The mapper beside this file, in the same form: the emitted tree runs the emitted
+ * mapper and a checkout runs the source through the runtime's own type stripping.
+ */
+function componentMapperCommand(): readonly string[] {
+  const here = fileURLToPath(import.meta.url);
+  return [process.execPath, join(dirname(here), `component-mapper${extname(here)}`)];
+}
+
 /**
  * The filesystem of the platform the command runs on, and the version of the
  * package it was installed from.
@@ -124,5 +146,7 @@ export function nodeHost(): Host {
       return found;
     },
     writeDocument: writeAtomically,
+    temporaryDirectory,
+    componentMapperCommand,
   };
 }

@@ -8,7 +8,7 @@ import { fixture, ROOT } from "../__test-helpers__/fixtures.ts";
 import type { Host } from "./host.ts";
 import { run, SETTING_OPTIONS, type Writer } from "./run.ts";
 import { declaresSetting } from "./schema.ts";
-import { openEngine, type Engine } from "./session.ts";
+import { openEngine, type Engine, type EngineOptions } from "./session.ts";
 import { CONTRACT_VERSION } from "./version.ts";
 
 class MemoryWriter implements Writer {
@@ -467,8 +467,8 @@ describe("the compiler client a verb opens", () => {
         '{"analysis":{"configurations":[{"id":"gone","project":"packages/gone/tsconfig.json"}]}}\n',
     });
     let closes = 0;
-    const counted = (collectTiming: boolean): Engine => {
-      const engine = openEngine({ collectTiming });
+    const counted = (options: EngineOptions): Engine => {
+      const engine = openEngine(options);
       return {
         ...engine,
         close: () => {
