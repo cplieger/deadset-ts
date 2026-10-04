@@ -51,29 +51,6 @@ function recordSource(results: string, document: Results): string {
   ].join("\n");
 }
 
-/**
- * Every failure line of the fixtures of the analysis rules this analyzer does not
- * implement, which no declared gap can cover: configuration files and the strings they
- * hold, script entries, and type-query aliases.
- */
-const UNIMPLEMENTED = [
-  "configuration-files-and-strings UsedByJSON: want no finding at target/package.json:9, got DS1601",
-  "configuration-files-and-strings UsedByModule: want no finding at target/package.json:8, got DS1601",
-  "configuration-files-and-strings prepare: want no finding at target/setup/prepare.ts:2, got DS1001",
-  "configuration-files-and-strings: DS1502 at target/build.config.ts:1, which no expectation names",
-  "configuration-files-and-strings: DS1601 at target/package.json:8, which no expectation names",
-  "configuration-files-and-strings: DS1601 at target/package.json:9, which no expectation names",
-  "configuration-files-and-strings: DS1502 at target/setup/prepare.ts:1, which no expectation names",
-  "configuration-files-and-strings: DS1001 at target/setup/prepare.ts:2, which no expectation names",
-  "test-and-script-defaults seed: want no finding at target/scripts/seed.ts:2, got DS1001",
-  "test-and-script-defaults: DS1502 at target/scripts/seed.ts:1, which no expectation names",
-  "test-and-script-defaults: DS1001 at target/scripts/seed.ts:2, which no expectation names",
-  "type-query-alias useCounter: want no finding at target/counter.ts:2, got DS1001",
-  "type-query-alias: DS1502 at target/counter.ts:1, which no expectation names",
-  "type-query-alias: DS1001 at target/counter.ts:2, which no expectation names",
-  "type-query-alias: DS1002 at target/globals.d.ts:3, which no expectation names",
-];
-
 /** Every expectation and fixture that does not pass or gap, one line each. */
 function failures(results: Results): string[] {
   return results.fixtures.flatMap((row) => [
@@ -110,9 +87,9 @@ describe("the conformance corpus, answered through the analyze verb", () => {
     expect(results.totals.fixtures).toBe(results.fixtures.length);
   });
 
-  it("fails exactly the expectations of the rules this analyzer does not implement, and no other", () => {
-    expect(failures(results)).toEqual(UNIMPLEMENTED);
-    expect(results.result).toBe("fail");
+  it("fails no expectation and no fixture, so the corpus passes", () => {
+    expect(failures(results)).toEqual([]);
+    expect(results.result).toBe("pass");
   });
 
   it("declares no gap over an expectation the analyzer answers as written", () => {

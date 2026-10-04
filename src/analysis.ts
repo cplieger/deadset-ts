@@ -241,6 +241,7 @@ function readProjects<Answer>(
     readManifest(host, targetRoot),
   );
   const options = {
+    host,
     manifest: workspace?.manifest ?? readManifest(host, targetRoot),
     workspaceEntries: workspace?.entries,
     patterns: config.rootPatterns,
@@ -846,7 +847,7 @@ function readEmitterRun(
     (project, read, references) => ({
       deprecation: deprecatedDeclarations(project, read.held),
       accessors: accessorsOf(project, read.held),
-      needs: projectNeeds(project, read.held, host),
+      needs: projectNeeds(project, read.held, host, targetRoot),
       implementations: implementations(project, read.held),
       heldByInclusion: heldByInclusion(project, targetRoot),
       rooted: read.rooted,

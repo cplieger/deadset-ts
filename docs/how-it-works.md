@@ -34,9 +34,15 @@ A root is a declaration the analysis keeps live without a reference. `print-root
 
 - What a file exports when the target's manifest, or another workspace package's manifest, names it through `main`, `module`, `types`, `bin` or `exports`, or when `ts.entry_files` matches it
 - A library target's published API
-- The configuration, setup and test files of Vitest, Stryker and Playwright, and the flat configuration of ESLint
+- A configuration file beside a `package.json` whose name is `<stem>.config.<ext>`, `<stem>.<qualifier>.config.<ext>` or `.<stem>rc.<ext>`
+- A file that a string starting with `./` or `../` names, in such a configuration file or in its JSON form, like `<stem>.config.json` or `.<stem>rc`
+- A file that a token of a `package.json` script names, such as `node ./scripts/seed.ts`
+- The test files, Vitest's workspace configuration, Stryker's other configuration names and the test files in Playwright's test directory
+- A global that a declaration file declares as `typeof import("<module>")["<name>"]`, which stands for that export, so using the global uses the export
 - A worker or service worker that a call addresses by a string literal
 - Every declaration a `roots.patterns` entry names
+
+A string in such a configuration file that spells a dependency its `package.json` declares, alone or followed by a subpath, keeps that dependency from `DS1601`.
 
 A `roots.patterns` entry that names nothing is reported as `DS1704` and fails the run. The entry-point conventions of other tools are not read, and the `DECLINED_CONVENTIONS` export lists each one with the reason.
 

@@ -1,0 +1,1 @@
+{ "plugin": "dep-broken", "file": "./src/broken.ts", }

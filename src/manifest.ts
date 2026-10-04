@@ -1,11 +1,9 @@
 /**
  * The entry points a package manifest names, which are roots because something
  * outside the analyzed program reaches them: a consumer importing the package, or a
- * shell running its command.
+ * shell running its command or one of its scripts.
  *
- * Only the target's own manifest is read. A manifest below the target root belongs
- * to another package, whose entry points are that package's roots and not this
- * target's.
+ * One call reads one manifest, the one in the directory it is given.
  */
 
 import type { Host } from "./host.ts";
@@ -22,7 +20,9 @@ export type EntryRole =
   /** A consumer importing the package, which is a caller the analysis cannot see. */
   | "import"
   /** A shell running the package's command, which is a caller that exists. */
-  | "run";
+  | "run"
+  /** A token of one of the package's scripts, which the package manager runs. */
+  | "script";
 
 /** One entry point the manifest names. */
 export interface ManifestEntry {
@@ -59,6 +59,24 @@ function isTarget(value: string, requireDot: boolean): boolean {
   return !requireDot || value.startsWith("./");
 }
 
+/** Where a script's command line splits into tokens: white space and the shell's operators. */
+const SCRIPT_SEPARATORS = /\s+|&&|\|\||;|\|/u;
+
+/** A token written inside one pair of quotes. */
+const QUOTED = /^(["'])(.*)\1$/su;
+
+/**
+ * Every token one script's command line holds, each with one pair of enclosing quotes
+ * removed. A token holding a wildcard is a pattern rather than a path, and names no
+ * entry point.
+ */
+export function scriptTokens(command: string): readonly string[] {
+  return command
+    .split(SCRIPT_SEPARATORS)
+    .map((token) => token.replace(QUOTED, "$2"))
+    .filter((token) => token !== "" && !token.includes("*"));
+}
+
 /** One member's spelling below another: `exports` then `exports["."]`. */
 function below(member: string, key: string): string {
   return `${member}[${JSON.stringify(key)}]`;
@@ -67,12 +85,9 @@ function below(member: string, key: string): string {
 /**
  * Every target one `exports` value carries, at the member each is written under.
  *
- * The value is a string, an object whose keys are subpaths or conditions, or an
- * array of alternatives, nested to any depth, and a `null` blocks a subpath rather
- * than naming a target. Every level is walked because a condition names a different
- * file of the same package and each is an entry point of its own; a key's meaning
- * is not read, because a subpath and a condition both lead to a target and the
- * walk needs no more than that.
+ * The value nests strings, subpath or condition objects and alternative arrays to
+ * any depth; a `null` blocks a subpath. Every level is walked, because each
+ * condition names its own entry file, and a key's meaning is never read.
  */
 function exportTargets(value: unknown, member: string, found: ManifestEntry[]): void {
   if (typeof value === "string") {
@@ -116,11 +131,12 @@ function manifestOf(host: Host, targetRoot: string): Record<string, unknown> | u
   return isRecord(value) ? value : undefined;
 }
 
-/** What the target's own manifest declares about where the package is entered. */
+/** What one manifest declares about where its package is entered. */
 export interface Manifest {
   /**
    * Every entry point the manifest names, in the order the members are read: `main`,
-   * `module`, `types`, then each `bin` command, then every target of `exports`. Each
+   * `module`, `types`, then each `bin` command, then every target of `exports`, then
+   * every token of each script, which names a file only where one is at its path. Each
    * path is absolute.
    */
   readonly entries: readonly ManifestEntry[];
@@ -134,7 +150,7 @@ export interface Manifest {
 }
 
 /**
- * What the target's own manifest declares about where the package is entered.
+ * What the manifest in `targetRoot` declares about where its package is entered.
  *
  * A target is taken as written. It is not resolved to a source file here, because
  * which file a target names is a fact about the compiler configuration that emits
@@ -166,6 +182,23 @@ export function readManifest(host: Host, targetRoot: string): Manifest {
   }
 
   exportTargets(manifest["exports"], "exports", found);
+
+  const scripts = manifest["scripts"];
+  if (isRecord(scripts)) {
+    for (const [name, command] of Object.entries(scripts)) {
+      if (typeof command !== "string") {
+        continue;
+      }
+      for (const token of new Set(scriptTokens(command))) {
+        found.push({
+          member: below("scripts", name),
+          path: token,
+          role: "script",
+          published: false,
+        });
+      }
+    }
+  }
 
   return {
     entries: found.map((entry) => ({ ...entry, path: resolvePath(targetRoot, entry.path) })),

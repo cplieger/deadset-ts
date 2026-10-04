@@ -143,7 +143,7 @@ export interface AnalyzeOptions {
    * Absent leaves it unresolved, so a case that reads declarations alone pays nothing
    * for it.
    */
-  readonly roots?: Omit<RootOptions, "manifest">;
+  readonly roots?: Omit<RootOptions, "manifest" | "host">;
 }
 
 /** Enumerates one project under `root`, in one client and one snapshot. */
@@ -167,7 +167,7 @@ export function analyzeRoot(root: string, options: AnalyzeOptions = {}): Analyze
       requests += engine.getTimingInfo().totals.requestCount - before;
     }
     if (options.roots !== undefined) {
-      rooted.push(roots(project, held, root, { ...options.roots, manifest }));
+      rooted.push(roots(project, held, root, { ...options.roots, manifest, host }));
     }
     return held;
   });

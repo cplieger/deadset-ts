@@ -39,6 +39,7 @@ import { relativePath } from "./paths.ts";
 import { byPosition, isComponentFile, renderPosition, type Position } from "./position.ts";
 import { DEFAULT_BATCH_CAP, UNANSWERED, type Answer } from "./query.ts";
 import type { ProjectView } from "./session.ts";
+import { typeQueryAliases } from "./type-query-alias.ts";
 
 /**
  * Every use one project's own files make of the project's own declarations.
@@ -495,12 +496,14 @@ function linksOf(
  * order, each with its enclosing declaration and its use, and every re-export the file
  * writes. One walk answers all of it, because a second would have to agree with this one
  * about which nodes are names. A declaration's own declared name is left out, which is
- * what makes a declaration referenced only from its own site an unreferenced one.
+ * what makes a declaration referenced only from its own site an unreferenced one, and so
+ * is every node of `unread`, a subtree that is no use.
  */
 function sitesOf(
   file: SourceFile,
   declarations: ReadonlyMap<string, string>,
   fileId: string,
+  unread: ReadonlySet<Node>,
 ): FileSites {
   const found: Site[] = [];
   const reads: Read[] = [];
@@ -532,6 +535,9 @@ function sitesOf(
   };
 
   const visit = (node: Node): void => {
+    if (unread.has(node)) {
+      return;
+    }
     if (isName(node)) {
       if (!declared.has(node.pos)) {
         const site = { node, shorthand: shorthands.get(node.pos), from: enclosing };
@@ -793,6 +799,49 @@ export function references<Brand>(
     ];
   };
 
+  // A type-query alias's own type names its export without using it; a use of the
+  // global is the use, so it names every link of the export's chain as well.
+  const aliases = project.ownSourceFiles().flatMap(typeQueryAliases);
+  const unread = new Set(aliases.map((alias) => alias.type));
+  const aliased = new Map<string, readonly ChainTarget[]>();
+  if (aliases.length > 0) {
+    const exported = project.symbolsAt(aliases.map((alias) => project.handle(alias.exported)));
+    aliases.forEach((alias, index) => {
+      const id = declaredAt(alias.declaration);
+      const symbol = exported[index];
+      if (id === undefined || symbol === undefined) {
+        return;
+      }
+      aliased.set(
+        id,
+        symbol === UNANSWERED
+          ? (declarationsByName(held).get(alias.name) ?? []).map((one) => ({
+              id: one,
+              stepped: true,
+              guessed: true,
+            }))
+          : chains.chainOf(symbol).map((target) => ({ ...target, stepped: true })),
+      );
+    });
+  }
+  /** One use's targets, then every link an alias global among them stands for, each once. */
+  const throughAliases = (targets: readonly ChainTarget[]): readonly ChainTarget[] => {
+    if (aliased.size === 0) {
+      return targets;
+    }
+    const all = [...targets];
+    const seen = new Set(targets.map((target) => target.id));
+    for (const target of targets) {
+      for (const forwarded of aliased.get(target.id) ?? []) {
+        if (!seen.has(forwarded.id)) {
+          seen.add(forwarded.id);
+          all.push(forwarded);
+        }
+      }
+    }
+    return all;
+  };
+
   /** The symbol one site resolves to, asking only the accessor the site's form names. */
   const symbolFor = (
     site: Site,
@@ -817,7 +866,12 @@ export function references<Brand>(
       tests.push(path);
     }
     const fileId = declaredAt(file) ?? "";
-    const { uses, reads, links, evaluations, decorated } = sitesOf(file, declarations, fileId);
+    const { uses, reads, links, evaluations, decorated } = sitesOf(
+      file,
+      declarations,
+      fileId,
+      unread,
+    );
     // A component file's markup may use any binding its blocks declare at the top level.
     const markup = isComponentFile(file);
     const bindings = markup ? importBindings(file) : [];
@@ -995,10 +1049,11 @@ export function references<Brand>(
       const position = renderPosition(file, root, site.node.getStart());
       // A re-export something imports is used and so is the declaration behind it, so
       // the use names every link of the chain its name stands at the head of.
-      const targets =
+      const targets = throughAliases(
         symbol === UNANSWERED
           ? named(site.node).map((id) => ({ id, stepped: false, guessed: true }))
-          : chains.chainOf(symbol);
+          : chains.chainOf(symbol),
+      );
       for (const target of targets) {
         found.push({
           from: site.from,

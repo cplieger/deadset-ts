@@ -1,0 +1,8 @@
+{
+  "name": "@example/configuration-files-sub",
+  "private": true,
+  "version": "1.0.0",
+  "devDependencies": {
+    "dep-sub": "1.0.0"
+  }
+}

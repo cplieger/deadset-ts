@@ -17,15 +17,21 @@ export interface DeclinedConvention {
   readonly reason: string;
 }
 
-/** What is declined for a tool none of whose conventions is entered. */
-const EVERY_CONVENTION = "its configuration and every file it loads by its own convention";
+/** What is declined for a tool whose own conventions are entered only through its configuration files. */
+const EVERY_CONVENTION = "every file it loads by its own convention beyond its configuration files";
 
-/** Why a tool none of whose conventions is entered declines them. */
+/** Why a tool whose own conventions are not read declines them. */
 const UNREAD =
-  "No rule reads it, so a file only it loads is reported as never imported unless " +
-  "ts.entry_files or roots.patterns names it.";
+  "No rule reads it beyond a configuration file the file-name form or a string enters, so a " +
+  "file only it loads is reported as never imported unless ts.entry_files or roots.patterns " +
+  "names it.";
 
-/** The tools none of whose conventions is entered. */
+/** Why a configuration's file names that are not relative literals are declined. */
+const NOT_RELATIVE =
+  "A string of a configuration file names a file only where it is a literal starting with ./ " +
+  "or ../, so a file named otherwise is reported as never imported.";
+
+/** The tools whose own conventions are not read. */
 const UNREAD_TOOLS: readonly string[] = [
   "angular",
   "astro",
@@ -184,7 +190,6 @@ const UNREAD_TOOLS: readonly string[] = [
   "typescript-content-mapper",
   "unbuild",
   "unocss",
-  "unplugin-auto-import",
   "unplugin-icons",
   "unplugin-vue-components",
   "unplugin-vue-i18n",
@@ -215,10 +220,17 @@ const UNREAD_TOOLS: readonly string[] = [
 const PARTLY_ENTERED: readonly DeclinedConvention[] = [
   {
     tool: "eslint",
-    convention: "the legacy .eslintrc configuration files",
+    convention: "a legacy configuration written in YAML or in JSON with comments",
     reason:
-      "Only the flat configuration's file names are entered, so a legacy configuration " +
-      "file the program holds is reported as never imported.",
+      "Only a configuration module and a strict JSON configuration file are read, so a " +
+      "dependency only such a file names is reported as unused.",
+  },
+  {
+    tool: "eslint",
+    convention: "a plugin or shareable configuration named without its package's prefix",
+    reason:
+      "A string uses a dependency only where it spells the dependency's name, so a " +
+      "dependency only a shortened name loads is reported as unused.",
   },
   {
     tool: "playwright",
@@ -229,9 +241,8 @@ const PARTLY_ENTERED: readonly DeclinedConvention[] = [
   },
   {
     tool: "playwright",
-    convention: "the globalSetup and globalTeardown files",
-    reason:
-      "No rule enters them, so a setup file only the runner loads is reported as never imported.",
+    convention: "a globalSetup or globalTeardown file named without a leading ./ or ../",
+    reason: NOT_RELATIVE,
   },
   {
     tool: "playwright",
@@ -242,15 +253,28 @@ const PARTLY_ENTERED: readonly DeclinedConvention[] = [
   },
   {
     tool: "stryker",
-    convention: "a configuration file named on the command line",
-    reason: "Only the file names the tool looks for by default are entered.",
+    convention: "a configuration file named on a command line no package.json script writes",
+    reason:
+      "Only the file names the tool looks for by default and the files a script names are entered.",
+  },
+  {
+    tool: "unplugin-auto-import",
+    convention: "an import its generated declarations add for a component's template alone",
+    reason:
+      "Only a global declared as an alias of an export is read, so an export the generated " +
+      "declarations name only for templates is reported as unused.",
   },
   {
     tool: "vite",
-    convention: "its configuration and every entry point it names",
+    convention: "an entry point its configuration names without a leading ./ or ../, or computes",
+    reason: NOT_RELATIVE,
+  },
+  {
+    tool: "vite",
+    convention: "the module scripts an index.html loads",
     reason:
-      "Only a worker a call addresses by a literal is entered. No rule reads the " +
-      "configuration, so a file only it names is reported as never imported.",
+      "No rule reads an HTML file, so a script only index.html loads is reported as never " +
+      "imported unless ts.entry_files names it.",
   },
   {
     tool: "vitest",
@@ -261,17 +285,15 @@ const PARTLY_ENTERED: readonly DeclinedConvention[] = [
   },
   {
     tool: "vitest",
-    convention: "the mock files below a __mocks__ directory",
+    convention: "the setup files of a configuration that moves its root",
     reason:
-      "No rule enters a file by its directory, so a mock only the runner's module mocking " +
-      "loads is reported as never imported.",
+      "A string is read against the configuration file's directory, so a setup file named " +
+      "against a root the configuration moves is not entered.",
   },
   {
     tool: "vitest",
-    convention: "the setup files of a configuration that moves its root",
-    reason:
-      "A configuration writing root reads its setup files against a directory its text " +
-      "may not state, so none of them is entered.",
+    convention: "a setup file named without a leading ./ or ../",
+    reason: NOT_RELATIVE,
   },
   {
     tool: "vitest",
@@ -282,10 +304,8 @@ const PARTLY_ENTERED: readonly DeclinedConvention[] = [
   },
   {
     tool: "webpack",
-    convention: "its configuration and every entry point it names",
-    reason:
-      "Only a worker a call addresses by a literal is entered. No rule reads the " +
-      "configuration, so a file only it names is reported as never imported.",
+    convention: "an entry point its configuration names without a leading ./ or ../, or computes",
+    reason: NOT_RELATIVE,
   },
 ];
 

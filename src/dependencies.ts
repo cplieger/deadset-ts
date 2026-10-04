@@ -2,7 +2,8 @@
  * The dependencies the target's manifest declares, and what the projects' own files
  * need from outside the target. A file needs a package it imports, re-exports from,
  * augments or references the types of, by name or through the file the specifier
- * resolves to; a configuration needs one it names. A package one dependency pulls in
+ * resolves to; a compiler configuration needs one it names, and a configuration file a
+ * tool loads needs each dependency its strings spell. A package one dependency pulls in
  * for itself is that dependency's need, not the target's.
  */
 
@@ -21,6 +22,12 @@ import {
   type Node,
   type SourceFile,
 } from "@typescript/native/unstable/ast";
+import {
+  configurationFiles,
+  declaredIn as declaredBeside,
+  dependenciesNamed,
+  moduleStrings,
+} from "./configuration-files.ts";
 import type { FindingPosition } from "./finding.ts";
 import type { Host } from "./host.ts";
 import { nodeKey, packageScope, type Inventory } from "./inventory.ts";
@@ -28,6 +35,7 @@ import { dirnamePath, isAbsolutePath, joinPath, resolvePath } from "./paths.ts";
 import type { DependencySection, Module } from "./ref.ts";
 import { UNANSWERED } from "./query.ts";
 import type { Handle, ProjectView } from "./session.ts";
+import { sourceFilesOf } from "./source-files.ts";
 
 const MANIFEST = "package.json";
 const MODULES_DIR = "node_modules";
@@ -268,12 +276,14 @@ function bindingsOf(node: Node | undefined): readonly Texted[] {
  * Every package one project needs, and which declaration each use is written in.
  * One local walk and one batched resolution per file: a use of an import binding is
  * an identifier resolving to the binding's own symbol, so a local declaration that
- * shadows the name is not one.
+ * shadows the name is not one. A string of a configuration file uses each dependency
+ * the manifest beside the file declares that it spells.
  */
 export function projectNeeds<Brand>(
   project: ProjectView<Brand>,
   held: Inventory,
   host: Host,
+  targetRoot: string,
 ): ProjectNeeds {
   const programPackages = new Set<string>();
   for (const name of project.program.getSourceFileNames()) {
@@ -307,6 +317,30 @@ export function projectNeeds<Brand>(
   let unanswered = false;
   for (const file of project.ownSourceFiles()) {
     unanswered = fileNeeds(project, held, file, programPackages, use) || unanswered;
+  }
+
+  const beside = new Map<string, readonly string[]>();
+  const declaredAt = (path: string): readonly string[] => {
+    const dir = dirnamePath(path);
+    let names = beside.get(dir);
+    if (names === undefined) {
+      names = declaredBeside(host, dir);
+      beside.set(dir, names);
+    }
+    return names;
+  };
+  const configuration = configurationFiles(host, targetRoot, sourceFilesOf(project, targetRoot));
+  for (const { file } of configuration.modules) {
+    const names = declaredAt(file.fileName);
+    for (const { node, text } of moduleStrings(file)) {
+      use(ownersOf(file, held, node), dependenciesNamed(text, names));
+    }
+  }
+  for (const document of configuration.documents) {
+    const names = declaredAt(document.path);
+    for (const text of document.strings) {
+      use([PROJECT_OWNER], dependenciesNamed(text, names));
+    }
   }
   return { packages, uses, unanswered };
 }

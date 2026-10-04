@@ -1,0 +1,15 @@
+{
+  "name": "@example/script-entries",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./main.ts",
+  "scripts": {
+    "plain": "node ./scripts/plain.ts --verbose",
+    "chain": "tsc&&node scripts/chained.ts||echo failed;node ./scripts/semi.ts|tee out.txt",
+    "quoted": "node \"./scripts/double.ts\" && node './scripts/single.ts'",
+    "built": "node dist/built.js",
+    "pattern": "node --test 'scripts/pattern*.ts'",
+    "missing": "node ./scripts/missing.ts"
+  }
+}

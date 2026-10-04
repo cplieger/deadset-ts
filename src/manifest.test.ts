@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Host } from "./host.ts";
-import { readManifest } from "./manifest.ts";
+import { readManifest, scriptTokens } from "./manifest.ts";
 
 /** A host holding one manifest at `/pkg`, or none. */
 function hostWith(manifest: string | undefined): Host {
@@ -96,5 +96,34 @@ describe("readManifest", () => {
     });
     expect(readManifest(hostWith("{"), "/pkg")).toEqual({ entries: [], declaresExports: false });
     expect(readManifest(hostWith("[]"), "/pkg")).toEqual({ entries: [], declaresExports: false });
+  });
+});
+
+describe("scriptTokens", () => {
+  it.each([
+    ["node ./a.ts --flag", ["node", "./a.ts", "--flag"]],
+    ["a&&b", ["a", "b"]],
+    ["a||b", ["a", "b"]],
+    ["a;b", ["a", "b"]],
+    ["a|b", ["a", "b"]],
+    ["a &&  b\tc", ["a", "b", "c"]],
+    ['node "./a.ts"', ["node", "./a.ts"]],
+    ["node './a.ts'", ["node", "./a.ts"]],
+    ["node \"'./a.ts'\"", ["node", "'./a.ts'"]],
+    ["node \"./a.ts'", ["node", "\"./a.ts'"]],
+    ["vitest 'src/*.ts'", ["vitest"]],
+  ])("splits %j into %j", (command, tokens) => {
+    expect(scriptTokens(command)).toEqual(tokens);
+  });
+});
+
+describe("the scripts of a manifest", () => {
+  it("name each distinct token of each script, read against the manifest's directory", () => {
+    expect(
+      entries({ scripts: { gen: "node ./bin/gen.ts && node ./bin/gen.ts", skipped: 3 } }),
+    ).toEqual([
+      'scripts["gen"] /pkg/node script false',
+      'scripts["gen"] /pkg/bin/gen.ts script false',
+    ]);
   });
 });

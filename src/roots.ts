@@ -12,12 +12,14 @@ import type { SourceFile } from "@typescript/native/unstable/ast";
 import { aliasChains } from "./alias-chain.ts";
 import { entryPoints, type EntryRule } from "./entry-points.ts";
 import { globExpression } from "./glob.ts";
+import type { Host } from "./host.ts";
 import { nodeKey, type Inventory, type InventorySymbol } from "./inventory.ts";
 import type { Manifest, ManifestEntry } from "./manifest.ts";
 import { byPosition } from "./position.ts";
 import { UNANSWERED } from "./query.ts";
 import type { ProjectView } from "./session.ts";
 import { sourceFilesOf } from "./source-files.ts";
+import { typeQueryAliases } from "./type-query-alias.ts";
 
 /** Why one declaration is a root. */
 export type RootKind =
@@ -27,6 +29,13 @@ export type RootKind =
   | "manifest-entry"
   /** A file the manifest names as a command, and what it exports outside the published API. */
   | "manifest-binary"
+  /** A file a token of a manifest's script names, and what it exports. */
+  | "script"
+  /**
+   * A global a declaration file declares as an alias of a module's export, and the
+   * module declarations around it: a use of the global is a use of the export.
+   */
+  | "type-query-alias"
   /** A declaration a consumer of a library target can name. */
   | "published-api"
   /** A declaration an exact reference from the configuration names. */
@@ -83,6 +92,8 @@ export interface Roots {
 
 /** What decides the roots beside the declarations themselves. */
 export interface RootOptions {
+  /** The platform the configuration files beside the program are read from. */
+  readonly host: Host;
   /** The target's own manifest. */
   readonly manifest: Manifest;
   /**
@@ -99,6 +110,13 @@ export interface RootOptions {
   /** Whether the target is a library, so a consumer outside it reaches its published API. */
   readonly publishedAPI: boolean;
 }
+
+/** The kind of root each role of a manifest entry makes. */
+const ENTRY_KINDS = {
+  import: "manifest-entry",
+  run: "manifest-binary",
+  script: "script",
+} as const satisfies Record<ManifestEntry["role"], RootKind>;
 
 /** Whether a configured string carries either special character. */
 function isPattern(text: string): boolean {
@@ -228,7 +246,7 @@ export function roots<Brand>(
   const publishedNames = new Set(published.map((file) => file.fileName));
   for (const { entry } of entries) {
     for (const file of files.named(entry.path)) {
-      const kind = entry.role === "run" ? "manifest-binary" : "manifest-entry";
+      const kind = ENTRY_KINDS[entry.role];
       enter(file, kind, entry.member, !publishedNames.has(file.fileName));
     }
   }
@@ -240,8 +258,19 @@ export function roots<Brand>(
       }
     }
   }
-  for (const point of entryPoints(project, files, options.testFiles)) {
+  for (const point of entryPoints(project, files, options.testFiles, options.host, targetRoot)) {
     enter(point.file, point.rule, point.source, point.exports);
+  }
+  for (const file of files.byPath.values()) {
+    for (const alias of typeQueryAliases(file)) {
+      const source = alias.type.getText().replace(/\s+/gu, " ");
+      for (const node of [alias.declaration, ...alias.containers]) {
+        const id = declared.get(nodeKey(file, node));
+        if (id !== undefined) {
+          add(id, "type-query-alias", source);
+        }
+      }
+    }
   }
 
   const { tables: exportsOf, answered } = exportTables(project, held, [
