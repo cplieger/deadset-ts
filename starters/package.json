@@ -26,6 +26,6 @@
     "storybook": "10.6.1",
     "sv": "1.1.0",
     "sv-sveltekit-2": "npm:sv@0.17.1",
-    "sveltekit-2": "npm:@sveltejs/kit@2.70.3"
+    "sveltekit-2": "npm:@sveltejs/kit@3.0.0"
   }
 }
