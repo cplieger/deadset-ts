@@ -78,13 +78,14 @@ import { references, testFileRulesOf, type Reference, type TestFileRule } from "
 import { roots, unmatchedEverywhere, type RootKind, type Roots } from "./roots.ts";
 import type { Scope } from "./scope.ts";
 import { serializationContract } from "./serialization-contract.ts";
-import { diagnosticsOf, runSession, type Engine, type ProjectView } from "./session.ts";
+import { diagnosticsOf, ownedAs, runSession, type Engine, type ProjectView } from "./session.ts";
 import { accessorsOf, storesOf } from "./stores.ts";
 import { isPartKind, type SuppressionRecord, type Suppressions, type Verdict } from "./suppress.ts";
 import { bindRows, readBaseline, readIgnoreFile, type Recorded } from "./suppress-file.ts";
 import { inlineDirectives, inlineSuppressions, type InlineDirective } from "./suppress-inline.ts";
 import type { Exemption, Mode, SweepInput } from "./sweep.ts";
 import { readTemplates, templateField } from "./template-field.ts";
+import { ownErrors, workspaceRun } from "./workspace-run.ts";
 
 /** The setting whose source decides where a finding about a configured root sits. */
 const ROOTS_SETTING = "roots.patterns";
@@ -156,6 +157,11 @@ interface ProjectRead {
   readonly configFile: string;
   readonly held: Inventory;
   readonly rooted: Roots;
+  /**
+   * The paths below the target root of the workspace-package files the project holds
+   * only for the references they make.
+   */
+  readonly referenceOnly: readonly string[];
 }
 
 /** What a run read of the consumers its scope declares. */
@@ -200,14 +206,22 @@ function readProjects<Answer>(
       load.configFiles.map((configFile) => [configFile, load.consumer] as const),
     ),
   );
+  const absoluteRoot = resolvePath(host.workingDirectory(), targetRoot);
+  const workspace = workspaceRun(
+    engine,
+    host,
+    absoluteRoot,
+    discovered.configFiles,
+    readManifest(host, targetRoot),
+  );
   const options = {
-    manifest: readManifest(host, targetRoot),
+    manifest: workspace?.manifest ?? readManifest(host, targetRoot),
+    workspaceEntries: workspace?.entries,
     patterns: config.rootPatterns,
     entryFiles: config.ts.entryFiles,
     testFiles: config.ts.testFiles,
     publishedAPI: config.targetKind === "library",
   };
-  const absoluteRoot = resolvePath(host.workingDirectory(), targetRoot);
   const notBuilt: NotBuilt[] = [...discovered.notBuilt];
   const dropped = (configFile: string, error: string): void => {
     notBuilt.push({
@@ -217,13 +231,34 @@ function readProjects<Answer>(
     });
   };
   const failures: LocatedDiagnostic[] = [];
+  const unbuildable: string[] = [];
   const consumed = new Map<string, Reference>();
   const session = runSession(
     engine,
     [...discovered.configFiles, ...consumerOf.keys()],
-    (project) => {
-      const errors = projectErrors(diagnosticsOf(project));
-      const consumer = consumerOf.get(project.configFile);
+    (opened) => {
+      const consumer = consumerOf.get(opened.configFile);
+      const setup = consumer === undefined ? workspace?.unbuildable(opened.configFile) : undefined;
+      if (setup !== undefined) {
+        if (isGuess(discovered, opened.configFile)) {
+          dropped(opened.configFile, setup);
+        } else {
+          unbuildable.push(setup);
+        }
+        return undefined;
+      }
+      const referenceOnly =
+        workspace === undefined || consumer !== undefined
+          ? () => false
+          : workspace.referenceOnly(opened.configFile);
+      const project =
+        workspace === undefined || consumer !== undefined
+          ? opened
+          : ownedAs(opened, (file, fromExternalLibrary) =>
+              workspace.ownFile(file, fromExternalLibrary),
+            );
+      const raw = projectErrors(diagnosticsOf(project));
+      const errors = { load: raw.load, check: ownErrors(raw.check, referenceOnly) };
       const [unloaded] = errors.load;
       if (
         unloaded !== undefined &&
@@ -258,15 +293,28 @@ function readProjects<Answer>(
       const held = inventory(project, host, targetRoot);
       const rooted = roots(project, held, targetRoot, options);
       const configuration = ids.get(project.configFile) ?? project.configFile;
-      return stage(project, { configuration, configFile: project.configFile, held, rooted });
+      return stage(project, {
+        configuration,
+        configFile: project.configFile,
+        held,
+        rooted,
+        referenceOnly: project
+          .ownSourceFiles()
+          .filter((file) => referenceOnly(file.fileName))
+          .flatMap((file) => relativePath(absoluteRoot, file.fileName) ?? []),
+      });
     },
     discovered.derived ? "record" : "refuse",
+    workspace?.programs,
   );
   for (const configFile of session.unopened) {
     if (consumerOf.has(configFile) || !isGuess(discovered, configFile)) {
       throw new DiscoveryError(`${configFile} opened no project`, []);
     }
     dropped(configFile, "the compiler opened no project for the configuration");
+  }
+  if (unbuildable.length > 0) {
+    throw new DiscoveryError(unbuildable.join("\n"), []);
   }
   if (failures.length > 0) {
     throw new DiscoveryError(
@@ -454,6 +502,9 @@ function readRun<Extra>(
         references: resolved.references,
         roots: projectRead.rooted.liveUnderReachability,
         testFiles: resolved.testFilePaths,
+        ...(projectRead.referenceOnly.length === 0
+          ? {}
+          : { referenceOnly: projectRead.referenceOnly }),
       };
       const exempt = computeExemptions(
         { project, held: projectRead.held, targetRoot, templates, ts: config.ts, consumers },
@@ -626,7 +677,9 @@ function readEmitterRun(
       implementations: implementations(project, read.held),
       heldByInclusion: heldByInclusion(project, targetRoot),
       rooted: read.rooted,
-      directives: inlineDirectives(project, read.held, targetRoot),
+      directives: inlineDirectives(project, read.held, targetRoot).filter(
+        (directive) => !read.referenceOnly.includes(directive.site.path),
+      ),
       declarationsNamed: declarationsNamed(project, read.held, configuredDeclarations(config)),
       parts: projectParts(project, read.held, references, targetRoot),
     }),

@@ -8,6 +8,7 @@ import { schemaValidator } from "../../__test-helpers__/json-schema.ts";
 import { writeProject } from "../../__test-helpers__/projects.ts";
 import type { Host } from "../host.ts";
 import { run, type Writer } from "../run.ts";
+import { openEngine, type Engine } from "../session.ts";
 
 /** The bound on one case, each of which loads a whole target. */
 const LOAD_TIMEOUT = 60_000;
@@ -721,6 +722,45 @@ describe("an unused parameter", () => {
           one["severity"],
         ]),
       ).toEqual([["DS1801", "factor", "warn"]]);
+    },
+    LOAD_TIMEOUT,
+  );
+});
+
+describe("a question the checker does not answer", () => {
+  it(
+    "is counted on the error stream under its configuration's path below the target",
+    () => {
+      const target = fixture("projects", "published-exports");
+      const failing = (collectTiming: boolean): Engine => {
+        const engine = openEngine({ collectTiming });
+        return {
+          ...engine,
+          ask: (accessor, locations, question) => {
+            if (
+              accessor === "getExportsOfModule" &&
+              locations().some((at) => at.endsWith('/src/index"'))
+            ) {
+              throw new Error("panic: runtime error: invalid memory address");
+            }
+            return engine.ask(accessor, locations, question);
+          },
+        };
+      };
+      const dir = outputDir();
+      const err = new MemoryWriter();
+
+      run(
+        ["analyze", `--target=${target}`, `--report=${join(dir, "report.json")}`],
+        new MemoryWriter(),
+        err,
+        hostAt(ROOT),
+        failing,
+      );
+
+      expect(err.text).toContain(
+        "the checker answered 1 question with a failure (tsconfig.json: 1)",
+      );
     },
     LOAD_TIMEOUT,
   );

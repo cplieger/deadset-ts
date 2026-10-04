@@ -45,6 +45,8 @@ interface DrawnConfiguration {
   readonly fromMain: readonly number[];
   /** The calls between held functions. */
   readonly calls: readonly Call[];
+  /** Whether the configuration holds the file only for the references it makes. */
+  readonly referenceOnly: boolean;
 }
 
 /** The calls of a configuration holding no function. */
@@ -60,7 +62,12 @@ const configuration: fc.Arbitrary<DrawnConfiguration> = fc
             fc.record({ from: fc.constantFrom(...held), to: fc.constantFrom(...held) }),
             { maxLength: 4, selector: (call) => `${String(call.from)}>${String(call.to)}` },
           );
-    return fc.record({ held: fc.constant(held), fromMain: fc.subarray(held), calls });
+    return fc.record({
+      held: fc.constant(held),
+      fromMain: fc.subarray(held),
+      calls,
+      referenceOnly: fc.boolean(),
+    });
   });
 
 const matrix = fc.array(configuration, { minLength: 1, maxLength: 5 });
@@ -88,6 +95,7 @@ function configured(drawn: DrawnConfiguration, index: number): Configured {
     ],
     roots: [{ id: MAIN.id, kind: "configured", source: "main" }],
     testFiles: [],
+    referenceOnly: drawn.referenceOnly ? [PATH] : [],
   };
 }
 
@@ -114,7 +122,9 @@ describe("the matrix intersection", () => {
    * Property dead-code-suite/P11: for any matrix of configurations, each holding its own
    * declarations and making its own references, a declaration is reported exactly when it
    * is dead in every configuration that holds it, a declaration no configuration holds is
-   * not reported at all, and each reported one names the configurations that hold it.
+   * not reported at all, and each reported one names the configurations that hold it. A
+   * configuration holding the file only for its references still keeps what it uses
+   * live, and a declaration no other configuration holds is not reported.
    */
   it("reports only what is dead in every configuration that holds it", () => {
     fc.assert(
@@ -131,7 +141,8 @@ describe("the matrix intersection", () => {
           const everywhere = drawn.every(
             (one, index) => !one.held.includes(at) || dead[index]?.has(at),
           );
-          return holders.length > 0 && everywhere ? [`${symbol.name} ${holders.join(",")}`] : [];
+          const judged = drawn.some((one) => one.held.includes(at) && !one.referenceOnly);
+          return judged && everywhere ? [`${symbol.name} ${holders.join(",")}`] : [];
         });
 
         expect(

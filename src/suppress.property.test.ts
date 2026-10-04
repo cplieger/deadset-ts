@@ -17,6 +17,7 @@ function hostWith(document: string): Host {
     readFile: (path) => (held(path) ? document : ""),
     readDirectory: () => [],
     kindOf: (path) => (held(path) ? "file" : "absent"),
+    realPath: (path) => path,
     analyzerVersion: () => "0.0.0-devel",
     writeDocument: (path) => {
       throw new Error(`${path}: this host writes nothing`);

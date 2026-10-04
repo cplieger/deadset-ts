@@ -6,6 +6,7 @@ import {
   openSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   statSync,
@@ -117,6 +118,7 @@ export function nodeHost(): Host {
       }
       return stat.isDirectory() ? "directory" : "file";
     },
+    realPath: (path) => realpathSync(path),
     analyzerVersion: (): string => {
       found ??= readVersion();
       return found;

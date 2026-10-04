@@ -1,6 +1,7 @@
 import { runSweep } from "../analysis.ts";
 import { retainedLines } from "../exempt.ts";
 import { partialNotes } from "../partial.ts";
+import { resolvePath } from "../paths.ts";
 import { resolve } from "../resolve.ts";
 import { EXIT_CLEAN, type Verb } from "./verb.ts";
 
@@ -21,7 +22,11 @@ export const printRetainedVerb: Verb = ({ out, err, host, inputs, scope, openCli
   for (const line of retainedLines(swept.matrix.union.symbols, swept.retained)) {
     out.write(`${line}\n`);
   }
-  for (const note of partialNotes({ notBuilt: swept.notBuilt, unanswered: swept.unanswered })) {
+  for (const note of partialNotes({
+    notBuilt: swept.notBuilt,
+    unanswered: swept.unanswered,
+    targetRoot: resolvePath(host.workingDirectory(), scoped.target.path),
+  })) {
     err.write(`deadset-ts: ${note}\n`);
   }
   return EXIT_CLEAN;

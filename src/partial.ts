@@ -1,4 +1,5 @@
 import type { NotBuilt } from "./discover.ts";
+import { relativePath } from "./paths.ts";
 import type { UnansweredQuestion } from "./query.ts";
 
 /** What a run read only in part. */
@@ -7,6 +8,8 @@ interface Partial {
   readonly notBuilt: readonly NotBuilt[];
   /** Every question the checker could not answer, each once. */
   readonly unanswered: readonly UnansweredQuestion[];
+  /** The target root, absolute, which every configuration file is named below. */
+  readonly targetRoot: string;
 }
 
 /** A count with its noun, so a line reads for one as well as for several. */
@@ -29,7 +32,9 @@ export function partialNotes(partial: Partial): readonly string[] {
   if (partial.unanswered.length > 0) {
     const byProject = new Map<string, number>();
     for (const question of partial.unanswered) {
-      byProject.set(question.configFile, (byProject.get(question.configFile) ?? 0) + 1);
+      const configFile =
+        relativePath(partial.targetRoot, question.configFile) ?? question.configFile;
+      byProject.set(configFile, (byProject.get(configFile) ?? 0) + 1);
     }
     const where = [...byProject].map(([configFile, n]) => `${configFile}: ${String(n)}`).join(", ");
     notes.push(

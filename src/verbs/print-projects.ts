@@ -65,7 +65,7 @@ export const printProjectsVerb: Verb = ({ out, err, host, inputs, scope, openCli
   }
   const projects = session.projects.filter((id): id is string => id !== undefined);
   if (projects.length === 0 && notBuilt.length > 0) {
-    for (const note of partialNotes({ notBuilt, unanswered: [] })) {
+    for (const note of partialNotes({ notBuilt, unanswered: [], targetRoot: root })) {
       err.write(`deadset-ts: ${note}\n`);
     }
     err.write("deadset-ts: no configuration discovery derived could be built\n");
@@ -74,7 +74,7 @@ export const printProjectsVerb: Verb = ({ out, err, host, inputs, scope, openCli
   for (const id of projects) {
     out.write(`${id}\n`);
   }
-  for (const note of partialNotes({ notBuilt, unanswered: [] })) {
+  for (const note of partialNotes({ notBuilt, unanswered: [], targetRoot: root })) {
     err.write(`deadset-ts: ${note}\n`);
   }
   return EXIT_CLEAN;
