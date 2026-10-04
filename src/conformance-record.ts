@@ -3,8 +3,8 @@
 export const RECORD = {
   conformance: {
     corpusVersion: "2.1.1",
-    result: "fail",
-    digest: "sha256:f93bd0a8559198e5148047ca4a5a87a3e174390c12d2808683acb3561a844682",
+    result: "pass",
+    digest: "sha256:e5e456bf3a706f1fa9f906ae71e10ea98a78da52d7d99a5ed59dca8a72bbe927",
   },
   gaps: [
     {

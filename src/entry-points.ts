@@ -1,8 +1,8 @@
 /**
  * The files a tool or the platform enters without any import naming them: the
- * configuration files the test runner, the linter, the mutation tester and the
- * browser-test runner load by their file name, the test files the runner executes,
- * and a worker a call addresses by a string literal.
+ * configuration files a tool loads by their file name and the files their strings
+ * name, the test files the runner executes, and a worker a call addresses by a string
+ * literal.
  *
  * Each rule is read from the program and nothing else: a file name the tool
  * itself looks for, a literal written in a configuration file, or a literal
@@ -30,7 +30,9 @@ import {
   type SourceFile,
 } from "@typescript/native/unstable/ast";
 import { SymbolFlags } from "@typescript/native/unstable/sync";
+import { configurationFiles, filesNamedBy, moduleStrings } from "./configuration-files.ts";
 import { globExpression } from "./glob.ts";
+import type { Host } from "./host.ts";
 import { dirnamePath, relativePath, resolvePath } from "./paths.ts";
 import { UNANSWERED } from "./query.ts";
 import type { ProjectView } from "./session.ts";
@@ -38,13 +40,15 @@ import type { SourceFiles } from "./source-files.ts";
 
 /** Which rule entered a file. */
 export type EntryRule =
-  /** The test runner: its configuration, its setup files and the test files. */
+  /** A configuration module, by the form of its name. */
+  | "configuration-file"
+  /** A file a relative string of a configuration module or a JSON configuration file names. */
+  | "configuration-string"
+  /** The test runner: its workspace configuration, its setup files and the test files. */
   | "test-runner"
-  /** The linter's flat configuration. */
-  | "lint-configuration"
-  /** The mutation tester's configuration, and the test-runner configuration it names. */
+  /** The mutation tester's configuration under a name the configuration form does not cover. */
   | "mutation-testing"
-  /** The browser-test runner's configuration and the test files below its test directory. */
+  /** The test files below the browser-test runner's test directory. */
   | "browser-tests"
   /** A worker or service worker a call addresses by a string literal. */
   | "worker";
@@ -78,41 +82,27 @@ interface Convention {
 /** The extensions the test runner and the browser-test runner load a configuration from. */
 const MODULE_EXTENSIONS = ["js", "mjs", "cjs", "ts", "mts", "cts"] as const;
 
-/** The extensions the linter's flat configuration and the mutation tester's are loaded from. */
+/** The extensions the mutation tester's configuration is loaded from. */
 const SCRIPT_EXTENSIONS = ["js", "mjs", "cjs"] as const;
 
+/** The tool file names the configuration form does not cover. */
 const CONVENTIONS: readonly Convention[] = [
   {
     rule: "test-runner",
-    stems: ["vitest.config", "vitest.workspace", "vitest.projects"],
+    stems: ["vitest.workspace", "vitest.projects"],
     extensions: MODULE_EXTENSIONS,
     testRunner: true,
   },
   {
-    rule: "lint-configuration",
-    stems: ["eslint.config"],
-    extensions: MODULE_EXTENSIONS,
-    testRunner: false,
-  },
-  {
     rule: "mutation-testing",
-    stems: ["stryker.config", "stryker.conf", ".stryker.config", ".stryker.conf"],
+    stems: ["stryker.conf", ".stryker.config", ".stryker.conf"],
     extensions: SCRIPT_EXTENSIONS,
     testRunner: false,
   },
-  {
-    rule: "mutation-testing",
-    stems: ["vitest.stryker.config"],
-    extensions: MODULE_EXTENSIONS,
-    testRunner: true,
-  },
-  {
-    rule: "browser-tests",
-    stems: ["playwright.config"],
-    extensions: MODULE_EXTENSIONS,
-    testRunner: false,
-  },
 ];
+
+/** The stem of the browser-test runner's configuration, whose test directory is read. */
+const BROWSER_TEST_CONFIG = "playwright.config";
 
 /** The browser-test runner's own test-file pattern, which holds where a configuration names none. */
 const BROWSER_TEST_MATCH = "**/*.{spec,test}.{js,ts,jsx,tsx,cjs,cts,cjsx,ctsx,mjs,mts,mjsx,mtsx}";
@@ -254,6 +244,43 @@ function filesNamed(files: SourceFiles, dir: string, text: string): readonly Sou
     return [];
   }
   return files.named(resolvePath(dir, pathPart(text)));
+}
+
+/** Whether one file name is the browser-test runner's configuration. */
+function isBrowserTestConfig(name: string): boolean {
+  return MODULE_EXTENSIONS.some((ext) => name === `${BROWSER_TEST_CONFIG}.${ext}`);
+}
+
+/**
+ * The files the configuration files of one project enter: each configuration module,
+ * with what it exports, and each own file a relative string of a configuration module
+ * or a JSON configuration file names, read against that file's directory.
+ */
+function configurationEntries(
+  host: Host,
+  targetRoot: string,
+  files: SourceFiles,
+): readonly EntryPoint[] {
+  const { modules, documents } = configurationFiles(host, targetRoot, files);
+  const found: EntryPoint[] = [];
+  const strings = (dir: string, texts: readonly string[]): void => {
+    for (const text of texts) {
+      for (const file of filesNamedBy(files, dir, text)) {
+        found.push({ file, rule: "configuration-string", source: text, exports: true });
+      }
+    }
+  };
+  for (const { file, form } of modules) {
+    found.push({ file, rule: "configuration-file", source: form, exports: true });
+    strings(
+      dirnamePath(file.fileName),
+      moduleStrings(file).map((one) => one.text),
+    );
+  }
+  for (const document of documents) {
+    strings(dirnamePath(document.path), document.strings);
+  }
+  return found;
 }
 
 /**
@@ -467,8 +494,8 @@ function workersOf<Brand>(
 }
 
 /**
- * Every file of one project the lifted rules enter, in no particular order and
- * possibly more than once: a file two rules enter appears once per rule.
+ * Every file of one project the rules enter, in no particular order and possibly more
+ * than once: a file two rules enter appears once per rule.
  *
  * `testFiles` is the configuration's test-file patterns, matched against each
  * file's path below the target root; a file one of them matches is a test file the
@@ -478,19 +505,22 @@ export function entryPoints<Brand>(
   project: ProjectView<Brand>,
   files: SourceFiles,
   testFiles: readonly string[],
+  host: Host,
+  targetRoot: string,
 ): readonly EntryPoint[] {
-  const found: EntryPoint[] = [];
+  const found: EntryPoint[] = [...configurationEntries(host, targetRoot, files)];
   const tests = testFiles.map((pattern) => ({ pattern, expression: globExpression(pattern) }));
   for (const [path, file] of files.byPath) {
-    const named = conventionOf(basename(path));
+    const name = basename(path);
+    const named = conventionOf(name);
     if (named !== undefined) {
       found.push({ file, rule: named.convention.rule, source: named.spelled, exports: true });
       if (named.convention.testRunner) {
         found.push(...setupFilesOf(file, files));
       }
-      if (named.convention.rule === "browser-tests") {
-        found.push(...browserTestsOf(file, files));
-      }
+    }
+    if (isBrowserTestConfig(name)) {
+      found.push(...browserTestsOf(file, files));
     }
     for (const { pattern, expression } of tests) {
       if (expression.test(path)) {

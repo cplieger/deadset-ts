@@ -1,0 +1,1 @@
+export function substituted(): void {}

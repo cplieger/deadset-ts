@@ -1,0 +1,5 @@
+{
+  "extends": "dep-json",
+  "dep-member": "./src/json-value.ts",
+  "list": ["./src/json-list.ts"]
+}

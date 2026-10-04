@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
 import { fixture, readFixture } from "../__test-helpers__/fixtures.ts";
-import { analyzeRoot, type Analyzed } from "../__test-helpers__/projects.ts";
+import { analyzeRoot, writeProject, type Analyzed } from "../__test-helpers__/projects.ts";
 import { runRoots, type RunRoots } from "./analysis.ts";
 import { resolve } from "./resolve.ts";
 import { matchRef } from "./roots.ts";
@@ -74,6 +74,57 @@ describe("the roots a manifest names", () => {
 
     expect(lines).not.toContain("#unexported");
     expect(lines).not.toContain("unreached.ts");
+  });
+});
+
+describe("the roots a manifest's scripts name", () => {
+  const SCRIPTS = runOver(fixture("projects", "script-entries")).roots.map(
+    (root) => `${root.position.path} ${root.kind} ${root.source}`,
+  );
+
+  it("root each file a token names, with what it exports, through the emit mapping too", () => {
+    expect(SCRIPTS.filter((line) => line.includes(" script "))).toEqual([
+      'built.ts script scripts["built"]',
+      'built.ts script scripts["built"]',
+      'scripts/chained.ts script scripts["chain"]',
+      'scripts/chained.ts script scripts["chain"]',
+      'scripts/double.ts script scripts["quoted"]',
+      'scripts/double.ts script scripts["quoted"]',
+      'scripts/plain.ts script scripts["plain"]',
+      'scripts/plain.ts script scripts["plain"]',
+      'scripts/semi.ts script scripts["chain"]',
+      'scripts/semi.ts script scripts["chain"]',
+      'scripts/single.ts script scripts["quoted"]',
+      'scripts/single.ts script scripts["quoted"]',
+    ]);
+  });
+
+  it("root no file a pattern token or no token names", () => {
+    expect(SCRIPTS.filter((line) => /pattern-one|unnamed/u.test(line))).toEqual([]);
+  });
+
+  it("root the file a workspace member's script names, spelled under the member's manifest", () => {
+    const root = writeProject({
+      "pnpm-workspace.yaml": 'packages: ["packages/*"]\n',
+      "package.json": '{ "name": "@example/root", "private": true }\n',
+      "deadset.json": '{ "target": { "kind": "application" } }\n',
+      "packages/tool/package.json":
+        '{ "name": "@example/tool", "private": true, "type": "module", "scripts": { "gen": "node ./bin/gen.ts" } }\n',
+      "packages/tool/bin/gen.ts": "export function gen(): void {}\n",
+      "packages/tool/bin/other.ts": "export function other(): void {}\n",
+    });
+    try {
+      expect(
+        runOver(root)
+          .roots.filter((one) => one.kind === "script")
+          .map((one) => `${one.ref} ${one.source}`),
+      ).toEqual([
+        'ts://@example/tool/bin/gen.ts# packages/tool/package.json scripts["gen"]',
+        'ts://@example/tool/bin/gen.ts#gen packages/tool/package.json scripts["gen"]',
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

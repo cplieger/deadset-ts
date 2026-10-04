@@ -1,0 +1,22 @@
+{
+  "name": "@example/configuration-files",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./src/main.ts",
+  "devDependencies": {
+    "@scope/dep-scoped": "1.0.0",
+    "dep-broken": "1.0.0",
+    "dep-exact": "1.0.0",
+    "dep-json": "1.0.0",
+    "dep-member": "1.0.0",
+    "dep-nested": "1.0.0",
+    "dep-nested-json": "1.0.0",
+    "dep-prefix": "1.0.0",
+    "dep-rc": "1.0.0",
+    "dep-root-only": "1.0.0",
+    "dep-subpath": "1.0.0",
+    "dep-substituted": "1.0.0",
+    "dep-template": "1.0.0"
+  }
+}
