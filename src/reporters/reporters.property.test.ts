@@ -110,6 +110,10 @@ function report(findings: readonly WireFinding[], stale: readonly WireStaleSuppr
     declared_gaps: [],
     excluded_by_cgo: [],
     test_file_rules: [],
+    type_error_skips: [],
+    notes: [],
+    unanswered_questions: [],
+    conventions_applied: [],
     totals: {
       findings: findings.length,
       by_severity: {

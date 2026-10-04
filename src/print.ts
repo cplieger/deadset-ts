@@ -75,6 +75,8 @@ export function printConfig(config: Config, provenance: Provenance): string {
     ts: {
       test_files: config.ts.testFiles,
       entry_files: config.ts.entryFiles,
+      component_extensions: config.ts.componentExtensions,
+      disabled_conventions: config.ts.disabledConventions,
       injection_registrations: config.ts.injectionRegistrations.map(declarationOf),
       lifecycle_contracts: config.ts.lifecycleContracts.map((entry) => ({
         components: entry.components.map(declarationOf),

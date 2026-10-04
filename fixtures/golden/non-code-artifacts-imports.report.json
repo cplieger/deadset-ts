@@ -1,6 +1,6 @@
 {
-  "schema_version": "6.1.0",
-  "contract_version": "4.0.0",
+  "schema_version": "7.0.0",
+  "contract_version": "5.1.0",
   "analyzer": {
     "name": "deadset-ts",
     "version": "0.0.0",
@@ -8,13 +8,12 @@
       "ts"
     ],
     "schema_versions_accepted": [
-      "6.0.0",
-      "6.1.0"
+      "7.0.0"
     ],
     "conformance": {
-      "corpus_version": "2.0.0",
-      "result": "pass",
-      "digest": "sha256:1274315595d7b944d22eb0126081e24cf293c9fe53a236f4d263c714644f32ee"
+      "corpus_version": "2.1.1",
+      "result": "fail",
+      "digest": "sha256:9d5e77a076e71be09d3f9bc2154eedfc7e97f56a94785bbcecd8ecb88cb455ed"
     }
   },
   "target": {
@@ -440,43 +439,6 @@
       "severity": "deny",
       "message": "exported variable has no reference in the target and none from any loaded consumer",
       "details": {}
-    },
-    {
-      "code": "DS1004",
-      "kind": "test-only-use",
-      "language": "ts",
-      "position": {
-        "path": "src/tested.ts",
-        "line": 1,
-        "column": 17,
-        "end_line": 3
-      },
-      "symbol": {
-        "ref": "ts://@example/non-code-artifacts-imports/src/tested.ts#tested",
-        "kind": "function",
-        "name": "tested",
-        "size_lines": 3
-      },
-      "reachability_class": "certain",
-      "confidence": "certain",
-      "liveness_relation": "reference-counting",
-      "test_only": true,
-      "generated": false,
-      "component": {
-        "id": "deadset-ts/c-0006",
-        "root": true,
-        "symbol_count": 1,
-        "deletable_lines": 3
-      },
-      "retained_by": [],
-      "configurations": [
-        "tsconfig.json"
-      ],
-      "consumers_loaded": [],
-      "fixability": "deletable",
-      "severity": "deny",
-      "message": "function is referenced only from test files and never from production code",
-      "details": {}
     }
   ],
   "edge_evaluations": [],
@@ -493,16 +455,36 @@
     {
       "rule": "test-file-pattern-1",
       "matched": 1
+    },
+    {
+      "rule": "test-file-pattern-2",
+      "matched": 0
+    },
+    {
+      "rule": "test-file-pattern-3",
+      "matched": 0
+    },
+    {
+      "rule": "test-file-pattern-4",
+      "matched": 0
+    },
+    {
+      "rule": "test-support",
+      "matched": 1
     }
   ],
+  "type_error_skips": [],
+  "notes": [],
+  "unanswered_questions": [],
+  "conventions_applied": [],
   "totals": {
-    "findings": 12,
+    "findings": 11,
     "by_severity": {
       "allow": 0,
       "warn": 0,
-      "deny": 12
+      "deny": 11
     },
-    "deletable_lines": 25,
+    "deletable_lines": 22,
     "suppressions_in_effect": 0,
     "reasons_recorded": 0,
     "stale_suppressions": 0,

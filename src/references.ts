@@ -6,9 +6,11 @@ import {
   isDeleteExpression,
   isElementAccessExpression,
   isExportDeclaration,
+  isExpressionStatement,
   isExternalModuleReference,
   isForInStatement,
   isForOfStatement,
+  isForStatement,
   isImportDeclaration,
   isImportEqualsDeclaration,
   isNamespaceExport,
@@ -23,6 +25,7 @@ import {
   isSpreadAssignment,
   isSpreadElement,
   isStringLiteral,
+  isVoidExpression,
   SyntaxKind,
   type Node,
   type SourceFile,
@@ -184,9 +187,8 @@ export interface ReferenceOptions {
 
 /**
  * The operators whose left side one assignment stores into. A compound assignment is
- * among them: it reads its target only to write the result back, so nothing else
- * receives what it read, and a declaration whose every other reference is one of these
- * carries no information out of itself.
+ * among them: where its value is discarded it reads its target only to write the result
+ * back, so nothing else receives what it read.
  */
 const ASSIGNMENTS: ReadonlySet<SyntaxKind> = new Set([
   SyntaxKind.EqualsToken,
@@ -206,6 +208,40 @@ const ASSIGNMENTS: ReadonlySet<SyntaxKind> = new Set([
   SyntaxKind.QuestionQuestionEqualsToken,
   SyntaxKind.CaretEqualsToken,
 ]);
+
+/**
+ * The assignments that read their target to decide whether to store at all, so the read
+ * carries information out whatever becomes of the result.
+ */
+const LOGICAL_ASSIGNMENTS: ReadonlySet<SyntaxKind> = new Set([
+  SyntaxKind.BarBarEqualsToken,
+  SyntaxKind.AmpersandAmpersandEqualsToken,
+  SyntaxKind.QuestionQuestionEqualsToken,
+]);
+
+/**
+ * Whether the value of one store expression is discarded: it is a statement of its own, a
+ * clause of a `for` loop, the operand of `void`, or the left operand of a comma.
+ */
+function valueDiscarded(node: Node): boolean {
+  let child = node;
+  let parent = node.parent;
+  while (isParenthesizedExpression(parent)) {
+    child = parent;
+    parent = parent.parent;
+  }
+  if (isExpressionStatement(parent) || isVoidExpression(parent)) {
+    return true;
+  }
+  if (isForStatement(parent)) {
+    return parent.initializer === child || parent.incrementor === child;
+  }
+  return (
+    isBinaryExpression(parent) &&
+    parent.operatorToken.kind === SyntaxKind.CommaToken &&
+    parent.left === child
+  );
+}
 
 /** Whether one node is an identifier or a private name, the two forms a name takes. */
 function isName(node: Node): boolean {
@@ -277,12 +313,20 @@ function markWrite(target: Node, writes: Set<number>): void {
  * Records every store one node performs: an assignment, a compound assignment, an
  * increment or a decrement, a `delete`, and an iteration that assigns to a name declared
  * elsewhere. An iteration that declares its own name stores into nothing the inventory
- * holds.
+ * holds. A store that reads its target as well records it in `reads`: a logical
+ * assignment, and a compound assignment, an increment or a decrement whose value is used.
  */
-function markStores(node: Node, writes: Set<number>): void {
+function markStores(node: Node, writes: Set<number>, reads: Set<number>): void {
   if (isBinaryExpression(node)) {
-    if (ASSIGNMENTS.has(node.operatorToken.kind)) {
+    const operator = node.operatorToken.kind;
+    if (ASSIGNMENTS.has(operator)) {
       markWrite(node.left, writes);
+      if (
+        LOGICAL_ASSIGNMENTS.has(operator) ||
+        (operator !== SyntaxKind.EqualsToken && !valueDiscarded(node))
+      ) {
+        markWrite(node.left, reads);
+      }
     }
     return;
   }
@@ -292,6 +336,9 @@ function markStores(node: Node, writes: Set<number>): void {
       node.operator === SyntaxKind.MinusMinusToken
     ) {
       markWrite(node.operand, writes);
+      if (!valueDiscarded(node)) {
+        markWrite(node.operand, reads);
+      }
     }
     return;
   }
@@ -461,6 +508,7 @@ function sitesOf(
   const evaluations: Evaluation[] = [];
   const decorated: Decorated[] = [];
   const writes = new Set<number>();
+  const alsoRead = new Set<number>();
   const declared = new Set<number>();
   const shorthands = new Map<number, Node>();
   let enclosing = fileId;
@@ -486,17 +534,18 @@ function sitesOf(
   const visit = (node: Node): void => {
     if (isName(node)) {
       if (!declared.has(node.pos)) {
-        found.push({
-          node,
-          shorthand: shorthands.get(node.pos),
-          from: enclosing,
-          use: writes.has(node.pos) ? "write" : "read",
-        });
+        const site = { node, shorthand: shorthands.get(node.pos), from: enclosing };
+        if (writes.has(node.pos)) {
+          found.push({ ...site, use: "write" });
+        }
+        if (!writes.has(node.pos) || alsoRead.has(node.pos)) {
+          found.push({ ...site, use: "read" });
+        }
       }
       return;
     }
     markNames(node);
-    markStores(node, writes);
+    markStores(node, writes, alsoRead);
     for (const read of propertyReadsOf(node)) {
       reads.push({ ...read, from: enclosing });
     }
@@ -523,6 +572,9 @@ function sitesOf(
   return { uses: found, reads, links, evaluations, decorated };
 }
 
+/** The rule a file the analysis classified as test-support code is counted under. */
+const TEST_SUPPORT_RULE = "test-support";
+
 /**
  * The name one test-file rule takes. A rule's name is a word list the report's own
  * vocabulary spells, which cannot carry a pattern, so a rule is named by the place of
@@ -539,17 +591,20 @@ function patternRule(index: number): string {
 export function testFileRulesOf(
   testFiles: readonly string[],
   paths: readonly string[],
+  supportFiles: readonly string[] = [],
 ): readonly TestFileRule[] {
   const distinct = [...new Set(paths)];
-  return testFiles
-    .map((pattern, index) => {
+  const support = new Set(supportFiles).size;
+  return [
+    ...testFiles.map((pattern, index) => {
       const expression = globExpression(pattern);
       return {
         rule: patternRule(index),
         matched: distinct.filter((path) => expression.test(path)).length,
       };
-    })
-    .sort((a, b) => compare(a.rule, b.rule));
+    }),
+    ...(support === 0 ? [] : [{ rule: TEST_SUPPORT_RULE, matched: support }]),
+  ].sort((a, b) => compare(a.rule, b.rule));
 }
 
 const importedCache = new WeakMap<

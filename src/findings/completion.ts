@@ -8,7 +8,7 @@ import type { RunSweep } from "../analysis.ts";
 import { componentId, type Component } from "../components.ts";
 import type { Cascade, Confidence, Severity } from "../config.ts";
 import type { CompletedFinding, Finding, FindingComponent, PositionedSymbol } from "../finding.ts";
-import { OUTSIDE } from "../graph.ts";
+import { OUTSIDE, type Graph } from "../graph.ts";
 import { KINDS, type KindRow } from "../kinds.ts";
 import { byPosition } from "../position.ts";
 import { FAMILY_KEY_LENGTH } from "../resolve.ts";
@@ -24,9 +24,6 @@ function capped(found: Confidence, ceiling: Confidence): Confidence {
   return RANK[found] <= RANK[ceiling] ? found : ceiling;
 }
 
-/** The kind whose default turns on what the run knows about the target's consumers. */
-const UNUSED_EXPORTED = "DS1001";
-
 /** Whether the run loaded every consumer the scope declared, which holds of a scope declaring none. */
 function everyDeclaredLoaded(boundary: Boundary): boolean {
   const { declared, loaded } = boundary.consumers;
@@ -34,46 +31,40 @@ function everyDeclaredLoaded(boundary: Boundary): boolean {
 }
 
 /**
- * Whether a library's published API may have a caller the run cannot see: the target is
- * a library, and the run either holds no consumer information or did not load a consumer
- * the scope declared. A configuration declaring the consumer set complete holds consumer
- * information whether or not it declares a consumer, because it says no other exists.
- */
-function openWorld(input: EmitterInput): boolean {
-  const known = input.config.consumersComplete || input.boundary.consumers.declared.length > 0;
-  return input.config.targetKind === "library" && !(known && everyDeclaredLoaded(input.boundary));
-}
-
-/**
  * The severity the configuration gives one code: the key naming the code, else the key
- * naming its family, else the code's default. The unused-exported kind defaults to
- * `allow` while a library's published API is open to callers the run cannot see.
+ * naming its family, else the code's default.
  */
 function severityOf(input: EmitterInput, code: string, fallback: Severity): Severity {
   const { config } = input;
-  const named = config.severity.get(code) ?? config.severity.get(code.slice(0, FAMILY_KEY_LENGTH));
-  if (named !== undefined) {
-    return named;
-  }
-  return code === UNUSED_EXPORTED && openWorld(input) ? "allow" : fallback;
+  return (
+    config.severity.get(code) ?? config.severity.get(code.slice(0, FAMILY_KEY_LENGTH)) ?? fallback
+  );
+}
+
+/**
+ * The declarations the roots name as a library's published API, each public member of a
+ * published type included.
+ */
+function publishedIds(union: Graph): ReadonlySet<string> {
+  return new Set(
+    union.rooted
+      .filter((root) => root.kind === "published-api")
+      .flatMap((root) => union.symbols[root.at]?.id ?? []),
+  );
 }
 
 /**
  * The reachability class of one declaration of the run. A declaration of a library's
- * published API has callers outside the target: it is `certain` where the run loaded
- * every consumer the scope declared and declared at least one, `probable` where it
- * declared consumers and did not load them all, and `possible` where it declared none.
- * Whether the configuration declares the consumer set complete decides nothing here.
- * Every other declaration has every reference in the loaded program, a private member
- * and a `#private` name among them, and is `certain`.
+ * published API, a public member of a published type included, has callers outside the
+ * target: it is `certain` where the run loaded every consumer the scope declared and
+ * declared at least one, `probable` where it declared consumers and did not load them
+ * all, and `possible` where it declared none. Whether the configuration declares the
+ * consumer set complete decides nothing here. Every other declaration has every reference
+ * in the loaded program, a private member and a `#private` name among them, and is
+ * `certain`.
  */
 function reachabilityClasses(input: EmitterInput): (id: string) => Confidence {
-  const union = input.swept.matrix.union;
-  const published = new Set(
-    union.rooted
-      .filter((root) => root.kind === "published-api")
-      .map((root) => union.symbols[root.at]?.id),
-  );
+  const published = publishedIds(input.swept.matrix.union);
   const { declared } = input.boundary.consumers;
   const outside: Confidence =
     declared.length === 0

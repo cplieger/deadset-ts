@@ -105,6 +105,8 @@ interface Doc {
   readonly providers: readonly Provider[] | undefined;
   readonly testFiles: readonly string[] | undefined;
   readonly entryFiles: readonly string[] | undefined;
+  readonly componentExtensions: readonly string[] | undefined;
+  readonly disabledConventions: readonly string[] | undefined;
   readonly injectionRegistrations: readonly DeclarationEntry[] | undefined;
   readonly lifecycleContracts: readonly LifecycleContract[] | undefined;
   readonly serializers: readonly DeclarationEntry[] | undefined;
@@ -275,6 +277,44 @@ function readStrings<T extends string>(
     seen.add(entry);
   }
   return value as readonly T[];
+}
+
+/** A component file's extension: a full stop followed by letters and digits. */
+const COMPONENT_EXTENSION = /^\.[A-Za-z0-9]+$/u;
+
+function readComponentExtensions(
+  ts: Record<string, unknown> | undefined,
+  label: string,
+): readonly string[] | undefined {
+  const extensions = readStrings(ts, "component_extensions", "ts.component_extensions", label, 0);
+  const wrong = extensions?.find((one) => !COMPONENT_EXTENSION.test(one));
+  if (wrong !== undefined) {
+    throw malformed(
+      label,
+      "ts.component_extensions",
+      `${JSON.stringify(wrong)} is not a full stop followed by letters and digits`,
+    );
+  }
+  return extensions;
+}
+
+/** The names of the convention rows this analyzer's table carries, which is none. */
+const CONVENTION_ROWS: readonly string[] = [];
+
+function readDisabledConventions(
+  ts: Record<string, unknown> | undefined,
+  label: string,
+): readonly string[] | undefined {
+  const names = readStrings(ts, "disabled_conventions", "ts.disabled_conventions", label, 0);
+  const unknown = names?.find((one) => !CONVENTION_ROWS.includes(one));
+  if (unknown !== undefined) {
+    throw malformed(
+      label,
+      "ts.disabled_conventions",
+      `${JSON.stringify(unknown)} names no convention row: this analyzer carries none`,
+    );
+  }
+  return names;
 }
 
 function requireMember(value: string | undefined, path: string, label: string): string {
@@ -792,6 +832,8 @@ function readDoc(value: unknown, label: string): Doc {
     providers: readProviders(providers, label),
     testFiles: readStrings(ts, "test_files", "ts.test_files", label, 1),
     entryFiles: readStrings(ts, "entry_files", "ts.entry_files", label, 0),
+    componentExtensions: readComponentExtensions(ts, label),
+    disabledConventions: readDisabledConventions(ts, label),
     injectionRegistrations: readDeclarations(
       ts,
       "injection_registrations",
@@ -986,13 +1028,13 @@ export function resolve(inputs: Inputs): { config: Config; provenance: Provenanc
 }
 
 /**
- * The build matrix the configuration documents resolve to, every document read and
- * refused as {@link resolve} refuses it, and nothing else required of them: which
- * projects a run analyzes depends on the matrix alone, so a question about the
- * projects asks no target kind.
+ * The configuration the documents resolve to, every document read and refused as
+ * {@link resolve} refuses it, with no target kind required of them: which projects a
+ * run analyzes does not depend on the kind, so a question about the projects asks
+ * none. The kind is empty where no document names one.
  */
-export function resolveMatrix(inputs: Inputs): readonly BuildConfiguration[] {
-  return settleAll(inputs).config.analysis.configurations;
+export function resolveUnkinded(inputs: Inputs): Config {
+  return settleAll(inputs).config;
 }
 
 /**
@@ -1076,6 +1118,16 @@ function settleAll(inputs: Inputs): { config: Config; provenance: Map<string, Or
     ts: {
       testFiles: at("ts.test_files", defaults.ts.testFiles, (doc) => doc.testFiles),
       entryFiles: at("ts.entry_files", defaults.ts.entryFiles, (doc) => doc.entryFiles),
+      componentExtensions: at(
+        "ts.component_extensions",
+        defaults.ts.componentExtensions,
+        (doc) => doc.componentExtensions,
+      ),
+      disabledConventions: at(
+        "ts.disabled_conventions",
+        defaults.ts.disabledConventions,
+        (doc) => doc.disabledConventions,
+      ),
       injectionRegistrations: at(
         "ts.injection_registrations",
         defaults.ts.injectionRegistrations,

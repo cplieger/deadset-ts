@@ -51,6 +51,7 @@ const NAMES_A_CALLER: Readonly<Record<RootKind, boolean>> = {
   "published-api": false,
   configured: true,
   pattern: true,
+  "type-error": true,
   "test-runner": true,
   "lint-configuration": true,
   "mutation-testing": true,
@@ -103,6 +104,8 @@ export interface Graph {
   readonly parent: readonly number[];
   /** Per declaration, whether a test file holds it. */
   readonly test: readonly boolean[];
+  /** Per declaration, whether a test-support file holds it. */
+  readonly support: readonly boolean[];
   /** Per declaration, whether the sweep judges its liveness. */
   readonly subject: readonly boolean[];
   /**
@@ -135,7 +138,9 @@ export function graphOf(
   references: readonly Reference[],
   roots: readonly Root[],
   testFiles: readonly string[],
+  supportFiles: readonly string[] = [],
 ): Graph {
+  const supports = new Set(supportFiles);
   const index = new Map(symbols.map((symbol, at) => [symbol.id, at]));
   const at = (id: string): number => index.get(id) ?? OUTSIDE;
   const tests = new Set(testFiles);
@@ -187,6 +192,7 @@ export function graphOf(
     made,
     parent,
     test: symbols.map((symbol) => tests.has(symbol.position.path)),
+    support: symbols.map((symbol) => supports.has(symbol.position.path)),
     subject: symbols.map((symbol) => swept(symbol.kind)),
     exportsOf,
     rooted,

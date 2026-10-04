@@ -5,7 +5,6 @@ import { afterAll, describe, expect, it } from "vitest";
 import { nodeHost } from "../../bin/node-host.ts";
 import { emitterInputOf } from "../../__test-helpers__/emitter-input.ts";
 import { contractDocument, fixture } from "../../__test-helpers__/fixtures.ts";
-import { DiscoveryError } from "../discover.ts";
 import type { Finding } from "../finding.ts";
 import { isRef } from "../ref.ts";
 import { resolve } from "../resolve.ts";
@@ -147,28 +146,19 @@ describe("the dependencies-and-module-machinery emitter", () => {
   });
 });
 
-describe("an import no package resolves", () => {
+describe("an import no package resolves and no manifest declares", () => {
   const unresolved = fixture("projects", "dependencies-unresolved");
 
-  it("fails the sweep with the project's diagnostic and produces no finding", () => {
-    let thrown: unknown;
-    try {
-      sweepFixture(unresolved);
-    } catch (error: unknown) {
-      thrown = error;
-    }
-    expect(thrown).toBeInstanceOf(DiscoveryError);
-    expect((thrown as Error).message).toContain("no answer was produced");
+  it("is a type error the sweep skips, so the emitter runs and reports nothing", () => {
+    expect(sweepFixture(unresolved).findings).toEqual([]);
   });
 
-  it("exits 3 from the command line, printing the diagnostic and no list", () => {
+  it("is no setup failure: the command line exits 0", () => {
     const out = new MemoryWriter();
     const err = new MemoryWriter();
     const code = run(["print-retained", `--target=${unresolved}`], out, err, nodeHost());
 
-    expect(code).toBe(3);
-    expect(out.text).toBe("");
-    expect(err.text).toContain("TS2307");
-    expect(err.text).toContain("not-installed");
+    expect(code, err.text).toBe(0);
+    expect(err.text).not.toContain("setup failure");
   });
 });

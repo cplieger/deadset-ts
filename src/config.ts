@@ -162,6 +162,8 @@ export interface Providers {
 export interface TSSection {
   readonly testFiles: readonly string[];
   readonly entryFiles: readonly string[];
+  readonly componentExtensions: readonly string[];
+  readonly disabledConventions: readonly string[];
   readonly injectionRegistrations: readonly DeclarationEntry[];
   readonly lifecycleContracts: readonly LifecycleContract[];
   readonly serializers: readonly DeclarationEntry[];
@@ -202,7 +204,7 @@ export function defaultConfig(): Config {
     targetKind: "",
     analysis: {
       languages: [],
-      minConfidence: "possible",
+      minConfidence: "probable",
       generatedFiles: "exclude",
       consumerTests: "test",
       configurations: [],
@@ -228,8 +230,15 @@ export function defaultConfig(): Config {
       ],
     },
     ts: {
-      testFiles: ["**/*.test.{ts,tsx,mts,cts}"],
+      testFiles: [
+        "**/*.test.{ts,tsx,mts,cts}",
+        "**/*.spec.*",
+        "**/__tests__/**",
+        "**/__mocks__/**",
+      ],
       entryFiles: [],
+      componentExtensions: [".vue", ".svelte", ".astro"],
+      disabledConventions: [],
       injectionRegistrations: [],
       lifecycleContracts: [],
       serializers: [],

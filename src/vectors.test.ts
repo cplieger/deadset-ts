@@ -68,6 +68,8 @@ describe("the published configuration vectors", () => {
   it("holds a case set this suite runs whole", () => {
     expect(configVectorCases()).toEqual([
       "array-spanning-lines",
+      "component-extension-without-a-full-stop",
+      "component-extensions-configured",
       "duplicated-key",
       "integer-written-with-a-fraction",
       "member-written-as-null",

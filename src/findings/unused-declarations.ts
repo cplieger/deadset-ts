@@ -52,6 +52,8 @@ interface Judged {
   readonly symbol: InventorySymbol;
   /** Whether a test file declares it. */
   readonly test: boolean;
+  /** Whether a test-support file declares it, which test code keeps live. */
+  readonly support: boolean;
   /** Whether its container is itself dead, so it falls with the container. */
   readonly containerDead: boolean;
   readonly deprecated: boolean;
@@ -62,8 +64,9 @@ interface Judged {
 /**
  * The code one candidate is reported under, or none, each symbol once under the most
  * specific code: a test of dead code first; no other test-file declaration, member of a
- * dead container or enum member nothing names; then deprecation, a test reference, and
- * the unreferenced codes, an unimportable unused export being the unreachable kind's.
+ * dead container or enum member nothing names, nor a test-support declaration test code
+ * references; then deprecation, a test reference, and the unreferenced codes, an
+ * unimportable unused export being the unreachable kind's.
  */
 function codeOf(judged: Judged): string | undefined {
   const { candidate, symbol } = judged;
@@ -75,6 +78,9 @@ function codeOf(judged: Judged): string | undefined {
   }
   const referenced = candidate.productionRefs + candidate.testRefs > 0;
   if (symbol.kind === "enum-member" && !referenced) {
+    return undefined;
+  }
+  if (judged.support && candidate.testRefs > 0) {
     return undefined;
   }
   if (candidate.productionRefs === 0 && judged.deprecated) {
@@ -167,6 +173,7 @@ function familyFindings(input: EmitterInput, fallen: boolean): Finding[] {
       candidate,
       symbol,
       test: union.test[at] === true,
+      support: union.support[at] === true,
       containerDead: containerDead && !fallen,
       deprecated: input.deprecated.has(symbol.id),
       unreachable: unreachable.has(symbol.id),

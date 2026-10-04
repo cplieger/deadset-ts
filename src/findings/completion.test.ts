@@ -252,12 +252,12 @@ describe("the defaults of a library", () => {
       ),
     ).map((finding) => `${finding.code} ${finding.symbol.name} ${finding.confidence}`);
 
-  it("turns the unused-exported kind off and narrows only where no manifest export reaches, with no consumer information", () => {
+  it("withholds the published API and narrows only where no manifest export reaches, with no consumer information", () => {
     expect(reported({})).toEqual(["DS1104 helperLocal certain"]);
   });
 
-  it("reports an unused export at possible where the configuration names the kind's severity", () => {
-    expect(reported({ severity: { DS1001: "deny" } })).toEqual([
+  it("reports the published API at possible where the configuration lowers the minimum confidence", () => {
+    expect(reported({ analysis: { min_confidence: "possible" } })).toEqual([
       "DS1001 unusedPublished possible",
       "DS1001 viaLocal possible",
       "DS1001 viaInternal possible",
@@ -266,7 +266,9 @@ describe("the defaults of a library", () => {
   });
 
   it("reports every kind over the published API once the configuration declares the consumer set complete", () => {
-    expect(reported({ consumers: { complete: true } })).toEqual([
+    expect(
+      reported({ consumers: { complete: true }, analysis: { min_confidence: "possible" } }),
+    ).toEqual([
       "DS1001 unusedPublished possible",
       "DS1001 viaLocal possible",
       "DS1001 viaInternal possible",

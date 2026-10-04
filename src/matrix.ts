@@ -21,6 +21,8 @@ export interface Configured {
   readonly roots: readonly Root[];
   /** The paths the reference pass classified as test files. */
   readonly testFiles: readonly string[];
+  /** The paths of the test-support files, which only test code imports. */
+  readonly supportFiles?: readonly string[] | undefined;
   /**
    * The paths of the workspace-package files the configuration holds but does not
    * compile itself. Their declarations count in its graph and its verdict on them is no
@@ -135,12 +137,15 @@ export function matrixOf(per: readonly Configured[]): Matrix {
 
   return {
     configurations: per.map((one) => one.configuration),
-    graphs: per.map((one) => graphOf(one.symbols, one.references, one.roots, one.testFiles)),
+    graphs: per.map((one) =>
+      graphOf(one.symbols, one.references, one.roots, one.testFiles, one.supportFiles),
+    ),
     union: graphOf(
       symbols,
       references,
       per.flatMap((one) => one.roots),
       [...new Set(per.flatMap((one) => one.testFiles))],
+      [...new Set(per.flatMap((one) => one.supportFiles ?? []))],
     ),
     heldIn: symbols.map((symbol) => holders.get(symbol.id) ?? []),
   };

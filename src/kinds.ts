@@ -69,7 +69,7 @@ const ROWS: readonly KindRow[] = [
     code: "DS1004",
     name: "test-only-use",
     languages: ["go", "ts"],
-    rule: "A symbol with zero production references and at least one test reference: an unused-exported, unused-unexported or unused-member candidate whose test reference count is not zero, reported once under this code. A reference from a consumer's test files is a test reference unless the configuration counts consumer tests as production.",
+    rule: "A symbol with zero production references and at least one test reference: an unused-exported, unused-unexported or unused-member candidate whose test reference count is not zero, reported once under this code. A reference from a consumer's test files is a test reference unless the configuration counts consumer tests as production. A reference from test-support code, a package or file that only test code imports, is a test reference, and a declaration of test-support code is never reported under this code.",
     defaultSeverity: "deny",
     maxClass: "certain",
     fixability: "deletable",
@@ -317,7 +317,7 @@ const ROWS: readonly KindRow[] = [
     languages: ["go", "ts"],
     rule: "A parameter with no reference inside its function body, on a function whose signature is free to change.",
     precondition:
-      "The signature must be free, defined as follows: the function is not a method retained by interface satisfaction, is not used as a value, is not a go:linkname or cgo target, and is not a stub whose body is empty or only panics. A parameter its body never names is dead whatever the callers, so a published declaration of a library is reported too, with the fixability the vocabulary gives the kind: the signature change is a breaking change.",
+      "The signature must be free, defined as follows: the function is not a method retained by interface satisfaction, is not used as a value, is not a go:linkname or cgo target, is not a function the Go test driver runs (a test, benchmark or fuzz test of a test file, or TestMain), and is not a stub whose body is empty or only panics. A parameter its body never names is dead whatever the callers, so a published declaration of a library is reported too, with the fixability the vocabulary gives the kind: the signature change is a breaking change.",
     defaultSeverity: "warn",
     maxClass: "certain",
     fixability: "manual",

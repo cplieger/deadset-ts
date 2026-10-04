@@ -1,16 +1,16 @@
 {
   "description": "The deadset-spec release this analyzer implements, and the digest of the copy of that release's documents committed under fixtures/. tag and commit name the release; every file under fixtures/contract is byte-identical to that commit's contract/ tree, which the copy holds whole so that a page's links to its siblings resolve, every file under fixtures/vectors/<set> is byte-identical to the same commit's vectors/<set>/ case directories for each of the config, sarif, baseline and template sets, with the sarif and baseline sets' README.md, which the copied contract pages link to, every file under fixtures/examples/negatives, fixtures/examples/scope and fixtures/examples/describe is byte-identical to the same commit's examples/negatives/, examples/scope/ and examples/describe/ trees, fixtures/corpus-document holds the same commit's corpus/corpus.json, and fixtures/corpus holds, for every fixture whose expectation file lists ts, that fixture's directory under the same commit's corpus/fixtures/ less its go.txtar rendering, each file byte-identical, so `git diff` against a clone of the tag verifies each of them. digest is sha256 over, for each file below the named directory in ascending path order, the path, a newline, the file's sha256 in lowercase hexadecimal and a newline; the suite recomputes it, so an edit to a committed copy fails a test rather than moving the Contract this analyzer is tested against. contract_version is the version contract/contract.json carries at that commit, which the analyzer names in every resolved configuration it prints.",
-  "tag": "v4.0.0",
-  "commit": "d91c0ac28685ec26be0fe4ebe2ae536c092cb289",
-  "contract_version": "4.0.0",
-  "reason": "The release whose closed configuration key list, exit-code table, issue-kind vocabulary, exemption classes, scope and describe documents, stable-symbol-reference grammar with its token and pattern corpora, template and SARIF pages, published configuration, SARIF, baseline and template vectors, refused documents and conformance corpus this analyzer is written against.",
+  "tag": "v5.1.2",
+  "commit": "92b2dbbd469056b95da8ffd395456b7e196e4fed",
+  "contract_version": "5.1.0",
+  "reason": "The release whose closed configuration key list, exit-code table, issue-kind vocabulary, exemption classes, analysis rules, scope and describe documents, stable-symbol-reference grammar with its token and pattern corpora, template and SARIF pages, published configuration, SARIF, baseline and template vectors, refused documents and conformance corpus this analyzer is written against.",
   "digests": {
-    "fixtures/contract": "3783b60cfdfd956cfdfc971c463dcc3ee52f2209777ba147a51125fb8e372db2",
-    "fixtures/corpus": "8e5961e397bde43306eaaa76a0a9e0cb645b10d3867c8217a17d80af63780eea",
-    "fixtures/corpus-document": "50eb6f4acf5d8f65b7df20c6f4fad8a3b8b7e4ba2b784a1cdb0c60d233d78005",
-    "fixtures/examples/describe": "c53bfe535eebde55d0756aecd36078847ae5266c9ad17c4bb26a70c5705f2ae9",
-    "fixtures/examples/negatives": "f1b6fe52ee24bb41d6d512ff7143600b79147cc74a2502d2cbcbb683764e2661",
+    "fixtures/contract": "4ae44afba0c8968b44165eb0bdc09e038208ee127e28656e001d9a5e8eb9d54e",
+    "fixtures/corpus": "d795e479517fbff442e681d789d7eff16af6a6ce17249147bf78da4929c6e91c",
+    "fixtures/corpus-document": "7a444d1dbae0d2acfca8d57abb0beb02ca2ddac1fa2c9ccc0573d18723a57767",
+    "fixtures/examples/describe": "fbe604f6dd62ead2adbca6b912a01fd7d5bdd571d302616a232d37ebca3823fa",
+    "fixtures/examples/negatives": "7c6f31b917ca96ed05fc65b4bf4a56dff7d5493fb3605620409d8ddcbd50d4fd",
     "fixtures/examples/scope": "f49f66169cb5ec0580840a90b66f9009ff3c907495f0b35d4e3e0a17ffa93e6f",
-    "fixtures/vectors": "046259e3e8658d89e6ecc7209318ffa6694e98f9c1ba4dc3f68e2ac218797ee5"
+    "fixtures/vectors": "ebdaf9f16ec8ab4be56acb9341a29a8880aafabcb1ec874ec81e89086058d7ed"
   }
 }

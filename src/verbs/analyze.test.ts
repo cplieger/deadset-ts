@@ -5,7 +5,7 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import { nodeHost } from "../../bin/node-host.ts";
 import { contractDocument, fixture, readFixture, ROOT } from "../../__test-helpers__/fixtures.ts";
 import { schemaValidator } from "../../__test-helpers__/json-schema.ts";
-import { writeProject } from "../../__test-helpers__/projects.ts";
+import { TSCONFIG, writeProject } from "../../__test-helpers__/projects.ts";
 import type { Host } from "../host.ts";
 import { run, type Writer } from "../run.ts";
 import { openEngine, type Engine } from "../session.ts";
@@ -233,6 +233,56 @@ const WITH_EMPTY_PROJECT = {
   "tools/tsconfig.json": '{ "compilerOptions": { "strict": true }, "include": ["none/*.ts"] }\n',
 };
 
+/** The setup failure a configuration under `tools/` meets, which imports a file nothing generated. */
+const MISSING_MODULE =
+  'setup failure: missing-module: tools/gen.ts:1: tools/gen.ts imports "./generated.js", which names no file of the target: run the generator or the build that writes it';
+
+/** The clean application, compiled from `src/` alone, beside a configuration that meets it. */
+const WITH_UNGENERATED_PROJECT = {
+  ...CLEAN_APPLICATION,
+  "tsconfig.json": TSCONFIG.replace('"**/*.ts"', '"src/**/*.ts"'),
+  "tools/tsconfig.json": TSCONFIG.replace('"**/*.ts"', '"*.ts"'),
+  "tools/gen.ts": 'export { made } from "./generated.js";\n',
+};
+
+describe("a configuration that meets a setup failure", () => {
+  it(
+    "is dropped and named in the report with the failure's line where discovery derived it",
+    () => {
+      const got = analyze(project(WITH_UNGENERATED_PROJECT), [], tmpdir());
+      const report = reportOf(got);
+
+      expect(got.code, got.err).toBe(0);
+      expect(validate(report)).toEqual([]);
+      expect(report["configurations"]).toEqual([{ id: "tsconfig.json", project: "tsconfig.json" }]);
+      expect(report["configurations_not_built"]).toEqual([
+        { id: "tools/tsconfig.json", project: "tools/tsconfig.json", error: MISSING_MODULE },
+      ]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "ends the run with the failure code and the line where the matrix names it",
+    () => {
+      const got = analyze(
+        project({
+          ...WITH_UNGENERATED_PROJECT,
+          "deadset.json":
+            '{ "target": { "kind": "application" }, "analysis": { "configurations": [{ "id": "app", "project": "tsconfig.json" }, { "id": "tools", "project": "tools/tsconfig.json" }] } }\n',
+        }),
+        [],
+        tmpdir(),
+      );
+
+      expect(got.code).toBe(3);
+      expect(got.err).toBe(`${MISSING_MODULE}\n`);
+      expect(readdirSync(got.dir)).toEqual([]);
+    },
+    LOAD_TIMEOUT,
+  );
+});
+
 describe("a configuration that names no input", () => {
   it(
     "is dropped and named in the report where discovery derived it, and the rest is analyzed",
@@ -382,7 +432,21 @@ describe("the exit code", () => {
   });
 
   it(
-    "is 3 for a target that does not type-check, and writes no report",
+    "is 3 for a target that imports a file nothing generated, and writes no report",
+    () => {
+      const got = analyze(failingToLoad(), [], tmpdir());
+
+      expect(got.code).toBe(3);
+      expect(got.err).toMatch(
+        /^setup failure: missing-module: src\/broken\.ts:1: src\/broken\.ts imports "\.\/generated\.js"/mu,
+      );
+      expect(readdirSync(got.dir)).toEqual([]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "follows the findings for a target whose own file holds a type error, listing the skip",
     () => {
       const broken = project({
         ...CLEAN_APPLICATION,
@@ -390,9 +454,40 @@ describe("the exit code", () => {
       });
       const got = analyze(broken, [], tmpdir());
 
-      expect(got.code).toBe(3);
-      expect(got.err).toContain("TS2322");
-      expect(readdirSync(got.dir)).toEqual([]);
+      expect(got.code, got.err).toBe(0);
+      expect(got.err).toContain("deadset-ts: src/broken.ts:1: ");
+      expect(reportOf(got)["type_error_skips"]).toEqual([
+        {
+          path: "src/broken.ts",
+          line: 1,
+          message: "Type 'number' is not assignable to type 'string'.",
+        },
+      ]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "reports nothing inside a function a type error skips, a dead local of it included",
+    () => {
+      const broken = project({
+        ...CLEAN_APPLICATION,
+        "src/main.ts":
+          'import { helper } from "./internal.js";\nimport { broken } from "./broken.js";\n\nconsole.log(helper(), broken(1));\n',
+        "src/broken.ts":
+          "export function broken(input: number): number {\n  const unusedLocal = 4;\n  const n: string = input;\n  return n.length;\n}\n",
+      });
+      const got = analyze(broken, [], tmpdir());
+
+      expect(got.code, got.err).toBe(0);
+      expect(reportOf(got)["type_error_skips"]).toEqual([
+        {
+          path: "src/broken.ts",
+          line: 3,
+          message: "Type 'number' is not assignable to type 'string'.",
+        },
+      ]);
+      expect(findingsOf(got)).toEqual([]);
     },
     LOAD_TIMEOUT,
   );
@@ -469,10 +564,7 @@ describe("the baseline", () => {
   it(
     "leaves an existing baseline untouched when the run fails",
     () => {
-      const tree = project({
-        ...CLEAN_APPLICATION,
-        "src/broken.ts": "export const broken: string = 1;\n",
-      });
+      const tree = failingToLoad();
       const baseline = join(tree, "deadset-baseline.json");
       writeFileSync(baseline, "kept\n");
 
@@ -493,7 +585,10 @@ function adjudicated(directive: boolean): string {
 
 /** A target whose analysis fails with 3, so a refusal with 2 is one that came before it. */
 function failingToLoad(): string {
-  return project({ ...CLEAN_APPLICATION, "src/broken.ts": "export const broken: string = 1;\n" });
+  return project({
+    ...CLEAN_APPLICATION,
+    "src/broken.ts": 'export { made } from "./generated.js";\n',
+  });
 }
 
 interface SarifRun {

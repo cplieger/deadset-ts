@@ -1,4 +1,10 @@
-import { runAnalysis, runBaselineWrite, type RunAnalysis, type RunProject } from "../analysis.ts";
+import {
+  runAnalysis,
+  runBaselineWrite,
+  unansweredCounts,
+  type RunAnalysis,
+  type RunProject,
+} from "../analysis.ts";
 import { ConfigError, type Format } from "../config.ts";
 import { CONFORMANCE, DECLARED_GAPS } from "../conformance.ts";
 import { moduleIdentity } from "../consumers.ts";
@@ -262,6 +268,8 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
       unavailable: [],
       result,
       testFileRules: run.testFileRules,
+      typeErrorSkips: run.typeErrorSkips,
+      unanswered: unansweredCounts(analysis),
     });
     report = capFindings(sortFindings(built, config.reporters.sort), config.reporters.maxFindings);
     verdict = verdictOf(result, config);
@@ -296,6 +304,11 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
 
   for (const note of partial) {
     err.write(`deadset-ts: ${note}\n`);
+  }
+  for (const skip of report.type_error_skips) {
+    err.write(
+      `deadset-ts: ${skip.path}:${String(skip.line)}: ${skip.message}: the function or statement holding this type error is not evaluated\n`,
+    );
   }
   if (report.totals.pending > 0) {
     err.write(

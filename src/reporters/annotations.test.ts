@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Severity } from "../config.ts";
-import type { Report, WireFinding, WireStaleSuppression } from "../report.ts";
+import type { Report, TypeErrorSkip, WireFinding, WireStaleSuppression } from "../report.ts";
 import { annotations } from "./annotations.ts";
 import type { RenderOptions } from "./reporter.ts";
 
@@ -51,12 +51,13 @@ const STALE: WireStaleSuppression = {
   message: "ignore entry for DS1001 matches no current finding",
 };
 
-/** A report holding only what an annotation reads: the findings and the stale suppressions. */
+/** A report holding only what an annotation reads: the findings, stale suppressions and skips. */
 function report(
   findings: readonly WireFinding[],
   stale: readonly WireStaleSuppression[] = [],
+  skips: readonly TypeErrorSkip[] = [],
 ): Report {
-  return { findings, stale_suppressions: stale } as unknown as Report;
+  return { findings, stale_suppressions: stale, type_error_skips: skips } as unknown as Report;
 }
 
 function options(failOn: Severity): RenderOptions {
@@ -70,6 +71,15 @@ function options(failOn: Severity): RenderOptions {
 }
 
 describe("annotations", () => {
+  it("annotates a type-error skip after the findings as a warning at its file and line", () => {
+    const skip = { path: "src/broken.ts", line: 7, message: "Property 'cuont' does not exist" };
+
+    expect(annotationsOf(report([finding("deny")], [], [skip]), options("deny"))).toBe(
+      "::error file=src/catalog.ts,line=12,col=17,endLine=20,title=DS1001 unused-exported::exported function has no reference\n" +
+        "::warning file=src/broken.ts,line=7,title=type error skipped::the analysis did not evaluate the function or statement holding this type error: Property 'cuont' does not exist\n",
+    );
+  });
+
   it("annotates a finding at the failing severity as an error naming its span, code and kind", () => {
     expect(annotationsOf(report([finding("deny")]), options("deny"))).toBe(
       "::error file=src/catalog.ts,line=12,col=17,endLine=20,title=DS1001 unused-exported::exported function has no reference\n",

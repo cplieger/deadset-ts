@@ -925,6 +925,9 @@ class Execution {
     if (head === undefined) {
       throw new RenderError("empty command");
     }
+    if (head.k === "lit" && head.value === null) {
+      throw new RenderError("nil is not a command");
+    }
     if (head.k !== "func") {
       if (rest.length > 0 || piped !== undefined) {
         throw new RenderError("cannot give an argument to a non-function");

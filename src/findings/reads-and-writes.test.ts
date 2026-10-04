@@ -192,8 +192,9 @@ describe("a write-only member of a library's published API", () => {
   });
   const library = (extra: Record<string, unknown> = {}): readonly CompletedFinding[] =>
     findingsOf(root, JSON.stringify({ target: { kind: "library" }, ...extra }));
-  const open = library();
+  const open = library({ analysis: { min_confidence: "possible" } });
   const certainOnly = library({ analysis: { min_confidence: "certain" } });
+  const byDefault = library();
   rmSync(root, { recursive: true, force: true });
 
   it("is reported at the possible class, because a consumer the run did not load may read it", () => {
@@ -204,6 +205,10 @@ describe("a write-only member of a library's published API", () => {
 
   it("is withheld under a minimum confidence above its class", () => {
     expect(certainOnly).toEqual([]);
+  });
+
+  it("is withheld under the default minimum confidence, which is probable", () => {
+    expect(byDefault).toEqual([]);
   });
 });
 
@@ -317,5 +322,80 @@ describe("print-retained over a project whose enums a conversion produces", () =
       out.text,
       "regenerate with `npx vitest --run -u src/findings/reads-and-writes.test.ts` and review the diff",
     ).toMatchFileSnapshot(fixture("golden", "reads-and-writes.retained.txt"));
+  });
+});
+
+describe("a store that reads its target", () => {
+  const root = writeProject({
+    "package.json": `${JSON.stringify({ name: "@example/counters", private: true, type: "module", bin: "./src/main.ts" })}\n`,
+    "src/main.ts": [
+      "class Counters {",
+      "  private postfix = 0;",
+      "  private prefix = 0;",
+      "  private cached: string | undefined;",
+      "  private flag = false;",
+      "  private added = 0;",
+      "  private discarded = 0;",
+      "  next(): number {",
+      "    this.discarded++;",
+      "    return this.postfix++;",
+      "  }",
+      "  first(): number {",
+      "    return ++this.prefix;",
+      "  }",
+      "  load(): void {",
+      '    this.cached ??= "value";',
+      "    this.flag ||= true;",
+      "  }",
+      "  add(): number {",
+      "    return (this.added += 1);",
+      "  }",
+      "}",
+      "",
+      "const counters = new Counters();",
+      "counters.next();",
+      "counters.first();",
+      "counters.load();",
+      "counters.add();",
+      "",
+    ].join("\n"),
+  });
+  const found = findingsOf(root, JSON.stringify({ target: { kind: "application" } }));
+  rmSync(root, { recursive: true, force: true });
+
+  it("is a read where its value is used, or where it reads to decide whether to store", () => {
+    expect(found.map((finding) => `${finding.code} ${finding.symbol.name}`)).toEqual([
+      "DS1301 Counters.discarded",
+    ]);
+  });
+});
+
+describe("a store a for loop's incrementor makes", () => {
+  const root = writeProject({
+    "package.json": `${JSON.stringify({ name: "@example/loop", private: true, type: "module", bin: "./src/main.ts" })}\n`,
+    "src/main.ts": [
+      "class Loop {",
+      "  private steps = 0;",
+      "  run(limit: number): number {",
+      "    let done = 0;",
+      "    for (let i = 0; i < limit; this.steps++) {",
+      "      done += 1;",
+      "      i = done;",
+      "    }",
+      "    return done;",
+      "  }",
+      "}",
+      "",
+      "new Loop().run(2);",
+      "",
+    ].join("\n"),
+  });
+  const found = findingsOf(root, JSON.stringify({ target: { kind: "application" } }));
+  rmSync(root, { recursive: true, force: true });
+
+  it("is a write only, so a member only it increments is written and never read", () => {
+    expect(found.map((finding) => `${finding.code} ${finding.symbol.name}`)).toEqual([
+      "DS1301 Loop.steps",
+    ]);
   });
 });
