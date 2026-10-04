@@ -34,6 +34,7 @@ A root is a declaration the analysis keeps live without a reference. `print-root
 
 - What a file exports when the target's manifest, or another workspace package's manifest, names it through `main`, `module`, `types`, `bin` or `exports`, or when `ts.entry_files` matches it
 - A library target's published API
+- What a file exports when an applied convention row names it, such as a Next.js page, a SvelteKit route or a Storybook story
 - A configuration file beside a `package.json` whose name is `<stem>.config.<ext>`, `<stem>.<qualifier>.config.<ext>` or `.<stem>rc.<ext>`
 - A file that a string starting with `./` or `../` names, in such a configuration file or in its JSON form, like `<stem>.config.json` or `.<stem>rc`
 - A file that a token of a `package.json` script names, such as `node ./scripts/seed.ts`
@@ -44,7 +45,28 @@ A root is a declaration the analysis keeps live without a reference. `print-root
 
 A string in such a configuration file that spells a dependency its `package.json` declares, alone or followed by a subpath, keeps that dependency from `DS1601`.
 
-A `roots.patterns` entry that names nothing is reported as `DS1704` and fails the run. The entry-point conventions of other tools are not read, and the `DECLINED_CONVENTIONS` export lists each one with the reason.
+A `roots.patterns` entry that names nothing is reported as `DS1704` and fails the run. Other entry-point conventions are not read, and the `DECLINED_CONVENTIONS` export lists each one with the reason.
+
+A convention row holds the file-system conventions of one framework or tool. It applies when a `package.json` the analysis reads declares the row's package and the installed version is in the row's range. Its globs are matched below that manifest's directory. The report lists each applied row in `conventions_applied`, and `print-roots` names the row beside each file it roots. A package that is declared and not installed is the setup failure `missing-module`.
+
+Some rows read a directory that the framework's configuration file moves, such as `srcDir` in `nuxt.config.ts`. The value is read from the default export, or from the options of the framework's Vite plugin, without running the file. A string literal or a template literal with no substitution moves the directory, and an unset property leaves the default.
+
+Any other value is the setup failure `convention-not-literal`. So is an object on the way to the property that is not written out or that spreads another object in. Write the value as a literal, or name the row in `ts.disabled_conventions` and its files in `ts.entry_files`.
+
+| Row            | Package                 | Versions           | What it roots                                                                                                                                                          |
+| -------------- | ----------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `astro`        | `astro`                 | `>=5.0.0 <8.0.0`   | Pages other than `_`-prefixed files and directories, middleware, actions and the content configuration below `src`, which `srcDir` moves                               |
+| `eslint`       | `eslint`                | `>=10.0.0 <11.0.0` | Every `eslint.config.*` file                                                                                                                                           |
+| `expo-router`  | `expo-router`           | `>=3.0.0 <58.0.0`  | Every module below `app` or `src/app`                                                                                                                                  |
+| `next`         | `next`                  | `>=13.4.0 <17.0.0` | The App Router's special and metadata files, `pages`, and `proxy`, `middleware`, `instrumentation` and `mdx-components`, at the root or below `src`                    |
+| `nuxt`         | `nuxt`                  | `>=3.0.0 <5.0.0`   | The app, error, app configuration and router options files, pages, layouts, middleware, plugins, modules and server routes, which `srcDir`, `serverDir` and `dir` move |
+| `qwik-city`    | `@builder.io/qwik-city` | `>=1.0.0 <2.0.0`   | `root`, the `entry.*` files and the routes, which `srcDir` and `routesDir` move                                                                                        |
+| `react-router` | `@react-router/dev`     | `>=7.0.0 <9.0.0`   | `root`, `routes`, `entry.client`, `entry.server` and the `routes` directory below `app`, which `appDirectory` moves                                                    |
+| `remix`        | `@remix-run/dev`        | `>=2.0.0 <3.0.0`   | The same files as `react-router`, which `appDirectory` moves                                                                                                           |
+| `solidstart`   | `@solidjs/start`        | `>=1.0.0 <3.0.0`   | `app`, `entry-client`, `entry-server`, the middleware and the routes below `src`, which `appRoot` and `routeDir` move                                                  |
+| `storybook`    | `storybook`             | `>=7.0.0 <11.0.0`  | The `.storybook` configuration files and every `*.stories.*` file                                                                                                      |
+| `sveltekit`    | `@sveltejs/kit`         | `>=2.0.0 <4.0.0`   | Route files, hooks, params, the service worker and `instrumentation.server` below `src`, which the `files` options move                                                |
+| `vitest`       | `vitest`                | `>=3.2.0 <6.0.0`   | Every `vitest.config.*` and `vite.config.*` file, with or without a qualifier                                                                                          |
 
 ## What an exemption holds back
 

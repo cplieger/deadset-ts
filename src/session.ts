@@ -69,6 +69,8 @@ export interface Engine {
     options: CreateSnapshotProgramParams["compilerOptions"],
     entries: readonly ModuleResolutionEntry[],
   ): ModuleResolver;
+  /** Parses one file's text outside every program. */
+  parseSourceFile(fileName: string, text: string): SourceFile;
   /** Sends many questions in one round trip and answers each, in order. */
   batch<T>(questions: readonly APIRequestGenerator<T>[]): T[];
   /**
@@ -158,6 +160,14 @@ export function openEngine(options: EngineOptions): Engine {
       api.createModuleResolver(options, {
         moduleResolutions: { fallback: "resolve", entries: [...entries] },
       }),
+    parseSourceFile: (fileName, text) => {
+      const retained = api.createSourceFile(fileName, text);
+      try {
+        return retained.sourceFile;
+      } finally {
+        retained.dispose();
+      }
+    },
     batch: <T>(questions: readonly APIRequestGenerator<T>[]) =>
       api.batch<readonly APIRequestGenerator<T>[]>(...questions),
     ask: (_accessor, _locations, question) => question(),

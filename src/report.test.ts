@@ -97,6 +97,7 @@ function input(pass: PassResult, overrides: Partial<ReportInput> = {}): ReportIn
     testFileRules: [],
     typeErrorSkips: [],
     unanswered: [],
+    conventionsApplied: [],
     ...overrides,
   };
 }

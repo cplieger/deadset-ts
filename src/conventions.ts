@@ -1,0 +1,640 @@
+/**
+ * The convention rows a run applies, and the files they root. A row applies to a
+ * manifest that declares its enabling package when the installed package's version is
+ * in the row's range; its globs are read against that manifest's directory, with every
+ * directory a configuration property moves read from the property's literal value.
+ * No configuration file is run.
+ */
+
+import {
+  isAsExpression,
+  isBinaryExpression,
+  isCallExpression,
+  isClassDeclaration,
+  isComputedPropertyName,
+  isExportAssignment,
+  isExportDeclaration,
+  isExpressionStatement,
+  isFunctionDeclaration,
+  isIdentifier,
+  isImportDeclaration,
+  isNamedExports,
+  isNamespaceImport,
+  isNoSubstitutionTemplateLiteral,
+  isNonNullExpression,
+  isObjectLiteralExpression,
+  isParenthesizedExpression,
+  isPropertyAccessExpression,
+  isPropertyAssignment,
+  isSatisfiesExpression,
+  isShorthandPropertyAssignment,
+  isSpreadAssignment,
+  isStringLiteral,
+  isVariableStatement,
+  SyntaxKind,
+  type AsExpression,
+  type Node,
+  type NonNullExpression,
+  type ObjectLiteralExpression,
+  type ParenthesizedExpression,
+  type SatisfiesExpression,
+  type SourceFile,
+} from "@typescript/native/unstable/ast";
+import { lineOf } from "./component-files.ts";
+import {
+  CONVENTION_ROWS,
+  type ConventionRow,
+  type DirectoryMove,
+  type OptionsCall,
+} from "./convention-rows.ts";
+import { globExpression } from "./glob.ts";
+import type { Host } from "./host.ts";
+import { dirnamePath, joinPath, normalizePath, relativePath, resolvePath } from "./paths.ts";
+import type { SetupFailure } from "./setup-failure.ts";
+import type { SourceFiles } from "./source-files.ts";
+import { satisfies } from "./version-range.ts";
+
+/** One manifest the analysis reads. */
+export interface ConventionManifest {
+  /** The manifest's directory, absolute. */
+  readonly dir: string;
+  /** The manifest's path below the target root, `/`-separated. */
+  readonly path: string;
+}
+
+/** One row a run applied, as the report lists it. */
+export interface AppliedConvention {
+  readonly name: string;
+  readonly package: string;
+  /** The version the installed package's own manifest names. */
+  readonly version: string;
+  /** The declaring manifest's path below the target root. */
+  readonly manifest: string;
+}
+
+/** One glob of an applied row, read against its manifest's directory. */
+interface ConventionGlob {
+  readonly dir: string;
+  readonly row: string;
+  readonly expression: RegExp;
+  /** The expressions of the row's excludes, read against the same directory. */
+  readonly excludes: readonly RegExp[];
+}
+
+/** A setup failure a row met, at the directory of the manifest that declared it. */
+interface ConventionFailure {
+  readonly dir: string;
+  readonly failure: SetupFailure;
+}
+
+/** What the rows decided for one run. */
+export interface Conventions {
+  /** The rows applied, ordered by name, then manifest, then their compact encoding. */
+  readonly applied: readonly AppliedConvention[];
+  readonly globs: readonly ConventionGlob[];
+  readonly failures: readonly ConventionFailure[];
+}
+
+/** One file a row roots. */
+interface ConventionEntry {
+  readonly file: SourceFile;
+  /** The row's name. */
+  readonly row: string;
+}
+
+/** Parses one file's text with no program. */
+type ParseSource = (fileName: string, text: string) => SourceFile;
+
+const DEPENDENCY_SECTIONS = [
+  "dependencies",
+  "devDependencies",
+  "peerDependencies",
+  "optionalDependencies",
+] as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readJSON(host: Host, path: string): unknown {
+  try {
+    return JSON.parse(host.readFile(path));
+  } catch {
+    return undefined;
+  }
+}
+
+function declares(manifest: unknown, name: string): boolean {
+  if (!isRecord(manifest)) {
+    return false;
+  }
+  return DEPENDENCY_SECTIONS.some((section) => {
+    const held = manifest[section];
+    return isRecord(held) && Object.hasOwn(held, name);
+  });
+}
+
+/**
+ * The version the installed package's manifest names, read from the nearest
+ * `node_modules` at or above `dir` that holds it, `""` where that manifest names
+ * none, or `undefined` where no `node_modules` holds it.
+ */
+function installedVersion(host: Host, dir: string, name: string): string | undefined {
+  for (let at = normalizePath(dir); ; at = dirnamePath(at)) {
+    const path = joinPath(at, "node_modules", name, "package.json");
+    if (host.kindOf(path) === "file") {
+      const manifest = readJSON(host, path);
+      const version = isRecord(manifest) ? manifest["version"] : undefined;
+      return typeof version === "string" ? version : "";
+    }
+    if (dirnamePath(at) === at) {
+      return undefined;
+    }
+  }
+}
+
+/** Whether one node wraps an expression without changing its value. */
+function isWrapper(
+  node: Node,
+): node is ParenthesizedExpression | AsExpression | SatisfiesExpression | NonNullExpression {
+  return (
+    isParenthesizedExpression(node) ||
+    isAsExpression(node) ||
+    isSatisfiesExpression(node) ||
+    isNonNullExpression(node)
+  );
+}
+
+/** The expression a wrapper that changes no value holds. */
+function unwrapped(node: Node): Node {
+  let at = node;
+  while (isWrapper(at)) {
+    at = at.expression;
+  }
+  return at;
+}
+
+/** The key one property is written with, where it is written as a name or a literal. */
+function keyOf(property: Node): string | undefined {
+  if (!isPropertyAssignment(property) && !isShorthandPropertyAssignment(property)) {
+    return undefined;
+  }
+  const { name } = property;
+  if (isComputedPropertyName(name)) {
+    return undefined;
+  }
+  if (isIdentifier(name) || isStringLiteral(name) || isNoSubstitutionTemplateLiteral(name)) {
+    return name.text;
+  }
+  return undefined;
+}
+
+/** The values one file's top-level variable declarations bind, by name. */
+function declaredValues(file: SourceFile): ReadonlyMap<string, Node> {
+  const values = new Map<string, Node>();
+  for (const statement of file.statements) {
+    if (isVariableStatement(statement)) {
+      for (const declaration of statement.declarationList.declarations) {
+        if (isIdentifier(declaration.name) && declaration.initializer !== undefined) {
+          values.set(declaration.name.text, declaration.initializer);
+        }
+      }
+    }
+  }
+  return values;
+}
+
+function isModuleExports(node: Node): boolean {
+  return (
+    isPropertyAccessExpression(node) &&
+    isIdentifier(node.expression) &&
+    node.expression.text === "module" &&
+    node.name.text === "exports"
+  );
+}
+
+/** Every expression or declaration one file exports as its default, in any module syntax. */
+function defaultExports(file: SourceFile): readonly Node[] {
+  const found: Node[] = [];
+  for (const statement of file.statements) {
+    if (isExportAssignment(statement)) {
+      found.push(statement.expression);
+    } else if (
+      (isFunctionDeclaration(statement) || isClassDeclaration(statement)) &&
+      statement.modifiers?.some((one) => one.kind === SyntaxKind.DefaultKeyword) === true
+    ) {
+      found.push(statement);
+    } else if (
+      isExportDeclaration(statement) &&
+      statement.moduleSpecifier === undefined &&
+      statement.exportClause !== undefined &&
+      isNamedExports(statement.exportClause)
+    ) {
+      for (const element of statement.exportClause.elements) {
+        if (element.name.text === "default") {
+          found.push(element.propertyName ?? element.name);
+        }
+      }
+    } else if (
+      isExpressionStatement(statement) &&
+      isBinaryExpression(statement.expression) &&
+      statement.expression.operatorToken.kind === SyntaxKind.EqualsToken &&
+      isModuleExports(statement.expression.left)
+    ) {
+      found.push(statement.expression.right);
+    }
+  }
+  return found;
+}
+
+/**
+ * The first argument of every call one file makes to one module's export, through a
+ * named or a namespace import; `undefined` for a call with no argument.
+ */
+function optionsArguments(file: SourceFile, call: OptionsCall): readonly (Node | undefined)[] {
+  const names = new Set<string>();
+  const namespaces = new Set<string>();
+  for (const statement of file.statements) {
+    const bindings = isImportDeclaration(statement)
+      ? statement.importClause?.namedBindings
+      : undefined;
+    if (
+      bindings === undefined ||
+      !isImportDeclaration(statement) ||
+      !isStringLiteral(statement.moduleSpecifier) ||
+      statement.moduleSpecifier.text !== call.module
+    ) {
+      continue;
+    }
+    if (isNamespaceImport(bindings)) {
+      namespaces.add(bindings.name.text);
+      continue;
+    }
+    for (const element of bindings.elements) {
+      if ((element.propertyName ?? element.name).text === call.export) {
+        names.add(element.name.text);
+      }
+    }
+  }
+  const found: (Node | undefined)[] = [];
+  const visit = (node: Node): void => {
+    if (isCallExpression(node)) {
+      const callee = unwrapped(node.expression);
+      const named = isIdentifier(callee) && names.has(callee.text);
+      const throughNamespace =
+        isPropertyAccessExpression(callee) &&
+        isIdentifier(callee.expression) &&
+        namespaces.has(callee.expression.text) &&
+        callee.name.text === call.export;
+      if (named || throughNamespace) {
+        found.push(node.arguments[0]);
+      }
+    }
+    node.forEachChild(visit);
+  };
+  file.forEachChild(visit);
+  return found;
+}
+
+/**
+ * The object literal one expression stands for, read through the file's top-level
+ * declarations and, where `throughCalls`, through a call's first argument: `undefined`
+ * for a call with no argument, and any other node where the expression is not written
+ * out as an object literal.
+ */
+function objectOf(
+  node: Node,
+  declared: ReadonlyMap<string, Node>,
+  throughCalls: boolean,
+  seen: ReadonlySet<string> = new Set(),
+): Node | undefined {
+  const at = unwrapped(node);
+  if (isIdentifier(at)) {
+    const value = declared.get(at.text);
+    if (value !== undefined && !seen.has(at.text)) {
+      return objectOf(value, declared, throughCalls, new Set([...seen, at.text]));
+    }
+  } else if (throughCalls && isCallExpression(at)) {
+    const [first] = at.arguments;
+    return first === undefined ? undefined : objectOf(first, declared, throughCalls, seen);
+  }
+  return at;
+}
+
+/**
+ * Reads the values at one path of keys below one object literal into `values`, and
+ * answers the first member that does not write its value out: a spread, a value that is
+ * not a literal at the path's end, or one that is not an object literal before it.
+ */
+function readPath(
+  object: ObjectLiteralExpression,
+  keys: readonly string[],
+  values: string[],
+): Node | undefined {
+  const [key, ...rest] = keys;
+  for (const member of object.properties) {
+    if (isSpreadAssignment(member)) {
+      return member;
+    }
+    if (keyOf(member) !== key) {
+      continue;
+    }
+    const held = isPropertyAssignment(member) ? unwrapped(member.initializer) : undefined;
+    if (rest.length === 0) {
+      if (held === undefined || !(isStringLiteral(held) || isNoSubstitutionTemplateLiteral(held))) {
+        return member;
+      }
+      values.push(held.text);
+    } else {
+      if (held === undefined || !isObjectLiteralExpression(held)) {
+        return member;
+      }
+      const failed = readPath(held, rest, values);
+      if (failed !== undefined) {
+        return failed;
+      }
+    }
+  }
+  return undefined;
+}
+
+/** What one configuration file states about one property. */
+interface PropertyReading {
+  /** The literal values the file sets the property to. */
+  readonly values: readonly string[];
+  /** The position of the first value that is not a literal, where there is one. */
+  readonly notLiteral?: Node;
+}
+
+/**
+ * Every value one file writes at one property's path inside the object it is read from:
+ * the options argument of every call `call` names, or the file's default export. A string
+ * literal or a template literal with no substitution is the value. A read object, or an
+ * object along the path, that is not written out as an object literal, or that spreads
+ * another object into itself, is not a literal, and neither is any other value at the path.
+ */
+export function readProperty(
+  file: SourceFile,
+  property: string,
+  call?: OptionsCall,
+): PropertyReading {
+  const declared = declaredValues(file);
+  const objects =
+    call === undefined
+      ? defaultExports(file).map((one) => objectOf(one, declared, true))
+      : optionsArguments(file, call).map((one) =>
+          one === undefined ? undefined : objectOf(one, declared, false),
+        );
+  const values: string[] = [];
+  for (const object of objects) {
+    if (object === undefined) {
+      continue;
+    }
+    const notLiteral = isObjectLiteralExpression(object)
+      ? readPath(object, property.split("."), values)
+      : object;
+    if (notLiteral !== undefined) {
+      return { values, notLiteral };
+    }
+  }
+  return { values };
+}
+
+/** A directory below a manifest's, `.` for the directory itself, `undefined` outside it. */
+function below(dir: string, path: string): string | undefined {
+  return normalizePath(path) === normalizePath(dir) ? "." : relativePath(dir, path);
+}
+
+/**
+ * Every text a template stands for, each placeholder replaced by every directory its move
+ * resolved to. A placeholder whose move resolved outside the manifest's directory leaves
+ * the text standing for nothing.
+ */
+function expand(
+  template: string,
+  resolved: ReadonlyMap<string, readonly (string | undefined)[]>,
+): readonly string[] {
+  const match = /<([A-Za-z]+)>/u.exec(template);
+  if (match === null) {
+    return [template];
+  }
+  const [placeholder, id = ""] = match;
+  const out: string[] = [];
+  for (const value of resolved.get(id) ?? []) {
+    if (value === undefined) {
+      continue;
+    }
+    const replaced =
+      value === "." && template.startsWith(`${placeholder}/`, match.index)
+        ? template.replace(`${placeholder}/`, "")
+        : template.replace(placeholder, value);
+    out.push(...expand(replaced, resolved));
+  }
+  return out;
+}
+
+/** The configuration files in one directory that one glob names, by name. */
+function configurationFiles(host: Host, dir: string, glob: string): readonly string[] {
+  const expression = globExpression(glob);
+  let entries;
+  try {
+    entries = host.readDirectory(dir);
+  } catch {
+    return [];
+  }
+  return entries
+    .filter((entry) => !entry.directory && expression.test(entry.name))
+    .map((entry) => entry.name)
+    .sort();
+}
+
+/** What one move resolved to: its directories, or the failure its property met. */
+type MoveResult = { readonly dirs: readonly (string | undefined)[] } | { readonly failure: string };
+
+function resolveMove(
+  host: Host,
+  parse: ParseSource,
+  dir: string,
+  row: ConventionRow,
+  move: DirectoryMove,
+  resolved: ReadonlyMap<string, readonly (string | undefined)[]>,
+): MoveResult {
+  const set: string[] = [];
+  for (const reading of move.readings) {
+    for (const glob of reading.files) {
+      for (const name of configurationFiles(host, dir, glob)) {
+        const path = joinPath(dir, name);
+        let text: string;
+        try {
+          text = host.readFile(path);
+        } catch {
+          continue;
+        }
+        const file = parse(path, text);
+        const read = readProperty(file, reading.property, reading.call);
+        if (read.notLiteral !== undefined) {
+          const line = lineOf(text, read.notLiteral.getStart());
+          return {
+            failure:
+              `${name}:${String(line)} sets ${reading.property}, which moves a directory ` +
+              `the convention row ${row.name} reads, to a value that is not a string literal: ` +
+              `write it as a literal, or name ${row.name} in ts.disabled_conventions and its ` +
+              `files in ts.entry_files`,
+          };
+        }
+        set.push(...read.values);
+      }
+    }
+  }
+  const dirs: (string | undefined)[] = [];
+  for (const base of expand(move.base ?? ".", resolved)) {
+    const against = joinPath(dir, base);
+    const texts = set.length > 0 ? set : move.defaults.flatMap((one) => expand(one, resolved));
+    for (const text of texts) {
+      dirs.push(below(dir, resolvePath(against, text)));
+    }
+  }
+  return { dirs: [...new Set(dirs)] };
+}
+
+/** Two strings ordered bytewise. */
+function compare(a: string, b: string): number {
+  if (a === b) {
+    return 0;
+  }
+  return a < b ? -1 : 1;
+}
+
+/**
+ * What the rows decide over the manifests the analysis reads. A row `disabled` names
+ * is skipped before anything is read for it.
+ */
+export function readConventions(
+  host: Host,
+  parse: ParseSource,
+  manifests: readonly ConventionManifest[],
+  disabled: readonly string[],
+  rows: readonly ConventionRow[] = CONVENTION_ROWS,
+): Conventions {
+  const applied: AppliedConvention[] = [];
+  const globs: ConventionGlob[] = [];
+  const failures: ConventionFailure[] = [];
+  for (const manifest of manifests) {
+    const declared = readJSON(host, joinPath(manifest.dir, "package.json"));
+    const versions = new Map<string, string | undefined>();
+    const missing = new Set<string>();
+    for (const row of rows) {
+      if (disabled.includes(row.name) || !declares(declared, row.package)) {
+        continue;
+      }
+      if (!versions.has(row.package)) {
+        versions.set(row.package, installedVersion(host, manifest.dir, row.package));
+      }
+      const version = versions.get(row.package);
+      if (version === undefined) {
+        if (missing.has(row.package)) {
+          continue;
+        }
+        missing.add(row.package);
+        failures.push({
+          dir: manifest.dir,
+          failure: {
+            setupClass: "missing-module",
+            detail:
+              `${manifest.path} declares ${row.package}, which no node_modules at or ` +
+              `above its directory holds: run the package manager's install`,
+          },
+        });
+        continue;
+      }
+      if (!satisfies(version, row.range)) {
+        continue;
+      }
+      const resolved = new Map<string, readonly (string | undefined)[]>();
+      let failed: string | undefined;
+      for (const move of row.moves) {
+        const result = resolveMove(host, parse, manifest.dir, row, move, resolved);
+        if ("failure" in result) {
+          failed = result.failure;
+          break;
+        }
+        resolved.set(move.id, result.dirs);
+      }
+      if (failed !== undefined) {
+        const where = dirnamePath(manifest.path);
+        failures.push({
+          dir: manifest.dir,
+          failure: {
+            setupClass: "convention-not-literal",
+            detail: where === "." ? failed : `${where}/${failed}`,
+          },
+        });
+        continue;
+      }
+      applied.push({
+        name: row.name,
+        package: row.package,
+        version,
+        manifest: manifest.path,
+      });
+      const excludes = [
+        ...new Set((row.excludes ?? []).flatMap((one) => expand(one, resolved))),
+      ].map(globExpression);
+      for (const glob of new Set(row.entries.flatMap((entry) => expand(entry, resolved)))) {
+        globs.push({
+          dir: manifest.dir,
+          row: row.name,
+          expression: globExpression(glob),
+          excludes,
+        });
+      }
+    }
+  }
+  const unique = [...new Map(applied.map((one) => [JSON.stringify(one), one])).values()];
+  unique.sort(
+    (a, b) =>
+      compare(a.name, b.name) ||
+      compare(a.manifest, b.manifest) ||
+      compare(JSON.stringify(a), JSON.stringify(b)),
+  );
+  return { applied: unique, globs, failures };
+}
+
+/** Every own file of one project an applied row's globs match, once per row. */
+export function conventionEntries(
+  conventions: Conventions,
+  files: SourceFiles,
+): readonly ConventionEntry[] {
+  const found = new Map<string, ConventionEntry>();
+  for (const glob of conventions.globs) {
+    for (const file of files.byName.values()) {
+      const path = relativePath(glob.dir, file.fileName);
+      if (
+        path !== undefined &&
+        glob.expression.test(path) &&
+        !glob.excludes.some((one) => one.test(path))
+      ) {
+        found.set(`${file.fileName}\u0000${glob.row}`, { file, row: glob.row });
+      }
+    }
+  }
+  return [...found.values()];
+}
+
+/**
+ * The failures the rows met that hold for one configuration: those of a manifest whose
+ * directory holds the configuration file or one of the files the project owns.
+ */
+export function conventionFailuresFor(
+  conventions: Conventions,
+  configFile: string,
+  ownFiles: readonly string[],
+): readonly SetupFailure[] {
+  return conventions.failures
+    .filter(
+      ({ dir }) =>
+        below(dir, dirnamePath(configFile)) !== undefined ||
+        ownFiles.some((file) => relativePath(dir, file) !== undefined),
+    )
+    .map(({ failure }) => failure);
+}

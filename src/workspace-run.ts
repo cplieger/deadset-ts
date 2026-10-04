@@ -51,6 +51,8 @@ export interface WorkspaceRun {
   readonly manifest: Manifest;
   /** The entry points the other members' manifests name. */
   readonly entries: readonly ManifestEntry[];
+  /** The directory of every member, the target's included, in the workspace's order. */
+  readonly memberDirs: readonly string[];
 }
 
 function layoutOf(engine: Engine, configFile: string): ParsedLayout | undefined {
@@ -131,6 +133,7 @@ export function workspaceRun(
         : !fromExternalLibrary,
     manifest: targetManifestIn(resolver, targetRoot, manifest),
     entries: memberEntries(host, resolver, targetRoot),
+    memberDirs: workspace.members.map((member) => member.dir),
   };
 }
 

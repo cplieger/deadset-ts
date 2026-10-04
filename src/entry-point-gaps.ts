@@ -34,7 +34,6 @@ const NOT_RELATIVE =
 /** The tools whose own conventions are not read. */
 const UNREAD_TOOLS: readonly string[] = [
   "angular",
-  "astro",
   "astro-db",
   "astro-markdoc",
   "astro-og-canvas",
@@ -67,7 +66,6 @@ const UNREAD_TOOLS: readonly string[] = [
   "esbuild",
   "eve",
   "execa",
-  "expo",
   "expressive-code",
   "fast",
   "fumadocs",
@@ -104,7 +102,6 @@ const UNREAD_TOOLS: readonly string[] = [
   "nano-staged",
   "nest",
   "netlify",
-  "next",
   "next-intl",
   "next-mdx",
   "nitro",
@@ -112,7 +109,6 @@ const UNREAD_TOOLS: readonly string[] = [
   "node-modules-inspector",
   "nodemon",
   "npm-package-json-lint",
-  "nuxt",
   "nuxtjs-i18n",
   "nx",
   "nyc",
@@ -137,17 +133,14 @@ const UNREAD_TOOLS: readonly string[] = [
   "prettier",
   "prisma",
   "quasar",
-  "qwik",
   "railway",
   "raycast",
   "react-cosmos",
   "react-email",
   "react-native",
-  "react-router",
   "relay",
   "release-it",
   "remark",
-  "remix",
   "rolldown",
   "rollup",
   "rsbuild",
@@ -163,11 +156,9 @@ const UNREAD_TOOLS: readonly string[] = [
   "sst",
   "starlight",
   "stencil",
-  "storybook",
   "stylelint",
   "svelte",
   "sveltejs-package",
-  "sveltekit",
   "svgo",
   "svgr",
   "swc",
@@ -250,6 +241,49 @@ const PARTLY_ENTERED: readonly DeclinedConvention[] = [
     reason:
       "Only the configuration object's own testDir and testMatch are read, so a test " +
       "directory a project entry moves is not entered.",
+  },
+  {
+    tool: "expo",
+    convention: "an app directory the expo-router entry of an app configuration moves",
+    reason:
+      "The convention row reads the app directory at its default places only, so a route " +
+      "below a moved directory is reported as never imported unless ts.entry_files names it.",
+  },
+  {
+    tool: "next",
+    convention: "a page extension next.config adds through pageExtensions",
+    reason:
+      "The convention row roots the default extensions only, so a route file of another " +
+      "extension is reported as never imported unless ts.entry_files names it.",
+  },
+  {
+    tool: "nuxt",
+    convention: "the files of a layer below layers/ beyond its nuxt.config",
+    reason:
+      "The convention row reads the project's own directories, so a layer's pages, plugins " +
+      "and server routes are reported as never imported unless ts.entry_files names them.",
+  },
+  {
+    tool: "qwik",
+    convention: "the routes of @qwik.dev/router",
+    reason:
+      "No convention row holds for that package, so its route files are reported as " +
+      "never imported unless ts.entry_files names them.",
+  },
+  {
+    tool: "react-router",
+    convention: "a route module app/routes.ts names outside the routes directory",
+    reason:
+      "The convention row roots the routes directory, and a string of routes.ts names no " +
+      "file, so a route module elsewhere is reported as never imported unless " +
+      "ts.entry_files names it.",
+  },
+  {
+    tool: "storybook",
+    convention: "a story the stories member of .storybook/main names outside *.stories.* files",
+    reason:
+      "The convention row roots *.stories.* files, so a story file named otherwise is " +
+      "reported as never imported unless ts.entry_files names it.",
   },
   {
     tool: "stryker",

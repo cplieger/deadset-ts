@@ -47,6 +47,7 @@ const SWEPT: Readonly<Record<SymbolKind, boolean>> = {
  */
 const NAMES_A_CALLER: Readonly<Record<RootKind, boolean>> = {
   "entry-file": true,
+  convention: true,
   "manifest-entry": true,
   "manifest-binary": true,
   script: true,

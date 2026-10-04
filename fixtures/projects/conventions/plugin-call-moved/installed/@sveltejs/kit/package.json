@@ -1,0 +1,11 @@
+{
+  "name": "@sveltejs/kit",
+  "version": "3.0.0",
+  "type": "module",
+  "exports": {
+    "./vite": {
+      "types": "./vite.d.ts",
+      "default": "./vite.js"
+    }
+  }
+}

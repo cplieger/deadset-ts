@@ -1,0 +1,13 @@
+{
+  "target": {
+    "kind": "application"
+  },
+  "ts": {
+    "disabled_conventions": [
+      "next"
+    ],
+    "entry_files": [
+      "app/page.tsx"
+    ]
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "name": "vitest",
+  "version": "5.0.3",
+  "bin": {
+    "vitest": "./cli.js"
+  }
+}

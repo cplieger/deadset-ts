@@ -1,0 +1,81 @@
+name: Weekly conventions
+
+on:
+  schedule:
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "starters/**"
+      - "src/convention-rows.ts"
+      - "src/conventions.ts"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: weekly-conventions-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  pinned:
+    name: Starters at the pinned versions
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "26"
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Run the starter test
+        env:
+          DEADSET_STARTERS: pinned
+        run: npm run test:starters
+
+  latest:
+    name: Starters at each row's latest release
+    # A new upstream release fails this whatever a pull request changed, so it runs unwatched only.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "26"
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Run the starter test
+        env:
+          DEADSET_STARTERS: latest
+        run: npm run test:starters
+
+  notify:
+    needs: [pinned, latest]
+    if: always()
+    permissions:
+      actions: read
+      contents: read
+      issues: write
+    uses: cplieger/ci/.github/workflows/notify-failure.yaml@8cbd5c6a72da96ff2b665ff5ab693eecc8fb2ad9 # v3.1.3
+    with:
+      workflow: ${{ github.workflow }}
+      run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

@@ -4,7 +4,7 @@
     "configurations": [{ "id": "tsconfig.test.json", "project": "tsconfig.test.json" }]
   },
   "ts": {
-    "test_files": ["**/*.test.{ts,tsx,mts,cts}", "__test-helpers__/**/*.ts"],
+    "test_files": ["**/*.test.{ts,tsx,mts,cts}", "__test-helpers__/**/*.ts", "starters/**/*.ts"],
     "entry_files": [
       "bin/deadset-ts.ts",
       "bin/component-mapper.ts",

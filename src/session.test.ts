@@ -50,6 +50,7 @@ function recordingEngine(real: Engine): { engine: Engine; recorded: Recorded } {
       }) as Snapshot;
     },
     createModuleResolver: (options, entries) => real.createModuleResolver(options, entries),
+    parseSourceFile: (fileName, text) => real.parseSourceFile(fileName, text),
     readsComponents: real.readsComponents,
     batch: (questions) => real.batch(questions),
     ask: (accessor, locations, question) => real.ask(accessor, locations, question),

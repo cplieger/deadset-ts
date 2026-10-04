@@ -1,0 +1,9 @@
+{
+  "name": "@example/params-directory",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "devDependencies": {
+    "@sveltejs/kit": "2.70.3"
+  }
+}

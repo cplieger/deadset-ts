@@ -10,6 +10,7 @@
 
 import type { SourceFile } from "@typescript/native/unstable/ast";
 import { aliasChains } from "./alias-chain.ts";
+import { conventionEntries, type Conventions } from "./conventions.ts";
 import { entryPoints, type EntryRule } from "./entry-points.ts";
 import { globExpression } from "./glob.ts";
 import type { Host } from "./host.ts";
@@ -25,6 +26,8 @@ import { typeQueryAliases } from "./type-query-alias.ts";
 export type RootKind =
   /** A file `ts.entry_files` names, and what it exports. */
   | "entry-file"
+  /** A file an applied convention row's globs match, and what it exports. */
+  | "convention"
   /** A file the manifest names as an importable entry point, and what it exports outside the published API. */
   | "manifest-entry"
   /** A file the manifest names as a command, and what it exports outside the published API. */
@@ -105,6 +108,8 @@ export interface RootOptions {
   readonly patterns: readonly string[];
   /** `ts.entry_files` from the resolved configuration. */
   readonly entryFiles: readonly string[];
+  /** The convention rows the run applied. */
+  readonly conventions?: Conventions | undefined;
   /** `ts.test_files` from the resolved configuration. */
   readonly testFiles: readonly string[];
   /** Whether the target is a library, so a consumer outside it reaches its published API. */
@@ -257,6 +262,11 @@ export function roots<Brand>(
         enter(file, "entry-file", pattern, true);
       }
     }
+  }
+  for (const { file, row } of options.conventions === undefined
+    ? []
+    : conventionEntries(options.conventions, files)) {
+    enter(file, "convention", row, true);
   }
   for (const point of entryPoints(project, files, options.testFiles, options.host, targetRoot)) {
     enter(point.file, point.rule, point.source, point.exports);

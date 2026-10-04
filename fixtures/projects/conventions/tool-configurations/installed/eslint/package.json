@@ -1,0 +1,7 @@
+{
+  "name": "eslint",
+  "version": "10.11.0",
+  "bin": {
+    "eslint": "./cli.js"
+  }
+}

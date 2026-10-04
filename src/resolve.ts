@@ -21,6 +21,7 @@ import {
   type TargetKind,
   type TemplateDelimiters,
 } from "./config.ts";
+import { CONVENTION_ROWS } from "./convention-rows.ts";
 import { FIXED_SEVERITY_CODES, LIVE_CODES } from "./kinds.ts";
 import {
   checkDocument,
@@ -298,20 +299,20 @@ function readComponentExtensions(
   return extensions;
 }
 
-/** The names of the convention rows this analyzer's table carries, which is none. */
-const CONVENTION_ROWS: readonly string[] = [];
+/** The names of the convention rows this analyzer's table carries. */
+const CONVENTION_NAMES: ReadonlySet<string> = new Set(CONVENTION_ROWS.map((row) => row.name));
 
 function readDisabledConventions(
   ts: Record<string, unknown> | undefined,
   label: string,
 ): readonly string[] | undefined {
   const names = readStrings(ts, "disabled_conventions", "ts.disabled_conventions", label, 0);
-  const unknown = names?.find((one) => !CONVENTION_ROWS.includes(one));
+  const unknown = names?.find((one) => !CONVENTION_NAMES.has(one));
   if (unknown !== undefined) {
     throw malformed(
       label,
       "ts.disabled_conventions",
-      `${JSON.stringify(unknown)} names no convention row: this analyzer carries none`,
+      `${JSON.stringify(unknown)} names no convention row this analyzer carries`,
     );
   }
   return names;

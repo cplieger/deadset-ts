@@ -4,7 +4,7 @@ This page lists where deadset-ts reads its settings, every setting it reads, the
 
 ## Where settings live
 
-deadset-ts reads up to three JSON documents. A command-line option wins over `deadset.json` at the target root, which wins over a central configuration that `--central=FILE` names. `--config=FILE` reads another file in place of `deadset.json`. A key the Contract does not declare, or a value of the wrong type, is refused with exit code 2. So is an `exemptions.disabled` entry that names no exemption class, and an `analysis.template_dirs` entry that is not a directory below the target.
+deadset-ts reads up to three JSON documents. A command-line option wins over `deadset.json` at the target root, which wins over a central configuration that `--central=FILE` names. `--config=FILE` reads another file in place of `deadset.json`. A key the Contract does not declare, or a value of the wrong type, is refused with exit code 2. So is an `exemptions.disabled` entry that names no exemption class, and an `analysis.template_dirs` entry that is not a directory below the target. So is a `ts.disabled_conventions` entry that names no convention row.
 
 `print-config` prints the resolved configuration and the source of each setting.
 
@@ -37,6 +37,7 @@ deadset-ts reads up to three JSON documents. A command-line option wins over `de
 | `reporters.fail_on`            | `deny`                                                                                | The lowest severity that fails the run: `allow`, `warn` or `deny`                                                                                        |
 | `ts.test_files`                | `["**/*.test.{ts,tsx,mts,cts}", "**/*.spec.*", "**/__tests__/**", "**/__mocks__/**"]` | Globs naming the test files                                                                                                                              |
 | `ts.entry_files`               | `[]`                                                                                  | Globs naming files whose exports are roots, beside the entry points the manifest names                                                                   |
+| `ts.disabled_conventions`      | `[]`                                                                                  | [Convention rows](how-it-works.md#the-roots) switched off, so they root no file. Name the files to keep in `ts.entry_files`                              |
 | `ts.component_extensions`      | `[".vue", ".svelte", ".astro"]`                                                       | Extensions of component files, whose script blocks and frontmatter are read as one module. `[]` reads none                                               |
 | `ts.injection_registrations`   | `[]`                                                                                  | Declarations whose call registers a class with a dependency-injection container                                                                          |
 | `ts.lifecycle_contracts`       | `[]`                                                                                  | Per framework, the decorators, calls or base classes that make a component, and the members the framework calls                                          |

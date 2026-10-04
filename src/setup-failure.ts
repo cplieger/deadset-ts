@@ -5,7 +5,11 @@
  */
 
 /** The classes of setup failure this analyzer meets. */
-type SetupClass = "missing-module" | "missing-consumer" | "workspace-member-without-source";
+type SetupClass =
+  | "missing-module"
+  | "missing-consumer"
+  | "workspace-member-without-source"
+  | "convention-not-literal";
 
 export interface SetupFailure {
   readonly setupClass: SetupClass;

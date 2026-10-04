@@ -1,0 +1,6 @@
+{
+  "description": "This directory is its own project so a type-aware linter finds these files: project discovery reads the nearest tsconfig.json, and the root one holds the published surface. The battery type-checks them through tsconfig.test.json.",
+  "extends": "../tsconfig.json",
+  "include": ["**/*.ts"],
+  "exclude": []
+}
