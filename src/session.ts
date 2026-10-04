@@ -1,8 +1,11 @@
 import { API, SymbolFlags } from "@typescript/native/unstable/sync";
 import type {
   APIRequestGenerator,
+  CreateSnapshotProgramParams,
   Diagnostic,
   DocumentIdentifier,
+  ModuleResolutionEntry,
+  ModuleResolver,
   NodeHandle,
   Project,
   Program,
@@ -36,8 +39,22 @@ export interface Engine {
    * the compiler package returns here is not one of its exported names.
    */
   parseConfigFile(file: DocumentIdentifier): ReturnType<API["parseConfigFile"]>;
-  /** Opens one snapshot holding every project named. */
-  createSnapshot(openProjects: readonly string[]): Snapshot;
+  /**
+   * Opens one snapshot holding every project named and every program described, the
+   * programs in the order given in the snapshot's operation.
+   */
+  createSnapshot(
+    openProjects: readonly string[],
+    createPrograms?: readonly CreateSnapshotProgramParams[],
+  ): Snapshot;
+  /**
+   * A module resolver answering each entry's import with the entry's file, and every
+   * other import as the compiler resolves it.
+   */
+  createModuleResolver(
+    options: CreateSnapshotProgramParams["compilerOptions"],
+    entries: readonly ModuleResolutionEntry[],
+  ): ModuleResolver;
   /** Sends many questions in one round trip and answers each, in order. */
   batch<T>(questions: readonly APIRequestGenerator<T>[]): T[];
   /**
@@ -70,7 +87,15 @@ export function openEngine(options: EngineOptions): Engine {
   let closed = false;
   return {
     parseConfigFile: (file) => api.parseConfigFile(file),
-    createSnapshot: (openProjects) => api.createSnapshot({ openProjects: [...openProjects] }),
+    createSnapshot: (openProjects, createPrograms) =>
+      api.createSnapshot({
+        openProjects: [...openProjects],
+        ...(createPrograms === undefined ? {} : { createPrograms: [...createPrograms] }),
+      }),
+    createModuleResolver: (options, entries) =>
+      api.createModuleResolver(options, {
+        moduleResolutions: { fallback: "resolve", entries: [...entries] },
+      }),
     batch: <T>(questions: readonly APIRequestGenerator<T>[]) =>
       api.batch<readonly APIRequestGenerator<T>[]>(...questions),
     ask: (_accessor, _locations, question) => question(),
@@ -166,6 +191,34 @@ export interface ProjectView<Brand> {
  */
 export type ProjectVisitor<Result> = <Brand>(project: ProjectView<Brand>) => Result;
 
+/**
+ * The source files of one program that `own` admits, in the program's order, none of
+ * them one of the compiler's default libraries.
+ */
+function filesOwned(
+  program: Program,
+  own: (fileName: string, fromExternalLibrary: boolean) => boolean,
+): readonly SourceFile[] {
+  return (
+    program
+      .getSourceFileNames()
+      // The metadata decides which files belong to the target, and it is read by
+      // name. Fetching each file first and filtering afterwards costs one round
+      // trip per library file the answer then discards, and a program holds far
+      // more library files than target files.
+      .filter((name) => {
+        const metadata = program.getSourceFileMetadata(name);
+        return (
+          metadata !== undefined &&
+          !metadata.isDefaultLibrary &&
+          own(name, metadata.isFromExternalLibrary)
+        );
+      })
+      .map((name) => program.getSourceFile(name))
+      .filter((file): file is SourceFile => file !== undefined)
+  );
+}
+
 function viewOf<Brand>(
   project: Project,
   configFile: string,
@@ -186,20 +239,7 @@ function viewOf<Brand>(
   let ownFiles: readonly SourceFile[] | undefined;
   let ownKeys: ReadonlySet<string> | undefined;
   const ownSourceFiles = (): readonly SourceFile[] => {
-    ownFiles ??= project.program
-      .getSourceFileNames()
-      // The metadata decides which files belong to the target, and it is read by
-      // name. Fetching each file first and filtering afterwards costs one round
-      // trip per library file the answer then discards, and a program holds far
-      // more library files than target files.
-      .filter((name) => {
-        const metadata = project.program.getSourceFileMetadata(name);
-        return (
-          metadata !== undefined && !metadata.isDefaultLibrary && !metadata.isFromExternalLibrary
-        );
-      })
-      .map((name) => project.program.getSourceFile(name))
-      .filter((file): file is SourceFile => file !== undefined);
+    ownFiles ??= filesOwned(project.program, (_name, fromExternalLibrary) => !fromExternalLibrary);
     return ownFiles;
   };
   return {
@@ -263,6 +303,30 @@ export function narrowedTo<Brand>(
   };
 }
 
+/**
+ * The same project, its own source files the ones `own` admits among every file its
+ * program holds, given whether the compiler reached the file as a library's.
+ */
+export function ownedAs<Brand>(
+  project: ProjectView<Brand>,
+  own: (fileName: string, fromExternalLibrary: boolean) => boolean,
+): ProjectView<Brand> {
+  let owned: readonly SourceFile[] | undefined;
+  let keys: ReadonlySet<string> | undefined;
+  const ownSourceFiles = (): readonly SourceFile[] => {
+    owned ??= filesOwned(project.program, own);
+    return owned;
+  };
+  return {
+    ...project,
+    ownSourceFiles,
+    ownPaths: () => {
+      keys ??= new Set(ownSourceFiles().map((file) => file.path));
+      return keys;
+    },
+  };
+}
+
 /** Every diagnostic set a project is refused for carrying an error in. */
 export interface ProjectDiagnostics {
   readonly configFile: string;
@@ -308,34 +372,49 @@ export interface SessionResult<Result> {
 /** What a run does about a configuration the snapshot opened no project for. */
 type Unopened = "refuse" | "record";
 
+/** The projects one snapshot holds for the configurations named, by configuration file. */
+function projectsOf(snapshot: Snapshot, built: readonly string[]): ReadonlyMap<string, Project> {
+  const opened = new Map<string, Project>();
+  for (const project of snapshot.getProjects()) {
+    if (project.configFileName !== undefined) {
+      opened.set(project.configFileName, project);
+    }
+  }
+  (snapshot.operation.createdPrograms ?? []).forEach((program, at) => {
+    const project = snapshot.getProject(program.id);
+    const configFile = built[at];
+    if (project !== undefined && configFile !== undefined) {
+      opened.set(configFile, project);
+    }
+  });
+  return opened;
+}
+
 /**
- * Runs `visit` over every project the compiler configurations name, inside one
- * snapshot of one client, in the order they are named, and answers in that order.
- *
- * The snapshot is opened once with every configuration, so each becomes a project
- * with its own program and checker; it is never updated, because the analysis
- * reads and the tree does not change under it. The order the snapshot lists its
- * projects in is the compiler's own, so each named configuration is looked up in it
- * instead. A configuration the snapshot opened no project for ends the run under
- * `"refuse"` and is named in the result under `"record"`. The snapshot is disposed once
- * the last project has been visited, and the client is released after it, whether the
- * visit completed or threw.
+ * Runs `visit` over every project the compiler configurations name, inside one never
+ * updated snapshot of one client, and answers in the order they are named. A
+ * configuration `programs` describes is built as that program instead of opened as a
+ * project. A configuration the snapshot holds nothing for ends the run under `"refuse"`
+ * and is named in the result under `"record"`. The snapshot is disposed after the last
+ * visit and the client released after it, whether the visit completed or threw.
  */
 export function runSession<Result>(
   engine: Engine,
   configFiles: readonly string[],
   visit: ProjectVisitor<Result>,
   unopened: Unopened = "refuse",
+  programs: ReadonlyMap<string, CreateSnapshotProgramParams> = new Map(),
 ): SessionResult<Result> {
   try {
-    const snapshot = engine.createSnapshot(configFiles);
+    const built = configFiles.filter((configFile) => programs.has(configFile));
+    const snapshot = engine.createSnapshot(
+      configFiles.filter((configFile) => !programs.has(configFile)),
+      built.length === 0
+        ? undefined
+        : built.flatMap((configFile) => programs.get(configFile) ?? []),
+    );
     try {
-      const opened = new Map<string, Project>();
-      for (const project of snapshot.getProjects()) {
-        if (project.configFileName !== undefined) {
-          opened.set(project.configFileName, project);
-        }
-      }
+      const opened = projectsOf(snapshot, built);
       const log = new UnansweredLog();
       const projects: Result[] = [];
       const missing: string[] = [];

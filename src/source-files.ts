@@ -5,52 +5,12 @@
  */
 
 import type { SourceFile } from "@typescript/native/unstable/ast";
-import { dirnamePath, joinPath, relativePath, resolvePath } from "./paths.ts";
+import { commonDirectory, emittedFrom } from "./emit-map.ts";
+import { dirnamePath, relativePath, resolvePath } from "./paths.ts";
 import type { ProjectView } from "./session.ts";
-
-/** The source extensions the compiler emits each output extension from. */
-const EMITTED: readonly { readonly emitted: string; readonly sources: readonly string[] }[] = [
-  { emitted: ".d.ts", sources: [".ts", ".tsx"] },
-  { emitted: ".d.mts", sources: [".mts"] },
-  { emitted: ".d.cts", sources: [".cts"] },
-  { emitted: ".js", sources: [".ts", ".tsx"] },
-  { emitted: ".jsx", sources: [".tsx"] },
-  { emitted: ".mjs", sources: [".mts"] },
-  { emitted: ".cjs", sources: [".cts"] },
-];
 
 /** The one character a subpath pattern of a manifest's `exports` holds. */
 const SUBPATH_WILDCARD = "*";
-
-/** One path with its extension replaced, where it carries the one named. */
-function reExtended(path: string, emitted: string, source: string): string | undefined {
-  return path.endsWith(emitted) ? path.slice(0, path.length - emitted.length) + source : undefined;
-}
-
-/**
- * The longest directory every path shares, which is the directory the compiler
- * emits from where the configuration declares no root directory.
- */
-function commonDirectory(paths: readonly string[]): string {
-  const first = paths[0];
-  if (first === undefined) {
-    return "";
-  }
-  let common = dirnamePath(first).split("/");
-  for (const path of paths.slice(1)) {
-    const segments = dirnamePath(path).split("/");
-    let shared = 0;
-    while (
-      shared < common.length &&
-      shared < segments.length &&
-      common[shared] === segments[shared]
-    ) {
-      shared += 1;
-    }
-    common = common.slice(0, shared);
-  }
-  return common.join("/");
-}
 
 /**
  * Whether one path is what a subpath pattern stands for: the text before the
@@ -108,32 +68,10 @@ export function sourceFilesOf<Brand>(project: ProjectView<Brand>, targetRoot: st
   const declarationDir = at(options.declarationDir);
   const sourceDir = at(options.rootDir) ?? commonDirectory([...byName.keys()]);
 
-  /** One path read below the directory the compiler emits from, where it is below the one it emits to. */
-  const fromEmit = (path: string, emitted: string): string | undefined => {
-    const emitDir = emitted.startsWith(".d.") ? (declarationDir ?? outDir) : outDir;
-    if (emitDir === undefined) {
-      return undefined;
-    }
-    const below = relativePath(emitDir, path);
-    return below === undefined ? undefined : joinPath(sourceDir, below);
-  };
+  const layout = { outDir, declarationDir, sourceDirs: [sourceDir] };
 
   /** The source paths one written path may stand for, the path itself first. */
-  const candidates = (path: string): readonly string[] => {
-    const found = [path];
-    for (const { emitted, sources } of EMITTED) {
-      const mapped = fromEmit(path, emitted);
-      for (const source of sources) {
-        for (const from of [path, mapped]) {
-          const candidate = from === undefined ? undefined : reExtended(from, emitted, source);
-          if (candidate !== undefined) {
-            found.push(candidate);
-          }
-        }
-      }
-    }
-    return found;
-  };
+  const candidates = (path: string): readonly string[] => [path, ...emittedFrom(path, layout)];
 
   return {
     byPath,

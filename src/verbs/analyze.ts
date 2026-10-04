@@ -242,7 +242,11 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
       recorded = write.rows;
     }
     const { result, run } = analysis;
-    partial = partialNotes({ notBuilt: run.notBuilt, unanswered: run.unanswered });
+    partial = partialNotes({
+      notBuilt: run.notBuilt,
+      unanswered: run.unanswered,
+      targetRoot: resolvePath(invoked, targetRoot),
+    });
     const built = buildReport({
       contractVersion: CONTRACT_VERSION,
       version,

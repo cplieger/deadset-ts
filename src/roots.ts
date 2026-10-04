@@ -83,6 +83,11 @@ export interface Roots {
 export interface RootOptions {
   /** The target's own manifest. */
   readonly manifest: Manifest;
+  /**
+   * The entry points the other packages of the target's workspace name, each already
+   * marked published or not by its own manifest's rule.
+   */
+  readonly workspaceEntries?: readonly ManifestEntry[] | undefined;
   /** `roots.patterns` from the resolved configuration. */
   readonly patterns: readonly string[];
   /** `ts.entry_files` from the resolved configuration. */
@@ -204,17 +209,22 @@ export function roots<Brand>(
   };
 
   const published: SourceFile[] = [];
-  const publishes = (entry: ManifestEntry): boolean =>
-    options.publishedAPI &&
-    entry.published &&
-    (options.manifest.declaresExports ? entry.member.startsWith("exports") : true);
-  for (const entry of options.manifest.entries) {
-    if (publishes(entry)) {
+  const entries = [
+    ...options.manifest.entries.map((entry) => ({
+      entry,
+      publishes:
+        entry.published &&
+        (options.manifest.declaresExports ? entry.member.startsWith("exports") : true),
+    })),
+    ...(options.workspaceEntries ?? []).map((entry) => ({ entry, publishes: entry.published })),
+  ];
+  for (const { entry, publishes } of entries) {
+    if (options.publishedAPI && publishes) {
       published.push(...files.named(entry.path));
     }
   }
   const publishedNames = new Set(published.map((file) => file.fileName));
-  for (const entry of options.manifest.entries) {
+  for (const { entry } of entries) {
     for (const file of files.named(entry.path)) {
       const kind = entry.role === "run" ? "manifest-binary" : "manifest-entry";
       enter(file, kind, entry.member, !publishedNames.has(file.fileName));

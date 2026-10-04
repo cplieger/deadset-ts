@@ -21,6 +21,12 @@ export interface Configured {
   readonly roots: readonly Root[];
   /** The paths the reference pass classified as test files. */
   readonly testFiles: readonly string[];
+  /**
+   * The paths of the workspace-package files the configuration holds but does not
+   * compile itself. Their declarations count in its graph and its verdict on them is no
+   * finding.
+   */
+  readonly referenceOnly?: readonly string[] | undefined;
 }
 
 /** The run's configurations, indexed for the sweep. */
@@ -30,9 +36,10 @@ export interface Matrix {
   /** Per configuration, in the same order, the graph of what that configuration holds. */
   readonly graphs: readonly Graph[];
   /**
-   * The graph over every configuration at once: every declaration any configuration
-   * holds, once per position and in site order, and every reference any configuration
-   * makes, a reference several configurations make at one position counted once.
+   * The graph over every configuration at once: every declaration a configuration
+   * holds in a file it does not hold only for its references, once per position and in
+   * site order, and every reference any configuration makes, a reference several
+   * configurations make at one position counted once.
    */
   readonly union: Graph;
   /**
@@ -88,30 +95,29 @@ export function referenceKey(reference: Reference): string {
 
 /**
  * Indexes what the passes answered for each configuration of one run, in the run's order.
- *
- * A declaration is keyed across configurations by its identifier, which is its rendered
- * position and so is the same in every configuration that compiles its file; the fields
- * of the first configuration that holds it are the ones kept. A declaration one
- * configuration alone holds is in the union with that one configuration, so it is
- * judged where it exists rather than skipped.
- *
- * One reference written at one position of a file several configurations compile is seen
- * once per configuration and is one reference, so the union holds it once; two references
- * one configuration makes at one position are two.
+ * A declaration is keyed by its rendered position, with the fields of the first
+ * configuration that judges it; one in a file every holder holds only for its references
+ * is judged by none and is not in the union. One reference at one position of a file
+ * several configurations compile is one reference; two one configuration makes are two.
  */
 export function matrixOf(per: readonly Configured[]): Matrix {
   const symbols: InventorySymbol[] = [];
   const holders = new Map<string, string[]>();
   const references: Reference[] = [];
   const firstSeen = new Map<string, number>();
+  const judged = new Set<string>();
   per.forEach((one, index) => {
+    const referenceOnly = new Set(one.referenceOnly);
     for (const symbol of one.symbols) {
       const held = holders.get(symbol.id);
       if (held === undefined) {
         holders.set(symbol.id, [one.configuration]);
-        symbols.push(symbol);
       } else if (!held.includes(one.configuration)) {
         held.push(one.configuration);
+      }
+      if (!referenceOnly.has(symbol.position.path) && !judged.has(symbol.id)) {
+        judged.add(symbol.id);
+        symbols.push(symbol);
       }
     }
     for (const reference of one.references) {

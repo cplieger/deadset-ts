@@ -15,6 +15,7 @@ function hostWith(files: Readonly<Record<string, string>>): Host {
     },
     readDirectory: () => [],
     kindOf: () => "absent",
+    realPath: (path) => path,
     analyzerVersion: () => "0.0.0",
     writeDocument: (path) => {
       throw new Error(`${path}: this host writes nothing`);

@@ -7,6 +7,7 @@ import { OUTSIDE, swept as judged } from "../graph.ts";
 import type { InventorySymbol } from "../inventory.ts";
 import { referenceKey, type Configured } from "../matrix.ts";
 import { partialNotes } from "../partial.ts";
+import { resolvePath } from "../paths.ts";
 import { positionKey } from "../position.ts";
 import type { Reference } from "../references.ts";
 import { resolve } from "../resolve.ts";
@@ -365,13 +366,15 @@ function explanation(analysis: RunAnalysis, subject: InventorySymbol, cascade: C
 export const explainVerb: Verb = ({ out, err, host, inputs, scope, openClient, option }) => {
   const named = namedSymbol(option);
   const { config, provenance } = resolve(inputs());
-  const analysis = runAnalysis(openClient(false), host, scope(), config, provenance, {
+  const scoped = scope();
+  const analysis = runAnalysis(openClient(false), host, scoped, config, provenance, {
     production: true,
   });
   const { subject, candidates } = subjectOf(analysis.swept.matrix.union.symbols, named);
   const notes = partialNotes({
     notBuilt: analysis.run.notBuilt,
     unanswered: analysis.run.unanswered,
+    targetRoot: resolvePath(host.workingDirectory(), scoped.target.path),
   });
   if (subject === undefined) {
     err.write(`deadset-ts: ${JSON.stringify(named)} names no one symbol of the target\n`);

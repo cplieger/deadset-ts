@@ -20,7 +20,7 @@ The projects you analyze need no TypeScript install of their own. deadset-ts typ
 
 `run(args, out, err, host, openClient?)` runs the command line over `args`, the arguments after the program name. It writes to the two `Writer` streams and returns the exit code. It never exits the process. `process.stdout` and `process.stderr` satisfy `Writer`.
 
-A `Host` gives the command line the filesystem, the directory relative paths resolve against, and the version of the package the analyzer was installed from. `bin/node-host.ts` is the Node.js host the command binds. A caller embedding the analyzer, or running it on another platform, supplies its own host and its own version with it. `openClient` opens the compiler client, and a caller that watches what a run reads may supply its own.
+A `Host` gives the command line the filesystem, the directory relative paths resolve against, and the version of the package the analyzer was installed from. `bin/node-host.ts` is the Node.js host the command binds. A caller embedding the analyzer, or running it on another platform, supplies its own host and its own version with it. `openClient` opens the compiler client, and a caller that watches what a run reads may supply its own. A host also resolves symbolic links, through `realPath`.
 
 `SETTING_OPTIONS` maps each command-line option to the configuration setting it supplies.
 

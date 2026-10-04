@@ -28,6 +28,12 @@ export interface Host {
   /** What one path names, `"absent"` where nothing is there. */
   kindOf(path: string): PathKind;
   /**
+   * The path one path names once every symbolic link along it is followed, or a throw
+   * naming why it cannot be: a package manager links an installed workspace package
+   * into `node_modules`, and the link's target is what says which package it is.
+   */
+  realPath(path: string): string;
+  /**
    * The version of the package this analyzer was installed from, or a throw
    * naming why it cannot be known. It is a method rather than a value because
    * locating that package is a filesystem walk, and a host that cannot do it

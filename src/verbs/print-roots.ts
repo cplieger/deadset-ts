@@ -1,5 +1,6 @@
 import { runRoots, type RunRoot } from "../analysis.ts";
 import { partialNotes } from "../partial.ts";
+import { resolvePath } from "../paths.ts";
 import { resolve } from "../resolve.ts";
 import { EXIT_CLEAN, EXIT_FINDINGS, type Verb } from "./verb.ts";
 
@@ -35,7 +36,11 @@ export const printRootsVerb: Verb = ({ out, err, host, inputs, scope, openClient
   for (const finding of answer.findings) {
     err.write(`${finding.code}: roots.patterns names nothing: ${finding.symbol.ref}\n`);
   }
-  for (const note of partialNotes({ notBuilt: answer.notBuilt, unanswered: answer.unanswered })) {
+  for (const note of partialNotes({
+    notBuilt: answer.notBuilt,
+    unanswered: answer.unanswered,
+    targetRoot: resolvePath(host.workingDirectory(), scoped.target.path),
+  })) {
     err.write(`deadset-ts: ${note}\n`);
   }
   return answer.findings.length > 0 ? EXIT_FINDINGS : EXIT_CLEAN;
