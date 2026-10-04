@@ -13,6 +13,7 @@ import type {
   FindingPosition,
   PositionedSymbol,
 } from "./finding.ts";
+import type { AppliedConvention } from "./conventions.ts";
 import type { PassResult } from "./findings-pass.ts";
 import type { StaleSuppression } from "./findings/self-check.ts";
 import type { TestFileRule } from "./references.ts";
@@ -217,7 +218,7 @@ export interface Report {
   readonly type_error_skips: readonly TypeErrorSkip[];
   readonly notes: readonly never[];
   readonly unanswered_questions: readonly UnansweredCount[];
-  readonly conventions_applied: readonly never[];
+  readonly conventions_applied: readonly AppliedConvention[];
   readonly totals: WireTotals;
 }
 
@@ -236,6 +237,8 @@ export interface ReportInput {
   readonly testFileRules: readonly TestFileRule[];
   readonly typeErrorSkips: readonly TypeErrorSkip[];
   readonly unanswered: readonly UnansweredCount[];
+  /** The convention rows the run applied, in the report's order. */
+  readonly conventionsApplied: readonly AppliedConvention[];
 }
 
 /** Two strings ordered bytewise. */
@@ -503,7 +506,12 @@ export function buildReport(input: ReportInput): Report {
         questions: one.questions,
         declarations: one.declarations,
       })),
-    conventions_applied: [],
+    conventions_applied: input.conventionsApplied.map((one) => ({
+      name: one.name,
+      package: one.package,
+      version: one.version,
+      manifest: one.manifest,
+    })),
     totals: totalsOf(findings, input.result),
   };
 }

@@ -34,6 +34,12 @@ import {
   type LocatedDiagnostic,
   type NotBuilt,
 } from "./discover.ts";
+import {
+  conventionFailuresFor,
+  readConventions,
+  type AppliedConvention,
+  type ConventionManifest,
+} from "./conventions.ts";
 import { readEdgeSides } from "./edges.ts";
 import { enumGroup } from "./enum-group.ts";
 import {
@@ -73,7 +79,7 @@ import {
   type Matrix,
   type SweepResult,
 } from "./matrix.ts";
-import { relativePath, resolvePath } from "./paths.ts";
+import { joinPath, relativePath, resolvePath } from "./paths.ts";
 import type { UnansweredQuestion } from "./query.ts";
 import { byPosition, isComponentFile, type Position } from "./position.ts";
 import type { TypeErrorSkip, UnansweredCount } from "./report.ts";
@@ -206,6 +212,30 @@ interface ReadProjects<Answer> {
   readonly unanswered: readonly UnansweredQuestion[];
   /** Per configuration whose component files the run cannot read, the reason. */
   readonly componentsUnread: readonly ComponentsUnread[];
+  /** The convention rows the run applied. */
+  readonly conventionsApplied: readonly AppliedConvention[];
+}
+
+/**
+ * The manifests the analysis reads, each once: the target's own, then every workspace
+ * member's below the target root.
+ */
+function conventionManifests(
+  host: Host,
+  targetRoot: string,
+  memberDirs: readonly string[],
+): readonly ConventionManifest[] {
+  const found = new Map<string, ConventionManifest>();
+  if (host.kindOf(joinPath(targetRoot, "package.json")) === "file") {
+    found.set(targetRoot, { dir: targetRoot, path: "package.json" });
+  }
+  for (const dir of memberDirs) {
+    const below = relativePath(targetRoot, dir);
+    if (below !== undefined && !found.has(dir)) {
+      found.set(dir, { dir, path: `${below}/package.json` });
+    }
+  }
+  return [...found.values()];
 }
 
 /**
@@ -240,12 +270,19 @@ function readProjects<Answer>(
     discovered.configFiles,
     readManifest(host, targetRoot),
   );
+  const conventions = readConventions(
+    host,
+    (fileName, text) => engine.parseSourceFile(fileName, text),
+    conventionManifests(host, absoluteRoot, workspace?.memberDirs ?? []),
+    config.ts.disabledConventions,
+  );
   const options = {
     host,
     manifest: workspace?.manifest ?? readManifest(host, targetRoot),
     workspaceEntries: workspace?.entries,
     patterns: config.rootPatterns,
     entryFiles: config.ts.entryFiles,
+    conventions,
     testFiles: config.ts.testFiles,
     publishedAPI: config.targetKind === "library",
   };
@@ -335,6 +372,18 @@ function readProjects<Answer>(
         setupMet(project.configFile, reading.missing);
         return undefined;
       }
+      const unconventional =
+        consumer === undefined
+          ? conventionFailuresFor(
+              conventions,
+              project.configFile,
+              project.ownSourceFiles().map((file) => file.fileName),
+            )
+          : [];
+      if (unconventional.length > 0) {
+        setupMet(project.configFile, unconventional);
+        return undefined;
+      }
       if (consumer !== undefined) {
         for (const reference of consumerReferences(
           project,
@@ -418,6 +467,7 @@ function readProjects<Answer>(
     notBuilt,
     unanswered: session.unanswered,
     componentsUnread: workspace?.componentsUnread ?? [],
+    conventionsApplied: conventions.applied,
   };
 }
 
@@ -587,6 +637,8 @@ interface ReadRun<Extra> {
   readonly unanswered: readonly UnansweredQuestion[];
   /** Per configuration whose component files the run cannot read, the reason. */
   readonly componentsUnread: readonly ComponentsUnread[];
+  /** The convention rows the run applied. */
+  readonly conventionsApplied: readonly AppliedConvention[];
 }
 
 /**
@@ -701,6 +753,7 @@ function readRun<Extra>(
     notBuilt: read.notBuilt,
     unanswered: read.unanswered,
     componentsUnread: read.componentsUnread,
+    conventionsApplied: read.conventionsApplied,
   };
 }
 
@@ -1009,6 +1062,7 @@ function readAnalysis(
       notBuilt: read.notBuilt,
       unanswered: read.unanswered,
       componentsUnread: read.componentsUnread,
+      conventionsApplied: read.conventionsApplied,
     },
     configured: read.projects.map((one) => one.configured),
     symbols,
@@ -1085,6 +1139,8 @@ export interface RunFacts {
   readonly componentWarnings: readonly ComponentWarning[];
   /** Per configuration whose component files the run cannot read, the reason. */
   readonly componentsUnread: readonly ComponentsUnread[];
+  /** The convention rows the run applied. */
+  readonly conventionsApplied: readonly AppliedConvention[];
 }
 
 /** One configuration whose component files a run cannot read. */

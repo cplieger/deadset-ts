@@ -1,0 +1,9 @@
+{
+  "name": "@example/other-plugin-literal",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "devDependencies": {
+    "@sveltejs/kit": "3.0.0"
+  }
+}

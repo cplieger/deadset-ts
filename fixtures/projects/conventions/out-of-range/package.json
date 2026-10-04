@@ -1,0 +1,9 @@
+{
+  "name": "@example/out-of-range",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "next": "12.3.4"
+  }
+}

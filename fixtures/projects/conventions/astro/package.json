@@ -1,0 +1,9 @@
+{
+  "name": "@example/astro",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "peerDependencies": {
+    "astro": "7.3.5"
+  }
+}

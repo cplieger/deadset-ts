@@ -1,0 +1,9 @@
+{
+  "name": "@example/next",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "next": "16.3.8"
+  }
+}

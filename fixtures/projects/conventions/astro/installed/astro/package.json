@@ -1,0 +1,7 @@
+{
+  "name": "astro",
+  "version": "7.3.5",
+  "bin": {
+    "astro": "./cli.js"
+  }
+}

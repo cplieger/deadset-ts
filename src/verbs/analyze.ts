@@ -278,6 +278,7 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
       testFileRules: run.testFileRules,
       typeErrorSkips: run.typeErrorSkips,
       unanswered: unansweredCounts(analysis),
+      conventionsApplied: run.conventionsApplied,
     });
     report = capFindings(sortFindings(built, config.reporters.sort), config.reporters.maxFindings);
     verdict = verdictOf(result, config);

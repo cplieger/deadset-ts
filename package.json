@@ -23,6 +23,7 @@
     "typecheck": "tsc -p tsconfig.json",
     "typecheck:tests": "tsc -p tsconfig.test.json",
     "test": "vitest --run",
+    "test:starters": "vitest --run --config starters/vitest.config.ts",
     "lint": "eslint .",
     "lint:prettier": "prettier --check .",
     "lint:fix": "eslint . --fix && prettier --write ."

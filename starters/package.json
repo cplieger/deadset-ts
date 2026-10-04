@@ -1,0 +1,31 @@
+{
+  "name": "@cplieger/deadset-ts-starters",
+  "private": true,
+  "type": "module",
+  "description": "The pinned generators of the official starter projects the convention rows are checked against, and the pinned version of each row's enabling package. Nothing installs this manifest: the starter test runs each generator at the version here and sets the enabling package to the version here.",
+  "devDependencies": {
+    "@builder.io/qwik-city": "1.20.1",
+    "@react-router/dev": "8.4.0",
+    "@remix-run/dev": "2.17.5",
+    "@solidjs/start": "2.0.5",
+    "@sveltejs/kit": "3.0.0",
+    "astro": "7.3.5",
+    "create-astro": "5.2.4",
+    "create-expo-app": "5.0.0",
+    "create-next-app": "16.3.8",
+    "create-nuxt": "3.37.0",
+    "create-qwik": "1.20.1",
+    "create-react-router": "8.4.0",
+    "create-remix": "2.16.8",
+    "create-solid": "0.12.0",
+    "create-storybook": "10.6.1",
+    "create-vite": "9.2.1",
+    "expo-router": "57.0.24",
+    "next": "16.3.8",
+    "nuxt": "4.5.2",
+    "storybook": "10.6.1",
+    "sv": "1.1.0",
+    "sv-sveltekit-2": "npm:sv@0.17.1",
+    "sveltekit-2": "npm:@sveltejs/kit@2.70.3"
+  }
+}

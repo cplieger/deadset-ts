@@ -1,0 +1,9 @@
+{
+  "name": "@example/nuxt",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "devDependencies": {
+    "nuxt": "4.5.2"
+  }
+}

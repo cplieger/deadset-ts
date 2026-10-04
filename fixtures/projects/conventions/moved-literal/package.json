@@ -1,0 +1,9 @@
+{
+  "name": "@example/moved-literal",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "devDependencies": {
+    "@react-router/dev": "8.4.0"
+  }
+}
