@@ -4,6 +4,6 @@
   "version": "1.0.0",
   "type": "module",
   "dependencies": {
-    "next": "12.3.4"
+    "next": "17.0.0"
   }
 }
