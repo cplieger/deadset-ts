@@ -1,6 +1,7 @@
 import { evaluateEdges, type EdgeEvaluation } from "../edges.ts";
 import type { CompletedFinding } from "../finding.ts";
 import { ledgerOf, type Dials, type Ledger, type SuppressionRecord } from "../suppress.ts";
+import { insideSkipped } from "../type-errors.ts";
 import { completed, dialsOf, reportable } from "./completion.ts";
 import { dependenciesAndModuleMachinery } from "./dependencies-and-module-machinery.ts";
 import type { Emitter, EmitterInput, Emitters } from "./emitter.ts";
@@ -111,7 +112,12 @@ export function decidedFindings(
   const unanswered = heldRefs(input);
   const kept = reportable(
     input,
-    found.filter((finding) => !ledger.withheld(finding) && !unanswered.has(finding.symbol.ref)),
+    found.filter(
+      (finding) =>
+        !ledger.withheld(finding) &&
+        !unanswered.has(finding.symbol.ref) &&
+        !insideSkipped(input.swept.skipped, finding.position),
+    ),
   );
   const evaluated = evaluateEdges(kept, input.boundary.edges, input.swept.matrix.union.symbols);
   return {

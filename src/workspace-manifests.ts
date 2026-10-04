@@ -68,9 +68,10 @@ export function targetManifestIn(
 
 /**
  * The entry points every other member's manifest names, each spelled as the member
- * that named it under the manifest's path below the target root. An entry is
- * published where its member is not private and the member named in its own manifest
- * is one a consumer imports.
+ * that named it under the manifest's path below the target root, a private member's
+ * `exports` left out: only the workspace imports a private package, and the workspace
+ * is analyzed. An entry is published where its member is not private and the member
+ * named in its own manifest is one a consumer imports.
  */
 export function memberEntries(
   host: Host,
@@ -86,13 +87,12 @@ export function memberEntries(
       relativePath(targetRoot, joinPath(member.dir, "package.json")) ??
       joinPath(member.dir, "package.json");
     const kept = manifest.entries.flatMap((entry): ManifestEntry[] => {
-      if (member.private && entry.role !== "run") {
+      const exported = entry.member.startsWith("exports");
+      if (member.private && exported) {
         return [];
       }
       const published =
-        !member.private &&
-        entry.published &&
-        (manifest.declaresExports ? entry.member.startsWith("exports") : true);
+        !member.private && entry.published && (manifest.declaresExports ? exported : true);
       return [{ ...entry, published }];
     });
     return sourceEntries(resolver, member, kept, (entry) => `${where} ${entry.member}`);

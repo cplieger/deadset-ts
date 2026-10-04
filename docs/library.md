@@ -14,7 +14,7 @@ The JSR package ships the TypeScript source only.
 
 The one runtime dependency is the `typescript` package at exactly 7.1.0-dev.20261003.1, installed under the `@typescript/native` name. The analyzer is written against its `unstable/*` API. It does not run on TypeScript 6, whose compiler API TypeScript 7 removed, and it does not fall back to it.
 
-The projects you analyze need no TypeScript install of their own. deadset-ts type-checks them with its own TypeScript 7.1.0-dev.20261003.1, so a project must compile cleanly under that version.
+The projects you analyze need no TypeScript install of their own. deadset-ts type-checks them with its own TypeScript 7.1.0-dev.20261003.1, so a type error under that version skips the function or statement that holds it.
 
 ## Running the analyzer in-process
 

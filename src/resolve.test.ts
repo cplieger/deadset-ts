@@ -6,7 +6,7 @@ import {
   type Negative,
 } from "../__test-helpers__/fixtures.ts";
 import { ConfigError, type Inputs } from "./config.ts";
-import { resolve, resolveMatrix } from "./resolve.ts";
+import { resolve, resolveUnkinded } from "./resolve.ts";
 
 function refuse(inputs: Inputs): ConfigError {
   try {
@@ -432,20 +432,20 @@ describe("the build matrix", () => {
 describe("the build matrix on its own", () => {
   it("resolves from documents that name no target kind", () => {
     expect(
-      resolveMatrix(
+      resolveUnkinded(
         repository('{"analysis":{"configurations":[{"id":"app","project":"tsconfig.json"}]}}'),
-      ),
+      ).analysis.configurations,
     ).toEqual([{ shape: "project", id: "app", project: "tsconfig.json" }]);
   });
 
   it("is the empty default where no document names one", () => {
-    expect(resolveMatrix({})).toEqual([]);
+    expect(resolveUnkinded({}).analysis.configurations).toEqual([]);
   });
 
   it("refuses a document resolution refuses, naming the same key", () => {
     let thrown: unknown;
     try {
-      resolveMatrix(repository('{"analysis":{"configurations":[{"id":"x"}]}}'));
+      resolveUnkinded(repository('{"analysis":{"configurations":[{"id":"x"}]}}'));
     } catch (error: unknown) {
       thrown = error;
     }

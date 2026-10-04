@@ -53,6 +53,13 @@ const STALE_SUPPRESSION = "DS1703";
 const UNMATCHED_ROOT = "DS1704";
 const UNMATCHED_DECLARATION = "DS1706";
 
+/** The capability a fixture's type_error_skips member exercises. */
+const TYPE_ERROR_SKIPS = "type-error-skips";
+
+/** The exit code a run ending with a setup failure returns, and the line it prints. */
+const SETUP_FAILURE_EXIT = 3;
+const SETUP_FAILURE_PREFIX = "setup failure: ";
+
 /** The two configuration keys under a lifecycle contract a configured declaration is written into. */
 const LIFECYCLE_KEYS = {
   "ts.lifecycle_contracts.components": "components",
@@ -104,10 +111,26 @@ interface EdgeExpectation {
   readonly report?: string;
 }
 
+/** One note the report must list. */
+interface NoteExpectation {
+  readonly kind: string;
+  readonly path: string;
+}
+
+/** The setup failure a fixture's run must end with. */
+interface SetupFailureExpectation {
+  readonly class: string;
+  readonly names: readonly string[];
+}
+
 interface ExpectationFile {
   readonly name: string;
   readonly languages: readonly string[];
   readonly target_kind: string;
+  readonly min_confidence?: string;
+  readonly type_error_skips?: readonly string[];
+  readonly notes?: readonly NoteExpectation[];
+  readonly setup_failure?: SetupFailureExpectation;
   readonly consumers?: readonly string[];
   readonly closed_world?: readonly string[];
   readonly configured_roots?: Readonly<Record<string, string>>;
@@ -366,6 +389,9 @@ function configOf(file: ExpectationFile): string {
   const ts = tsSectionOf(file.configured_declarations ?? {});
   return `${JSON.stringify({
     target: { kind: file.target_kind },
+    ...(file.min_confidence === undefined
+      ? {}
+      : { analysis: { min_confidence: file.min_confidence } }),
     ...(world.includes("consumers") ? { consumers: { complete: true } } : {}),
     ...(patterns.length > 0 ? { roots: { patterns } } : {}),
     ...(Object.keys(ts).length > 0 ? { ts } : {}),
@@ -829,6 +855,137 @@ export function edgeDifferences(
   return held.join("; ");
 }
 
+/**
+ * Every way the report's type-error skips differ from the fixture's, in one line, or
+ * empty: each name resolves to at least one record at its file and line, and every
+ * record resolves to a name.
+ */
+export function skipDifferences(
+  file: Pick<ExpectationFile, "type_error_skips">,
+  manifest: Manifest,
+  report: Pick<Report, "type_error_skips">,
+): string {
+  const held: string[] = [];
+  const sites = new Map<string, string>();
+  for (const name of file.type_error_skips ?? []) {
+    const bound = manifest.symbols[name];
+    if (bound?.file === undefined || bound.line === undefined) {
+      throw new FixtureError(`the manifest binds no file and line for ${name}`);
+    }
+    sites.set(`${bound.file}:${String(bound.line)}`, name);
+  }
+  const reported = new Set(report.type_error_skips.map((one) => siteOf(one.path, one.line)));
+  for (const [site, name] of sites) {
+    if (!reported.has(site)) {
+      held.push(`want a type-error skip ${name} at ${site}, got none`);
+    }
+  }
+  for (const site of reported) {
+    if (!sites.has(site)) {
+      held.push(`type-error skip at ${site}, which no name resolves to`);
+    }
+  }
+  return held.join("; ");
+}
+
+/**
+ * Every way the report's notes differ from the fixture's, in one line, or empty: each
+ * entry names exactly one record of its kind and path, and no record is left that no
+ * entry names.
+ */
+export function noteDifferences(
+  file: Pick<ExpectationFile, "notes">,
+  report: Pick<Report, "notes">,
+): string {
+  const held: string[] = [];
+  const wanted = file.notes ?? [];
+  const records = report.notes as readonly NoteExpectation[];
+  for (const want of wanted) {
+    const found = records.filter((one) => one.kind === want.kind && one.path === want.path);
+    if (found.length !== 1) {
+      held.push(`want exactly one ${want.kind} note at ${want.path}, got ${String(found.length)}`);
+    }
+  }
+  for (const record of records) {
+    if (!wanted.some((one) => one.kind === record.kind && one.path === record.path)) {
+      held.push(`${record.kind} note at ${record.path}, which no entry names`);
+    }
+  }
+  return held.join("; ");
+}
+
+/** Whether a declared gap covers one fixture-level capability of one fixture. */
+function gapCovers(gaps: readonly DeclaredGap[], fixtureName: string, capability: string): boolean {
+  return gaps.some(
+    (gap) =>
+      gap.fixture === fixtureName && gap.symbol === undefined && gap.capability === capability,
+  );
+}
+
+/**
+ * Why one run's end does not answer the fixture's setup failure, or empty: the run exits
+ * with the failure code, reports no finding, and prints a line naming the class and
+ * every name the member lists.
+ */
+export function setupFailureDifference(
+  want: SetupFailureExpectation,
+  code: number,
+  stderr: string,
+  findings: number,
+): string {
+  const prefix = `${SETUP_FAILURE_PREFIX}${want.class}: `;
+  const lines = stderr.split("\n").filter((line) => line.startsWith(prefix));
+  const named = lines.some((line) => want.names.every((name) => line.includes(name)));
+  const held: string[] = [];
+  if (code !== SETUP_FAILURE_EXIT) {
+    held.push(`want exit ${String(SETUP_FAILURE_EXIT)}, got ${String(code)}`);
+  }
+  if (findings > 0) {
+    held.push(`want no finding, got ${String(findings)}`);
+  }
+  if (!named) {
+    held.push(
+      `want a line starting ${JSON.stringify(prefix)} naming ${want.names.join(", ")}, got ${JSON.stringify(stderr.trim())}`,
+    );
+  }
+  return held.join("; ");
+}
+
+/** The answer to a fixture whose run must end with a setup failure. */
+function setupFixture(
+  at: CorpusRun,
+  name: string,
+  want: SetupFailureExpectation,
+  gaps: readonly DeclaredGap[],
+): FixtureResult {
+  const report = join(at.dir, "first.report.json");
+  const err = new MemoryWriter();
+  const code = run(
+    [
+      "analyze",
+      `--target=${join("rendering", TARGET)}`,
+      `--config=${join(at.dir, "deadset.json")}`,
+      ...(at.scope === undefined ? [] : [`--scope=${join(at.dir, "scope.json")}`]),
+      `--report=${report}`,
+    ],
+    new MemoryWriter(),
+    err,
+    hostAt(at.dir),
+  );
+  const written = readJsonIfPresent(report) as Report | undefined;
+  const message = setupFailureDifference(want, code, err.text, written?.findings.length ?? 0);
+  if (message === "") {
+    return { fixture: name, result: "pass", expectations: [], unexpected: [] };
+  }
+  return {
+    fixture: name,
+    result: gapCovers(gaps, name, want.class) ? "gap" : "fail",
+    expectations: [],
+    unexpected: [],
+    message,
+  };
+}
+
 /** The capabilities one row exercises: its code, else the classes it names. */
 function exercised(row: Row): readonly string[] {
   return row.report === NONE ? (row.retained_by ?? []) : [row.report];
@@ -919,6 +1076,9 @@ function answerFixture(
     if (at.scope !== undefined) {
       writeFileSync(join(dir, "scope.json"), at.scope);
     }
+    if (file.setup_failure !== undefined) {
+      return setupFixture(at, name, file.setup_failure, gaps);
+    }
 
     const first = analyzeRendering(at, "first");
     const answers = rows.map((row) => {
@@ -954,7 +1114,16 @@ function answerFixture(
 
     const decided = answers.map(({ row, held }) => decide(row, held, gaps, name));
     const unexpected = unexpectedOf(first.report, namedByRows(file, sites), entriesOf(file));
-    const edges = edgeDifferences(file, manifest, first.report);
+    const skips = gapCovers(gaps, name, TYPE_ERROR_SKIPS)
+      ? ""
+      : skipDifferences(file, manifest, first.report);
+    const edges = [
+      edgeDifferences(file, manifest, first.report),
+      skips,
+      noteDifferences(file, first.report),
+    ]
+      .filter((one) => one !== "")
+      .join("; ");
     const outcomes = decided.map((one) => one.result);
     let result: Outcome = "pass";
     if (unexpected.length > 0 || edges !== "" || outcomes.includes("fail")) {

@@ -4,6 +4,7 @@ import { EMITTERS } from "./findings/emitters.ts";
 import type { Host } from "./host.ts";
 import { joinPath, resolvePath } from "./paths.ts";
 import { readScope, ScopeError, scopeForDir, type Scope } from "./scope.ts";
+import { SetupError, setupLine } from "./setup-failure.ts";
 import { openEngine, type Engine } from "./session.ts";
 import { printConfigVerb } from "./verbs/print-config.ts";
 import { printProjectsVerb } from "./verbs/print-projects.ts";
@@ -280,6 +281,12 @@ function refuse(error: unknown, err: Writer): number {
       err.write(`${renderDiagnostic(diagnostic)}\n`);
     }
     err.write(`deadset-ts: ${error.message}\n`);
+    return EXIT_FAILURE;
+  }
+  if (error instanceof SetupError) {
+    for (const failure of error.failures) {
+      err.write(`${setupLine(failure)}\n`);
+    }
     return EXIT_FAILURE;
   }
   if (error instanceof ScopeError) {

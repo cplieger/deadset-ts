@@ -168,6 +168,36 @@ function outcomeOf(name: string): string {
 }
 
 describe("the published template vectors", () => {
+  it("are the case set this suite runs", () => {
+    expect(templateCases()).toEqual([
+      "character-constant",
+      "comparison-of-two-kinds",
+      "field-on-a-string",
+      "findings-by-member-name",
+      "function-outside-the-subset",
+      "index-of-a-missing-key",
+      "index-past-the-array",
+      "integers-print-in-decimal",
+      "length-in-bytes",
+      "member-the-document-lacks",
+      "nil-as-a-command",
+      "nil-as-an-argument",
+      "number-with-a-fraction",
+      "octal-escape",
+      "print-spacing",
+      "printf-operand-left-over",
+      "printf-verb-outside-the-subset",
+      "printf-verbs",
+      "range-orders-and-stops",
+      "strings-compare-by-bytes",
+      "template-definition",
+      "truth-and-logic",
+      "unclosed-action",
+      "values-print-bracketed",
+      "variables-and-trim-markers",
+    ]);
+  });
+
   it.each(templateCases())("%s ends as the case states", (name) => {
     const exit = caseFile(name, "expected_exit");
 

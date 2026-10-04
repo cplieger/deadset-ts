@@ -253,13 +253,15 @@ function admitTestsOfDeadCode(
 ): readonly boolean[] {
   const admitted = graph.symbols.map(() => false);
   graph.symbols.forEach((_symbol, at) => {
-    if (graph.test[at] !== true || graph.subject[at] !== true || held[at] === true) {
+    const testCode = graph.test[at] === true || graph.support[at] === true;
+    if (!testCode || graph.subject[at] !== true || held[at] === true) {
       return;
     }
     let targets = 0;
     let live = 0;
     for (const edge of graph.out[at] ?? []) {
-      if (graph.test[edge.to] === true || graph.subject[edge.to] !== true) {
+      const target = graph.test[edge.to] === true || graph.support[edge.to] === true;
+      if (target || graph.subject[edge.to] !== true) {
         continue;
       }
       targets += 1;

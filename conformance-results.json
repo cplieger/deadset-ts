@@ -1,9 +1,113 @@
 {
-  "corpus_version": "2.0.0",
+  "corpus_version": "2.1.1",
   "product": { "name": "deadset-ts", "version": "0.1.0", "language": "ts" },
-  "result": "pass",
-  "totals": { "fixtures": 20, "pass": 19, "gap": 1, "fail": 0 },
+  "result": "fail",
+  "totals": { "fixtures": 34, "pass": 29, "gap": 1, "fail": 4 },
   "fixtures": [
+    {
+      "fixture": "component-files",
+      "result": "fail",
+      "expectations": [
+        {
+          "symbol": "format",
+          "result": "fail",
+          "actual": { "report": "DS1001", "confidence": "certain" },
+          "message": "want no finding at target/format.ts:2, got DS1001"
+        },
+        {
+          "symbol": "heading",
+          "result": "fail",
+          "actual": { "report": "DS1001", "confidence": "certain" },
+          "message": "want no finding at target/heading.ts:2, got DS1001"
+        },
+        { "symbol": "localHelper", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "summary",
+          "result": "fail",
+          "actual": { "report": "none" },
+          "message": "want DS1003 as the finding at target/model.ts:9, got none"
+        },
+        {
+          "symbol": "title",
+          "result": "fail",
+          "actual": { "report": "none" },
+          "message": "want the retained listing to name [\"template-field\"] at target/model.ts:4, got []"
+        },
+        {
+          "symbol": "unusedFormat",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "unusedHeading",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": [
+        { "file": "target/format.ts", "line": 1, "report": "DS1502" },
+        { "file": "target/format.ts", "line": 2, "report": "DS1001" },
+        { "file": "target/heading.ts", "line": 1, "report": "DS1502" },
+        { "file": "target/heading.ts", "line": 2, "report": "DS1001" },
+        { "file": "target/model.ts", "line": 1, "report": "DS1502" },
+        { "file": "target/model.ts", "line": 2, "report": "DS1001" }
+      ],
+      "message": "type-error skip at target/main.ts:1, which no name resolves to; type-error skip at target/main.ts:2, which no name resolves to"
+    },
+    {
+      "fixture": "configuration-files-and-strings",
+      "result": "fail",
+      "expectations": [
+        {
+          "symbol": "UnusedTool",
+          "result": "pass",
+          "actual": {
+            "report": "DS1601",
+            "symbol_kind": "dependency",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "details": { "dependency_class": "dev-dependency" }
+          }
+        },
+        {
+          "symbol": "UsedByJSON",
+          "result": "fail",
+          "actual": { "report": "DS1601", "confidence": "certain" },
+          "message": "want no finding at target/package.json:9, got DS1601"
+        },
+        {
+          "symbol": "UsedByModule",
+          "result": "fail",
+          "actual": { "report": "DS1601", "confidence": "certain" },
+          "message": "want no finding at target/package.json:8, got DS1601"
+        },
+        {
+          "symbol": "prepare",
+          "result": "fail",
+          "actual": { "report": "DS1001", "confidence": "certain" },
+          "message": "want no finding at target/setup/prepare.ts:2, got DS1001"
+        }
+      ],
+      "unexpected": [
+        { "file": "target/build.config.ts", "line": 1, "report": "DS1502" },
+        { "file": "target/package.json", "line": 8, "report": "DS1601" },
+        { "file": "target/package.json", "line": 9, "report": "DS1601" },
+        { "file": "target/setup/prepare.ts", "line": 1, "report": "DS1502" },
+        { "file": "target/setup/prepare.ts", "line": 2, "report": "DS1001" }
+      ]
+    },
     {
       "fixture": "dependency-commands-and-peers",
       "result": "pass",
@@ -183,6 +287,72 @@
       "unexpected": []
     },
     {
+      "fixture": "intra-function-parts",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "DeadStore",
+          "result": "pass",
+          "actual": {
+            "report": "DS1807",
+            "symbol_kind": "store",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "DroppedResult",
+          "result": "pass",
+          "actual": {
+            "report": "DS1803",
+            "symbol_kind": "result",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "LiveStore", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "ReachableCase", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "ReadParameter", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "ReadResult", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "UnreachableCase",
+          "result": "pass",
+          "actual": {
+            "report": "DS1809",
+            "symbol_kind": "case",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "UnreachableStatement",
+          "result": "pass",
+          "actual": {
+            "report": "DS1805",
+            "symbol_kind": "statement",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "UnreadParameter",
+          "result": "pass",
+          "actual": {
+            "report": "DS1801",
+            "symbol_kind": "parameter",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "member-withheld-with-its-root",
       "result": "pass",
       "expectations": [
@@ -216,6 +386,18 @@
         },
         { "symbol": "balance", "result": "pass", "actual": { "report": "none" } }
       ],
+      "unexpected": []
+    },
+    {
+      "fixture": "missing-consumer-setup-failure",
+      "result": "pass",
+      "expectations": [],
+      "unexpected": []
+    },
+    {
+      "fixture": "missing-module-setup-failure",
+      "result": "pass",
+      "expectations": [],
       "unexpected": []
     },
     {
@@ -281,6 +463,87 @@
             "confidence": "certain",
             "reachability_class": "certain",
             "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "published-api-confidence",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "Catalog", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Count",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "possible",
+            "reachability_class": "possible"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "Exposed",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "confidence": "possible",
+            "reachability_class": "possible"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "hidden",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "orphan",
+          "result": "pass",
+          "actual": {
+            "report": "DS1002",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "published-api-withheld-by-default",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "Catalog", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Count", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Exposed", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "hidden",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "orphan",
+          "result": "pass",
+          "actual": {
+            "report": "DS1002",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
           },
           "suppression": { "suppressed": true, "stale": false }
         }
@@ -397,6 +660,56 @@
         }
       ],
       "unexpected": []
+    },
+    {
+      "fixture": "test-and-script-defaults",
+      "result": "fail",
+      "expectations": [
+        {
+          "symbol": "inMocks",
+          "result": "pass",
+          "actual": {
+            "report": "DS1004",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "inSpec",
+          "result": "pass",
+          "actual": {
+            "report": "DS1004",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "inTests",
+          "result": "pass",
+          "actual": {
+            "report": "DS1004",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "production", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "seed",
+          "result": "fail",
+          "actual": { "report": "DS1001", "confidence": "certain" },
+          "message": "want no finding at target/scripts/seed.ts:2, got DS1001"
+        }
+      ],
+      "unexpected": [
+        { "file": "target/scripts/seed.ts", "line": 1, "report": "DS1502" },
+        { "file": "target/scripts/seed.ts", "line": 2, "report": "DS1001" }
+      ]
     },
     {
       "fixture": "test-file-declarations-outside-components",
@@ -569,6 +882,62 @@
       "unexpected": []
     },
     {
+      "fixture": "test-support-code",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "Encode",
+          "result": "pass",
+          "actual": {
+            "report": "DS1004",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "Fixture", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Live", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Unused",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "type-error-skips-its-function",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "broken", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "count", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "dead",
+          "result": "pass",
+          "actual": {
+            "report": "DS1002",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "helper", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "panel", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "type-parameter-of-a-dead-function",
       "result": "pass",
       "expectations": [
@@ -618,6 +987,47 @@
         }
       ],
       "unexpected": []
+    },
+    {
+      "fixture": "type-query-alias",
+      "result": "fail",
+      "expectations": [
+        { "symbol": "GlobalResetCounter", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "GlobalUseCounter", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "resetCounter",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "unusedCounter",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "useCounter",
+          "result": "fail",
+          "actual": { "report": "DS1001", "confidence": "certain" },
+          "message": "want no finding at target/counter.ts:2, got DS1001"
+        }
+      ],
+      "unexpected": [
+        { "file": "target/counter.ts", "line": 1, "report": "DS1502" },
+        { "file": "target/counter.ts", "line": 2, "report": "DS1001" },
+        { "file": "target/globals.d.ts", "line": 3, "report": "DS1002" }
+      ]
     },
     {
       "fixture": "unmatched-configured-declaration",
@@ -697,6 +1107,28 @@
       "unexpected": []
     },
     {
+      "fixture": "unnecessary-code-diagnostic",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "label",
+          "result": "pass",
+          "actual": {
+            "report": "DS1801",
+            "symbol_kind": "parameter",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "details": {
+              "overlap": ["tsc --noUnusedParameters", "@typescript-eslint/no-unused-vars"]
+            }
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "scaled", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "unused-declaration-visibility",
       "result": "pass",
       "expectations": [
@@ -771,6 +1203,31 @@
         },
         { "symbol": "UsedByConsumer", "result": "pass", "actual": { "report": "none" } }
       ],
+      "unexpected": []
+    },
+    {
+      "fixture": "workspace-member-source",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "unused",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "used", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "workspace-member-without-source",
+      "result": "pass",
+      "expectations": [],
       "unexpected": []
     },
     {

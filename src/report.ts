@@ -18,13 +18,10 @@ import type { StaleSuppression } from "./findings/self-check.ts";
 import type { TestFileRule } from "./references.ts";
 
 /** The version of the report schema this analyzer writes a report to. */
-const SCHEMA_VERSION = "6.1.0";
+const SCHEMA_VERSION = "7.0.0";
 
-/**
- * Every report schema version this analyzer reads: the schema versions the Contract it
- * implements admits, each an instance of the one it writes.
- */
-export const SCHEMA_VERSIONS_ACCEPTED: readonly string[] = ["6.0.0", SCHEMA_VERSION];
+/** Every report schema version this analyzer reads: the one the Contract it implements admits. */
+export const SCHEMA_VERSIONS_ACCEPTED: readonly string[] = [SCHEMA_VERSION];
 
 /** The name this analyzer writes every document under and mints every identifier with. */
 export const ANALYZER_NAME = "deadset-ts";
@@ -151,6 +148,22 @@ export interface ReportNotBuilt {
   readonly error: string;
 }
 
+/** One type error that skipped the function or statement holding it. */
+export interface TypeErrorSkip {
+  /** The file holding the error, below the target root. */
+  readonly path: string;
+  readonly line: number;
+  /** The compiler's message, on one line. */
+  readonly message: string;
+}
+
+/** One configuration in which the checker left questions unanswered, with what they held. */
+export interface UnansweredCount {
+  readonly configuration: string;
+  readonly questions: number;
+  readonly declarations: number;
+}
+
 /** One consumer the run loaded, at the directory a report names it by. */
 interface ReportConsumer {
   readonly id: string;
@@ -201,6 +214,10 @@ export interface Report {
   readonly declared_gaps: readonly WireDeclaredGap[];
   readonly excluded_by_cgo: readonly never[];
   readonly test_file_rules: readonly TestFileRule[];
+  readonly type_error_skips: readonly TypeErrorSkip[];
+  readonly notes: readonly never[];
+  readonly unanswered_questions: readonly UnansweredCount[];
+  readonly conventions_applied: readonly never[];
   readonly totals: WireTotals;
 }
 
@@ -217,6 +234,8 @@ export interface ReportInput {
   readonly unavailable: readonly UnavailableConsumer[];
   readonly result: PassResult;
   readonly testFileRules: readonly TestFileRule[];
+  readonly typeErrorSkips: readonly TypeErrorSkip[];
+  readonly unanswered: readonly UnansweredCount[];
 }
 
 /** Two strings ordered bytewise. */
@@ -462,6 +481,29 @@ export function buildReport(input: ReportInput): Report {
     test_file_rules: [...input.testFileRules]
       .sort((a, b) => compare(a.rule, b.rule) || a.matched - b.matched)
       .map((one) => ({ rule: one.rule, matched: one.matched })),
+    type_error_skips: [
+      ...new Map(
+        input.typeErrorSkips.map((one) => {
+          const skip = { path: one.path, line: one.line, message: one.message };
+          return [JSON.stringify(skip), skip] as const;
+        }),
+      ),
+    ]
+      .sort(([a, x], [b, y]) => compare(x.path, y.path) || x.line - y.line || compare(a, b))
+      .map(([, skip]) => skip),
+    notes: [],
+    unanswered_questions: [...input.unanswered]
+      .sort(
+        (a, b) =>
+          compare(a.configuration, b.configuration) ||
+          compare(JSON.stringify(a), JSON.stringify(b)),
+      )
+      .map((one) => ({
+        configuration: one.configuration,
+        questions: one.questions,
+        declarations: one.declarations,
+      })),
+    conventions_applied: [],
     totals: totalsOf(findings, input.result),
   };
 }

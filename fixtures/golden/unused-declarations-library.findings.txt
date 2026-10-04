@@ -1,4 +1,3 @@
-DS1003	src/index.ts:4:3-4	class-member Published.visible 1	possible/possible	reference-counting	-	deadset-ts/c-0001 root 1 1	deny	tsconfig.json	{}	class member has no reference in the target
 DS1003	src/index.ts:6:3-6	class-member Published.#secret 1	certain/certain	reference-counting	-	deadset-ts/c-0002 root 1 1	deny	tsconfig.json	{}	private class member has no reference in the target
 DS1003	src/index.ts:8:11-8	class-member Published.hidden 1	certain/certain	reference-counting	-	deadset-ts/c-0003 root 1 1	deny	tsconfig.json	{}	private class member has no reference in the target
 DS1006	src/internal.ts:8:17-10	function internalRetired 3	certain/certain	reference-counting	-	deadset-ts/c-0006 root 1 3	deny	tsconfig.json	{}	deprecated function has no production reference

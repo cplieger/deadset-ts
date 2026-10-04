@@ -73,11 +73,21 @@ import {
 import { relativePath, resolvePath } from "./paths.ts";
 import type { UnansweredQuestion } from "./query.ts";
 import { byPosition, type Position } from "./position.ts";
+import type { TypeErrorSkip, UnansweredCount } from "./report.ts";
+import { SetupError, setupLine, type SetupFailure } from "./setup-failure.ts";
+import {
+  pathsOf,
+  readErrors,
+  skippedRoots,
+  skippedUnits,
+  type SkippedUnit,
+} from "./type-errors.ts";
 import { reflectiveLookup } from "./reflective-lookup.ts";
 import { references, testFileRulesOf, type Reference, type TestFileRule } from "./references.ts";
 import { roots, unmatchedEverywhere, type RootKind, type Roots } from "./roots.ts";
 import type { Scope } from "./scope.ts";
 import { serializationContract } from "./serialization-contract.ts";
+import { supportReferences, testSupportFiles } from "./test-support.ts";
 import { diagnosticsOf, ownedAs, runSession, type Engine, type ProjectView } from "./session.ts";
 import { accessorsOf, storesOf } from "./stores.ts";
 import { isPartKind, type SuppressionRecord, type Suppressions, type Verdict } from "./suppress.ts";
@@ -162,6 +172,17 @@ interface ProjectRead {
    * only for the references they make.
    */
   readonly referenceOnly: readonly string[];
+  /** Every type error of the project's own files that skipped a unit. */
+  readonly typeErrorSkips: readonly TypeErrorSkip[];
+  /** The lines each of those skips withholds every finding on. */
+  readonly skipped: readonly SkippedUnit[];
+}
+
+/** One target project the run analyzes, as its stage is handed it. */
+interface OpenedProject {
+  readonly configuration: string;
+  /** Enumerates and roots the project; called only inside the stage it was handed to. */
+  readonly read: () => ProjectRead;
 }
 
 /** What a run read of the consumers its scope declares. */
@@ -184,18 +205,19 @@ interface ReadProjects<Answer> {
 
 /**
  * Reads every project the scope discovers, and every project of each consumer it
- * declares, in one snapshot, each checked for errors first. A target project is
- * enumerated, rooted and handed to `stage`; a consumer project is read for its references
- * to the target. A guess that does not load is dropped into `notBuilt` (see
- * {@link isGuess}); any other project that does not load or carries an error fails the
- * run, as does a run whose every guess was dropped.
+ * declares, in one snapshot, each checked for errors first. A target project is handed to
+ * `stage`, which enumerates and roots it if it reads it; a consumer project is read for
+ * its references to the target. A type error in an own file skips the unit holding it. A guess that does
+ * not load or meets a setup failure is dropped into `notBuilt` (see {@link isGuess}); any
+ * other project that does not load or meets a setup failure fails the run, as does a run
+ * whose every guess was dropped.
  */
 function readProjects<Answer>(
   engine: Engine,
   host: Host,
   scope: Scope,
   config: Config,
-  stage: <Brand>(project: ProjectView<Brand>, read: ProjectRead) => Answer,
+  stage: <Brand>(project: ProjectView<Brand>, opened: OpenedProject) => Answer,
 ): ReadProjects<Answer> {
   const targetRoot = scope.target.path;
   const discovered = discoverProjects(engine, host, scope, config.analysis.configurations);
@@ -231,8 +253,18 @@ function readProjects<Answer>(
     });
   };
   const failures: LocatedDiagnostic[] = [];
-  const unbuildable: string[] = [];
+  const unbuildable: SetupFailure[] = [];
+  const setupDropped: SetupFailure[] = [];
   const consumed = new Map<string, Reference>();
+  const setupMet = (configFile: string, met: readonly SetupFailure[]): void => {
+    const [first] = met;
+    if (first !== undefined && isGuess(discovered, configFile)) {
+      dropped(configFile, setupLine(first));
+      setupDropped.push(...met);
+    } else {
+      unbuildable.push(...met);
+    }
+  };
   const session = runSession(
     engine,
     [...discovered.configFiles, ...consumerOf.keys()],
@@ -240,11 +272,9 @@ function readProjects<Answer>(
       const consumer = consumerOf.get(opened.configFile);
       const setup = consumer === undefined ? workspace?.unbuildable(opened.configFile) : undefined;
       if (setup !== undefined) {
-        if (isGuess(discovered, opened.configFile)) {
-          dropped(opened.configFile, setup);
-        } else {
-          unbuildable.push(setup);
-        }
+        setupMet(opened.configFile, [
+          { setupClass: "workspace-member-without-source", detail: setup },
+        ]);
         return undefined;
       }
       const referenceOnly =
@@ -271,8 +301,33 @@ function readProjects<Answer>(
         );
         return undefined;
       }
-      if (errors.load.length > 0 || errors.check.length > 0) {
-        failures.push(...errors.load, ...errors.check);
+      if (errors.load.length > 0) {
+        failures.push(...errors.load);
+        return undefined;
+      }
+      const reading = readErrors(project, errors.check, {
+        host,
+        targetRoot:
+          consumer === undefined
+            ? absoluteRoot
+            : resolvePath(host.workingDirectory(), consumer.path),
+        paths: pathsOf(engine, project.configFile),
+      });
+      if (reading.failing.length > 0) {
+        failures.push(...reading.failing);
+        return undefined;
+      }
+      if (consumer !== undefined && reading.missing.length > 0) {
+        unbuildable.push(
+          ...reading.missing.map((one) => ({
+            setupClass: "missing-consumer" as const,
+            detail: `the consumer ${consumer.path} does not build, its dependencies not installed: ${one.detail}`,
+          })),
+        );
+        return undefined;
+      }
+      if (reading.missing.length > 0) {
+        setupMet(project.configFile, reading.missing);
         return undefined;
       }
       if (consumer !== undefined) {
@@ -290,19 +345,35 @@ function readProjects<Answer>(
         }
         return undefined;
       }
-      const held = inventory(project, host, targetRoot);
-      const rooted = roots(project, held, targetRoot, options);
       const configuration = ids.get(project.configFile) ?? project.configFile;
-      return stage(project, {
-        configuration,
-        configFile: project.configFile,
-        held,
-        rooted,
-        referenceOnly: project
-          .ownSourceFiles()
-          .filter((file) => referenceOnly(file.fileName))
-          .flatMap((file) => relativePath(absoluteRoot, file.fileName) ?? []),
-      });
+      const read = (): ProjectRead => {
+        const held = inventory(project, host, targetRoot);
+        const found = roots(project, held, targetRoot, options);
+        const kept = skippedRoots(project, held, reading.skips);
+        const rooted =
+          kept.length === 0
+            ? found
+            : {
+                ...found,
+                liveUnderReachability: [
+                  ...found.liveUnderReachability,
+                  ...kept.map((id) => ({ id, kind: "type-error" as const, source: "" })),
+                ],
+              };
+        return {
+          configuration,
+          configFile: project.configFile,
+          held,
+          rooted,
+          typeErrorSkips: reading.skips.map((one) => one.record),
+          skipped: skippedUnits(reading.skips, absoluteRoot),
+          referenceOnly: project
+            .ownSourceFiles()
+            .filter((file) => referenceOnly(file.fileName))
+            .flatMap((file) => relativePath(absoluteRoot, file.fileName) ?? []),
+        };
+      };
+      return stage(project, { configuration, read });
     },
     discovered.derived ? "record" : "refuse",
     workspace?.programs,
@@ -314,7 +385,7 @@ function readProjects<Answer>(
     dropped(configFile, "the compiler opened no project for the configuration");
   }
   if (unbuildable.length > 0) {
-    throw new DiscoveryError(unbuildable.join("\n"), []);
+    throw new SetupError(unbuildable);
   }
   if (failures.length > 0) {
     throw new DiscoveryError(
@@ -324,6 +395,9 @@ function readProjects<Answer>(
   }
   const answers = session.projects.filter((answer): answer is Answer => answer !== undefined);
   const [first] = notBuilt;
+  if (answers.length === 0 && setupDropped.length > 0) {
+    throw new SetupError(setupDropped);
+  }
   if (answers.length === 0 && first !== undefined) {
     throw new DiscoveryError(
       `no configuration discovery derived could be built; ${first.id}: ${first.error}`,
@@ -341,6 +415,32 @@ function readProjects<Answer>(
   };
 }
 
+/** The projects one run analyzes, and what reading them left out. */
+interface RunProjects {
+  /** Each configuration the run analyzes, by the name discovery gives its project, in discovery order. */
+  readonly configurations: readonly string[];
+  /** The derived configurations the run dropped. */
+  readonly notBuilt: readonly NotBuilt[];
+  /** Every question the checker could not answer, each once. */
+  readonly unanswered: readonly UnansweredQuestion[];
+}
+
+/**
+ * The projects the run the scope and the configuration describe analyzes, each read
+ * for the errors and setup failures that decide whether it is analyzed, dropped or
+ * fails the run, exactly as the analysis reads them.
+ */
+export function runProjects(engine: Engine, host: Host, scope: Scope, config: Config): RunProjects {
+  const read = readProjects(
+    engine,
+    host,
+    scope,
+    config,
+    (_project, opened) => opened.configuration,
+  );
+  return { configurations: read.answers, notBuilt: read.notBuilt, unanswered: read.unanswered };
+}
+
 /**
  * The root set of the run the scope and the configuration describe.
  *
@@ -355,7 +455,7 @@ export function runRoots(
   provenance: Provenance,
 ): RunRoots {
   const targetRoot = scope.target.path;
-  const read = readProjects(engine, host, scope, config, (_project, projectRead) => projectRead);
+  const read = readProjects(engine, host, scope, config, (_project, opened) => opened.read());
   const projects = read.answers;
 
   const configurations: string[] = [];
@@ -423,6 +523,8 @@ export interface RunSweep {
    * such a declaration keeps live. The run reports none of them.
    */
   readonly heldByUnanswered: readonly string[];
+  /** The lines of the units type errors skipped, on which the run reports nothing. */
+  readonly skipped: readonly SkippedUnit[];
 }
 
 /** The exemption classes this analyzer detects, each by its detector; any other retains nothing. */
@@ -444,6 +546,8 @@ interface SweptProject<Extra> {
   readonly exempt: readonly Exemption[];
   /** The declarations of the project an unanswered question could have kept live. */
   readonly unanswered: readonly string[];
+  readonly typeErrorSkips: readonly TypeErrorSkip[];
+  readonly skipped: readonly SkippedUnit[];
   readonly extra: Extra;
 }
 
@@ -487,51 +591,56 @@ function readRun<Extra>(
     ? { delimiters: config.analysis.templateDelimiters, files: [] }
     : readTemplates(host, targetRoot, config.analysis);
   const consumers = scope.consumers.map((consumer) => consumer.path);
-  const read = readProjects<SweptProject<Extra>>(
-    engine,
-    host,
-    scope,
-    config,
-    (project, projectRead) => {
-      const resolved = references(project, projectRead.held, targetRoot, {
-        testFiles: config.ts.testFiles,
-      });
-      const configured: Configured = {
-        configuration: projectRead.configuration,
-        symbols: projectRead.held.symbols,
-        references: resolved.references,
-        roots: projectRead.rooted.liveUnderReachability,
-        testFiles: resolved.testFilePaths,
-        ...(projectRead.referenceOnly.length === 0
-          ? {}
-          : { referenceOnly: projectRead.referenceOnly }),
-      };
-      const exempt = computeExemptions(
-        { project, held: projectRead.held, targetRoot, templates, ts: config.ts, consumers },
-        detectors,
-        {
-          disabled,
-          mode,
-          testFiles: new Set(resolved.testFilePaths),
-        },
-      );
-      const unanswered = [
-        ...projectRead.held.unanswered,
-        ...projectRead.rooted.unanswered,
-        ...resolved.references
-          .filter((reference) => reference.resolution === "by-name")
-          .map((reference) => reference.to),
-        ...exempt.filter(isUnansweredRecord).map((record) => record.id),
-      ];
-      return {
-        configFile: projectRead.configFile,
-        configured,
-        exempt,
-        unanswered,
-        extra: extra(project, projectRead, resolved.references),
-      };
-    },
-  );
+  const read = readProjects<SweptProject<Extra>>(engine, host, scope, config, (project, opened) => {
+    const projectRead = opened.read();
+    const resolved = references(project, projectRead.held, targetRoot, {
+      testFiles: config.ts.testFiles,
+    });
+    const support = testSupportFiles(
+      projectRead.held.symbols,
+      resolved.references,
+      projectRead.rooted.liveUnderReachability,
+      resolved.testFilePaths,
+    );
+    const made = supportReferences(resolved.references, support);
+    const configured: Configured = {
+      configuration: projectRead.configuration,
+      symbols: projectRead.held.symbols,
+      references: made,
+      roots: projectRead.rooted.liveUnderReachability,
+      testFiles: resolved.testFilePaths,
+      ...(support.size === 0 ? {} : { supportFiles: [...support].sort() }),
+      ...(projectRead.referenceOnly.length === 0
+        ? {}
+        : { referenceOnly: projectRead.referenceOnly }),
+    };
+    const exempt = computeExemptions(
+      { project, held: projectRead.held, targetRoot, templates, ts: config.ts, consumers },
+      detectors,
+      {
+        disabled,
+        mode,
+        testFiles: new Set([...resolved.testFilePaths, ...support]),
+      },
+    );
+    const unanswered = [
+      ...projectRead.held.unanswered,
+      ...projectRead.rooted.unanswered,
+      ...made
+        .filter((reference) => reference.resolution === "by-name")
+        .map((reference) => reference.to),
+      ...exempt.filter(isUnansweredRecord).map((record) => record.id),
+    ];
+    return {
+      configFile: projectRead.configFile,
+      configured,
+      exempt,
+      unanswered,
+      typeErrorSkips: projectRead.typeErrorSkips,
+      skipped: projectRead.skipped,
+      extra: extra(project, projectRead, made),
+    };
+  });
   const consumed = read.consumers.references;
   const projects = read.answers.map((one) =>
     consumed.length === 0
@@ -613,6 +722,7 @@ function sweptOf<Extra>(
     notBuilt: read.notBuilt,
     unanswered: read.unanswered,
     heldByUnanswered: [...held],
+    skipped: read.projects.flatMap((one) => one.skipped),
   };
 }
 
@@ -821,7 +931,9 @@ function readAnalysis(
       testFileRules: testFileRulesOf(
         config.ts.testFiles,
         read.projects.flatMap((one) => one.configured.testFiles),
+        read.projects.flatMap((one) => one.configured.supportFiles ?? []),
       ),
+      typeErrorSkips: read.projects.flatMap((one) => one.typeErrorSkips),
       consumers: read.consumers,
       notBuilt: read.notBuilt,
       unanswered: read.unanswered,
@@ -895,6 +1007,8 @@ export interface RunFacts {
   readonly notBuilt: readonly NotBuilt[];
   /** Every question the checker could not answer, each once. */
   readonly unanswered: readonly UnansweredQuestion[];
+  /** Every type error that skipped a unit, in the run's order. */
+  readonly typeErrorSkips: readonly TypeErrorSkip[];
 }
 
 /** The findings of one run, beside what a report states about the run itself. */
@@ -925,6 +1039,25 @@ export function runAnalysis(
   const reader = readAnalysis(engine, host, scope, config, provenance, mode, detectors);
   const inputs = reader.inputsUnder(readBaseline(host, scope.target.path, reader.symbols));
   return analysisOf(reader, inputs);
+}
+
+/**
+ * One count per configuration of the run in which the checker left a question unanswered:
+ * the questions asked in its project, and the declarations of its own the run holds for them.
+ */
+export function unansweredCounts(analysis: RunAnalysis): readonly UnansweredCount[] {
+  const held = new Set(analysis.swept.heldByUnanswered);
+  return analysis.run.projects.flatMap((project) => {
+    const questions = analysis.run.unanswered.filter(
+      (one) => one.configFile === project.configFile,
+    ).length;
+    if (questions === 0) {
+      return [];
+    }
+    const symbols = analysis.configured.find((one) => one.configuration === project.id)?.symbols;
+    const declarations = new Set((symbols ?? []).map((one) => one.id).filter((id) => held.has(id)));
+    return [{ configuration: project.id, questions, declarations: declarations.size }];
+  });
 }
 
 function analysisOf(reader: AnalysisReader, inputs: AnalysisInputs): RunAnalysis {

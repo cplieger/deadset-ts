@@ -95,6 +95,8 @@ function input(pass: PassResult, overrides: Partial<ReportInput> = {}): ReportIn
     unavailable: [],
     result: pass,
     testFileRules: [],
+    typeErrorSkips: [],
+    unanswered: [],
     ...overrides,
   };
 }

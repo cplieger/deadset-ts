@@ -197,6 +197,25 @@ describe("print-config", () => {
     },
   );
 
+  it("refuses a disabled convention row this analyzer does not carry, naming the setting, and exits 2", () => {
+    const scratch = mkdtempSync(join(tmpdir(), "deadset-ts-conventions-"));
+    onTestFinished(() => {
+      rmSync(scratch, { recursive: true, force: true });
+    });
+    const document = join(scratch, "deadset.json");
+    writeFileSync(
+      document,
+      '{"target":{"kind":"application"},"ts":{"disabled_conventions":["next-app-router"]}}\n',
+    );
+
+    const got = invoke(["print-config", `--config=${document}`]);
+
+    expect(got.code, got.err).toBe(2);
+    expect(got.out).toBe("");
+    expect(got.err).toContain("ts.disabled_conventions");
+    expect(got.err).toContain('"next-app-router" names no convention row');
+  });
+
   it("names an unknown option and exits 2", () => {
     const got = invoke(["print-config", "--nope=1"]);
 
@@ -220,14 +239,11 @@ describe("print-projects", () => {
     expect(got.out).toBe("tsconfig.json\n");
   });
 
-  it("exits 3 printing the diagnostics and no project list for a project that fails to check", () => {
+  it("lists a project whose own file holds a type error, which the run analyzes", () => {
     const got = invoke(["print-projects", `--target=${fixture("projects", "semantic-error")}`]);
 
-    expect(got.code).toBe(3);
-    expect(got.out).toBe("");
-    expect(got.err).toContain("broken.ts");
-    expect(got.err).toContain("TS2322");
-    expect(got.err).toContain("no answer was produced");
+    expect(got.code, got.err).toBe(0);
+    expect(got.out).toBe("tsconfig.json\n");
   });
 
   it("analyzes exactly the projects a declared matrix names, by their identifiers", () => {
@@ -279,12 +295,26 @@ describe("print-projects", () => {
     );
   });
 
-  it("derives every project of the tree, and fails on the one that does not check, with no declared matrix", () => {
+  it("derives every project of the tree with no declared matrix, one holding a type error among them", () => {
     const got = invoke(["print-projects", `--target=${matrixTree()}`]);
 
-    expect(got.code).toBe(3);
-    expect(got.out).toBe("");
-    expect(got.err).toContain("broken.ts");
+    expect(got.code, got.err).toBe(0);
+    expect(got.out).toBe(
+      "fixtures/broken/tsconfig.json\npackages/app/tsconfig.json\ntsconfig.json\n",
+    );
+  });
+
+  it("drops a derived project that imports a file nothing generated, naming the setup failure", () => {
+    const got = invoke([
+      "print-projects",
+      `--target=${matrixTree({ "fixtures/broken/broken.ts": 'export { made } from "./generated.js";\n' })}`,
+    ]);
+
+    expect(got.code, got.err).toBe(0);
+    expect(got.out).toBe("packages/app/tsconfig.json\ntsconfig.json\n");
+    expect(got.err).toContain(
+      'the derived configuration fixtures/broken/tsconfig.json was not built and is not analyzed: setup failure: missing-module: fixtures/broken/broken.ts:1: fixtures/broken/broken.ts imports "./generated.js", which names no file of the target: run the generator or the build that writes it',
+    );
   });
 
   it("prints the projects that load and names on the error stream a derived one that names no input", () => {
@@ -331,16 +361,57 @@ describe("print-projects", () => {
     expect(got.err).toContain(join(target, "packages", "gone", "tsconfig.json"));
   });
 
-  it("exits 3 for a declared project that does not check", () => {
+  it("exits 3 with the setup failure when it drops every project discovery derived", () => {
+    const ungenerated = 'export { made } from "./generated.js";\n';
     const target = matrixTree({
-      "deadset.json":
-        '{"analysis":{"configurations":[{"id":"broken","project":"fixtures/broken/tsconfig.json"}]}}\n',
+      "src/main.ts": ungenerated,
+      "packages/app/app.ts": ungenerated,
+      "fixtures/broken/broken.ts": ungenerated,
     });
 
     const got = invoke(["print-projects", `--target=${target}`]);
 
     expect(got.code).toBe(3);
-    expect(got.err).toContain("TS2322");
+    expect(got.out).toBe("");
+    expect(got.err).toMatch(/^setup failure: missing-module: src\/main\.ts:1: /mu);
+  });
+
+  it("exits 3 with the setup failure for a declared project that imports a file nothing generated", () => {
+    const target = matrixTree({
+      "deadset.json":
+        '{"analysis":{"configurations":[{"id":"app","project":"tsconfig.json"},{"id":"broken","project":"fixtures/broken/tsconfig.json"}]}}\n',
+      "fixtures/broken/broken.ts": 'export { made } from "./generated.js";\n',
+    });
+
+    const got = invoke(["print-projects", `--target=${target}`]);
+
+    expect(got.code).toBe(3);
+    expect(got.out).toBe("");
+    expect(got.err).toMatch(/^setup failure: missing-module: /mu);
+  });
+
+  it("names the setup failure analyze names for a workspace member with no source", () => {
+    const target = fixture("corpus", "workspace-member-without-source", "ts", "target");
+    const scratch = mkdtempSync(join(tmpdir(), "deadset-ts-member-"));
+    onTestFinished(() => {
+      rmSync(scratch, { recursive: true, force: true });
+    });
+    writeFileSync(join(scratch, "deadset.json"), '{"target":{"kind":"application"}}\n');
+    const line =
+      "setup failure: workspace-member-without-source: packages/app/src/main.ts imports @example/lib, a package of the workspace with no source to read: the package has no tsconfig*.json and its manifest names ./dist/bundle.js, which does not exist; build the package\n";
+
+    const projects = invoke(["print-projects", `--target=${target}`]);
+    const analyzed = invoke([
+      "analyze",
+      `--target=${target}`,
+      `--config=${join(scratch, "deadset.json")}`,
+      `--report=${join(scratch, "report.json")}`,
+    ]);
+
+    expect(projects.code).toBe(3);
+    expect(projects.err).toBe(line);
+    expect(analyzed.code).toBe(3);
+    expect(analyzed.err).toBe(line);
   });
 
   it("exits 3 for a declared project referencing one the matrix leaves out, whose errors the run would not read", () => {
@@ -451,16 +522,15 @@ describe("print-roots", () => {
     );
   });
 
-  it("exits 3 printing the diagnostics and no root set for a project that fails to check", () => {
+  it("roots what a statement holding a type error declares, and exits 0", () => {
     const got = invoke([
       "print-roots",
       `--target=${fixture("projects", "semantic-error")}`,
       `--config=${fixture("projects", "entry-points", "deadset.json")}`,
     ]);
 
-    expect(got.code).toBe(3);
-    expect(got.out).toBe("");
-    expect(got.err).toContain("TS2322");
+    expect(got.code, got.err).toBe(0);
+    expect(got.out).toBe("ts://./broken.ts#answer\ttype-error\n");
   });
 });
 

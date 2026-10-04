@@ -8,7 +8,7 @@ A run opens one compiler session over the project entries of `analysis.configura
 
 JavaScript files are analyzed too, in a project that sets `allowJs`.
 
-The run reads every project's diagnostics and fails closed for the projects you name. A project that `analysis.configurations` or the scope names and that does not load ends the run with exit code 3. A discovered project whose configuration names no input, carries an option the compiler refuses or cannot be read is dropped instead. The report names it in `configurations_not_built` with its error, standard error names it too, and the other projects are analyzed. Configuration is decoded against the Contract's closed key list, and `print-config` shows each setting with its source.
+The run reads every project's diagnostics and fails closed for the projects you name. A project that `analysis.configurations` or the scope names and that does not load ends the run with exit code 3. A discovered project is dropped instead when it meets a setup failure or its configuration names no input, carries a refused option or is unreadable. The report names it in `configurations_not_built` with its error, standard error names it too, and the other projects are analyzed. Configuration is decoded against the Contract's closed key list, and `print-config` shows each setting with its source.
 
 A target can sit in a workspace that `pnpm-workspace.yaml` or the `workspaces` field of a `package.json` declares. An import of another workspace package is then read from that package's TypeScript source, so a monorepo needs no build before a run.
 
@@ -57,7 +57,7 @@ An exemption holds a declaration back from the report when something the compile
 
 A library's published API has callers outside the target. A scope document passed with `--scope` names the consumers loaded beside it, each a directory whose compiler configurations open in the same session. A reference from a consumer keeps a target declaration live, and the report names every consumer it loaded. A consumer that is absent or does not load ends the run with exit code 3.
 
-The published API is reported at confidence `certain` once every declared consumer loads, and `possible` when the scope declares none. In that second case, `DS1001` defaults to `allow` and the visibility-narrowing kinds report only in files no manifest export reaches. Every other declaration has all its references in the loaded program and is `certain`.
+The published API is reported at confidence `certain` once every declared consumer loads, and `possible` when the scope declares none. In that second case the default `analysis.min_confidence`, `probable`, withholds those findings, and the visibility-narrowing kinds report only in files no manifest export reaches. Every other declaration has all its references in the loaded program and is `certain`.
 
 ## Groups that keep each other alive
 

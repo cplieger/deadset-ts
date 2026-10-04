@@ -266,6 +266,7 @@ describe("the references a narrowing reads", () => {
           notBuilt: [],
           unanswered: [],
           heldByUnanswered: [],
+          skipped: [],
         }),
       ),
     );

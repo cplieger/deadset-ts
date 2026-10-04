@@ -69,15 +69,26 @@ describe("the finding schema's validator", () => {
 /** The bound on one case, which loads one whole target, the repository among them. */
 const LOAD_TIMEOUT = 60_000;
 
-/** Every target the suite analyzes: the repository and every fixture with a TypeScript rendering. */
+/** Whether a corpus fixture's run ends with a setup failure, which leaves no finding to check. */
+function endsInSetupFailure(name: string): boolean {
+  const expectation = JSON.parse(
+    readFileSync(fixture("corpus", name, "expect.json"), "utf8"),
+  ) as Record<string, unknown>;
+  return expectation["setup_failure"] !== undefined;
+}
+
+/**
+ * Every target the suite analyzes: the repository, every project fixture, and every corpus
+ * fixture with a TypeScript rendering that a run analyzes to the end.
+ */
 function targets(): [string, string][] {
-  const projects = readdirSync(fixture("projects"))
-    .filter((name) => !["dependencies-unresolved", "semantic-error"].includes(name))
-    .map((name): [string, string] => [`projects/${name}`, fixture("projects", name)]);
-  const corpus = readdirSync(fixture("corpus")).map((name): [string, string] => [
-    `corpus/${name}`,
-    fixture("corpus", name, "ts", "target"),
+  const projects = readdirSync(fixture("projects")).map((name): [string, string] => [
+    `projects/${name}`,
+    fixture("projects", name),
   ]);
+  const corpus = readdirSync(fixture("corpus"))
+    .filter((name) => !endsInSetupFailure(name))
+    .map((name): [string, string] => [`corpus/${name}`, fixture("corpus", name, "ts", "target")]);
   return [["the repository", ROOT], ...projects, ...corpus];
 }
 

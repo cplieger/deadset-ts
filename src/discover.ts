@@ -4,6 +4,7 @@ import type { BuildConfiguration, ProjectConfiguration } from "./config.ts";
 import type { Host } from "./host.ts";
 import { dirnamePath, isAbsolutePath, joinPath, relativePath, resolvePath } from "./paths.ts";
 import type { Scope } from "./scope.ts";
+import { SetupError } from "./setup-failure.ts";
 import type { Engine, ProjectDiagnostics } from "./session.ts";
 
 /** Directory names discovery does not descend into. */
@@ -323,13 +324,16 @@ function derivedFrom(
  */
 export function consumerProjects(engine: Engine, host: Host, root: string): readonly string[] {
   const kind = host.kindOf(root);
+  if (kind === "absent") {
+    throw new SetupError([
+      {
+        setupClass: "missing-consumer",
+        detail: `the scope declares the consumer ${root}, and nothing is at that path: check the consumer out at ${root} and install its dependencies`,
+      },
+    ]);
+  }
   if (kind !== "directory") {
-    throw new DiscoveryError(
-      kind === "absent"
-        ? `the consumer ${root} does not exist`
-        : `the consumer ${root} is not a directory`,
-      [],
-    );
+    throw new DiscoveryError(`the consumer ${root} is not a directory`, []);
   }
   const found = derivedFrom(engine, host, configFilesUnder(host, root));
   if (found.length === 0) {

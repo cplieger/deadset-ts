@@ -33,6 +33,8 @@ export type RootKind =
   | "configured"
   /** A declaration a pattern from the configuration names. */
   | "pattern"
+  /** A declaration of a function or statement a type error skipped, and what it may have selected. */
+  | "type-error"
   /** A file a tool or the platform enters by its own convention, and what it exports where the tool reads it. */
   | EntryRule;
 

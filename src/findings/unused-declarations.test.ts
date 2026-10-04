@@ -205,12 +205,19 @@ describe("the unused-declarations emitter over a library", () => {
   });
 
   it("classes the published API possible and a private member certain, with no consumer information", () => {
-    const classes = findings.map((finding) => `${finding.symbol.name} ${finding.confidence}`);
+    const every = family({
+      ...input,
+      config: configOf(
+        `{ "target": { "kind": "library" }, "analysis": { "min_confidence": "possible" } }`,
+      ),
+    });
+    const classes = every.map((finding) => `${finding.symbol.name} ${finding.confidence}`);
 
     expect(classes).toEqual([
       "Published.visible possible",
       "Published.#secret certain",
       "Published.hidden certain",
+      "makePublished possible",
       "internalRetired certain",
     ]);
   });
@@ -266,7 +273,7 @@ describe("an export a root names that nothing references", () => {
     const input = emitterInputOf(
       target,
       configOf(
-        `{ "target": { "kind": "library" }, "consumers": { "complete": true }, "ts": { "entry_files": ["src/route.ts"] } }`,
+        `{ "target": { "kind": "library" }, "analysis": { "min_confidence": "possible" }, "ts": { "entry_files": ["src/route.ts"] } }`,
       ),
     );
 

@@ -102,6 +102,8 @@ export const SCHEMA_ROOT: KeyNode = {
       members: {
         test_files: leaf,
         entry_files: leaf,
+        component_extensions: leaf,
+        disabled_conventions: leaf,
         injection_registrations: declarations,
         lifecycle_contracts: {
           kind: "list",

@@ -37,11 +37,17 @@ function command(
   return `::${level} file=${escapeProperty(at.path)},line=${String(at.line)},col=${String(at.column)},endLine=${String(endLine)},title=${escapeProperty(title)}::${escapeData(message)}`;
 }
 
+/** The title and the message prefix of a type-error skip's annotation. */
+const SKIP_TITLE = "type error skipped";
+const SKIP_MESSAGE =
+  "the analysis did not evaluate the function or statement holding this type error: ";
+
 /**
  * One workflow annotation per finding, then one per stale suppression, each naming its
- * file, line, column and last line, titled by its code and kind. A finding at or above the
- * failing severity is an error and one below it a warning; a stale suppression is an error,
- * because its kind is fixed on at the failing severity.
+ * file, line, column and last line, titled by its code and kind, then one warning per
+ * type-error skip naming its file and line. A finding at or above the failing severity is
+ * an error and one below it a warning; a stale suppression is an error, because its kind
+ * is fixed on at the failing severity.
  */
 export function annotations(report: Report, options: RenderOptions): Iterable<string> {
   return coalesced(
@@ -63,6 +69,9 @@ export function annotations(report: Report, options: RenderOptions): Iterable<st
           `${stale.code} ${kindName(stale.code)}`,
           stale.message,
         )}\n`;
+      }
+      for (const skip of report.type_error_skips) {
+        yield `::warning file=${escapeProperty(skip.path)},line=${String(skip.line)},title=${escapeProperty(SKIP_TITLE)}::${escapeData(SKIP_MESSAGE + skip.message)}\n`;
       }
     })(),
   );

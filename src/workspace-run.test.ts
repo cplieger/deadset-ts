@@ -361,8 +361,8 @@ describe("a workspace package with no source to read", () => {
     const analysis = analyze(root);
 
     expect(analysis.run.notBuilt.map((one) => one.id)).toEqual(["packages/b/tsconfig.json"]);
-    expect(analysis.run.notBuilt[0]?.error).toContain(
-      "packages/b/src/main.ts imports c, a package of the workspace with no source to read",
+    expect(analysis.run.notBuilt[0]?.error).toMatch(
+      /^setup failure: workspace-member-without-source: .*packages\/b\/src\/main\.ts imports c, a package of the workspace with no source to read/u,
     );
   });
 
@@ -378,7 +378,9 @@ describe("a workspace package with no source to read", () => {
           ],
         },
       }),
-    ).toThrow(/imports c, a package of the workspace with no source to read/u);
+    ).toThrow(
+      /^setup failure: workspace-member-without-source: .*imports c, a package of the workspace with no source to read/u,
+    );
   });
 
   it("does not refuse a configuration that holds the import only in another package's source", () => {

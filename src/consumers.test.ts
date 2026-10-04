@@ -250,7 +250,9 @@ describe("a consumer the run cannot load", () => {
       const analyzed = analyze(root, ["missing"]);
 
       expect(analyzed.code).toBe(EXIT_FAILURE);
-      expect(analyzed.err).toContain(`the consumer ${join(root, "missing")} does not exist`);
+      expect(analyzed.err).toMatch(
+        new RegExp(`^setup failure: missing-consumer: .*${join(root, "missing")}`, "mu"),
+      );
       expect(analyzed.report).toBeUndefined();
     },
     LOAD_TIMEOUT,
@@ -272,7 +274,36 @@ describe("a consumer the run cannot load", () => {
   );
 
   it(
-    "ends the run with the failure code when the consumer's program carries an error",
+    "ends the run with the failure code naming the consumer whose dependencies are not installed",
+    () => {
+      const root = workspace({
+        "target/lib.ts": "export const used = 1;\n",
+        "consumer/package.json": `${JSON.stringify({
+          name: "@example/consumer",
+          private: true,
+          type: "module",
+          dependencies: { "@example/absent": "1.0.0" },
+        })}\n`,
+        "consumer/main.ts":
+          'import { used } from "../target/lib.js";\nimport { pad } from "@example/absent";\n\nconsole.log(pad(used));\n',
+      });
+
+      const analyzed = analyze(root);
+
+      expect(analyzed.code).toBe(EXIT_FAILURE);
+      expect(analyzed.err).toMatch(
+        new RegExp(
+          `^setup failure: missing-consumer: .*${join(root, "consumer")}.*@example/absent`,
+          "mu",
+        ),
+      );
+      expect(analyzed.report).toBeUndefined();
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "counts the references of a consumer whose program carries a type error",
     () => {
       const root = workspace({
         "target/lib.ts": "export const used = 1;\n",
@@ -281,9 +312,8 @@ describe("a consumer the run cannot load", () => {
 
       const analyzed = analyze(root);
 
-      expect(analyzed.code).toBe(EXIT_FAILURE);
-      expect(analyzed.err).toContain("TS2322");
-      expect(analyzed.report).toBeUndefined();
+      expect(analyzed.code).toBe(EXIT_CLEAN);
+      expect(claims(analyzed.report)).toEqual([]);
     },
     LOAD_TIMEOUT,
   );
