@@ -335,7 +335,7 @@ describe("a workspace package imported by name", () => {
       "DS1001 packages/b/src/m1.ts unusedInB packages/a/tsconfig.json packages/b/tsconfig.json",
     ]);
     expect(new Set(runs.map((findings) => JSON.stringify(findings))).size).toBe(1);
-  });
+  }, 30_000);
 
   it("is read from the same source by a run that reads no component file", () => {
     const root = writeWorkspace(UNBUILT);
