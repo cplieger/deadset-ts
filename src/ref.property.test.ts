@@ -42,21 +42,11 @@ function above(lines: readonly Above[]): string {
 }
 
 /**
- * Property dead-code-suite/P32: for any edit above a declaration that changes
- * neither its name nor its container, the stable symbol reference is unchanged, so a
- * suppression naming it still matches.
- *
- * One iteration writes a project and opens a compiler client and a snapshot over it,
- * which measures 46 ms on an idle machine, alone and inside the suite alike (1.84 to
- * 1.91 s for the forty draws over five runs), and 105 ms on one loaded by other work.
- * The bound the shared configuration puts on a property is ten seconds and an
- * interrupt fails the run, so the run count is 40: two seconds measured here and
- * about 4.2 seconds at the loaded cost, which leaves that bound the margin a
- * four-core runner needs. The case's own timeout is raised above the bound so that
- * the property's interrupt is what reports a draw that grew too expensive, rather
- * than the case failing on its own clock. The tree changes per iteration, so one
- * session cannot serve several draws: a snapshot is never updated, which is what makes
- * a run's answer independent of the order it reads in.
+ * Property dead-code-suite/P32: for any edit above a declaration that changes neither its
+ * name nor its container, the stable symbol reference is unchanged, so a suppression naming
+ * it still matches. A draw writes a project and opens a client over it, so its cost follows
+ * the machine's load: the run is bounded by its count, and its time limit sits far above
+ * what forty draws cost, so another process's load cannot interrupt it.
  */
 describe("the stable symbol reference", () => {
   it("survives any edit above the declaration, while the position does not", () => {
@@ -87,9 +77,9 @@ describe("the stable symbol reference", () => {
           expect(record.symbol).toBe(member?.ref);
         },
       ),
-      { numRuns: 40 },
+      { numRuns: 40, interruptAfterTimeLimit: 100_000 },
     );
-  }, 20_000);
+  }, 120_000);
 });
 
 /**

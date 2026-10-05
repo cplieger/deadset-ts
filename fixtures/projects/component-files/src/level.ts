@@ -4,4 +4,5 @@ export enum Level {
   High,
   Unused,
   HalfOnly,
+  Templated,
 }

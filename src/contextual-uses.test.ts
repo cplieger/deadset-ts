@@ -79,6 +79,15 @@ describe("the uses a contextual type makes", () => {
     ).toEqual(["DS1301 Tab.title 6: type member Tab.title is written once and never read"]);
   });
 
+  it("reads the members a position declares through array elements nested at any depth", () => {
+    expect(
+      findings({
+        "src/main.ts":
+          'interface Key {\n  order: number;\n}\ninterface Tab {\n  order: number;\n  title: string;\n}\nfunction first(keys: readonly (readonly (readonly (readonly Key[])[])[])[]): number {\n  return keys[0]?.[0]?.[0]?.[0]?.order ?? 0;\n}\nconst tabs: Tab[][][][] = [[[[{ order: 2, title: "b" }]]]];\nconsole.log(first(tabs));\n',
+      }),
+    ).toEqual(["DS1301 Tab.title 6: type member Tab.title is written once and never read"]);
+  });
+
   it("reads the members a function's parameter declares from the values the position passes it", () => {
     expect(
       findings({

@@ -122,9 +122,9 @@ export interface Graph {
   /** Every root naming a declaration the inventory holds, in the order the root set gives them. */
   readonly rooted: readonly Rooted[];
   /**
-   * Every reference a loaded consumer makes to a declaration the inventory holds, in the
-   * order given. A consumer is a caller the analysis read, so the sweep holds what it
-   * names live under both relations and reaches on from there.
+   * Every reference a loaded consumer or an unheld file makes to a declaration the
+   * inventory holds, in the order given. Such a file is a caller the analysis read, so the
+   * sweep holds what it names live under both relations and reaches on from there.
    */
   readonly consumed: readonly Edge[];
   /** The position of the declaration one identifier names, or {@link OUTSIDE}. */
@@ -167,7 +167,7 @@ export function graphOf(
       }
     }
     const edge = { to, test: reference.test, evaluation: reference.use === "evaluation" };
-    if (reference.consumer !== undefined) {
+    if (reference.consumer !== undefined || reference.unheld === true) {
       consumed.push(edge);
       continue;
     }

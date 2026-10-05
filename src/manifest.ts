@@ -1,13 +1,12 @@
 /**
  * The entry points a package manifest names, which are roots because something
  * outside the analyzed program reaches them: a consumer importing the package, or a
- * shell running its command or one of its scripts.
- *
- * One call reads one manifest, the one in the directory it is given.
+ * shell running its command or one of its scripts. {@link readManifest} reads one
+ * directory's manifest, {@link packageEntries} those of the packages below the target root.
  */
 
 import type { Host } from "./host.ts";
-import { isAbsolutePath, joinPath, resolvePath } from "./paths.ts";
+import { dirnamePath, isAbsolutePath, joinPath, relativePath, resolvePath } from "./paths.ts";
 
 /** The manifest's own name. */
 const MANIFEST = "package.json";
@@ -204,4 +203,41 @@ export function readManifest(host: Host, targetRoot: string): Manifest {
     entries: found.map((entry) => ({ ...entry, path: resolvePath(targetRoot, entry.path) })),
     declaresExports: manifest["exports"] !== undefined,
   };
+}
+
+/**
+ * The entry points every package manifest between the target root and each compiler
+ * configuration names: each directory holding a `package.json` that a configuration sits
+ * in or below, the target root and `known` excluded, whose manifests the run reads
+ * otherwise. Each entry is spelled under its manifest's path below the target root, and
+ * is published by its own manifest's rule, as the target's own entries are.
+ */
+export function packageEntries(
+  host: Host,
+  targetRoot: string,
+  configFiles: readonly string[],
+  known: ReadonlySet<string>,
+): readonly ManifestEntry[] {
+  const dirs = new Set<string>();
+  for (const configFile of configFiles) {
+    for (
+      let dir = dirnamePath(resolvePath(targetRoot, configFile));
+      dir !== targetRoot && relativePath(targetRoot, dir) !== undefined;
+      dir = dirnamePath(dir)
+    ) {
+      if (!known.has(dir) && host.kindOf(joinPath(dir, MANIFEST)) === "file") {
+        dirs.add(dir);
+      }
+    }
+  }
+  return [...dirs].sort().flatMap((dir) => {
+    const manifest = readManifest(host, dir);
+    const where = `${relativePath(targetRoot, dir) ?? dir}/${MANIFEST}`;
+    return manifest.entries.map((entry) => ({
+      ...entry,
+      member: `${where} ${entry.member}`,
+      published:
+        entry.published && (!manifest.declaresExports || entry.member.startsWith("exports")),
+    }));
+  });
 }

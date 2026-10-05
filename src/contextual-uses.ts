@@ -99,9 +99,6 @@ interface Checked {
   readonly targets: readonly Type[];
 }
 
-/** How many element and signature steps the structural walk takes below a value's own type. */
-const MAX_DEPTH = 3;
-
 /** One member of an object type, by the inventory's declarations and the checker's declaration handles. */
 interface Member {
   readonly ids: readonly string[];
@@ -254,12 +251,12 @@ export function contextualUses<Brand>(
    * Each object type a value of `source` is checked as against the object types of
    * `target`: the value's own, and through array elements and through a function's
    * parameters, checked the other way, and its result. A source that is one of the
-   * target's own object types matches it as it stands.
+   * target's own object types matches it as it stands. Each pair is compared once, which
+   * ends the walk over a recursive type.
    */
   const compared = (
     source: Type | undefined,
     target: Type | undefined,
-    depth: number,
     into: Checked[],
     seen: Set<string>,
   ): void => {
@@ -267,7 +264,7 @@ export function contextualUses<Brand>(
     if (source === undefined || target === undefined || source.id === target.id) {
       return;
     }
-    if (depth > MAX_DEPTH || seen.has(key)) {
+    if (seen.has(key)) {
       return;
     }
     seen.add(key);
@@ -281,7 +278,7 @@ export function contextualUses<Brand>(
       const called = element === undefined ? callOf(one) : undefined;
       for (const part of targets) {
         if (element !== undefined) {
-          compared(element, elementOf(part), depth + 1, into, seen);
+          compared(element, elementOf(part), into, seen);
           continue;
         }
         const other = called === undefined ? undefined : callOf(part);
@@ -289,30 +286,37 @@ export function contextualUses<Brand>(
           continue;
         }
         other.parameters.forEach((parameter, index) => {
-          compared(parameter, called.parameters[index], depth + 1, into, seen);
+          compared(parameter, called.parameters[index], into, seen);
         });
-        compared(called.result, other.result, depth + 1, into, seen);
+        compared(called.result, other.result, into, seen);
       }
     }
   };
 
-  /** Whether a value of one type may carry a member a position reads, at any depth the walk takes. */
-  const mayCarry = (type: Type, depth: number): boolean =>
-    depth <= MAX_DEPTH &&
-    partsOf(type).some((part) => {
+  /**
+   * Whether a value of one type may carry a member a position reads, at any depth the
+   * walk takes. A type met again on the way adds nothing its first visit did not.
+   */
+  const mayCarry = (type: Type, seen: Set<number> = new Set()): boolean => {
+    if (seen.has(type.id)) {
+      return false;
+    }
+    seen.add(type.id);
+    return partsOf(type).some((part) => {
       if (carries(part)) {
         return true;
       }
       const element = elementOf(part);
       if (element !== undefined) {
-        return mayCarry(element, depth + 1);
+        return mayCarry(element, seen);
       }
       return callOf(part) !== undefined;
     });
+  };
 
   const sourced = carried.flatMap((flow, index) => {
     const type = types[index];
-    return type === undefined || !isAnswered(type) || !mayCarry(type, 0) ? [] : [{ flow, type }];
+    return type === undefined || !isAnswered(type) || !mayCarry(type) ? [] : [{ flow, type }];
   });
   batches += batchesOf(sourced.length);
   const positions = queries.contextualTypes(
@@ -326,7 +330,7 @@ export function contextualUses<Brand>(
       return;
     }
     const checked: Checked[] = [];
-    compared(type, position, 0, checked, new Set());
+    compared(type, position, checked, new Set());
     const ids = new Set<string>();
     for (const { source, targets } of checked) {
       const tables = targets.map(membersOf);

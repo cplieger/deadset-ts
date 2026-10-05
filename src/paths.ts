@@ -73,6 +73,24 @@ export function resolvePath(against: string, path: string): string {
 }
 
 /**
+ * The relative path before the query of a relative module specifier such as
+ * `./worker.ts?worker`, the module a bundler loads; undefined for a specifier with no
+ * query, one that is not relative, and one whose query has a `raw` parameter, which
+ * reads the file as text and so evaluates nothing.
+ */
+export function queriedModulePath(specifier: string): string | undefined {
+  const query = specifier.indexOf("?");
+  if (query < 0 || !(specifier.startsWith("./") || specifier.startsWith("../"))) {
+    return undefined;
+  }
+  const raw = specifier
+    .slice(query + 1)
+    .split("&")
+    .some((parameter) => parameter.split("=")[0] === "raw");
+  return raw ? undefined : specifier.slice(0, query);
+}
+
+/**
  * One path as it reads below a root, or undefined when it is not below the root.
  * Both are normalized first, so a root written with a trailing separator or a `.`
  * segment reaches the same answer, and the comparison is then lexical, so a root

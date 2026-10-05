@@ -1,10 +1,15 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
 import { fixture, readFixture } from "../__test-helpers__/fixtures.ts";
-import { analyzeRoot, writeProject, type Analyzed } from "../__test-helpers__/projects.ts";
+import {
+  analyzeRoot,
+  TSCONFIG,
+  writeProject,
+  type Analyzed,
+} from "../__test-helpers__/projects.ts";
 import { runRoots, type RunRoots } from "./analysis.ts";
 import { resolve } from "./resolve.ts";
 import { matchRef } from "./roots.ts";
@@ -128,6 +133,60 @@ describe("the roots a manifest's scripts name", () => {
   });
 });
 
+describe("the roots the manifest of a package below the target names", () => {
+  it("root its entry points, spelled under its manifest, where the target root holds no manifest", () => {
+    const root = mkdtempSync(join(tmpdir(), "deadset-ts-"));
+    const files = {
+      "deadset.json": '{ "target": { "kind": "application" } }\n',
+      "web/package.json":
+        '{ "name": "@example/web", "private": true, "type": "module", "exports": { ".": "./src/index.ts" } }\n',
+      "web/tsconfig.json": TSCONFIG,
+      "web/src/index.ts": "export function served(): void {}\n",
+    };
+    for (const [path, text] of Object.entries(files)) {
+      mkdirSync(join(root, dirname(path)), { recursive: true });
+      writeFileSync(join(root, path), text);
+    }
+    try {
+      expect(
+        runOver(root)
+          .roots.filter((one) => one.kind === "manifest-entry")
+          .map((one) => `${one.ref} ${one.source}`),
+      ).toEqual([
+        'ts://@example/web/src/index.ts# web/package.json exports["."]',
+        'ts://@example/web/src/index.ts#served web/package.json exports["."]',
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("publish only what its exports name where it declares them", () => {
+    const root = mkdtempSync(join(tmpdir(), "deadset-ts-"));
+    const files = {
+      "deadset.json": '{ "target": { "kind": "library" } }\n',
+      "web/package.json":
+        '{ "name": "@example/web", "type": "module", "main": "./src/main.ts", "exports": { ".": "./src/index.ts" } }\n',
+      "web/tsconfig.json": TSCONFIG,
+      "web/src/index.ts": "export function served(): void {}\n",
+      "web/src/main.ts": "export function started(): void {}\n",
+    };
+    for (const [path, text] of Object.entries(files)) {
+      mkdirSync(join(root, dirname(path)), { recursive: true });
+      writeFileSync(join(root, path), text);
+    }
+    try {
+      expect(
+        runOver(root)
+          .roots.filter((one) => one.kind === "published-api")
+          .map((one) => one.ref),
+      ).toEqual(["ts://@example/web/src/index.ts#served"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("the published API of a library target", () => {
   const PUBLISHED = analyzeRoot(fixture("projects", "published-exports"), {
     roots: { ...NO_CONFIGURED, publishedAPI: true },
@@ -162,6 +221,93 @@ describe("the published API of a library target", () => {
     expect(text).not.toContain("Published.closed");
     expect(text).not.toContain("Reexported.hidden");
     expect(text, "a class the file does not export is not published").not.toContain("Unexported");
+  });
+
+  it("reaches the members of an unexported type a published declaration's type names", () => {
+    const root = writeProject({
+      "package.json": `${JSON.stringify({
+        name: "@example/exposed",
+        private: true,
+        type: "module",
+        exports: { ".": "./src/index.ts" },
+      })}\n`,
+      "src/index.ts": [
+        "export namespace JSX {",
+        "  interface Shared {",
+        "    title?: string;",
+        "  }",
+        "  interface Anchor {",
+        "    href?: string;",
+        "  }",
+        "  export interface Elements extends Shared {",
+        "    a: Anchor;",
+        "  }",
+        "}",
+        "interface Options {",
+        "  retries: number;",
+        "}",
+        "interface Hidden {",
+        "  never: number;",
+        "}",
+        "export function connect(options: Options): number {",
+        "  const hidden: Hidden = { never: options.retries };",
+        "  return hidden.never;",
+        "}",
+        "",
+      ].join("\n"),
+    });
+    try {
+      expect(
+        rootLines(analyzeRoot(root, { roots: { ...NO_CONFIGURED, publishedAPI: true } }))
+          .filter((line) => line.endsWith(" published-api"))
+          .map((line) => line.slice("ts://@example/exposed/src/index.ts#".length)),
+      ).toEqual([
+        "JSX published-api",
+        "JSX.Shared published-api",
+        "JSX.Shared.title published-api",
+        "JSX.Anchor published-api",
+        "JSX.Anchor.href published-api",
+        "JSX.Elements published-api",
+        "JSX.Elements.a published-api",
+        "Options published-api",
+        "Options.retries published-api",
+        "connect published-api",
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not reach a type only a member a consumer cannot name writes", () => {
+    const root = writeProject({
+      "package.json": `${JSON.stringify({
+        name: "@example/exposed",
+        private: true,
+        type: "module",
+        exports: { ".": "./src/index.ts" },
+      })}\n`,
+      "src/index.ts": [
+        "interface Hidden {",
+        "  secret: number;",
+        "}",
+        "export class Client {",
+        "  private state: Hidden = { secret: 1 };",
+        "  read(): number {",
+        "    return this.state.secret;",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    });
+    try {
+      expect(
+        rootLines(analyzeRoot(root, { roots: { ...NO_CONFIGURED, publishedAPI: true } }))
+          .filter((line) => line.endsWith(" published-api"))
+          .map((line) => line.slice("ts://@example/exposed/src/index.ts#".length)),
+      ).toEqual(["Client published-api", "Client.read published-api"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("is not rooted for an application target", () => {

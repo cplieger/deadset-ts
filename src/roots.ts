@@ -8,7 +8,16 @@
  * under reachability and still a candidate under reference counting.
  */
 
-import type { SourceFile } from "@typescript/native/unstable/ast";
+import {
+  isExpressionWithTypeArguments,
+  isFunctionLikeDeclaration,
+  isPropertyAccessExpression,
+  isQualifiedName,
+  isTypeQueryNode,
+  isTypeReferenceNode,
+  type Node,
+  type SourceFile,
+} from "@typescript/native/unstable/ast";
 import { aliasChains } from "./alias-chain.ts";
 import type { ParseFile } from "./configuration-files.ts";
 import { conventionEntries, type Conventions } from "./conventions.ts";
@@ -88,8 +97,8 @@ export interface Roots {
   readonly unmatched: readonly string[];
   /**
    * Every declaration of the project, where the checker left the module or export table
-   * of an entry or a published file unanswered, and none otherwise: which of them that
-   * file exports is unknown.
+   * of an entry or a published file unanswered, since which of them that file exports is
+   * unknown; otherwise each one an unanswered published type name may name.
    */
   readonly unanswered: readonly string[];
 }
@@ -101,10 +110,10 @@ export interface RootOptions {
   /** The target's own manifest. */
   readonly manifest: Manifest;
   /**
-   * The entry points the other packages of the target's workspace name, each already
-   * marked published or not by its own manifest's rule.
+   * The entry points the target's other packages name, its workspace's members and the
+   * packages below it, each already marked published or not by its own manifest's rule.
    */
-  readonly workspaceEntries?: readonly ManifestEntry[] | undefined;
+  readonly otherPackages?: readonly ManifestEntry[] | undefined;
   /** `roots.patterns` from the resolved configuration. */
   readonly patterns: readonly string[];
   /** `ts.entry_files` from the resolved configuration. */
@@ -244,7 +253,7 @@ export function roots<Brand>(
         entry.published &&
         (options.manifest.declaresExports ? entry.member.startsWith("exports") : true),
     })),
-    ...(options.workspaceEntries ?? []).map((entry) => ({ entry, publishes: entry.published })),
+    ...(options.otherPackages ?? []).map((entry) => ({ entry, publishes: entry.published })),
   ];
   for (const { entry, publishes } of entries) {
     if (options.publishedAPI && publishes) {
@@ -310,10 +319,11 @@ export function roots<Brand>(
     }
   }
 
-  if (options.publishedAPI) {
-    for (const id of publishedAPI(published, exportsOf, held)) {
-      add(id, "published-api", "");
-    }
+  const api = options.publishedAPI
+    ? publishedAPI(project, published, exportsOf, held, files.byPath)
+    : { ids: [], guessed: [] };
+  for (const id of api.ids) {
+    add(id, "published-api", "");
   }
 
   const unmatched = configured(held, options.patterns, add);
@@ -330,7 +340,7 @@ export function roots<Brand>(
     configFile: project.configFile,
     liveUnderReachability: ordered,
     unmatched,
-    unanswered: answered ? [] : held.symbols.map((symbol) => symbol.id),
+    unanswered: answered ? api.guessed : held.symbols.map((symbol) => symbol.id),
   };
 }
 
@@ -388,55 +398,143 @@ function exportTables<Brand>(
 const EXPORTING_CONTAINERS: ReadonlySet<string> = new Set(["file", "namespace"]);
 
 /**
- * Every declaration a consumer of the library can name: what the published files
- * export, and below each, the members a consumer reaches through it.
- *
- * The published files are the ones `exports` reaches where the manifest declares
- * one, because a package that declares `exports` has said exactly what a consumer may
- * import; where it declares none, they are the ones the members that preceded it
- * name. Below a published module or namespace the walk follows what its export table
- * names; below any other published declaration it follows every member a consumer
- * can write: a public one, and a protected one, which a consumer's subclass names. A
- * private member is not published, nor is anything below one, and a type parameter
- * is not published either, because a consumer supplies a type argument by position.
- *
- * A published file is not itself published. A consumer imports a module and names
- * what it exports; the file is a root because the manifest names it, which is a
- * different reason.
+ * Every declaration a consumer of the library can name: what the published files export
+ * and, below each, the members a consumer writes: a namespace's exported ones, any other
+ * declaration's public and protected ones, never a private one or a type parameter. A
+ * declaration a published one's type names is published too, exported or not. A type name
+ * the checker leaves unanswered publishes every declaration spelled as it is, and those are
+ * `guessed`. A published file is not itself published.
  */
-function publishedAPI(
+function publishedAPI<Brand>(
+  project: ProjectView<Brand>,
   published: readonly SourceFile[],
   exportsOf: ReadonlyMap<string, readonly string[]>,
   held: Inventory,
-): readonly string[] {
+  byPath: ReadonlyMap<string, SourceFile>,
+): { readonly ids: readonly string[]; readonly guessed: readonly string[] } {
   const byId = new Map(held.symbols.map((symbol) => [symbol.id, symbol]));
   const children = childrenOf(held);
+  const nodes = declarationNodes(held, byPath);
+  const chains = aliasChains(project, held);
   const reached = new Set<string>();
+  const guessed = new Set<string>();
   const pending: string[] = [];
+  const reach = (id: string): void => {
+    if (!reached.has(id) && byId.get(id)?.kind !== "file") {
+      reached.add(id);
+      pending.push(id);
+    }
+  };
   for (const file of published) {
     for (const id of exportsOf.get(file.fileName) ?? []) {
       if (byId.get(id)?.kind === "file") {
         pending.push(id);
-      } else if (!reached.has(id)) {
-        reached.add(id);
-        pending.push(id);
+      } else {
+        reach(id);
       }
     }
   }
-  for (let next = pending.shift(); next !== undefined; next = pending.shift()) {
-    const exporting = EXPORTING_CONTAINERS.has(byId.get(next)?.kind ?? "");
-    for (const member of children.get(next) ?? []) {
-      const reachable = exporting
-        ? member.exported
-        : member.visibility !== "private" && member.visibility !== "private-name";
-      if (member.kind === "type-parameter" || reached.has(member.id) || !reachable) {
-        continue;
+  while (pending.length > 0) {
+    const round: string[] = [];
+    for (let next = pending.shift(); next !== undefined; next = pending.shift()) {
+      round.push(next);
+      const exporting = EXPORTING_CONTAINERS.has(byId.get(next)?.kind ?? "");
+      for (const member of children.get(next) ?? []) {
+        const reachable = exporting
+          ? member.exported
+          : member.visibility !== "private" && member.visibility !== "private-name";
+        if (member.kind !== "type-parameter" && reachable) {
+          reach(member.id);
+        }
       }
-      reached.add(member.id);
-      pending.push(member.id);
     }
+    const named = round.flatMap((id) => {
+      const symbol = byId.get(id);
+      return symbol === undefined || symbol.kind === "file" ? [] : nodes.typeNamesOf(symbol);
+    });
+    project.symbolsAt(named.map((node) => project.handle(node))).forEach((symbol, index) => {
+      if (symbol === UNANSWERED) {
+        for (const id of held.byName.get(named[index]?.getText() ?? "") ?? []) {
+          guessed.add(id);
+          reach(id);
+        }
+      } else if (symbol !== undefined) {
+        for (const target of chains.chainOf(symbol)) {
+          reach(target.id);
+        }
+      }
+    });
   }
-  return [...reached];
+  return { ids: [...reached], guessed: [...guessed] };
+}
+
+/** The type names declarations of the inventory write, each file walked once, when first asked. */
+function declarationNodes(
+  held: Inventory,
+  byPath: ReadonlyMap<string, SourceFile>,
+): { typeNamesOf(symbol: InventorySymbol): readonly Node[] } {
+  const walked = new Map<string, { byId: Map<string, Node>; nodes: Set<Node> }>();
+  const nodesIn = (path: string): { byId: Map<string, Node>; nodes: Set<Node> } => {
+    const known = walked.get(path);
+    if (known !== undefined) {
+      return known;
+    }
+    const found = { byId: new Map<string, Node>(), nodes: new Set<Node>() };
+    const file = byPath.get(path);
+    if (file !== undefined) {
+      const visit = (node: Node): void => {
+        const id = held.declarations.get(nodeKey(file, node));
+        if (id !== undefined) {
+          found.nodes.add(node);
+          if (!found.byId.has(id)) {
+            found.byId.set(id, node);
+          }
+        }
+        node.forEachChild(visit);
+      };
+      visit(file);
+    }
+    walked.set(path, found);
+    return found;
+  };
+  return {
+    typeNamesOf: (symbol) => {
+      const { byId, nodes } = nodesIn(symbol.position.path);
+      const declaration = byId.get(symbol.id);
+      return declaration === undefined ? [] : typeNamesOf(declaration, nodes);
+    },
+  };
+}
+
+/**
+ * The names of types one declaration's own syntax writes: in a type reference, a
+ * heritage clause or a type query. A function body is not read, and neither is a
+ * declaration nested in this one, which `nested` holds and which is read on its own.
+ */
+function typeNamesOf(declaration: Node, nested: ReadonlySet<Node>): readonly Node[] {
+  const found: Node[] = [];
+  const visit = (node: Node): void => {
+    if (node !== declaration && nested.has(node)) {
+      return;
+    }
+    if (isTypeReferenceNode(node)) {
+      found.push(isQualifiedName(node.typeName) ? node.typeName.right : node.typeName);
+    } else if (isExpressionWithTypeArguments(node)) {
+      found.push(
+        isPropertyAccessExpression(node.expression) ? node.expression.name : node.expression,
+      );
+    } else if (isTypeQueryNode(node)) {
+      found.push(isQualifiedName(node.exprName) ? node.exprName.right : node.exprName);
+    }
+    const body = isFunctionLikeDeclaration(node) ? node.body : undefined;
+    node.forEachChild((child) => {
+      if (child !== body) {
+        visit(child);
+      }
+    });
+  };
+  visit(declaration);
+  return found;
 }
 
 /**

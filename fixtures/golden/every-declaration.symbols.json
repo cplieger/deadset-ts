@@ -70,5 +70,5 @@
   {"id":"src/more.ts:6:7","kind":"variable","name":"localOnly","ref":"ts://@example/every-declaration/src/more.ts#localOnly","parent":"src/more.ts:1:1","endLine":6,"exported":false,"visibility":"public","static":false},
   {"id":"src/more.ts:8:10","kind":"function","name":"defaultCandidate","ref":"ts://@example/every-declaration/src/more.ts#defaultCandidate","parent":"src/more.ts:1:1","endLine":8,"exported":false,"visibility":"public","static":false},
   {"id":"src/more.ts:10:23","kind":"export-alias","name":"renamedLocal","ref":"ts://@example/every-declaration/src/more.ts#renamedLocal:alias","parent":"src/more.ts:1:1","endLine":10,"exported":true,"visibility":"public","static":false},
-  {"id":"src/more.ts:12:1","kind":"export-alias","name":"default","ref":"ts://@example/every-declaration/src/more.ts#default:alias","parent":"src/more.ts:1:1","endLine":12,"exported":true,"visibility":"public","static":false}
+  {"id":"src/more.ts:12:8","kind":"export-alias","name":"default","ref":"ts://@example/every-declaration/src/more.ts#default:alias","parent":"src/more.ts:1:1","endLine":12,"exported":true,"visibility":"public","static":false}
 ]

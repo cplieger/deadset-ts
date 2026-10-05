@@ -37,7 +37,8 @@ import { contextualUses, type FlowAt, type LiteralAt } from "./contextual-uses.t
 import { destructuring, propertyReadsOf, type PropertyRead } from "./destructuring.ts";
 import { globExpression } from "./glob.ts";
 import { declarationsByName, nodeKey, type Inventory, type InventorySymbol } from "./inventory.ts";
-import { relativePath } from "./paths.ts";
+import { overrideReferences } from "./overrides.ts";
+import { dirnamePath, queriedModulePath, relativePath, resolvePath } from "./paths.ts";
 import { byPosition, isComponentFile, renderPosition, type Position } from "./position.ts";
 import { DEFAULT_BATCH_CAP, propertyTables, UNANSWERED, type Answer } from "./query.ts";
 import type { ProjectView } from "./session.ts";
@@ -71,12 +72,12 @@ import { handedOn, valuesOf } from "./value-flow.ts";
 export type Use = "read" | "write" | "evaluation" | "decorator";
 
 /**
- * Which path answered for one reference: `batch`, the batched lookup over a file's names;
- * `resolved-symbol`, the per-node lookup for a batch's residue; `shorthand`, the value
- * `{ a }` reads; `alias`, a step along an import or export chain; `syntax`, the tree alone
- * (a decorator's target, a component's markup); `destructured`, the property a pattern
- * names; `contextual`, the member a literal property writes or a value's position reads;
- * `by-name`, every declaration spelled as the site is, where the checker failed.
+ * Which path answered for one reference: `batch`, a file's batched lookup; `resolved-symbol`,
+ * the per-node lookup for its residue; `shorthand`, the value `{ a }` reads; `alias`, a step
+ * along an import or export chain; `syntax`, the tree alone (a decorator's target, a
+ * component's markup); `destructured`, the property a pattern names; `contextual`, the member
+ * a literal property writes or a value's position reads; `override`, the override a base
+ * member's call dispatches to; `by-name`, every declaration so spelled, where the checker failed.
  */
 export type Resolution =
   | "batch"
@@ -86,6 +87,7 @@ export type Resolution =
   | "syntax"
   | "destructured"
   | "contextual"
+  | "override"
   | "by-name";
 
 /** One use of one declaration by one declaration. */
@@ -112,6 +114,8 @@ export interface Reference {
    * the consumer's root.
    */
   readonly consumer?: string;
+  /** Made by a target file no project of the run holds, so it enters as a consumer's reference does. */
+  readonly unheld?: true;
   /**
    * On a write, the local names of the writing file's import bindings that only the
    * values its file writes into the same declaration use, which deleting the
@@ -474,6 +478,24 @@ function evaluatedBy(node: Node): Node | undefined {
     return isLiteralText(argument) ? argument : undefined;
   }
   return undefined;
+}
+
+/**
+ * The own file a module specifier with a query evaluates ({@link queriedModulePath}): the
+ * checker resolves the whole specifier to whatever module declaration matches it.
+ */
+function queriedFile(
+  file: SourceFile,
+  specifier: Node,
+  fileIdByName: ReadonlyMap<string, string>,
+): string | undefined {
+  if (!isStringLiteral(specifier) && !isNoSubstitutionTemplateLiteral(specifier)) {
+    return undefined;
+  }
+  const path = queriedModulePath(specifier.text);
+  return path === undefined
+    ? undefined
+    : fileIdByName.get(resolvePath(dirnamePath(file.fileName), path));
 }
 
 /**
@@ -1000,6 +1022,9 @@ export function references<Brand>(
     const fileId = declaredAt(file) ?? "";
     return { file, fileId, ...sitesOf(file, declarations, fileId, unread) };
   });
+  const fileIdByName = new Map(
+    walked.filter((one) => fileIds.has(one.fileId)).map((one) => [one.file.fileName, one.fileId]),
+  );
   const contextual = contextualUses(
     project,
     held,
@@ -1160,6 +1185,17 @@ export function references<Brand>(
     }
 
     for (const evaluation of evaluations) {
+      const queried = queriedFile(file, evaluation.node, fileIdByName);
+      if (queried !== undefined) {
+        found.push({
+          from: evaluation.from,
+          to: queried,
+          position: renderPosition(file, root, evaluation.node.getStart()),
+          use: "evaluation",
+          resolution: "syntax",
+          test,
+        });
+      }
       const module = answered.get(evaluation.node);
       if (module === undefined) {
         continue;
@@ -1298,6 +1334,9 @@ export function references<Brand>(
     }
   }
 
+  if (consumer === undefined) {
+    found.push(...overrideReferences(project, held, chains, new Set(tests)));
+  }
   found.sort(
     (a, b) =>
       byPosition(a.position, b.position) ||

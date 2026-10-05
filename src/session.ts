@@ -485,8 +485,8 @@ function projectsOf(
  * snapshot of one client, and answers in their order. A configuration `programs` describes is
  * built as that program, or opened from the configuration it writes, instead of as a project.
  * One the snapshot holds nothing for ends the run under `"refuse"` and is named in the result
- * under `"record"`. The snapshot is disposed after the last visit and the client released
- * after it, whether the visit completed or threw.
+ * under `"record"`. `last` runs after the last visit while the client still answers; the
+ * snapshot is disposed and the client released after it, whether the visit completed or threw.
  */
 export function runSession<Result>(
   engine: Engine,
@@ -494,6 +494,7 @@ export function runSession<Result>(
   visit: ProjectVisitor<Result>,
   unopened: Unopened = "refuse",
   programs: ReadonlyMap<string, WorkspaceProgram> = new Map(),
+  last: () => void = () => undefined,
 ): SessionResult<Result> {
   try {
     const built: string[] = [];
@@ -531,6 +532,7 @@ export function runSession<Result>(
         }
         projects.push(visit(viewOf(project, configFile, engine, log)));
       }
+      last();
       return {
         projects,
         unopened: missing,

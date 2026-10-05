@@ -334,10 +334,10 @@ describe("the three default-export forms", () => {
 
   it("names the export a default export of an expression is, and nothing behind it", () => {
     expect(targetsAt("src/index.ts:7:10"), "the object literal is declared at the export").toEqual([
-      "src/held.ts:2:1",
+      "src/held.ts:2:8",
     ]);
     expect(targetsAt("src/index.ts:7:19"), "and so is the value the call answers").toEqual([
-      "src/made.ts:7:1",
+      "src/made.ts:7:8",
     ]);
     expect(
       DEFAULTS?.cost.aliasSteps,
@@ -351,7 +351,7 @@ describe("the three default-export forms", () => {
       targetsAt("src/index.ts:7:26"),
       "the export carries the declaration forward, so the import names the export and the " +
         "function behind it",
-    ).toEqual(["src/named.ts:2:17", "src/named.ts:7:1"]);
+    ).toEqual(["src/named.ts:2:17", "src/named.ts:7:8"]);
     expect(
       targetsAt("src/named.ts:7:16"),
       "while the name the export is written against reads the function directly",

@@ -470,7 +470,20 @@ function nameNodeOf(node: Node): Node | undefined {
  * needs the declaration this enumeration made for it.
  */
 export function nodeKey(file: SourceFile, node: Node): string {
-  return `${file.fileName}:${String(node.pos)}:${String(node.end)}`;
+  return `${file.fileName}:${String(node.pos)}:${String(node.end)}:${String(node.kind)}`;
+}
+
+/** `export default`, up to the keyword that stands where an unnamed default export's name would. */
+const DEFAULT_EXPORT = /^export\s+(?=default\b)/u;
+
+/**
+ * Where an unnamed declaration is placed: at `default` when it is the default export, so it
+ * never shares the file's own position, else at its first token.
+ */
+function unnamedStart(node: Node): number {
+  const start = node.getStart();
+  const prefix = DEFAULT_EXPORT.exec(node.getText());
+  return prefix === null ? start : start + prefix[0].length;
 }
 
 /** The kind a class element takes: a method, or a property or accessor. */
@@ -565,12 +578,11 @@ export function inventory<Brand>(
     name: Node | undefined,
     named: { readonly component: Component; readonly localName: string | undefined },
   ): Building {
-    const at = name ?? node;
     const record = keep({
       file: owner.file,
       node,
       module: owner.module,
-      position: renderPosition(owner.file, targetRoot, at.getStart()),
+      position: renderPosition(owner.file, targetRoot, name?.getStart() ?? unnamedStart(node)),
       endLine: renderPosition(owner.file, targetRoot, Math.max(node.end - 1, 0)).line,
       kind,
       parentChain: owner.kind === "file" ? [] : chainOf(owner),
