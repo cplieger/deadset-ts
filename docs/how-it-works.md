@@ -38,7 +38,7 @@ A root is a declaration the analysis keeps live without a reference. `print-root
 - A configuration file beside a `package.json` whose name is `<stem>.config.<ext>`, `<stem>.<qualifier>.config.<ext>` or `.<stem>rc.<ext>`
 - A file that a string starting with `./` or `../` names, in such a configuration file or in its JSON form, like `<stem>.config.json` or `.<stem>rc`
 - A file that a token of a `package.json` script names, such as `node ./scripts/seed.ts`
-- The test files, Vitest's workspace configuration, Stryker's other configuration names and the test files in Playwright's test directory
+- The test files, Vitest's workspace configuration and the setup files it names, Stryker's `stryker.conf.*`, `.stryker.conf.*` and `.stryker.config.*` files, and the test files in Playwright's test directory
 - A global that a declaration file declares as `typeof import("<module>")["<name>"]`, which stands for that export, so using the global uses the export
 - A worker or service worker that a call addresses by a string literal
 - Every declaration a `roots.patterns` entry names
