@@ -146,8 +146,9 @@ export function completed(
   const classOf = reachabilityClasses(input);
   const componentOf = findingComponents(swept, input.config.reporters.cascade);
   let minted = swept.sweep.components.length;
+  const dead = new Set(swept.sweep.components.map((component) => component.id));
 
-  return findings.map((finding): CompletedFinding => {
+  const done = findings.map((finding): CompletedFinding => {
     const row = kinds.get(finding.code);
     if (row === undefined) {
       throw new Error(`${finding.code} names no live row of the issue-kind vocabulary`);
@@ -183,6 +184,7 @@ export function completed(
         ? union.made[at]
         : { production: candidate.productionRefs, test: candidate.testRefs };
     const reachabilityClass = judged === undefined ? "certain" : classOf(judged.id);
+    const generated = input.files.generated?.has(finding.position.path) === true;
     return {
       code: finding.code,
       kind: row.name,
@@ -193,7 +195,7 @@ export function completed(
       confidence: capped(reachabilityClass, row.maxClass),
       ...(candidate === undefined ? {} : { livenessRelation: candidate.relation }),
       testOnly: judged !== undefined && counts?.production === 0 && counts.test > 0,
-      generated: false,
+      generated,
       component,
       retainedBy: [],
       configurations:
@@ -202,11 +204,37 @@ export function completed(
           ? swept.matrix.configurations
           : (swept.matrix.heldIn[at] ?? swept.matrix.configurations)),
       consumersLoaded: input.boundary.consumers.loaded,
-      fixability: row.fixability,
+      fixability: generated ? "none" : row.fixability,
       severity: severityOf(input, finding.code, row.defaultSeverity),
       message: finding.message,
       details: finding.details ?? {},
     };
+  });
+  return componentCapped(done, dead);
+}
+
+/**
+ * The findings with every finding of a dead component capped by the lowest confidence
+ * among the component's root members, so the minimum confidence reports or withholds a
+ * component whole.
+ */
+function componentCapped(
+  findings: readonly CompletedFinding[],
+  dead: ReadonlySet<string>,
+): readonly CompletedFinding[] {
+  const lowest = new Map<string, Confidence>();
+  for (const finding of findings) {
+    const { id, root } = finding.component;
+    if (root && dead.has(id)) {
+      const held = lowest.get(id);
+      lowest.set(id, held === undefined ? finding.confidence : capped(held, finding.confidence));
+    }
+  }
+  return findings.map((finding) => {
+    const cap = lowest.get(finding.component.id);
+    return cap === undefined || RANK[cap] >= RANK[finding.confidence]
+      ? finding
+      : { ...finding, confidence: cap };
   });
 }
 

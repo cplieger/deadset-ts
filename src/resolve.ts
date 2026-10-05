@@ -262,18 +262,19 @@ function readStrings<T extends string>(
     );
   }
   const seen = new Set<string>();
-  for (const entry of value as unknown[]) {
+  for (const [index, entry] of (value as unknown[]).entries()) {
+    const at = `${path}[${String(index)}]`;
     if (typeof entry !== "string") {
-      throw malformed(label, path, "holds an entry that is not a string");
+      throw malformed(label, at, "is not a string");
     }
     if (entry === "") {
-      throw malformed(label, path, "holds an empty entry");
+      throw malformed(label, at, "is empty");
     }
     if (seen.has(entry)) {
-      throw malformed(label, path, `names ${JSON.stringify(entry)} twice`);
+      throw malformed(label, at, `names ${JSON.stringify(entry)} again`);
     }
     if (allowed !== undefined && !(allowed as readonly string[]).includes(entry)) {
-      throw malformed(label, path, `${JSON.stringify(entry)} is not one of ${spell(allowed)}`);
+      throw malformed(label, at, `${JSON.stringify(entry)} is not one of ${spell(allowed)}`);
     }
     seen.add(entry);
   }
@@ -288,12 +289,12 @@ function readComponentExtensions(
   label: string,
 ): readonly string[] | undefined {
   const extensions = readStrings(ts, "component_extensions", "ts.component_extensions", label, 0);
-  const wrong = extensions?.find((one) => !COMPONENT_EXTENSION.test(one));
-  if (wrong !== undefined) {
+  const wrong = extensions?.findIndex((one) => !COMPONENT_EXTENSION.test(one)) ?? -1;
+  if (extensions !== undefined && wrong !== -1) {
     throw malformed(
       label,
-      "ts.component_extensions",
-      `${JSON.stringify(wrong)} is not a full stop followed by letters and digits`,
+      `ts.component_extensions[${String(wrong)}]`,
+      `${JSON.stringify(extensions[wrong])} is not a full stop followed by letters and digits`,
     );
   }
   return extensions;
@@ -307,12 +308,12 @@ function readDisabledConventions(
   label: string,
 ): readonly string[] | undefined {
   const names = readStrings(ts, "disabled_conventions", "ts.disabled_conventions", label, 0);
-  const unknown = names?.find((one) => !CONVENTION_NAMES.has(one));
-  if (unknown !== undefined) {
+  const unknown = names?.findIndex((one) => !CONVENTION_NAMES.has(one)) ?? -1;
+  if (names !== undefined && unknown !== -1) {
     throw malformed(
       label,
-      "ts.disabled_conventions",
-      `${JSON.stringify(unknown)} names no convention row this analyzer carries`,
+      `ts.disabled_conventions[${String(unknown)}]`,
+      `${JSON.stringify(names[unknown])} names no convention row this analyzer carries`,
     );
   }
   return names;

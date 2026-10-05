@@ -29,6 +29,7 @@
   {"at":"src/index.ts:14:21","from":"src/index.ts:9:17","to":"src/declarations.ts:38:14","use":"read","resolution":"alias","test":false},
   {"at":"src/index.ts:15:4","from":"src/index.ts:9:17","to":"src/declarations.ts:38:14","use":"read","resolution":"alias","test":false},
   {"at":"src/index.ts:16:3","from":"src/index.ts:9:17","to":"src/declarations.ts:47:17","use":"read","resolution":"alias","test":false},
+  {"at":"src/index.ts:17:12","from":"src/index.ts:9:17","to":"src/declarations.ts:31:12","use":"write","resolution":"contextual","test":false},
   {"at":"src/index.ts:21:25","from":"src/index.ts:21:14","to":"src/index.ts:5:7","use":"read","resolution":"shorthand","test":false},
   {"at":"src/index.ts:21:31","from":"src/index.ts:21:14","to":"src/index.ts:9:17","use":"read","resolution":"shorthand","test":false},
   {"at":"src/middle.ts:1:10","from":"src/middle.ts:1:10","to":"src/declarations.ts:7:14","use":"read","resolution":"alias","test":false},

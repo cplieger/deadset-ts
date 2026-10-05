@@ -62,23 +62,76 @@ function findingAbout(
 interface Uses {
   readonly writes: FindingPosition[];
   reads: number;
+  /** The import bindings only the writes use. */
+  readonly alone: Set<string>;
 }
 
 /**
  * Whether one declaration is a subject of the write-only kind: a module-level variable,
- * or a class member that is state rather than code. A getter or a setter is code, so a
- * store into one runs it.
+ * a member of an object type, or a class member that is state rather than code. A getter
+ * or a setter is code, so a store into one runs it.
  */
 function writable(run: Run, symbol: InventorySymbol): boolean {
-  if (symbol.kind === "variable") {
+  if (symbol.kind === "variable" || symbol.kind === "type-member") {
     return true;
   }
   return symbol.kind === "class-member" && !run.input.stores.accessors.has(symbol.id);
 }
 
+/** The reader's word for each kind of the write-only kind's subject. */
+const SUBJECT_WORDS: Readonly<Partial<Record<InventorySymbol["kind"], string>>> = {
+  variable: "variable",
+  "class-member": "member",
+  "type-member": "type member",
+};
+
 /**
- * `DS1301`: a module-level variable or a class member the counted references store into
- * and never read, named with every position written.
+ * The type parameters of one member's declaring type that only the member names, which
+ * deleting the member leaves unused.
+ */
+function parametersOnlyNamedBy(
+  run: Run,
+  namedBy: ReadonlyMap<string, ReadonlySet<string>>,
+  member: InventorySymbol,
+): readonly string[] {
+  return [...run.symbols.values()]
+    .filter((symbol) => {
+      const from = namedBy.get(symbol.id);
+      return (
+        symbol.kind === "type-parameter" &&
+        symbol.parent === member.parent &&
+        from?.size === 1 &&
+        from.has(member.id)
+      );
+    })
+    .map((symbol) => symbol.name);
+}
+
+/** What one write-only finding says, the declarations its deletion takes with it included. */
+function writeOnlyMessage(
+  run: Run,
+  namedBy: ReadonlyMap<string, ReadonlySet<string>>,
+  symbol: InventorySymbol,
+  held: Uses,
+): string {
+  const writes = held.writes.length === 1 ? "once" : `at ${String(held.writes.length)} positions`;
+  const read = run.input.stores.readInTests.has(symbol.id)
+    ? "read only from test files"
+    : "never read";
+  const cascade = [
+    ...parametersOnlyNamedBy(run, namedBy, symbol).map((name) => `type parameter ${name}`),
+    ...[...held.alone].sort().map((name) => `import ${name}`),
+  ];
+  const word = SUBJECT_WORDS[symbol.kind] ?? "member";
+  const message = `${word} ${symbol.name} is written ${writes} and ${read}`;
+  return cascade.length === 0
+    ? message
+    : `${message}, and deleting it with its writes deletes ${cascade.join(" and ")} too`;
+}
+
+/**
+ * `DS1301`: a module-level variable, a type member or a class member the counted
+ * references store into and never read, named with every position written.
  *
  * The subject is a live declaration: a store is a reference, so the sweep holds a
  * written one live and its candidates are never this kind's. Every reference that is
@@ -91,7 +144,7 @@ function writeOnlySymbols(run: Run): readonly Finding[] {
   for (const reference of stores.references) {
     let held = uses.get(reference.to);
     if (held === undefined) {
-      held = { writes: [], reads: 0 };
+      held = { writes: [], reads: 0, alone: new Set() };
       uses.set(reference.to, held);
     }
     // A consumer's store is written at a position no report of the target can name, so
@@ -100,10 +153,20 @@ function writeOnlySymbols(run: Run): readonly Finding[] {
       held.reads += 1;
       continue;
     }
+    for (const name of reference.alone ?? []) {
+      held.alone.add(name);
+    }
     const at = reference.position;
     const key = positionKey(at);
     if (!held.writes.some((written) => positionKey(written) === key)) {
       held.writes.push({ path: at.path, line: at.line, column: at.column, endLine: at.line });
+    }
+  }
+
+  const namedBy = new Map<string, Set<string>>();
+  for (const reference of stores.references) {
+    if (run.symbols.get(reference.to)?.kind === "type-parameter") {
+      namedBy.set(reference.to, (namedBy.get(reference.to) ?? new Set()).add(reference.from));
     }
   }
 
@@ -120,10 +183,8 @@ function writeOnlySymbols(run: Run): readonly Finding[] {
     ) {
       continue;
     }
-    const writes = held.writes.length === 1 ? "once" : `at ${String(held.writes.length)} positions`;
-    const word = symbol.kind === "variable" ? "variable" : "member";
     found.push(
-      findingAbout(symbol, "DS1301", `${word} ${symbol.name} is written ${writes} and never read`, {
+      findingAbout(symbol, "DS1301", writeOnlyMessage(run, namedBy, symbol, held), {
         writePositions: held.writes,
       }),
     );

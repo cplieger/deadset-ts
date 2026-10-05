@@ -169,22 +169,15 @@ describe("every corpus fixture with a TypeScript rendering, answered by every fa
         "Counter.Total none: pass",
       ],
     ],
-  ])("answers %s row for row", (name, rows) => {
-    expect(answer(name)).toEqual({ rows, unnamed: [] });
-  });
-
-  // Each declared gap below is asserted as it stands, so a gap that closes fails here
-  // and is removed rather than left declared.
-  it("answers private-member-unread with one declared gap", () => {
-    expect(answer("private-member-unread")).toEqual({
-      rows: [
+    [
+      "private-member-unread",
+      [
         "UnreadPrivate DS1301: pass",
         "UnreferencedPrivate DS1003: pass",
-        // Declared gap: the reference pass resolves a string-literal element access to
-        // the member it names, so the member is live rather than held back by a class.
-        "ReachedByStringIndex none: not retained by reflective-lookup",
+        "ReachedByStringIndex none: pass",
       ],
-      unnamed: [],
-    });
+    ],
+  ])("answers %s row for row", (name, rows) => {
+    expect(answer(name)).toEqual({ rows, unnamed: [] });
   });
 });

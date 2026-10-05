@@ -27,6 +27,7 @@ import {
   declaredIn as declaredBeside,
   dependenciesNamed,
   moduleStrings,
+  type ParseFile,
 } from "./configuration-files.ts";
 import type { FindingPosition } from "./finding.ts";
 import type { Host } from "./host.ts";
@@ -284,6 +285,7 @@ export function projectNeeds<Brand>(
   held: Inventory,
   host: Host,
   targetRoot: string,
+  parse?: ParseFile,
 ): ProjectNeeds {
   const programPackages = new Set<string>();
   for (const name of project.program.getSourceFileNames()) {
@@ -329,7 +331,12 @@ export function projectNeeds<Brand>(
     }
     return names;
   };
-  const configuration = configurationFiles(host, targetRoot, sourceFilesOf(project, targetRoot));
+  const configuration = configurationFiles(
+    host,
+    targetRoot,
+    sourceFilesOf(project, targetRoot),
+    parse,
+  );
   for (const { file } of configuration.modules) {
     const names = declaredAt(file.fileName);
     for (const { node, text } of moduleStrings(file)) {
@@ -339,6 +346,12 @@ export function projectNeeds<Brand>(
   for (const document of configuration.documents) {
     const names = declaredAt(document.path);
     for (const text of document.strings) {
+      use([PROJECT_OWNER], dependenciesNamed(text, names));
+    }
+  }
+  for (const { file, manifestDir } of configuration.outside) {
+    const names = declaredAt(joinPath(manifestDir, "package.json"));
+    for (const { text } of moduleStrings(file)) {
       use([PROJECT_OWNER], dependenciesNamed(text, names));
     }
   }

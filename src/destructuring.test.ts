@@ -41,7 +41,9 @@ function accounted(cost: ReferenceCost | undefined): number {
     (cost?.shorthandLookups ?? 0) +
     (cost?.aliasSteps ?? 0) +
     (cost?.patternBatches ?? 0) +
-    (cost?.patternLookups ?? 0)
+    (cost?.patternLookups ?? 0) +
+    (cost?.contextualBatches ?? 0) +
+    (cost?.contextualLookups ?? 0)
   );
 }
 
@@ -172,16 +174,17 @@ describe("the unused members of a destructured tree", () => {
 
     expect(
       findings
-        .filter((finding) => finding.code === "DS1003")
-        .map((finding) => finding.symbol.name)
+        .filter((finding) => finding.code === "DS1003" || finding.code === "DS1301")
+        .map((finding) => `${finding.code} ${finding.symbol.name}`)
         .sort(),
+      "a member only an object literal writes is written and never read",
     ).toEqual([
-      "Circle.kind",
-      "Holder.spare",
-      "Inner.untouched",
-      "Invocation.typedOnly",
-      "Invocation.unread",
-      "Square.kind",
+      "DS1003 Holder.spare",
+      "DS1301 Circle.kind",
+      "DS1301 Inner.untouched",
+      "DS1301 Invocation.typedOnly",
+      "DS1301 Invocation.unread",
+      "DS1301 Square.kind",
     ]);
   });
 });

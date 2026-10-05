@@ -206,7 +206,7 @@ describe("a value the closed key list constrains", () => {
       text:
         '{"target":{"kind":"library"},"providers":{"analyzers":[' +
         '{"name":"deadset-py","languages":["py"],"command":"deadset-py"}]}}',
-      setting: "providers.analyzers[0].languages",
+      setting: "providers.analyzers[0].languages[0]",
       detail: '"py" is not one of "go", "ts"',
     },
     {
@@ -241,14 +241,14 @@ describe("a value the closed key list constrains", () => {
     {
       name: "an array naming one entry twice",
       text: '{"target":{"kind":"library"},"roots":{"patterns":["a","a"]}}',
-      setting: "roots.patterns",
-      detail: 'names "a" twice',
+      setting: "roots.patterns[1]",
+      detail: 'names "a" again',
     },
     {
       name: "an array holding an empty entry",
       text: '{"target":{"kind":"library"},"analysis":{"template_dirs":[""]}}',
-      setting: "analysis.template_dirs",
-      detail: "holds an empty entry",
+      setting: "analysis.template_dirs[0]",
+      detail: "is empty",
     },
     {
       name: "a contract version that is not a semantic version",

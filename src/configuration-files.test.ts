@@ -1,9 +1,10 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
 import { emitterInputOf } from "../__test-helpers__/emitter-input.ts";
 import { fixture } from "../__test-helpers__/fixtures.ts";
+import { writeProject } from "../__test-helpers__/projects.ts";
 import { runRoots } from "./analysis.ts";
 import {
   configurationModuleForm,
@@ -171,5 +172,32 @@ describe("the configuration files of a project", () => {
       "dep-root-only",
       "dep-substituted",
     ]);
+  });
+});
+
+describe("a configuration file no program holds", () => {
+  it("reads the modules it imports by a relative specifier and no other file it imports", () => {
+    const root = writeProject({
+      "package.json":
+        '{ "name": "@example/app", "type": "module", "main": "./src/main.ts", "devDependencies": { "@example/kit": "1.0.0", "@example/used": "1.0.0" } }\n',
+      "src/main.ts": "export const main = 1;\n",
+      "tool.config.mjs":
+        'import manifest from "./package.json" with { type: "json" };\nimport shared from "./tool.shared.mjs";\nexport default [manifest.name, ...shared];\n',
+      "tool.shared.mjs": 'import used from "@example/used";\nexport default [used];\n',
+    });
+    try {
+      const { config } = resolve({
+        repository: '{ "target": { "kind": "application" } }',
+        repositoryLabel: "deadset.json",
+      });
+      const emit = EMITTERS.get("dependencies-and-module-machinery");
+      const unused =
+        emit === undefined
+          ? []
+          : emit(emitterInputOf(root, config)).map((finding) => finding.symbol.name);
+      expect(unused).toEqual(["@example/kit"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

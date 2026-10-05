@@ -191,6 +191,7 @@ describe("readConventions", () => {
     expect(decide({ "/repo/package.json": "{}", ...INSTALLED })).toEqual({
       applied: [],
       globs: [],
+      generated: [],
       failures: [],
     });
   });
@@ -217,7 +218,7 @@ describe("readConventions", () => {
       "/repo/node_modules/tool/package.json": '{ "version": "3.0.0" }',
     });
 
-    expect(decided).toEqual({ applied: [], globs: [], failures: [] });
+    expect(decided).toEqual({ applied: [], globs: [], generated: [], failures: [] });
   });
 
   it("fails as missing-module where no installed manifest is found", () => {
@@ -264,7 +265,7 @@ describe("readConventions", () => {
       "tool",
     ]);
 
-    expect(decided).toEqual({ applied: [], globs: [], failures: [] });
+    expect(decided).toEqual({ applied: [], globs: [], generated: [], failures: [] });
   });
 
   it("reads the globs against the default directory where no configuration sets it", () => {

@@ -22,6 +22,8 @@ export interface Stores {
    * configuration. A production mode counts none a test file made.
    */
   readonly references: readonly Reference[];
+  /** The declarations a test file reads, which a production mode counts no read of. */
+  readonly readInTests: ReadonlySet<string>;
   /**
    * The class members declared by a getter or a setter. A store into one runs the
    * setter, which is code rather than state.
@@ -70,6 +72,13 @@ export function storesOf(
   return {
     references: per.flatMap((one) =>
       one.references.filter((reference) => !mode.production || !reference.test),
+    ),
+    readInTests: new Set(
+      per.flatMap((one) =>
+        one.references
+          .filter((reference) => reference.test && reference.use !== "write")
+          .map((reference) => reference.to),
+      ),
     ),
     accessors: new Set(per.flatMap((one) => one.accessors)),
     exempt: new Set(exempt.map((record) => record.id)),

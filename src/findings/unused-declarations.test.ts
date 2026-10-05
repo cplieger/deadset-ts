@@ -1,8 +1,9 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { emitterInputOf } from "../../__test-helpers__/emitter-input.ts";
 import { fixture } from "../../__test-helpers__/fixtures.ts";
+import { writeProject } from "../../__test-helpers__/projects.ts";
 import type { Config } from "../config.ts";
 import type { CompletedFinding } from "../finding.ts";
 import { resolve } from "../resolve.ts";
@@ -417,22 +418,47 @@ describe("the corpus fixtures naming a code of the family", () => {
         "Counter.Total none: pass",
       ],
     ],
+    [
+      "private-member-unread",
+      [
+        "UnreadPrivate DS1301: another family",
+        "UnreferencedPrivate DS1003: pass",
+        "ReachedByStringIndex none: pass",
+      ],
+    ],
   ])("answers %s row for row", (name, rows) => {
     expect(answer(name)).toEqual({ rows, unnamed: [] });
   });
+});
 
-  // Each declared gap below is asserted as it stands, so a gap that closes fails here
-  // and is removed rather than left declared.
-  it("answers private-member-unread, with the write-only row another family's and one declared gap", () => {
-    expect(answer("private-member-unread")).toEqual({
-      rows: [
-        "UnreadPrivate DS1301: another family",
-        "UnreferencedPrivate DS1003: pass",
-        // Declared gap: the reference pass resolves a string-literal element access to
-        // the member it names, so the member is live rather than held back by a class.
-        "ReachedByStringIndex none: not retained by reflective-lookup",
-      ],
-      unnamed: [],
+describe("a member that is the only part of its type naming a type parameter", () => {
+  const roots: string[] = [];
+  afterAll(() => {
+    for (const root of roots) {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  /** This family's findings over one `src/main.ts` the manifest names as the entry. */
+  function findings(main: string): string[] {
+    const root = writeProject({
+      "package.json": '{ "name": "@example/app", "type": "module", "main": "./src/main.ts" }\n',
+      "src/main.ts": main,
     });
+    roots.push(root);
+    return family(emitterInputOf(root, configOf('{ "target": { "kind": "application" } }'))).map(
+      (finding) => `${finding.code} ${finding.symbol.name}`,
+    );
+  }
+
+  const PAIR =
+    "export interface Pair<P> {\n  readonly id: number;\n  readonly first?: P;\n  readonly second?: P;\n}\nconst pair: Pair<string> = { id: 1 };\n";
+
+  it("is not reported while every part naming the parameter is a member no value writes and nothing reads", () => {
+    expect(findings(`${PAIR}console.log(pair.id);\n`)).toEqual([]);
+  });
+
+  it("is reported once another part naming the parameter is read", () => {
+    expect(findings(`${PAIR}console.log(pair.id, pair.second);\n`)).toEqual(["DS1003 Pair.first"]);
   });
 });

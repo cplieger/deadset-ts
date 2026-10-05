@@ -8,6 +8,8 @@
  */
 
 import {
+  isExportDeclaration,
+  isImportDeclaration,
   isNoSubstitutionTemplateLiteral,
   isStringLiteral,
   type Node,
@@ -42,6 +44,17 @@ const DEPENDENCY_MEMBERS = [
 
 /** The prefixes a string names a file with, relative to the file that writes it. */
 const RELATIVE_PREFIXES = ["./", "../"] as const;
+
+/** The JavaScript extensions a relative specifier from a configuration file stands for TypeScript under. */
+const COUNTERPARTS: readonly (readonly [string, readonly string[]])[] = [
+  [".js", [".ts", ".tsx"]],
+  [".jsx", [".tsx", ".ts"]],
+  [".mjs", [".mts"]],
+  [".cjs", [".cts"]],
+];
+
+/** The extensions appended to a relative specifier from a configuration file, in order. */
+const APPENDED = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"] as const;
 
 /** The extensions the program's module resolution appends to a specifier written without one. */
 const RESOLVED_EXTENSIONS = [
@@ -83,10 +96,27 @@ interface ConfigurationDocument {
   readonly strings: readonly string[];
 }
 
+/** Parses one file the program does not hold, with no type information. */
+export type ParseFile = (fileName: string, text: string) => SourceFile;
+
+/** One file no program holds that a configuration module outside the program leads to. */
+export interface OutsideModule {
+  /** The file, parsed alone. */
+  readonly file: SourceFile;
+  /** The directory of the configuration module the file was reached from, which holds its manifest. */
+  readonly manifestDir: string;
+}
+
 /** The configuration files one project holds and sits beside. */
 interface ConfigurationFiles {
   /** Every own file that is a configuration module, with the form its name has. */
   readonly modules: readonly { readonly file: SourceFile; readonly form: string }[];
+  /**
+   * Every configuration module in a directory of the project that the program does not
+   * hold, and every file such a file imports or re-exports by a relative specifier that
+   * the program does not hold either, read where a parser is given.
+   */
+  readonly outside: readonly OutsideModule[];
   /** Every JSON configuration file in a directory of the project's files or above one. */
   readonly documents: readonly ConfigurationDocument[];
 }
@@ -128,6 +158,7 @@ export function configurationFiles(
   host: Host,
   targetRoot: string,
   files: SourceFiles,
+  parse?: ParseFile,
 ): ConfigurationFiles {
   const root = resolvePath(host.workingDirectory(), targetRoot);
   const manifests = new Map<string, boolean>();
@@ -182,7 +213,111 @@ export function configurationFiles(
       documents.push({ path, strings: documentStrings(value) });
     }
   }
-  return { modules, documents };
+  return {
+    modules,
+    documents,
+    outside:
+      parse === undefined ? [] : outsideModules(host, [...dirs], files, holdsManifest, parse),
+  };
+}
+
+/** The relative specifiers one file's imports and re-exports name. */
+function relativeSpecifiers(file: SourceFile): readonly string[] {
+  return file.statements.flatMap((statement) => {
+    const specifier =
+      isImportDeclaration(statement) || isExportDeclaration(statement)
+        ? statement.moduleSpecifier
+        : undefined;
+    return specifier !== undefined &&
+      isStringLiteral(specifier) &&
+      RELATIVE_PREFIXES.some((prefix) => specifier.text.startsWith(prefix))
+      ? [specifier.text]
+      : [];
+  });
+}
+
+/**
+ * The module one relative specifier from a configuration file reaches: the path it names,
+ * that path with its JavaScript extension replaced by the TypeScript counterparts, that
+ * path with an extension appended, and a directory's `index` with one appended.
+ */
+function reachedBy(host: Host, dir: string, specifier: string): string | undefined {
+  const path = resolvePath(dir, specifier);
+  const isFile = (candidate: string): boolean => host.kindOf(candidate) === "file";
+  // A data file such as `./package.json` is no module, so its strings use no dependency.
+  if (isFile(path) && APPENDED.some((extension) => path.endsWith(extension))) {
+    return path;
+  }
+  for (const [extension, counterparts] of COUNTERPARTS) {
+    if (path.endsWith(extension)) {
+      const stem = path.slice(0, -extension.length);
+      const found = counterparts.map((one) => stem + one).find(isFile);
+      if (found !== undefined) {
+        return found;
+      }
+    }
+  }
+  const appended = APPENDED.map((extension) => path + extension).find(isFile);
+  if (appended !== undefined) {
+    return appended;
+  }
+  return host.kindOf(path) === "directory"
+    ? APPENDED.map((extension) => joinPath(path, `index${extension}`)).find(isFile)
+    : undefined;
+}
+
+/**
+ * The configuration modules of the directories that hold a manifest which the program
+ * does not hold, and the files they import by a relative specifier, until no further
+ * file joins. A file that cannot be read is skipped.
+ */
+function outsideModules(
+  host: Host,
+  dirs: readonly string[],
+  files: SourceFiles,
+  holdsManifest: (dir: string) => boolean,
+  parse: ParseFile,
+): readonly OutsideModule[] {
+  const pending: { path: string; manifestDir: string }[] = [];
+  for (const dir of [...dirs].sort()) {
+    if (!holdsManifest(dir)) {
+      continue;
+    }
+    let names: readonly string[];
+    try {
+      names = host
+        .readDirectory(dir)
+        .filter((entry) => !entry.directory && configurationModuleForm(entry.name) !== undefined)
+        .map((entry) => entry.name)
+        .sort();
+    } catch {
+      continue;
+    }
+    pending.push(...names.map((name) => ({ path: joinPath(dir, name), manifestDir: dir })));
+  }
+  const found: OutsideModule[] = [];
+  const seen = new Set<string>();
+  for (let next = pending.shift(); next !== undefined; next = pending.shift()) {
+    if (seen.has(next.path) || files.byName.has(next.path)) {
+      continue;
+    }
+    seen.add(next.path);
+    let text: string;
+    try {
+      text = host.readFile(next.path);
+    } catch {
+      continue;
+    }
+    const file = parse(next.path, text);
+    found.push({ file, manifestDir: next.manifestDir });
+    for (const specifier of relativeSpecifiers(file)) {
+      const reached = reachedBy(host, dirnamePath(next.path), specifier);
+      if (reached !== undefined) {
+        pending.push({ path: reached, manifestDir: next.manifestDir });
+      }
+    }
+  }
+  return found;
 }
 
 /** Every dependency the manifest in one directory declares, or none where it holds none to read. */

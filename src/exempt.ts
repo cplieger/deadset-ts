@@ -48,6 +48,11 @@ export interface DetectorInput<Brand> {
   readonly ts: TSSection;
   /** The absolute path of each declared consumer, whose modules are part of the analysis. */
   readonly consumers: readonly string[];
+  /**
+   * The project's generated files, by path below the target root, each with the
+   * convention row that names its directory as generated.
+   */
+  readonly generated?: ReadonlyMap<string, string>;
 }
 
 /**
@@ -162,8 +167,29 @@ export function computeExemptions<Brand>(
   detectors: Detectors,
   holding: Holding,
 ): readonly Exemption[] {
+  return detectExemptions(input, detectors, holding).records;
+}
+
+/** One project's records, and the evidence a production mode found in a test file. */
+export interface Detected {
+  readonly records: readonly Exemption[];
+  /**
+   * Under a production mode, each record whose evidence is written in a test file. It
+   * holds nothing, and it is a test reference to its declaration, as a reference the
+   * test file wrote would be.
+   */
+  readonly inTestFiles: readonly Exemption[];
+}
+
+/** The records of {@link computeExemptions}, beside the test-file evidence it set aside. */
+export function detectExemptions<Brand>(
+  input: DetectorInput<Brand>,
+  detectors: Detectors,
+  holding: Holding,
+): Detected {
   const visibility = new Map(input.held.symbols.map((symbol) => [symbol.id, symbol.visibility]));
   const found: Exemption[] = [];
+  const inTestFiles: Exemption[] = [];
   for (const exemptionClass of TS_EXEMPTION_CLASSES) {
     const detect = detectors.get(exemptionClass);
     if (detect === undefined || holding.disabled.has(exemptionClass)) {
@@ -174,19 +200,21 @@ export function computeExemptions<Brand>(
       if (!retainable(allowed, visibility.get(evidence.id))) {
         continue;
       }
-      if (holding.mode.production && holding.testFiles.has(evidence.site.path)) {
-        continue;
-      }
-      found.push({
+      const record = {
         id: evidence.id,
         class: exemptionClass,
         detail: evidence.detail,
         site: evidence.site,
         ...(evidence.whileLive === undefined ? {} : { whileLive: evidence.whileLive }),
-      });
+      };
+      if (holding.mode.production && holding.testFiles.has(evidence.site.path)) {
+        inTestFiles.push(record);
+        continue;
+      }
+      found.push(record);
     }
   }
-  return exemptionsOf(found);
+  return { records: exemptionsOf(found), inTestFiles };
 }
 
 /** Two strings ordered bytewise. */
@@ -247,17 +275,18 @@ function byDeclaration(records: readonly Exemption[]): ReadonlyMap<string, reado
 }
 
 /**
- * The records that held back a declaration some configuration of the run would
- * otherwise judge dead: each configuration's graph is swept once more with no
- * exemption and the marks it was given, and a record is retained when one of those
- * sweeps judged its declaration a candidate. A record that holds a declaration back in
- * one configuration is retained whatever another configuration answers about it, as a
- * run of that configuration alone would report the declaration without it. A record
- * on a declaration that a relation or a mark holds live in every configuration held
- * nothing back. The order is the declarations' site order, and for one declaration
- * the input's.
+ * The records that held back a declaration: one some configuration's graph, swept
+ * again with no exemption and its marks, judges a candidate, whatever another
+ * configuration answers, or one in `writeOnly`, which the run would report as written
+ * and never read without the record's read. A declaration a relation or a mark holds
+ * live in every configuration is held back by no record. The order is the
+ * declarations' site order, and for one declaration the input's.
  */
-export function retainedIn(matrix: Matrix, input: SweepInput): readonly Exemption[] {
+export function retainedIn(
+  matrix: Matrix,
+  input: SweepInput,
+  writeOnly: ReadonlySet<string> = new Set(),
+): readonly Exemption[] {
   const exempt = input.exempt ?? [];
   if (exempt.length === 0) {
     return [];
@@ -268,7 +297,9 @@ export function retainedIn(matrix: Matrix, input: SweepInput): readonly Exemptio
       sweep(graph, bare).candidates.map((candidate) => candidate.id),
     ),
   );
-  const held = byDeclaration(exempt.filter((record) => dead.has(record.id)));
+  const held = byDeclaration(
+    exempt.filter((record) => dead.has(record.id) || writeOnly.has(record.id)),
+  );
   return matrix.union.symbols.flatMap((symbol) => held.get(symbol.id) ?? []);
 }
 

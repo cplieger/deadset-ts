@@ -2,16 +2,9 @@
 // Regenerate it with `UPDATE_GOLDEN=1 npx vitest --run src/conformance.corpus.test.ts`.
 export const RECORD = {
   conformance: {
-    corpusVersion: "2.1.1",
+    corpusVersion: "2.2.0",
     result: "pass",
-    digest: "sha256:e5e456bf3a706f1fa9f906ae71e10ea98a78da52d7d99a5ed59dca8a72bbe927",
+    digest: "sha256:ce7c9087ed7b2baf3de9fa2df436b500706f4f9e94fd9e0fed633054305f06a4",
   },
-  gaps: [
-    {
-      fixture: "private-member-unread",
-      capability: "reflective-lookup",
-      reason:
-        "The reference pass resolves a string-literal element access to the member it names, so the member is live by that reference and the retained listing names no class for it.",
-    },
-  ],
+  gaps: [],
 } as const;

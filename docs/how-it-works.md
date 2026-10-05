@@ -43,15 +43,15 @@ A root is a declaration the analysis keeps live without a reference. `print-root
 - A worker or service worker that a call addresses by a string literal
 - Every declaration a `roots.patterns` entry names
 
-A string in such a configuration file that spells a dependency its `package.json` declares, alone or followed by a subpath, keeps that dependency from `DS1601`.
+A string in such a configuration file that spells a dependency its `package.json` declares, alone or followed by a subpath, keeps that dependency from `DS1601`. So does a string in a module such a configuration file imports by a relative specifier. A data file it imports, such as `./package.json`, is not read for strings. Both kinds of module are read whether or not a compiler configuration includes the file.
 
 A `roots.patterns` entry that names nothing is reported as `DS1704` and fails the run. Other entry-point conventions are not read, and the `DECLINED_CONVENTIONS` export lists each one with the reason.
 
-A convention row holds the file-system conventions of one framework or tool. It applies when a `package.json` the analysis reads declares the row's package and the installed version is in the row's range. Its globs are matched below that manifest's directory. The report lists each applied row in `conventions_applied`, and `print-roots` names the row beside each file it roots. A package that is declared and not installed is the setup failure `missing-module`.
+A convention row holds the file-system conventions of one framework or tool. It applies when a `package.json` the analysis reads declares the row's package and the installed version is in the row's range. Its globs are matched below that manifest's directory. The report lists each applied row in `conventions_applied`, and `print-roots` names the row beside each file it roots. A package declared and not installed is the setup failure `missing-module` when `dependencies` or `devDependencies` declares it, and applies no row otherwise.
 
-Some rows read a directory that the framework's configuration file moves, such as `srcDir` in `nuxt.config.ts`. The value is read from the default export, or from the options of the framework's Vite plugin, without running the file. A string literal or a template literal with no substitution moves the directory, and an unset property leaves the default.
+Some rows read a directory that the framework's configuration file moves, such as `srcDir` in `nuxt.config.ts`. The value is read from the default export, or from the options of the framework's Vite plugin, without running the file. The plugin may be imported or bound by a top-level `require`. A string literal or a template literal with no substitution moves the directory, and an unset property leaves the default.
 
-Any other value is the setup failure `convention-not-literal`. So is an object on the way to the property that is not written out or that spreads another object in. Write the value as a literal, or name the row in `ts.disabled_conventions` and its files in `ts.entry_files`.
+Any other value is the setup failure `convention-not-literal`. So is an object on the way to the property that is not written out, that spreads another object in, or that computes a key from anything but a literal. Write the value as a literal, or name the row in `ts.disabled_conventions` and its files in `ts.entry_files`.
 
 | Row            | Package                 | Versions           | What it roots                                                                                                                                                          |
 | -------------- | ----------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -70,7 +70,7 @@ Any other value is the setup failure `convention-not-literal`. So is an object o
 
 ## What an exemption holds back
 
-An exemption holds a declaration back from the report when something the compiler cannot follow uses it. `print-retained` lists every declaration an exemption held back, with its class, site and detail. Eight classes run on TypeScript:
+An exemption holds a declaration back from the report when something the compiler cannot follow uses it. `print-retained` lists every declaration an exemption held back, with its class, site and detail. Nine classes run on TypeScript:
 
 | Class                    | What it holds back                                                                                                                                                                                         |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -80,6 +80,7 @@ An exemption holds a declaration back from the report when something the compile
 | `injection-container`    | A decorated property of a class a dependency-injection container constructs: one passed to a call `ts.injection_registrations` names, or one with a decorated constructor parameter                        |
 | `framework-lifecycle`    | A member a `ts.lifecycle_contracts` entry lists, on a class the entry's decorator, call or base class makes a component                                                                                    |
 | `serialization-contract` | The properties of a class whose values reach `JSON.stringify` or a `ts.serializers` declaration, and its `toJSON` and `toString` when a value reaches an `unknown` or `any` parameter outside the analysis |
+| `generated-file`         | Every declaration in a file below a directory an applied convention row names as generated, such as `.nuxt` or `.svelte-kit`                                                                               |
 | `template-field`         | A member that an action of a template under `analysis.template_dirs`, or a live component file's markup, names                                                                                             |
 | `reflective-lookup`      | A member that a literal key of an element access, or of `Reflect.get`, `Reflect.set` or `Reflect.has`, names                                                                                               |
 
@@ -89,11 +90,11 @@ An exemption holds a declaration back from the report when something the compile
 
 A library's published API has callers outside the target. A scope document passed with `--scope` names the consumers loaded beside it, each a directory whose compiler configurations open in the same session. A reference from a consumer keeps a target declaration live, and the report names every consumer it loaded. A consumer that is absent or does not load ends the run with exit code 3.
 
-The published API is reported at confidence `certain` once every declared consumer loads, and `possible` when the scope declares none. In that second case the default `analysis.min_confidence`, `probable`, withholds those findings, and the visibility-narrowing kinds report only in files no manifest export reaches. Every other declaration has all its references in the loaded program and is `certain`.
+The published API is reported at confidence `certain` once every declared consumer loads, and `possible` when the scope declares none. In that second case the default `analysis.min_confidence`, `probable`, withholds those findings, and the visibility-narrowing kinds report only in files no manifest export reaches. Every other declaration has all its references in the loaded program and is `certain`, unless it is dead in a group with a published member, as the next section says.
 
 ## Groups that keep each other alive
 
-Declarations that reference only each other, with no path from a root, are dead together. The report counts each group as one component with its deletable lines. `reporters.cascade` decides whether a rendering lists only the group's root members or every member.
+Declarations that reference only each other, with no path from a root, are dead together. The report counts each group as one component with its deletable lines. `reporters.cascade` decides whether a rendering lists only the group's root members or every member. Every finding of a group carries the lowest confidence among the group's root members, so `analysis.min_confidence` reports or withholds a group whole.
 
 ## Explaining one declaration
 

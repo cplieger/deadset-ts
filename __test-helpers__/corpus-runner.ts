@@ -117,6 +117,14 @@ interface NoteExpectation {
   readonly path: string;
 }
 
+/** One convention row the report must list as applied. */
+interface ConventionExpectation {
+  readonly name: string;
+  readonly package: string;
+  readonly version: string;
+  readonly manifest: string;
+}
+
 /** The setup failure a fixture's run must end with. */
 interface SetupFailureExpectation {
   readonly class: string;
@@ -130,6 +138,7 @@ interface ExpectationFile {
   readonly min_confidence?: string;
   readonly type_error_skips?: readonly string[];
   readonly notes?: readonly NoteExpectation[];
+  readonly conventions_applied?: readonly ConventionExpectation[];
   readonly setup_failure?: SetupFailureExpectation;
   readonly consumers?: readonly string[];
   readonly closed_world?: readonly string[];
@@ -917,6 +926,26 @@ export function noteDifferences(
   return held.join("; ");
 }
 
+/**
+ * Every way the report's applied convention rows differ from the fixture's, in one line,
+ * or empty: the list is exhaustive, so a fixture that names none wants none.
+ */
+export function conventionDifferences(
+  file: Pick<ExpectationFile, "conventions_applied">,
+  report: Pick<Report, "conventions_applied">,
+): string {
+  const spell = (one: ConventionExpectation): string =>
+    `${one.name} (${one.package} ${one.version}, ${one.manifest})`;
+  const wanted = (file.conventions_applied ?? []).map(spell);
+  const listed = report.conventions_applied.map(spell);
+  return [
+    ...wanted.filter((one) => !listed.includes(one)).map((one) => `want the row ${one} applied`),
+    ...listed
+      .filter((one) => !wanted.includes(one))
+      .map((one) => `the row ${one} applied, which no entry names`),
+  ].join("; ");
+}
+
 /** Whether a declared gap covers one fixture-level capability of one fixture. */
 function gapCovers(gaps: readonly DeclaredGap[], fixtureName: string, capability: string): boolean {
   return gaps.some(
@@ -1120,10 +1149,14 @@ function answerFixture(
     const skips = gapCovers(gaps, name, TYPE_ERROR_SKIPS)
       ? ""
       : skipDifferences(file, manifest, first.report);
+    const rowsDeclined = (file.conventions_applied ?? []).some((one) =>
+      gapCovers(gaps, name, one.name),
+    );
     const edges = [
       edgeDifferences(file, manifest, first.report),
       skips,
       noteDifferences(file, first.report),
+      rowsDeclined ? "" : conventionDifferences(file, first.report),
     ]
       .filter((one) => one !== "")
       .join("; ");
@@ -1131,7 +1164,7 @@ function answerFixture(
     let result: Outcome = "pass";
     if (unexpected.length > 0 || edges !== "" || outcomes.includes("fail")) {
       result = "fail";
-    } else if (outcomes.includes("gap")) {
+    } else if (outcomes.includes("gap") || rowsDeclined) {
       result = "gap";
     }
     return {

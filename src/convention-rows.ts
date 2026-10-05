@@ -52,6 +52,8 @@ export interface ConventionRow {
   readonly entries: readonly string[];
   /** The globs of the files the row does not root, though an entry glob names them. */
   readonly excludes?: readonly string[];
+  /** The directories the framework generates, each of whose files is a generated file. */
+  readonly generated?: readonly string[];
   /** The directories configuration moves, in the order their placeholders depend on each other. */
   readonly moves: readonly DirectoryMove[];
 }
@@ -102,6 +104,7 @@ export const CONVENTION_ROWS: readonly ConventionRow[] = [
       `<src>/content/config.${MODULE}`,
     ],
     excludes: ["<src>/pages/**/_*", "<src>/pages/**/_*/**"],
+    generated: [".astro"],
     moves: [
       {
         id: "src",
@@ -128,6 +131,7 @@ export const CONVENTION_ROWS: readonly ConventionRow[] = [
     name: "next",
     package: "next",
     range: ">=13.4.0 <17.0.0",
+    generated: [".next"],
     entries: [
       `{,src/}app/**/{layout,page,loading,not-found,error,route,template,default,forbidden,unauthorized}.${SCRIPT}`,
       `{,src/}app/global-{error,not-found}.${SCRIPT}`,
@@ -144,6 +148,7 @@ export const CONVENTION_ROWS: readonly ConventionRow[] = [
     name: "nuxt",
     package: "nuxt",
     range: ">=3.0.0 <5.0.0",
+    generated: [".nuxt"],
     entries: [
       "<srcDir>/{app,error}.{vue,jsx,tsx}",
       `<srcDir>/app.config.${MODULE}`,
@@ -238,6 +243,7 @@ export const CONVENTION_ROWS: readonly ConventionRow[] = [
     package: "@react-router/dev",
     range: ">=7.0.0 <9.0.0",
     entries: APP_DIRECTORY_ENTRIES,
+    generated: [".react-router"],
     moves: [
       {
         id: "app",
@@ -316,6 +322,7 @@ export const CONVENTION_ROWS: readonly ConventionRow[] = [
     package: "@sveltejs/kit",
     range: ">=2.0.0 <3.0.0",
     entries: [...SVELTEKIT_ENTRIES, "<params>/*.{js,ts}"],
+    generated: [".svelte-kit"],
     moves: [
       {
         id: "src",
@@ -380,6 +387,7 @@ export const CONVENTION_ROWS: readonly ConventionRow[] = [
     package: "@sveltejs/kit",
     range: ">=3.0.0 <4.0.0",
     entries: [...SVELTEKIT_ENTRIES, "<params>.{js,ts}"],
+    generated: [".svelte-kit"],
     moves: [
       {
         id: "src",

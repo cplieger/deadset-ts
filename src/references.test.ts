@@ -83,6 +83,7 @@ describe("the reference table of every reference form", () => {
     ).toEqual([
       ["alias", 17],
       ["batch", 22],
+      ["contextual", 1],
       ["shorthand", 3],
     ]);
   });
@@ -116,11 +117,17 @@ describe("the reference table of every reference form", () => {
         "label names no declaration",
     ).toBe(0);
     expect(
+      [RESOLVED?.cost.contextualBatches, RESOLVED?.cost.contextualLookups],
+      "one batch of contextual types for the object literals, one of value types and one " +
+        "of the positions a value that may carry a member reaches, and one lookup per " +
+        "distinct type's constituents, properties, element type or call signature",
+    ).toEqual([3, 15]);
+    expect(
       EVERY_REFERENCE.referenceRequests,
       "the requests the client measured are the ones the pass accounts for: a declaration " +
         "outside the project's own files is never fetched to find out that the inventory " +
         "does not hold it",
-    ).toBe(4 + 0 + 4 + 11 + 2 + 2);
+    ).toBe(4 + 0 + 4 + 11 + 2 + 2 + 3 + 15);
   });
 
   it("records each decorator as a use of the declaration it is attached to, at the decorator", () => {
@@ -156,7 +163,9 @@ describe("the reference table of every reference form", () => {
         held.cost.shorthandLookups +
         held.cost.aliasSteps +
         held.cost.patternBatches +
-        held.cost.patternLookups,
+        held.cost.patternLookups +
+        held.cost.contextualBatches +
+        held.cost.contextualLookups,
       0,
     );
 

@@ -109,11 +109,11 @@ describe("component files, read through the compiler's content mapper", () => {
 
   it("reports only what no block, no live markup and no retained binding keeps, at the file's own positions", () => {
     expect(answered.findings).toEqual([
-      "DS1003 src/Crlf.vue:7:3-7 Row.unread",
-      "DS1003 src/Crlf.vue:8:3-8 Row.note",
+      "DS1301 src/Crlf.vue:7:3-7 Row.unread",
+      "DS1301 src/Crlf.vue:8:3-8 Row.note",
       "DS1502 src/Orphan.vue:1:1-4 src/Orphan.vue",
       "DS1002 src/Orphan.vue:3:7-3 lonely",
-      "DS1003 src/Wide.vue:2:56-2 Shape.side",
+      "DS1301 src/Wide.vue:2:56-2 Shape.side",
       "DS1001 src/helpers.ts:9:17-9 unusedHelper",
       "DS1302 src/level.ts:5:3-5 Level.Unused",
       "DS1302 src/level.ts:6:3-6 Level.HalfOnly",

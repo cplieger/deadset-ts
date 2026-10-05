@@ -142,6 +142,52 @@ function messageOf(code: string, judged: Judged): string {
   return `${subject} has no reference in the target`;
 }
 
+/**
+ * The members nothing writes or reads that are brands: each names a type parameter of
+ * its declaring type that no other part of the declaration names, other than another
+ * such member. They are what make two instantiations of the type distinct types, so
+ * deleting them would let one instantiation stand for another.
+ */
+function brandMembers(input: EmitterInput): ReadonlySet<string> {
+  const union = input.swept.matrix.union;
+  const unreferenced = new Map(
+    input.swept.sweep.candidates
+      .filter((candidate) => candidate.productionRefs + candidate.testRefs === 0)
+      .map((candidate) => [candidate.id, candidate]),
+  );
+  const namedBy = new Map<string, Set<string>>();
+  for (const reference of input.stores.references) {
+    const to = union.symbols[union.at(reference.to)];
+    if (to?.kind === "type-parameter") {
+      namedBy.set(to.id, (namedBy.get(to.id) ?? new Set()).add(reference.from));
+    }
+  }
+  const brands = new Set<string>();
+  for (const [parameter, from] of namedBy) {
+    const owner = union.symbols[union.at(parameter)]?.parent;
+    const members = [...from].map((id) => union.symbols[union.at(id)]);
+    if (
+      members.every(
+        (member) =>
+          member !== undefined &&
+          member.parent === owner &&
+          BRANDS.has(member.kind) &&
+          unreferenced.has(member.id),
+      )
+    ) {
+      for (const member of members) {
+        if (member !== undefined) {
+          brands.add(member.id);
+        }
+      }
+    }
+  }
+  return brands;
+}
+
+/** The kinds of member a brand is: a data member of a type or of a class. */
+const BRANDS: ReadonlySet<SymbolKind> = new Set(["type-member", "class-member"]);
+
 /** The findings of the unused-declarations family, `DS1000` to `DS1099`. */
 export const unusedDeclarations: Emitter = (input) => familyFindings(input, false);
 
@@ -157,6 +203,7 @@ function familyFindings(input: EmitterInput, fallen: boolean): Finding[] {
   const union = input.swept.matrix.union;
   const dead = new Set(input.swept.sweep.candidates.map((candidate) => candidate.id));
   const unreachable = unreachableExports(input);
+  let brands: ReadonlySet<string> | undefined;
 
   const found: Finding[] = [];
   for (const candidate of input.swept.sweep.candidates) {
@@ -179,7 +226,10 @@ function familyFindings(input: EmitterInput, fallen: boolean): Finding[] {
       unreachable: unreachable.has(symbol.id),
     };
     const code = codeOf(judged);
-    if (code === undefined) {
+    if (
+      code === undefined ||
+      (code === "DS1003" && (brands ??= brandMembers(input)).has(symbol.id))
+    ) {
       continue;
     }
     const endLine = Math.max(symbol.position.line, symbol.endLine);
