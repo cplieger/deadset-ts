@@ -90,7 +90,7 @@ A TypeScript caller that imports the source sets `allowImportingTsExtensions`, b
 
 ## Related projects
 
-deadset-ts implements the [deadset Contract](https://github.com/cplieger/deadset-spec), which fixes the issue codes, the report schema and the exit codes. It passes every fixture of the Contract's conformance corpus except one reflective-lookup fixture, the gap [`conformance.json`](conformance.json) declares.
+deadset-ts implements the [deadset Contract](https://github.com/cplieger/deadset-spec), which fixes the issue codes, the report schema and the exit codes. It passes every fixture of the Contract's conformance corpus.
 
 - [deadset-go](https://github.com/cplieger/deadset-go) is the same analysis for Go modules.
 - [deadset](https://github.com/cplieger/deadset) runs both analyzers as one command and merges their reports, resolving the edges between Go and TypeScript code.
