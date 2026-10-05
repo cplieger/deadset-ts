@@ -232,7 +232,8 @@ function unreachable(
  * The visibility-narrowing family over one run: `DS1101`, `DS1103` and `DS1104`. A finding
  * about a symbol a declared cross-language edge names is reported here like any other, and
  * the edge's evaluation then holds it pending, because the edge stands for a reference from
- * outside the file and the package whose use is decided in the other language.
+ * outside the file and the package whose use is decided in the other language. A
+ * declaration of a generated file is reported only where generated files are included.
  */
 export function narrowings(input: EmitterInput): readonly Finding[] {
   const facts = factsOf(input.swept.matrix.union);
@@ -242,9 +243,14 @@ export function narrowings(input: EmitterInput): readonly Finding[] {
   const candidates = new Map(
     input.swept.sweep.candidates.map((candidate) => [candidate.id, candidate]),
   );
+  const generated =
+    input.config.analysis.generatedFiles === "include" ? undefined : input.files.generated;
 
   const findings: Finding[] = [];
   facts.graph.symbols.forEach((symbol, at) => {
+    if (generated?.has(symbol.position.path) === true) {
+      return;
+    }
     const candidate = candidates.get(symbol.id);
     const found =
       candidate === undefined

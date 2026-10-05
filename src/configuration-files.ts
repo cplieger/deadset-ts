@@ -237,33 +237,36 @@ function relativeSpecifiers(file: SourceFile): readonly string[] {
 }
 
 /**
- * The module one relative specifier from a configuration file reaches: the path it names,
- * that path with its JavaScript extension replaced by the TypeScript counterparts, that
- * path with an extension appended, and a directory's `index` with one appended.
+ * The paths one relative specifier from a configuration file may reach, in the order they
+ * are tried: the path it names where that ends with a module extension, that path with its
+ * JavaScript extension replaced by the TypeScript counterparts, that path with an
+ * extension appended, and a directory's `index` with one appended. A data file such as
+ * `./package.json` is no module, so it is no candidate.
  */
-function reachedBy(host: Host, dir: string, specifier: string): string | undefined {
+export function specifierCandidates(dir: string, specifier: string): readonly string[] {
   const path = resolvePath(dir, specifier);
-  const isFile = (candidate: string): boolean => host.kindOf(candidate) === "file";
-  // A data file such as `./package.json` is no module, so its strings use no dependency.
-  if (isFile(path) && APPENDED.some((extension) => path.endsWith(extension))) {
-    return path;
+  const candidates: string[] = [];
+  if (APPENDED.some((extension) => path.endsWith(extension))) {
+    candidates.push(path);
   }
   for (const [extension, counterparts] of COUNTERPARTS) {
     if (path.endsWith(extension)) {
       const stem = path.slice(0, -extension.length);
-      const found = counterparts.map((one) => stem + one).find(isFile);
-      if (found !== undefined) {
-        return found;
-      }
+      candidates.push(...counterparts.map((one) => stem + one));
     }
   }
-  const appended = APPENDED.map((extension) => path + extension).find(isFile);
-  if (appended !== undefined) {
-    return appended;
-  }
-  return host.kindOf(path) === "directory"
-    ? APPENDED.map((extension) => joinPath(path, `index${extension}`)).find(isFile)
-    : undefined;
+  candidates.push(...APPENDED.map((extension) => path + extension));
+  candidates.push(...APPENDED.map((extension) => joinPath(path, `index${extension}`)));
+  return candidates;
+}
+
+/** The file on disk one relative specifier from a configuration file reaches, or undefined. */
+export function resolveRelativeSpecifier(
+  host: Host,
+  dir: string,
+  specifier: string,
+): string | undefined {
+  return specifierCandidates(dir, specifier).find((path) => host.kindOf(path) === "file");
 }
 
 /**
@@ -311,7 +314,7 @@ function outsideModules(
     const file = parse(next.path, text);
     found.push({ file, manifestDir: next.manifestDir });
     for (const specifier of relativeSpecifiers(file)) {
-      const reached = reachedBy(host, dirnamePath(next.path), specifier);
+      const reached = resolveRelativeSpecifier(host, dirnamePath(next.path), specifier);
       if (reached !== undefined) {
         pending.push({ path: reached, manifestDir: next.manifestDir });
       }
@@ -347,12 +350,13 @@ export function dependenciesNamed(text: string, declared: readonly string[]): re
 }
 
 /**
- * The own files one string names read against a directory: none unless it starts with
- * `./` or `../`, else the file it names directly or through the emit mapping, or the
- * file it names with an extension the module resolution appends.
+ * The own files one string names read against a directory: the file it names directly or
+ * through the emit mapping, or the file it names with an extension the module resolution
+ * appends. An empty string, one starting with `/` and one holding a glob character names
+ * none.
  */
 export function filesNamedBy(files: SourceFiles, dir: string, text: string): readonly SourceFile[] {
-  if (!RELATIVE_PREFIXES.some((prefix) => text.startsWith(prefix)) || text.includes("*")) {
+  if (text === "" || text.startsWith("/") || /[*?[{]/u.test(text)) {
     return [];
   }
   const path = resolvePath(dir, text);

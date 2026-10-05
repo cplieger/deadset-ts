@@ -128,7 +128,7 @@ describe("a string that names a dependency", () => {
 });
 
 describe("the configuration files of a project", () => {
-  it("root each configuration module and each own file a relative string of a configuration file names", () => {
+  it("root each configuration module and each own file a string of a configuration file names", () => {
     expect(FILE_ROOTS).toEqual([
       ".toolrc.cjs configuration-file .<stem>rc.<ext>",
       "src/bare.ts configuration-string ./src/bare",
@@ -140,6 +140,7 @@ describe("the configuration files of a project", () => {
       "src/rc-json.ts configuration-string ./src/rc-json.ts",
       "src/rc-module.ts configuration-string ./src/rc-module.ts",
       "src/template.ts configuration-string ./src/template.ts",
+      "src/unprefixed.ts configuration-string src/unprefixed.ts",
       "src/up.ts configuration-string ../src/up.ts",
       "sub/inner.config.ts configuration-file <stem>.config.<ext>",
       "tool.config.ts configuration-file <stem>.config.<ext>",
@@ -148,7 +149,6 @@ describe("the configuration files of a project", () => {
   });
 
   it.each([
-    ["src/unprefixed.ts", "a string with no leading ./ or ../"],
     ["src/pattern-one.ts", "a string holding a wildcard"],
     ["src/substituted.ts", "a template literal with a substitution"],
     ["src/no-manifest.ts", "a string of a configuration name in a directory with no manifest"],

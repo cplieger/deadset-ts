@@ -12,8 +12,11 @@ import {
   isForInStatement,
   isForOfStatement,
   isForStatement,
+  isIdentifier,
   isImportDeclaration,
   isImportEqualsDeclaration,
+  isMetaProperty,
+  isNewExpression,
   isNamespaceExport,
   isNoSubstitutionTemplateLiteral,
   isObjectLiteralExpression,
@@ -35,6 +38,8 @@ import type { Symbol as TSSymbol } from "@typescript/native/unstable/sync";
 import { aliasChains, type ChainTarget } from "./alias-chain.ts";
 import { contextualUses, type FlowAt, type LiteralAt } from "./contextual-uses.ts";
 import { destructuring, propertyReadsOf, type PropertyRead } from "./destructuring.ts";
+import { specifierCandidates } from "./configuration-files.ts";
+import { namespaceUses } from "./namespace-objects.ts";
 import { globExpression } from "./glob.ts";
 import { declarationsByName, nodeKey, type Inventory, type InventorySymbol } from "./inventory.ts";
 import { overrideReferences } from "./overrides.ts";
@@ -424,6 +429,27 @@ interface Evaluation {
   readonly from: string;
 }
 
+/**
+ * One module URL a source file builds: `new URL(<literal>, import.meta.url)` or
+ * `import.meta.resolve(<literal>)`, the literal relative. A runtime starts the file it
+ * names as a module, so it is an import of that file for its effects.
+ */
+interface ModuleURL {
+  readonly specifier: string;
+  /** The `URL` the constructor names, which must name no declaration of the target. */
+  readonly constructor: Node | undefined;
+  readonly at: Node;
+}
+
+/** One use of a module namespace object that may read every export of the module. */
+interface WholeRead {
+  /** The module specifier, whose symbol is the module read. */
+  readonly specifier: Node;
+  /** The use, whose position the reference carries. */
+  readonly at: Node;
+  readonly from: string;
+}
+
 /** One decorator expression, and the declaration it is attached to. */
 interface Decorated {
   readonly decorator: Node;
@@ -443,7 +469,53 @@ interface FileSites {
   readonly reads: readonly Read[];
   readonly links: readonly Link[];
   readonly evaluations: readonly Evaluation[];
+  readonly wholes: readonly WholeRead[];
+  readonly urls: readonly ModuleURL[];
   readonly decorated: readonly Decorated[];
+}
+
+/** Whether one node is `import.meta.url`. */
+function isImportMetaURL(node: Node): boolean {
+  const at = unparenthesized(node);
+  return (
+    isPropertyAccessExpression(at) &&
+    isMetaProperty(at.expression) &&
+    at.expression.keywordToken === SyntaxKind.ImportKeyword &&
+    at.name.text === "url"
+  );
+}
+
+/** The module URL one node builds, where it builds one. */
+function moduleURLOf(node: Node): ModuleURL | undefined {
+  const relative = (argument: Node | undefined): string | undefined => {
+    const at = argument === undefined ? undefined : unparenthesized(argument);
+    return at !== undefined &&
+      (isStringLiteral(at) || isNoSubstitutionTemplateLiteral(at)) &&
+      /^\.\.?\//u.test(at.text)
+      ? at.text
+      : undefined;
+  };
+  if (isNewExpression(node) && isIdentifier(node.expression) && node.expression.text === "URL") {
+    const [reference, base] = node.arguments ?? [];
+    const specifier = relative(reference);
+    return specifier !== undefined && base !== undefined && isImportMetaURL(base)
+      ? { specifier, constructor: node.expression, at: node }
+      : undefined;
+  }
+  if (isCallExpression(node)) {
+    const callee = unparenthesized(node.expression);
+    const specifier = relative(node.arguments[0]);
+    if (
+      specifier !== undefined &&
+      isPropertyAccessExpression(callee) &&
+      isMetaProperty(callee.expression) &&
+      callee.expression.keywordToken === SyntaxKind.ImportKeyword &&
+      callee.name.text === "resolve"
+    ) {
+      return { specifier, constructor: undefined, at: node };
+    }
+  }
+  return undefined;
 }
 
 /** Whether one node is a string literal or a template literal with no substitution. */
@@ -584,7 +656,10 @@ function sitesOf(
   const reads: Read[] = [];
   const links: Link[] = [];
   const evaluations: Evaluation[] = [];
+  const wholes: WholeRead[] = [];
+  const urls: ModuleURL[] = [];
   const decorated: Decorated[] = [];
+  const namespaces = namespaceUses(file);
   const literals: LiteralAt[] = [];
   const flows: FlowAt[] = [];
   const writes = new Set<number>();
@@ -615,6 +690,12 @@ function sitesOf(
     if (unread.has(node)) {
       return;
     }
+    const namespace = namespaces.get(node);
+    if (namespace?.kind === "whole") {
+      wholes.push({ specifier: namespace.specifier, at: node, from: enclosing });
+    } else if (namespace?.kind === "indexed") {
+      found.push({ node: namespace.literal, shorthand: undefined, from: enclosing, use: "read" });
+    }
     if (isName(node)) {
       if (!declared.has(node.pos)) {
         const site = { node, shorthand: shorthands.get(node.pos), from: enclosing };
@@ -644,6 +725,10 @@ function sitesOf(
     if (evaluated !== undefined) {
       evaluations.push({ node: evaluated, from: enclosing });
     }
+    const url = moduleURLOf(node);
+    if (url !== undefined) {
+      urls.push(url);
+    }
     const held = declarations.get(nodeKey(file, node));
     const outer = enclosing;
     if (held !== undefined) {
@@ -659,7 +744,7 @@ function sitesOf(
   };
 
   file.forEachChild(visit);
-  return { uses: found, literals, flows, reads, links, evaluations, decorated };
+  return { uses: found, literals, flows, reads, links, evaluations, wholes, urls, decorated };
 }
 
 /** The declaration kinds of a property an object literal declares. */
@@ -922,6 +1007,36 @@ export function references<Brand>(
     return topLevel.get(fileId) ?? [];
   };
 
+  const exportsCache = new Map<number, readonly ChainTarget[]>();
+  /**
+   * Every declaration one module exports, each re-export walked along its chain. A module
+   * the checker left unanswered may be any file, so it reads every file's exports.
+   */
+  const exportsRead = (module: Answer<TSSymbol>): readonly ChainTarget[] => {
+    if (module === UNANSWERED) {
+      return [...fileIds].flatMap((id) =>
+        declaredIn(id)
+          .filter((symbol) => symbol.exported)
+          .map((symbol) => ({ id: symbol.id, stepped: false, guessed: true })),
+      );
+    }
+    const known = exportsCache.get(module.id);
+    if (known !== undefined) {
+      return known;
+    }
+    const table = project.queries.exportsOfModule(module);
+    const read =
+      table === UNANSWERED
+        ? chains.declarationsOf(module).flatMap((id) =>
+            declaredIn(id)
+              .filter((symbol) => symbol.exported)
+              .map((symbol) => ({ id: symbol.id, stepped: false, guessed: true })),
+          )
+        : table.flatMap((exported) => chains.chainOf(exported));
+    exportsCache.set(module.id, read);
+    return read;
+  };
+
   /** The identifier of the declaration one node of this program is, where it is one. */
   const declaredAt = (node: Node): string | undefined =>
     declarations.get(nodeKey(node.getSourceFile(), node));
@@ -1022,7 +1137,7 @@ export function references<Brand>(
     const fileId = declaredAt(file) ?? "";
     return { file, fileId, ...sitesOf(file, declarations, fileId, unread) };
   });
-  const fileIdByName = new Map(
+  const fileIdByName = new Map<string, string>(
     walked.filter((one) => fileIds.has(one.fileId)).map((one) => [one.file.fileName, one.fileId]),
   );
   const contextual = contextualUses(
@@ -1112,7 +1227,7 @@ export function references<Brand>(
     }
   }
 
-  for (const { file, fileId, uses, reads, links, evaluations, decorated } of walked) {
+  for (const { file, fileId, uses, reads, links, evaluations, wholes, urls, decorated } of walked) {
     const test = testFile.get(file) === true;
     // A component file's markup may use any binding its blocks declare at the top level.
     const markup = isComponentFile(file);
@@ -1142,6 +1257,8 @@ export function references<Brand>(
         ...uses.filter((site) => site.shorthand === undefined).map((site) => site.node),
         ...links.map((link) => link.node),
         ...evaluations.map((evaluation) => evaluation.node),
+        ...wholes.map((whole) => whole.specifier),
+        ...urls.flatMap((url) => url.constructor ?? []),
         ...bindings.map((binding) => binding.node),
       ]),
     ];
@@ -1214,6 +1331,47 @@ export function references<Brand>(
             test,
           });
         }
+      }
+    }
+
+    for (const url of urls) {
+      const constructor = url.constructor === undefined ? undefined : answered.get(url.constructor);
+      if (
+        typeof constructor === "object" &&
+        constructor.declarations.some((handle) => ownPaths.has(handle.path))
+      ) {
+        continue;
+      }
+      const loaded = specifierCandidates(dirnamePath(file.fileName), url.specifier)
+        .map((path) => fileIdByName.get(path))
+        .find((id) => id !== undefined);
+      if (loaded !== undefined) {
+        found.push({
+          from: fileId,
+          to: loaded,
+          position: renderPosition(file, root, url.at.getStart()),
+          use: "evaluation",
+          resolution: "syntax",
+          test,
+        });
+      }
+    }
+
+    for (const whole of wholes) {
+      const module = answered.get(whole.specifier);
+      if (module === undefined) {
+        continue;
+      }
+      const position = renderPosition(file, root, whole.at.getStart());
+      for (const target of exportsRead(module)) {
+        found.push({
+          from: whole.from,
+          to: target.id,
+          position,
+          use: "read",
+          resolution: target.guessed ? "by-name" : "batch",
+          test,
+        });
       }
     }
 

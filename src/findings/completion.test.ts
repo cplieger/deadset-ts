@@ -63,7 +63,7 @@ describe("the placement of every family's findings in their components", () => {
       const input = emitterInputOf(root, configOf(root));
       const rows = findingsOf(input).filter((finding) => finding.code === "DS1601");
 
-      expect(input.swept.sweep.components).toHaveLength(2);
+      expect(input.swept.sweep.components).toHaveLength(1);
       expect(placements(rows)).toEqual([
         "DS1601 unused-runtime deadset-ts/c-0003 root 1 0",
         "DS1601 @types/bundled deadset-ts/c-0004 root 1 0",

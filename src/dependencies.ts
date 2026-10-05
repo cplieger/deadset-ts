@@ -61,6 +61,15 @@ export interface DeclaredDependency {
   readonly position: FindingPosition;
 }
 
+/** What a configuration's own reading needs: packages no deletion of a declaration removes. */
+export function configurationNeeds(packages: readonly string[]): ProjectNeeds {
+  return {
+    packages: new Set(packages),
+    uses: new Map([[PROJECT_OWNER, new Set(packages)]]),
+    unanswered: false,
+  };
+}
+
 /** What the installed copy of one declared dependency states about itself. */
 export interface InstalledDependency {
   /** Whether its manifest declares a command. */

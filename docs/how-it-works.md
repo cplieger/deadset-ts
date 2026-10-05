@@ -32,15 +32,16 @@ The same tree always gives the same report, and the analysis keeps no cache betw
 
 A root is a declaration the analysis keeps live without a reference. `print-roots` lists each one with the rule that made it a root. The roots are:
 
-- What a file exports when the target's manifest, or another workspace package's manifest, names it through `main`, `module`, `types`, `bin` or `exports`, or when `ts.entry_files` matches it. A `package.json` in a directory between the target and one of its compiler configurations counts here too.
+- What a file exports when the target's manifest, or another workspace package's manifest, names it through `main`, `module`, `types`, `bin` or `exports`, or when `ts.entry_files` matches it. A `package.json` in a directory between the target and one of its compiler configurations counts here too. A build output it names, such as `dist/cli/main.js`, is read back to the rooted source file of the same name.
 - A library target's published API
 - What a file exports when an applied convention row names it, such as a Next.js page, a SvelteKit route or a Storybook story
 - A configuration file beside a `package.json` whose name is `<stem>.config.<ext>`, `<stem>.<qualifier>.config.<ext>` or `.<stem>rc.<ext>`
-- A file that a string starting with `./` or `../` names, in such a configuration file or in its JSON form, like `<stem>.config.json` or `.<stem>rc`
+- A file that a string names, read against the directory of such a configuration file or of its JSON form, like `<stem>.config.json` or `.<stem>rc`. A string that starts with `/` or holds a glob character names no file.
 - A file that a token of a `package.json` script names, such as `node ./scripts/seed.ts`
 - The test files, Vitest's workspace configuration and the setup files it names, Stryker's `stryker.conf.*`, `.stryker.conf.*` and `.stryker.config.*` files, and the test files in Playwright's test directory
 - A global that a declaration file declares as `typeof import("<module>")["<name>"]`, which stands for that export, so using the global uses the export
-- A worker or service worker that a call addresses by a string literal
+- A worker or service worker that a call addresses by a string literal. A module URL, `new URL("./x.ts", import.meta.url)` or `import.meta.resolve("./x.ts")`, imports its file for its effects.
+- A file that a module script of an HTML file below the target loads, through its `src` attribute or an import in its inline content
 - Every declaration a `roots.patterns` entry names
 
 A string in such a configuration file that spells a dependency its `package.json` declares, alone or followed by a subpath, keeps that dependency from `DS1601`. So does a string in a module such a configuration file imports by a relative specifier. A data file it imports, such as `./package.json`, is not read for strings. Both kinds of module are read whether or not a compiler configuration includes the file.
@@ -80,7 +81,7 @@ An exemption holds a declaration back from the report when something the compile
 | `injection-container`    | A decorated property of a class a dependency-injection container constructs: one passed to a call `ts.injection_registrations` names, or one with a decorated constructor parameter                        |
 | `framework-lifecycle`    | A member a `ts.lifecycle_contracts` entry lists, on a class the entry's decorator, call or base class makes a component                                                                                    |
 | `serialization-contract` | The properties of a class whose values reach `JSON.stringify` or a `ts.serializers` declaration, and its `toJSON` and `toString` when a value reaches an `unknown` or `any` parameter outside the analysis |
-| `generated-file`         | Every declaration in a file below a directory an applied convention row names as generated, such as `.nuxt` or `.svelte-kit`                                                                               |
+| `generated-file`         | Every declaration in a file marked `@generated` or `Code generated ... DO NOT EDIT.`, or below a directory an applied convention row names as generated                                                    |
 | `template-field`         | A member that an action of a template under `analysis.template_dirs`, or a live component file's markup, names                                                                                             |
 | `reflective-lookup`      | A member that a literal key of an element access, or of `Reflect.get`, `Reflect.set` or `Reflect.has`, names                                                                                               |
 
@@ -90,7 +91,7 @@ An exemption holds a declaration back from the report when something the compile
 
 A library's published API has callers outside the target. A scope document passed with `--scope` names the consumers loaded beside it, each a directory whose compiler configurations open in the same session. A reference from a consumer keeps a target declaration live, and the report names every consumer it loaded. A consumer that is absent or does not load ends the run with exit code 3.
 
-The published API is reported at confidence `certain` once every declared consumer loads, and `possible` when the scope declares none. In that second case the default `analysis.min_confidence`, `probable`, withholds those findings, and the visibility-narrowing kinds report only in files no manifest export reaches. Every other declaration has all its references in the loaded program and is `certain`, unless it is dead in a group with a published member, as the next section says.
+The published API is reported at confidence `certain` once every declared consumer loads, and `possible` when the scope declares none. In that second case the default `analysis.min_confidence`, `probable`, withholds those findings, and the visibility-narrowing kinds report only in files no manifest export reaches. Every other declaration is `certain`, unless it is dead in a group with a published member, as the next section says, or only tests reach it. A declaration only tests reach, such as a test helper, is `possible` while a test references it, and `certain` when nothing does. The default withholds those `possible` findings too.
 
 ## Groups that keep each other alive
 

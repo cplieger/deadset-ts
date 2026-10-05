@@ -92,6 +92,14 @@ function claims(report: Record<string, unknown> | undefined): string[] {
   return findings.map((one) => `${one.code} ${one.symbol.name} ${one.confidence}`);
 }
 
+/** A library member the target writes, a consumer's test file writes, and nothing reads. */
+const WRITTEN_IN_A_CONSUMER_TEST: Readonly<Record<string, string>> = {
+  "target/lib.ts":
+    "export class Settings {\n  level = 0;\n}\n\nexport function make(): Settings {\n  const made = new Settings();\n  made.level = 1;\n  return made;\n}\n",
+  "consumer/main.ts": 'import { make } from "../target/lib.js";\n\nconsole.log(make());\n',
+  "consumer/lib.test.ts": 'import { make } from "../target/lib.js";\n\nmake().level = 3;\n',
+};
+
 describe("a consumer the scope declares", () => {
   it(
     "keeps the export it references live and classes the one nothing references certain",
@@ -151,7 +159,7 @@ describe("a consumer the scope declares", () => {
   );
 
   it(
-    "keeps the file whose namespace it reads, and reaches on through what that module exports",
+    "reads every export of a module whose namespace it hands on, and reaches on through them",
     () => {
       const root = workspace({
         "target/lib.ts": "export const version = 1;\n",
@@ -161,9 +169,22 @@ describe("a consumer the scope declares", () => {
           'import { version } from "../target/lib.js";\nimport * as extra from "../target/extra.js";\n\nconsole.log(version, extra);\n',
       });
 
-      // A namespace read references no export by name, so the export itself counts no
-      // reference, as a namespace read inside the target counts none.
-      expect(claims(analyze(root).report)).toEqual(["DS1001 entry certain"]);
+      expect(claims(analyze(root).report)).toEqual([]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "reads only the export a namespace it holds is read for",
+    () => {
+      const root = workspace({
+        "target/lib.ts": "export const version = 1;\n",
+        "target/extra.ts": "export const read = 1;\n\nexport const unread = 2;\n",
+        "consumer/main.ts":
+          'import { version } from "../target/lib.js";\nimport * as extra from "../target/extra.js";\n\nconsole.log(version, extra.read);\n',
+      });
+
+      expect(claims(analyze(root).report)).toEqual(["DS1001 unread certain"]);
     },
     LOAD_TIMEOUT,
   );
@@ -233,6 +254,30 @@ describe("a consumer the scope declares", () => {
         "target/lib.ts": "export class Settings {\n  level?: number;\n}\n",
         "consumer/main.ts":
           'import { Settings } from "../target/lib.js";\n\nnew Settings().level = 3;\n',
+      });
+
+      expect(claims(analyze(root).report)).toEqual([]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "counts no write from its test file in a production sweep, so a member only the target also writes is write-only",
+    () => {
+      const root = workspace(WRITTEN_IN_A_CONSUMER_TEST);
+
+      expect(claims(analyze(root).report)).toEqual(["DS1301 Settings.level certain"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "counts a write from its test file as a read where the configuration counts its tests as production",
+    () => {
+      const root = workspace({
+        ...WRITTEN_IN_A_CONSUMER_TEST,
+        "target/deadset.json":
+          '{ "target": { "kind": "library" }, "analysis": { "consumer_tests": "production" } }\n',
       });
 
       expect(claims(analyze(root).report)).toEqual([]);

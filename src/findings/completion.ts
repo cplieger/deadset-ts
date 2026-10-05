@@ -55,16 +55,19 @@ function publishedIds(union: Graph): ReadonlySet<string> {
 
 /**
  * The reachability class of one declaration of the run. A declaration of a library's
- * published API, a public member of a published type included, has callers outside the
- * target: it is `certain` where the run loaded every consumer the scope declared and
- * declared at least one, `probable` where it declared consumers and did not load them
- * all, and `possible` where it declared none. Whether the configuration declares the
- * consumer set complete decides nothing here. Every other declaration has every reference
- * in the loaded program, a private member and a `#private` name among them, and is
- * `certain`.
+ * published API, a public member of a published type included, is `certain` where the
+ * run loaded every consumer the scope declared and declared one, `probable` where one did
+ * not load, and `possible` where it declared none, whatever the configuration says of the
+ * consumer set. A declaration of test-support code that test code references, outside the
+ * test-of-dead-code rule, is `possible`. Every other declaration is `certain`.
  */
 function reachabilityClasses(input: EmitterInput): (id: string) => Confidence {
   const published = publishedIds(input.swept.matrix.union);
+  const usedByTests = new Set(
+    input.swept.sweep.candidates
+      .filter((candidate) => candidate.heldByTests === candidate.id)
+      .map((candidate) => candidate.id),
+  );
   const { declared } = input.boundary.consumers;
   const outside: Confidence =
     declared.length === 0
@@ -72,7 +75,12 @@ function reachabilityClasses(input: EmitterInput): (id: string) => Confidence {
       : everyDeclaredLoaded(input.boundary)
         ? "certain"
         : "probable";
-  return (id) => (published.has(id) ? outside : "certain");
+  return (id) => {
+    if (usedByTests.has(id)) {
+      return "possible";
+    }
+    return published.has(id) ? outside : "certain";
+  };
 }
 
 /**
@@ -147,6 +155,12 @@ export function completed(
   const componentOf = findingComponents(swept, input.config.reporters.cascade);
   let minted = swept.sweep.components.length;
   const dead = new Set(swept.sweep.components.map((component) => component.id));
+  const fallingWith = new Map<string, number>();
+  for (const { heldByTests } of swept.sweep.candidates) {
+    if (heldByTests !== undefined) {
+      fallingWith.set(heldByTests, (fallingWith.get(heldByTests) ?? 0) + 1);
+    }
+  }
 
   const done = findings.map((finding): CompletedFinding => {
     const row = kinds.get(finding.code);
@@ -165,8 +179,14 @@ export function completed(
     const judged = !part && union.subject[at] === true ? symbol : undefined;
     const candidate = judged === undefined ? undefined : candidates.get(judged.id);
     const found = symbol === undefined || part ? undefined : componentOf(symbol.id);
-    // A test file's declaration is a component member only as a test of dead code.
-    if (candidate !== undefined && found === undefined && union.test[at] !== true) {
+    // A test file's declaration is a component member only as a test of dead code, and
+    // test code keeps the test-support code it references out of every component.
+    if (
+      candidate !== undefined &&
+      found === undefined &&
+      union.test[at] !== true &&
+      candidate.heldByTests === undefined
+    ) {
       throw new Error(`${candidate.id} is judged dead and falls in no dead component`);
     }
     let component = found;
@@ -175,7 +195,7 @@ export function completed(
       component = {
         id: componentId(minted),
         root: true,
-        symbolCount: 1,
+        symbolCount: symbol?.kind === "interface" ? (fallingWith.get(symbol.id) ?? 1) : 1,
         deletableLines: 0,
       };
     }

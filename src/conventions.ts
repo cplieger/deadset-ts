@@ -7,6 +7,7 @@
  */
 
 import {
+  isArrayLiteralExpression,
   isAsExpression,
   isBinaryExpression,
   isCallExpression,
@@ -50,6 +51,7 @@ import {
   type ConventionRow,
   type DirectoryMove,
   type OptionsCall,
+  type ShortNameReading,
 } from "./convention-rows.ts";
 import { globExpression } from "./glob.ts";
 import type { Host } from "./host.ts";
@@ -106,6 +108,8 @@ export interface Conventions {
   readonly globs: readonly ConventionGlob[];
   readonly generated: readonly GeneratedDirectory[];
   readonly failures: readonly ConventionFailure[];
+  /** The dependencies the applied rows' short names use, by name, each once. */
+  readonly uses: readonly string[];
 }
 
 /** One file a row roots. */
@@ -445,6 +449,28 @@ function objectOf(
   return at;
 }
 
+/** The text of a string literal or a template literal with no substitution, or undefined. */
+function literalText(node: Node): string | undefined {
+  const at = unwrapped(node);
+  return isStringLiteral(at) || isNoSubstitutionTemplateLiteral(at) ? at.text : undefined;
+}
+
+/**
+ * The literal texts one value at a path's end writes: the literal itself, or, where
+ * `elements`, each element of an array literal of literals. Undefined for any other value.
+ */
+function literalTexts(held: Node, elements: boolean): readonly string[] | undefined {
+  const one = literalText(held);
+  if (one !== undefined) {
+    return [one];
+  }
+  if (!elements || !isArrayLiteralExpression(held)) {
+    return undefined;
+  }
+  const texts = held.elements.map(literalText);
+  return texts.every((text) => text !== undefined) ? texts : undefined;
+}
+
 /**
  * Reads the values at one path of keys below one object literal into `values`, and
  * answers the first member that does not write its value out: a spread, a value that is
@@ -454,6 +480,7 @@ function readPath(
   object: ObjectLiteralExpression,
   keys: readonly string[],
   values: string[],
+  elements: boolean,
 ): Node | undefined {
   const [key, ...rest] = keys;
   for (const member of object.properties) {
@@ -465,15 +492,16 @@ function readPath(
     }
     const held = isPropertyAssignment(member) ? unwrapped(member.initializer) : undefined;
     if (rest.length === 0) {
-      if (held === undefined || !(isStringLiteral(held) || isNoSubstitutionTemplateLiteral(held))) {
+      const texts = held === undefined ? undefined : literalTexts(held, elements);
+      if (texts === undefined) {
         return member;
       }
-      values.push(held.text);
+      values.push(...texts);
     } else {
       if (held === undefined || !isObjectLiteralExpression(held)) {
         return member;
       }
-      const failed = readPath(held, rest, values);
+      const failed = readPath(held, rest, values, elements);
       if (failed !== undefined) {
         return failed;
       }
@@ -493,14 +521,16 @@ interface PropertyReading {
 /**
  * Every value one file writes at one property's path inside the object it is read from:
  * the options argument of every call `call` names, or the file's default export. A string
- * literal or a template literal with no substitution is the value. A read object, or an
- * object along the path, that is not written out as an object literal, or that spreads
- * another object into itself, is not a literal, and neither is any other value at the path.
+ * literal or a template literal with no substitution is the value, and so is each element
+ * of an array literal of them where `elements`. A read object, or an object along the
+ * path, that is not written out as an object literal, or that spreads another object into
+ * itself, is not a literal, and neither is any other value at the path.
  */
 export function readProperty(
   file: SourceFile,
   property: string,
   call?: OptionsCall,
+  elements = false,
 ): PropertyReading {
   const declared = declaredValues(file);
   const objects =
@@ -515,7 +545,7 @@ export function readProperty(
       continue;
     }
     const notLiteral = isObjectLiteralExpression(object)
-      ? readPath(object, property.split("."), values)
+      ? readPath(object, property.split("."), values, elements)
       : object;
     if (notLiteral !== undefined) {
       return { values, notLiteral };
@@ -585,29 +615,19 @@ function resolveMove(
 ): MoveResult {
   const set: string[] = [];
   for (const reading of move.readings) {
-    for (const glob of reading.files) {
-      for (const name of configurationFiles(host, dir, glob)) {
-        const path = joinPath(dir, name);
-        let text: string;
-        try {
-          text = host.readFile(path);
-        } catch {
-          continue;
-        }
-        const file = parse(path, text);
-        const read = readProperty(file, reading.property, reading.call);
-        if (read.notLiteral !== undefined) {
-          const line = lineOf(text, read.notLiteral.getStart());
-          return {
-            failure:
-              `${name}:${String(line)} sets ${reading.property}, which moves a directory ` +
-              `the convention row ${row.name} reads, to a value that is not a string literal: ` +
-              `write it as a literal, or name ${row.name} in ts.disabled_conventions and its ` +
-              `files in ts.entry_files`,
-          };
-        }
-        set.push(...read.values);
+    for (const { name, text, file } of readingFiles(host, parse, dir, reading.files)) {
+      const read = readProperty(file, reading.property, reading.call);
+      if (read.notLiteral !== undefined) {
+        const line = lineOf(text, read.notLiteral.getStart());
+        return {
+          failure:
+            `${name}:${String(line)} sets ${reading.property}, which moves a directory ` +
+            `the convention row ${row.name} reads, to a value that is not a string literal: ` +
+            `write it as a literal, or name ${row.name} in ts.disabled_conventions and its ` +
+            `files in ts.entry_files`,
+        };
       }
+      set.push(...read.values);
     }
   }
   const dirs: (string | undefined)[] = [];
@@ -619,6 +639,71 @@ function resolveMove(
     }
   }
   return { dirs: [...new Set(dirs)] };
+}
+
+/** The texts each configuration file a reading names holds, parsed, in name order. */
+function readingFiles(
+  host: Host,
+  parse: ParseSource,
+  dir: string,
+  files: readonly string[],
+): readonly { readonly name: string; readonly text: string; readonly file: SourceFile }[] {
+  const found = [];
+  for (const glob of files) {
+    for (const name of configurationFiles(host, dir, glob)) {
+      const path = joinPath(dir, name);
+      let text: string;
+      try {
+        text = host.readFile(path);
+      } catch {
+        continue;
+      }
+      found.push({ name, text, file: parse(path, text) });
+    }
+  }
+  return found;
+}
+
+/**
+ * The dependencies one manifest declares that an applied row's short names use: the
+ * package each literal value stands for, and, for a value that is not a literal, every
+ * declared dependency the row's package name stands for with some value.
+ */
+function shortNameUses(
+  host: Host,
+  parse: ParseSource,
+  dir: string,
+  manifest: unknown,
+  readings: readonly ShortNameReading[],
+): readonly string[] {
+  const declared = new Set(
+    DEPENDENCY_SECTIONS.flatMap((section) => {
+      const held = isRecord(manifest) ? manifest[section] : undefined;
+      return isRecord(held) ? Object.keys(held) : [];
+    }),
+  );
+  const used = new Set<string>();
+  for (const reading of readings) {
+    const [before = "", after = ""] = reading.package.split("{}");
+    for (const { file } of readingFiles(host, parse, dir, reading.files)) {
+      const read = readProperty(file, reading.property, reading.call, true);
+      for (const value of read.values) {
+        used.add(`${before}${value}${after}`);
+      }
+      if (read.notLiteral !== undefined) {
+        for (const name of declared) {
+          if (
+            name.length >= before.length + after.length &&
+            name.startsWith(before) &&
+            name.endsWith(after)
+          ) {
+            used.add(name);
+          }
+        }
+      }
+    }
+  }
+  return [...used].filter((name) => declared.has(name)).sort(compare);
 }
 
 /** Two strings ordered bytewise. */
@@ -644,6 +729,7 @@ export function readConventions(
   const globs: ConventionGlob[] = [];
   const generated: GeneratedDirectory[] = [];
   const failures: ConventionFailure[] = [];
+  const uses = new Set<string>();
   for (const manifest of manifests) {
     const declared = readJSON(host, joinPath(manifest.dir, "package.json"));
     const versions = new Map<string, string | undefined>();
@@ -702,6 +788,9 @@ export function readConventions(
         version,
         manifest: manifest.path,
       });
+      for (const name of shortNameUses(host, parse, manifest.dir, declared, row.shortNames ?? [])) {
+        uses.add(name);
+      }
       const excludes = [
         ...new Set((row.excludes ?? []).flatMap((one) => expand(one, resolved))),
       ].map(globExpression);
@@ -725,7 +814,7 @@ export function readConventions(
       compare(a.manifest, b.manifest) ||
       compare(JSON.stringify(a), JSON.stringify(b)),
   );
-  return { applied: unique, globs, generated, failures };
+  return { applied: unique, globs, generated, failures, uses: [...uses].sort(compare) };
 }
 
 /**

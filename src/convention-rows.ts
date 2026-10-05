@@ -25,6 +25,12 @@ interface MoveReading {
   readonly call?: OptionsCall;
 }
 
+/** One configuration property whose value names a package by a short name. */
+export interface ShortNameReading extends MoveReading {
+  /** The package name a value stands for, written with `{}` where the value goes. */
+  readonly package: string;
+}
+
 /** One directory a row's globs name that a configuration property moves. */
 export interface DirectoryMove {
   /** The placeholder the row's globs and later moves write as `<id>`. */
@@ -56,6 +62,8 @@ export interface ConventionRow {
   readonly generated?: readonly string[];
   /** The directories configuration moves, in the order their placeholders depend on each other. */
   readonly moves: readonly DirectoryMove[];
+  /** The properties that name a package the configuration uses by a short name. */
+  readonly shortNames?: readonly ShortNameReading[];
 }
 
 const SCRIPT = "{js,jsx,ts,tsx}";
@@ -444,5 +452,12 @@ export const CONVENTION_ROWS: readonly ConventionRow[] = [
       `**/{vitest,vite}.*.config.${ANY_MODULE}`,
     ],
     moves: [],
+    shortNames: [
+      {
+        property: "test.coverage.provider",
+        files: [`{vitest,vite}.config.${ANY_MODULE}`],
+        package: "@vitest/coverage-{}",
+      },
+    ],
   },
 ];

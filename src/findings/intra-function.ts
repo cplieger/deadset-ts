@@ -1,6 +1,7 @@
 import type { Finding } from "../finding.ts";
 import { KINDS } from "../kinds.ts";
 import { UNUSED_PARAMETER, UNUSED_RESULT, type PartFact } from "../intra-function-parts.ts";
+import { reachedWithTheTests } from "../sweep.ts";
 import type { Emitter, EmitterInput } from "./emitter.ts";
 
 /** A list of rules as a sentence names them. */
@@ -51,12 +52,25 @@ function reported(
 /**
  * The findings of the intra-function family, `DS1800` to `DS1899`, each about a part of
  * the declaration its reference names, at the part's own position, whatever the sweep
- * decided about that declaration. Each message names the other rules that report the
- * kind, as the vocabulary lists them, and so does the finding's details.
+ * decided about a production declaration. A part of test code is reported only where the
+ * run that counts test references reaches its declaration and that is no test of dead
+ * code. Each message and the finding's details name the other rules that report the kind.
  */
 export const intraFunction: Emitter = (input) => {
   const union = input.swept.matrix.union;
   const byId = new Map(union.symbols.map((symbol) => [symbol.id, symbol]));
+  const reached = reachedWithTheTests(union, [
+    ...input.swept.exempt.map((record) => record.id),
+    ...input.swept.heldByUnanswered,
+  ]);
+  const testsOfDeadCode = new Set(
+    input.swept.sweep.candidates.filter((one) => one.testOfDeadCode).map((one) => one.id),
+  );
+  const judged = (id: string): boolean => {
+    const at = union.at(id);
+    const testCode = union.test[at] === true || union.support[at] === true;
+    return !testCode || (reached[at] === true && !testsOfDeadCode.has(id));
+  };
   const unknown = new Set(
     union.rooted.flatMap((root) => {
       const symbol = union.symbols[root.at];
@@ -84,7 +98,7 @@ export const intraFunction: Emitter = (input) => {
   for (const part of input.intraFunction.parts) {
     const declaration = byId.get(part.declaration);
     const overlap = KINDS.get(part.code)?.overlap ?? [];
-    if (declaration === undefined || !reported(input, part, unknown)) {
+    if (declaration === undefined || !judged(declaration.id) || !reported(input, part, unknown)) {
       continue;
     }
     found.push({

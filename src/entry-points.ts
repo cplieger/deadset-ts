@@ -38,6 +38,7 @@ import {
 } from "./configuration-files.ts";
 import { globExpression } from "./glob.ts";
 import type { Host } from "./host.ts";
+import { htmlEntries } from "./html-entries.ts";
 import { dirnamePath, relativePath, resolvePath } from "./paths.ts";
 import { UNANSWERED } from "./query.ts";
 import type { ProjectView } from "./session.ts";
@@ -56,7 +57,9 @@ export type EntryRule =
   /** The test files below the browser-test runner's test directory. */
   | "browser-tests"
   /** A worker or service worker a call addresses by a string literal. */
-  | "worker";
+  | "worker"
+  /** A file a module script of an HTML file below the target root loads. */
+  | "html-entry";
 
 /** One file a rule enters. */
 export interface EntryPoint {
@@ -541,6 +544,9 @@ export function entryPoints<Brand>(
       }
     }
     found.push(...workersOf(project, file, files));
+  }
+  for (const { file, source } of htmlEntries(host, targetRoot, files, parse)) {
+    found.push({ file, rule: "html-entry", source, exports: true });
   }
   return found;
 }

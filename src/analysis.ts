@@ -22,7 +22,7 @@ import {
   declarationsNamed,
 } from "./configured-declarations.ts";
 import { decorator } from "./decorator.ts";
-import { dependenciesOf, projectNeeds } from "./dependencies.ts";
+import { configurationNeeds, dependenciesOf, projectNeeds } from "./dependencies.ts";
 import { deprecatedDeclarations, type Deprecation } from "./deprecation.ts";
 import {
   discoverProjects,
@@ -43,7 +43,7 @@ import {
 } from "./conventions.ts";
 import { readEdgeSides } from "./edges.ts";
 import { enumGroup } from "./enum-group.ts";
-import { generatedFile } from "./generated-file.ts";
+import { generatedFile, generatedFilesOf } from "./generated-file.ts";
 import { sourceFilesOf } from "./source-files.ts";
 import {
   evidenceRecords,
@@ -191,7 +191,7 @@ interface ProjectRead {
   readonly typeErrorSkips: readonly TypeErrorSkip[];
   /** The lines each of those skips withholds every finding on. */
   readonly skipped: readonly SkippedUnit[];
-  /** The project's generated files, by path below the target root, each with the row naming it. */
+  /** The project's generated files, by path below the target root, each with the detail its retentions name. */
   readonly generated: ReadonlyMap<string, string>;
 }
 
@@ -222,6 +222,8 @@ interface ReadProjects<Answer> {
   readonly componentsUnread: readonly ComponentsUnread[];
   /** The convention rows the run applied. */
   readonly conventionsApplied: readonly AppliedConvention[];
+  /** The dependencies the applied rows' short names use. */
+  readonly conventionUses: readonly string[];
   /** The test files below the target root no project the run reads holds, parsed. */
   readonly outsideTests: readonly OutsideTest[];
 }
@@ -435,6 +437,7 @@ function readProjects<Answer>(
                   ...kept.map((id) => ({ id, kind: "type-error" as const, source: "" })),
                 ],
               };
+        const own = sourceFilesOf(project, targetRoot);
         return {
           configuration,
           configFile: project.configFile,
@@ -446,7 +449,7 @@ function readProjects<Answer>(
             .ownSourceFiles()
             .filter((file) => referenceOnly(file.fileName))
             .flatMap((file) => relativePath(absoluteRoot, file.fileName) ?? []),
-          generated: generatedFiles(conventions, sourceFilesOf(project, targetRoot)),
+          generated: generatedFilesOf(own, generatedFiles(conventions, own)),
         };
       };
       for (const file of project.ownSourceFiles()) {
@@ -504,6 +507,7 @@ function readProjects<Answer>(
     unanswered: session.unanswered,
     componentsUnread: workspace?.componentsUnread ?? [],
     conventionsApplied: conventions.applied,
+    conventionUses: conventions.uses,
     outsideTests,
   };
 }
@@ -688,6 +692,8 @@ interface ReadRun<Extra> {
   readonly componentsUnread: readonly ComponentsUnread[];
   /** The convention rows the run applied. */
   readonly conventionsApplied: readonly AppliedConvention[];
+  /** The dependencies the applied rows' short names use. */
+  readonly conventionUses: readonly string[];
 }
 
 /**
@@ -839,6 +845,7 @@ function readRun<Extra>(
     unanswered: read.unanswered,
     componentsUnread: read.componentsUnread,
     conventionsApplied: read.conventionsApplied,
+    conventionUses: read.conventionUses,
   };
 }
 
@@ -1093,7 +1100,7 @@ function emitterInputOver(
     dependencies: dependenciesOf(
       host,
       targetRoot,
-      projects.map((one) => one.extra.needs),
+      [...projects.map((one) => one.extra.needs), configurationNeeds(read.conventionUses)],
       swept.sweep.candidates.map((candidate) => candidate.id),
     ),
     implementations: mergeImplementations(projects.map((one) => one.extra.implementations)),

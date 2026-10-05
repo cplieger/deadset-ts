@@ -26,6 +26,7 @@ import { globExpression } from "./glob.ts";
 import type { Host } from "./host.ts";
 import { nodeKey, type Inventory, type InventorySymbol } from "./inventory.ts";
 import type { Manifest, ManifestEntry } from "./manifest.ts";
+import { relativePath, resolvePath } from "./paths.ts";
 import { byPosition } from "./position.ts";
 import { UNANSWERED } from "./query.ts";
 import type { ProjectView } from "./session.ts";
@@ -134,6 +135,50 @@ const ENTRY_KINDS = {
   run: "manifest-binary",
   script: "script",
 } as const satisfies Record<ManifestEntry["role"], RootKind>;
+
+/** The rules whose rooted files a manifest target is read back to by name. */
+const READ_BACK_RULES: ReadonlySet<EntryRule> = new Set([
+  "configuration-file",
+  "configuration-string",
+  "html-entry",
+]);
+
+/** The extensions a manifest target's name drops: the ones a build writes. */
+const OUTPUT_EXTENSION = /\.(?:d\.ts|d\.mts|d\.cts|js|mjs|cjs|jsx)$/u;
+
+/** The extension a source file's name drops. */
+const SOURCE_EXTENSION = /\.(?:d\.)?[cm]?[jt]sx?$/u;
+
+/**
+ * The rooted files one manifest target reads back to by name: its path below the
+ * manifest's directory, past its first directory where it names one, without its output
+ * extension, is the name, and a rooted file is one whose path below the same directory,
+ * without its source extension, ends with that name at a directory boundary.
+ */
+function readBackByName(
+  host: Host,
+  entry: ManifestEntry,
+  rooted: readonly SourceFile[],
+): readonly SourceFile[] {
+  const dir = resolvePath(host.workingDirectory(), entry.dir);
+  const below = relativePath(dir, resolvePath(host.workingDirectory(), entry.path));
+  if (below === undefined || below === "") {
+    return [];
+  }
+  const cut = below.indexOf("/");
+  const name = (cut === -1 ? below : below.slice(cut + 1)).replace(OUTPUT_EXTENSION, "");
+  if (name === "") {
+    return [];
+  }
+  const found = new Map<string, SourceFile>();
+  for (const file of rooted) {
+    const path = relativePath(dir, file.fileName)?.replace(SOURCE_EXTENSION, "");
+    if (path !== undefined && (path === name || path.endsWith(`/${name}`))) {
+      found.set(file.fileName, file);
+    }
+  }
+  return [...found.values()];
+}
 
 /** Whether a configured string carries either special character. */
 function isPattern(text: string): boolean {
@@ -245,6 +290,14 @@ export function roots<Brand>(
     entered.push({ file, kind, source, exports });
   };
 
+  const points = entryPoints(
+    project,
+    files,
+    options.testFiles,
+    options.host,
+    targetRoot,
+    options.parse,
+  );
   const published: SourceFile[] = [];
   const entries = [
     ...options.manifest.entries.map((entry) => ({
@@ -255,14 +308,27 @@ export function roots<Brand>(
     })),
     ...(options.otherPackages ?? []).map((entry) => ({ entry, publishes: entry.published })),
   ];
+  const scripted = entries.flatMap(({ entry }) =>
+    entry.role === "script" ? files.named(entry.path) : [],
+  );
+  const readBackTo = [
+    ...scripted,
+    ...points.filter((point) => READ_BACK_RULES.has(point.rule)).map((point) => point.file),
+  ];
+  const entryFiles = (entry: ManifestEntry): readonly SourceFile[] => {
+    const named = files.named(entry.path);
+    return named.length > 0 || entry.role === "script"
+      ? named
+      : readBackByName(options.host, entry, readBackTo);
+  };
   for (const { entry, publishes } of entries) {
     if (options.publishedAPI && publishes) {
-      published.push(...files.named(entry.path));
+      published.push(...entryFiles(entry));
     }
   }
   const publishedNames = new Set(published.map((file) => file.fileName));
   for (const { entry } of entries) {
-    for (const file of files.named(entry.path)) {
+    for (const file of entryFiles(entry)) {
       const kind = ENTRY_KINDS[entry.role];
       enter(file, kind, entry.member, !publishedNames.has(file.fileName));
     }
@@ -280,14 +346,7 @@ export function roots<Brand>(
     : conventionEntries(options.conventions, files)) {
     enter(file, "convention", row, true);
   }
-  for (const point of entryPoints(
-    project,
-    files,
-    options.testFiles,
-    options.host,
-    targetRoot,
-    options.parse,
-  )) {
+  for (const point of points) {
     enter(point.file, point.rule, point.source, point.exports);
   }
   for (const file of files.byPath.values()) {
