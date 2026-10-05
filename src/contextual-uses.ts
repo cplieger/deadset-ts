@@ -97,12 +97,19 @@ interface Called {
 interface Checked {
   readonly source: Type;
   readonly targets: readonly Type[];
+  /**
+   * Whether the source is declared outside the target, so code the analysis does not
+   * hold reads the members of the target's types it declares.
+   */
+  readonly outside: boolean;
 }
 
 /** One member of an object type, by the inventory's declarations and the checker's declaration handles. */
 interface Member {
   readonly ids: readonly string[];
   readonly handles: ReadonlySet<string>;
+  /** Whether a declaration of it is in one of the target's own files. */
+  readonly own: boolean;
 }
 
 /**
@@ -120,6 +127,7 @@ export function contextualUses<Brand>(
   properties: PropertyTables,
 ): ContextualUses {
   const queries = project.queries;
+  const ownPaths = project.ownPaths();
   const kinds = new Map(held.symbols.map((symbol) => [symbol.id, symbol.kind]));
   let batches = 0;
   let lookups = 0;
@@ -162,6 +170,7 @@ export function contextualUses<Brand>(
         handles: new Set(
           property.declarations.map((handle) => `${handle.path}#${String(handle.index)}`),
         ),
+        own: property.declarations.some((handle) => ownPaths.has(handle.path)),
       });
     }
     tables.set(type.id, table);
@@ -203,6 +212,11 @@ export function contextualUses<Brand>(
     member.ids.filter((id) => kinds.get(id) === "type-member");
   const carries = (part: Type): boolean =>
     [...membersOf(part).values()].some((member) => readable(member).length > 0);
+  /** Whether an object type has members and declares none of them in the target. */
+  const outside = (part: Type): boolean => {
+    const members = [...membersOf(part).values()];
+    return members.length > 0 && members.every((member) => !member.own);
+  };
 
   const elements = new Map<number, Type | undefined>();
   /** The element type of an array type, read once per type. */
@@ -272,7 +286,9 @@ export function contextualUses<Brand>(
     const sources = partsOf(source).filter((one) => !targets.some((part) => part.id === one.id));
     for (const one of sources) {
       if (carries(one)) {
-        into.push({ source: one, targets });
+        into.push({ source: one, targets, outside: false });
+      } else if (outside(one)) {
+        into.push({ source: one, targets, outside: true });
       }
       const element = elementOf(one);
       const called = element === undefined ? callOf(one) : undefined;
@@ -303,7 +319,7 @@ export function contextualUses<Brand>(
     }
     seen.add(type.id);
     return partsOf(type).some((part) => {
-      if (carries(part)) {
+      if (carries(part) || outside(part)) {
         return true;
       }
       const element = elementOf(part);
@@ -332,9 +348,20 @@ export function contextualUses<Brand>(
     const checked: Checked[] = [];
     compared(type, position, checked, new Set());
     const ids = new Set<string>();
-    for (const { source, targets } of checked) {
+    for (const { source, targets, outside: held } of checked) {
       const tables = targets.map(membersOf);
-      for (const [name, member] of membersOf(source)) {
+      const sourceMembers = membersOf(source);
+      if (held) {
+        for (const table of tables) {
+          for (const [name, member] of table) {
+            if (sourceMembers.has(name)) {
+              member.ids.forEach((id) => ids.add(id));
+            }
+          }
+        }
+        continue;
+      }
+      for (const [name, member] of sourceMembers) {
         const read = tables.some((table) => {
           const declared = table.get(name);
           return (

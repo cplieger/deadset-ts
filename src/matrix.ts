@@ -5,7 +5,7 @@
  */
 
 import { componentsOf, type Component } from "./components.ts";
-import { graphOf, type Graph } from "./graph.ts";
+import { graphOf, OUTSIDE, type Graph } from "./graph.ts";
 import type { InventorySymbol } from "./inventory.ts";
 import { byPosition } from "./position.ts";
 import type { Reference } from "./references.ts";
@@ -55,6 +55,13 @@ export interface Matrix {
 export interface MatrixCandidate extends Candidate {
   /** The configurations the declaration is dead in, which are every one that holds it. */
   readonly configurations: readonly string[];
+  /**
+   * The declaration of test-support code that test code references, outside the
+   * test-of-dead-code rule, that is or contains this one, the outermost where two do.
+   * Such a declaration is not dead while test code references it, so neither it nor a
+   * declaration it contains is a member of a dead component.
+   */
+  readonly heldByTests: string | undefined;
 }
 
 /** One run's sweep. */
@@ -178,6 +185,7 @@ export function sweepMatrix(matrix: Matrix, input: SweepInput): SweepResult {
   const union = matrix.union;
   const dead = union.symbols.map(() => false);
   const testOfDeadCode = union.symbols.map(() => false);
+  const heldBy: (string | undefined)[] = union.symbols.map(() => undefined);
   const candidates: MatrixCandidate[] = [];
   union.symbols.forEach((symbol, at) => {
     const held = matrix.heldIn[at] ?? [];
@@ -187,24 +195,34 @@ export function sweepMatrix(matrix: Matrix, input: SweepInput): SweepResult {
     }
     const all = found.filter((candidate): candidate is Candidate => candidate !== undefined);
     const admitted = all.every((candidate) => candidate.testOfDeadCode);
+    const testRefs = union.made[at]?.test ?? 0;
+    const heldByTests =
+      heldBy[union.parent[at] ?? OUTSIDE] ??
+      (union.support[at] === true && testRefs > 0 && !admitted ? symbol.id : undefined);
     dead[at] = true;
     testOfDeadCode[at] = admitted;
+    heldBy[at] = heldByTests;
     candidates.push({
       id: symbol.id,
       productionRefs: union.made[at]?.production ?? 0,
-      testRefs: union.made[at]?.test ?? 0,
+      testRefs,
       relation: all.every((candidate) => candidate.relation === "reference-counting")
         ? "reference-counting"
         : "reachability",
       testOfDeadCode: admitted,
       configurations: held,
+      heldByTests,
     });
   });
 
   return {
     liveUnder: liveAnywhere(union.symbols, per),
     candidates,
-    components: componentsOf(union, dead, testOfDeadCode),
+    components: componentsOf(
+      union,
+      dead.map((one, at) => one && heldBy[at] === undefined),
+      testOfDeadCode,
+    ),
   };
 }
 

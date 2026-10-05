@@ -26,10 +26,10 @@ const UNREAD =
   "file only it loads is reported as never imported unless ts.entry_files or roots.patterns " +
   "names it.";
 
-/** Why a configuration's file names that are not relative literals are declined. */
-const NOT_RELATIVE =
-  "A string of a configuration file names a file only where it is a literal starting with ./ " +
-  "or ../, so a file named otherwise is reported as never imported.";
+/** Why a configuration's file names that are not literals are declined. */
+const NOT_LITERAL =
+  "A string of a configuration file names a file only where it is a literal, so a file a " +
+  "computed value names is reported as never imported.";
 
 /** The tools whose own conventions are not read. */
 const UNREAD_TOOLS: readonly string[] = [
@@ -232,11 +232,6 @@ const PARTLY_ENTERED: readonly DeclinedConvention[] = [
   },
   {
     tool: "playwright",
-    convention: "a globalSetup or globalTeardown file named without a leading ./ or ../",
-    reason: NOT_RELATIVE,
-  },
-  {
-    tool: "playwright",
     convention: "the testDir and testMatch of an entry in projects",
     reason:
       "Only the configuration object's own testDir and testMatch are read, so a test " +
@@ -300,22 +295,15 @@ const PARTLY_ENTERED: readonly DeclinedConvention[] = [
   },
   {
     tool: "vite",
-    convention: "an entry point its configuration names without a leading ./ or ../, or computes",
-    reason: NOT_RELATIVE,
-  },
-  {
-    tool: "vite",
-    convention: "the module scripts an index.html loads",
-    reason:
-      "No rule reads an HTML file, so a script only index.html loads is reported as never " +
-      "imported unless ts.entry_files names it.",
+    convention: "an entry point its configuration computes",
+    reason: NOT_LITERAL,
   },
   {
     tool: "vitest",
-    convention: "the benchmark and type-test files",
+    convention: "the benchmark files",
     reason:
-      "A test file is one ts.test_files classifies, so a *.bench.* or *.test-d.* file is " +
-      "entered only where a configured pattern names it.",
+      "A test file is one ts.test_files classifies, so a *.bench.* file is entered only " +
+      "where a configured pattern names it.",
   },
   {
     tool: "vitest",
@@ -326,11 +314,6 @@ const PARTLY_ENTERED: readonly DeclinedConvention[] = [
   },
   {
     tool: "vitest",
-    convention: "a setup file named without a leading ./ or ../",
-    reason: NOT_RELATIVE,
-  },
-  {
-    tool: "vitest",
     convention: "the test files a configuration's include member names",
     reason:
       "A test file is one ts.test_files classifies rather than one the runner's include " +
@@ -338,8 +321,8 @@ const PARTLY_ENTERED: readonly DeclinedConvention[] = [
   },
   {
     tool: "webpack",
-    convention: "an entry point its configuration names without a leading ./ or ../, or computes",
-    reason: NOT_RELATIVE,
+    convention: "an entry point its configuration computes",
+    reason: NOT_LITERAL,
   },
 ];
 

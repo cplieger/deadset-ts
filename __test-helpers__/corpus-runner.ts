@@ -142,6 +142,8 @@ interface ExpectationFile {
   readonly setup_failure?: SetupFailureExpectation;
   readonly consumers?: readonly string[];
   readonly closed_world?: readonly string[];
+  readonly entry_files?: readonly string[];
+  readonly disabled_conventions?: readonly string[];
   readonly configured_roots?: Readonly<Record<string, string>>;
   readonly configured_declarations?: Readonly<Record<string, ConfiguredDeclaration>>;
   readonly edge_evaluations?: readonly EdgeExpectation[];
@@ -395,7 +397,13 @@ function configOf(file: ExpectationFile): string {
   const patterns = Object.keys(file.configured_roots ?? {})
     .sort(compare)
     .map((name) => file.configured_roots?.[name] ?? "");
-  const ts = tsSectionOf(file.configured_declarations ?? {});
+  const ts = {
+    ...tsSectionOf(file.configured_declarations ?? {}),
+    ...(file.entry_files === undefined ? {} : { entry_files: file.entry_files }),
+    ...(file.disabled_conventions === undefined
+      ? {}
+      : { disabled_conventions: file.disabled_conventions }),
+  };
   return `${JSON.stringify({
     target: { kind: file.target_kind },
     ...(file.min_confidence === undefined
@@ -1149,9 +1157,10 @@ function answerFixture(
     const skips = gapCovers(gaps, name, TYPE_ERROR_SKIPS)
       ? ""
       : skipDifferences(file, manifest, first.report);
-    const rowsDeclined = (file.conventions_applied ?? []).some((one) =>
-      gapCovers(gaps, name, one.name),
-    );
+    const rowsDeclined = [
+      ...(file.conventions_applied ?? []).map((one) => one.name),
+      ...(file.disabled_conventions ?? []),
+    ].some((row) => gapCovers(gaps, name, row));
     const edges = [
       edgeDifferences(file, manifest, first.report),
       skips,

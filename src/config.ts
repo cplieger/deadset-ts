@@ -232,9 +232,12 @@ export function defaultConfig(): Config {
     ts: {
       testFiles: [
         "**/*.test.{ts,tsx,mts,cts}",
+        "**/*.test-d.{ts,tsx,mts,cts}",
+        "**/*.spec-d.{ts,tsx,mts,cts}",
         "**/*.spec.*",
         "**/__tests__/**",
         "**/__mocks__/**",
+        "**/test-d/**",
       ],
       entryFiles: [],
       componentExtensions: [".vue", ".svelte", ".astro"],

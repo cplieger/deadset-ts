@@ -48,10 +48,7 @@ export interface DetectorInput<Brand> {
   readonly ts: TSSection;
   /** The absolute path of each declared consumer, whose modules are part of the analysis. */
   readonly consumers: readonly string[];
-  /**
-   * The project's generated files, by path below the target root, each with the
-   * convention row that names its directory as generated.
-   */
+  /** The project's generated files, by path below the target root, each with the detail its retentions name. */
   readonly generated?: ReadonlyMap<string, string>;
 }
 

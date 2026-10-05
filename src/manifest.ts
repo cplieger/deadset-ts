@@ -40,6 +40,8 @@ export interface ManifestEntry {
    * `exports` is the surface a library's published API is read from.
    */
   readonly published: boolean;
+  /** The directory of the manifest that names it, which `path` was resolved against. */
+  readonly dir: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -88,7 +90,7 @@ function below(member: string, key: string): string {
  * any depth; a `null` blocks a subpath. Every level is walked, because each
  * condition names its own entry file, and a key's meaning is never read.
  */
-function exportTargets(value: unknown, member: string, found: ManifestEntry[]): void {
+function exportTargets(value: unknown, member: string, found: Omit<ManifestEntry, "dir">[]): void {
   if (typeof value === "string") {
     if (isTarget(value, true)) {
       found.push({ member, path: value, role: "import", published: true });
@@ -161,7 +163,7 @@ export function readManifest(host: Host, targetRoot: string): Manifest {
     return { entries: [], declaresExports: false };
   }
 
-  const found: ManifestEntry[] = [];
+  const found: Omit<ManifestEntry, "dir">[] = [];
   for (const member of LEGACY_MEMBERS) {
     const value = manifest[member];
     if (typeof value === "string" && isTarget(value, false)) {
@@ -200,7 +202,11 @@ export function readManifest(host: Host, targetRoot: string): Manifest {
   }
 
   return {
-    entries: found.map((entry) => ({ ...entry, path: resolvePath(targetRoot, entry.path) })),
+    entries: found.map((entry) => ({
+      ...entry,
+      path: resolvePath(targetRoot, entry.path),
+      dir: targetRoot,
+    })),
     declaresExports: manifest["exports"] !== undefined,
   };
 }

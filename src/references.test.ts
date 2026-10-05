@@ -1,12 +1,15 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
+import { emitterInputOf } from "../__test-helpers__/emitter-input.ts";
 import { fixture, ROOT } from "../__test-helpers__/fixtures.ts";
-import { analyzeRoot } from "../__test-helpers__/projects.ts";
+import { analyzeRoot, writeProject } from "../__test-helpers__/projects.ts";
+import { findingsOf } from "./findings/emitters.ts";
 import type { InventorySymbol } from "./inventory.ts";
 import { positionKey } from "./position.ts";
 import { DEFAULT_BATCH_CAP } from "./query.ts";
 import { testFileRulesOf, type Reference } from "./references.ts";
+import { resolve } from "./resolve.ts";
 
 /**
  * The fixture holding one instance of every reference form, resolved once for every
@@ -121,13 +124,13 @@ describe("the reference table of every reference form", () => {
       "one batch of contextual types for the object literals, one of value types and one " +
         "of the positions a value that may carry a member reaches, and one lookup per " +
         "distinct type's constituents, properties, element type or call signature",
-    ).toEqual([3, 15]);
+    ).toEqual([3, 16]);
     expect(
       EVERY_REFERENCE.referenceRequests,
       "the requests the client measured are the ones the pass accounts for: a declaration " +
         "outside the project's own files is never fetched to find out that the inventory " +
         "does not hold it",
-    ).toBe(4 + 0 + 4 + 11 + 2 + 2 + 3 + 15);
+    ).toBe(4 + 0 + 4 + 11 + 2 + 2 + 3 + 16);
   });
 
   it("records each decorator as a use of the declaration it is attached to, at the decorator", () => {
@@ -481,5 +484,79 @@ describe("the default batch cap", () => {
       record.caps,
       "a chosen default the sweep never ran is a number, not a reading",
     ).toContain(DEFAULT_BATCH_CAP);
+  });
+});
+
+/** An application whose entry builds a module URL in each form, and five that load nothing. */
+const MODULE_URLS: Readonly<Record<string, string>> = {
+  "package.json": '{ "name": "@example/app", "type": "module", "main": "./main.ts" }\n',
+  "deadset.json": '{ "target": { "kind": "application" } }\n',
+  "main.ts": [
+    'import { made } from "./local-url.js";',
+    "",
+    "console.log(made);",
+    'console.log(new URL("./worker.ts", import.meta.url));',
+    'console.log(import.meta.resolve("./resolved.ts"));',
+    "console.log(new URL(`./templated.ts`, import.meta.url));",
+    'console.log(new URL("bare.ts", import.meta.url));',
+    'console.log(new URL("./based.ts", "https://example.com/"));',
+    "",
+  ].join("\n"),
+  "local-url.ts": [
+    "class URL {",
+    "  constructor(",
+    "    readonly path: string,",
+    "    readonly base: string,",
+    "  ) {}",
+    "}",
+    "",
+    'export const made = new URL("./shadowed.ts", import.meta.url);',
+    "",
+  ].join("\n"),
+  ...Object.fromEntries(
+    ["worker", "resolved", "templated", "bare", "based", "shadowed"].map((name) => [
+      `${name}.ts`,
+      `export const ${name}Value = 1;\n`,
+    ]),
+  ),
+};
+
+describe("a module URL", () => {
+  const roots: string[] = [];
+  afterAll(() => {
+    for (const root of roots) {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  const found = ((): string[] => {
+    const root = writeProject(MODULE_URLS);
+    roots.push(root);
+    const { config } = resolve({
+      repository: MODULE_URLS["deadset.json"] ?? "",
+      repositoryLabel: "deadset.json",
+    });
+    return findingsOf(emitterInputOf(root, config))
+      .map((finding) => `${finding.code} ${finding.symbol.name}`)
+      .sort();
+  })();
+
+  it.each([
+    ["worker", "new URL with import.meta.url as its base"],
+    ["resolved", "import.meta.resolve"],
+    ["templated", "a template literal with no substitution"],
+  ])("imports %s.ts for its effects, through %s, referencing none of its exports", (name) => {
+    expect(found.filter((line) => line.includes(name))).toEqual([`DS1001 ${name}Value`]);
+  });
+
+  it.each([
+    ["bare", "a string with no leading ./ or ../"],
+    ["based", "a base other than import.meta.url"],
+    ["shadowed", "a URL the target declares"],
+  ])("loads no file through %s.ts, named by %s", (name) => {
+    expect(found.filter((line) => line.includes(name))).toEqual([
+      `DS1001 ${name}Value`,
+      `DS1502 ${name}.ts`,
+    ]);
   });
 });

@@ -80,6 +80,35 @@ describe("the roots a manifest names", () => {
     expect(lines).not.toContain("#unexported");
     expect(lines).not.toContain("unreached.ts");
   });
+
+  it("reads a target no emit mapping reaches back by name, at a directory boundary, to a file a configuration file roots", () => {
+    const root = writeProject({
+      "package.json":
+        '{ "name": "@example/app", "type": "module", "main": "./dist/index.js", "module": "./dist/main.mjs", "bin": { "tool": "./dist/cli/main.js" } }\n',
+      "deadset.json": '{ "target": { "kind": "application" } }\n',
+      "build.config.ts":
+        'export default { entry: ["./src/index.ts", "./src/cli/main.ts", "./src/domain.ts"] };\n',
+      "src/index.ts": "export const index = 1;\n",
+      "src/cli/main.ts": "export const cli = 1;\n",
+      "src/domain.ts": "export const domain = 1;\n",
+    });
+    try {
+      expect(
+        runOver(root)
+          .roots.filter((one) => one.kind.startsWith("manifest-"))
+          .map((one) => `${one.ref} ${one.kind} ${one.source}`),
+      ).toEqual([
+        'ts://@example/app/src/cli/main.ts# manifest-binary bin["tool"]',
+        "ts://@example/app/src/cli/main.ts# manifest-entry module",
+        'ts://@example/app/src/cli/main.ts#cli manifest-binary bin["tool"]',
+        "ts://@example/app/src/cli/main.ts#cli manifest-entry module",
+        "ts://@example/app/src/index.ts# manifest-entry main",
+        "ts://@example/app/src/index.ts#index manifest-entry main",
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("the roots a manifest's scripts name", () => {

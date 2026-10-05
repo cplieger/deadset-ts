@@ -193,6 +193,7 @@ describe("readConventions", () => {
       globs: [],
       generated: [],
       failures: [],
+      uses: [],
     });
   });
 
@@ -218,7 +219,7 @@ describe("readConventions", () => {
       "/repo/node_modules/tool/package.json": '{ "version": "3.0.0" }',
     });
 
-    expect(decided).toEqual({ applied: [], globs: [], generated: [], failures: [] });
+    expect(decided).toEqual({ applied: [], globs: [], generated: [], failures: [], uses: [] });
   });
 
   it("fails as missing-module where no installed manifest is found", () => {
@@ -265,7 +266,7 @@ describe("readConventions", () => {
       "tool",
     ]);
 
-    expect(decided).toEqual({ applied: [], globs: [], generated: [], failures: [] });
+    expect(decided).toEqual({ applied: [], globs: [], generated: [], failures: [], uses: [] });
   });
 
   it("reads the globs against the default directory where no configuration sets it", () => {
@@ -343,6 +344,58 @@ describe("readConventions", () => {
 
     expect(matches(decided, "app/x.ts")).toEqual(["tool", "tool"]);
     expect(matches(decided, "x.ts")).toEqual(["tool"]);
+  });
+});
+
+describe("a row's short names", () => {
+  const row: ConventionRow = {
+    ...ROW,
+    shortNames: [{ property: "plugin.name", files: ["tool.config.ts"], package: "tool-plugin-{}" }],
+  };
+  const manifest =
+    '{ "dependencies": { "tool": "2" }, "devDependencies": { "tool-plugin-a": "1", "tool-plugin-b": "1", "tool-plugin-c": "1", "other": "1" } }';
+  const uses = (config: string): readonly string[] =>
+    decide(
+      { "/repo/package.json": manifest, "/repo/tool.config.ts": config, ...INSTALLED },
+      [],
+      [row],
+    ).uses;
+
+  it("uses the declared dependency each literal value stands for, an array's elements included", () => {
+    expect(uses('export default { plugin: { name: "a" } };')).toEqual(["tool-plugin-a"]);
+    expect(uses('export default { plugin: { name: ["c", "a", "missing"] } };')).toEqual([
+      "tool-plugin-a",
+      "tool-plugin-c",
+    ]);
+  });
+
+  it("uses every declared dependency the package name can stand for where the value is not a literal, and fails nothing", () => {
+    const decided = decide(
+      {
+        "/repo/package.json": manifest,
+        "/repo/tool.config.ts": "export default { plugin: { name: process.env.PLUGIN } };",
+        ...INSTALLED,
+      },
+      [],
+      [row],
+    );
+
+    expect(decided.uses).toEqual(["tool-plugin-a", "tool-plugin-b", "tool-plugin-c"]);
+    expect(decided.failures).toEqual([]);
+  });
+
+  it("uses nothing where the row does not apply", () => {
+    expect(
+      decide(
+        {
+          "/repo/package.json": manifest,
+          "/repo/tool.config.ts": 'export default { plugin: { name: "a" } };',
+          ...INSTALLED,
+        },
+        [],
+        [{ ...row, range: ">=3.0.0" }],
+      ).uses,
+    ).toEqual([]);
   });
 });
 

@@ -121,6 +121,15 @@ describe("the uses a contextual type makes", () => {
     ]);
   });
 
+  it("reads each member of a target type that a value of a type declared outside the target declares", () => {
+    expect(
+      findings({
+        "src/main.ts":
+          'interface Problem {\n  message: string;\n  code?: number;\n}\nconst problem: Problem = new Error("failed");\nproblem.message = "failed again";\nproblem.code = 1;\n',
+      }),
+    ).toEqual(["DS1301 Problem.code 3: type member Problem.code is written once and never read"]);
+  });
+
   it("names an import only the written values use as deleted with the member", () => {
     expect(
       findings({

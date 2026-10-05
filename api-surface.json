@@ -39,6 +39,7 @@
         "isAwaitExpression",
         "isBigIntLiteral",
         "isBinaryExpression",
+        "isBindingElement",
         "isBlock",
         "isBreakStatement",
         "isCallExpression",
@@ -123,6 +124,7 @@
         "isTypeReferenceNode",
         "isUnionTypeNode",
         "isVariableDeclaration",
+        "isVariableDeclarationList",
         "isVariableStatement",
         "isVoidExpression"
       ]

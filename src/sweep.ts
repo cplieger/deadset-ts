@@ -167,6 +167,25 @@ export function sweep(graph: Graph, input: SweepInput): Liveness {
 }
 
 /**
+ * Per declaration of the graph, whether the run that counts test references reaches it.
+ * That run's roots are the graph's own and each test file, being the file's top level
+ * and every declaration it exports, which a test runner may call; `held` seeds it as a
+ * mark or an exemption seeds a sweep.
+ */
+export function reachedWithTheTests(graph: Graph, held: readonly string[]): readonly boolean[] {
+  const tests = graph.symbols.flatMap((symbol, at) => {
+    const top =
+      symbol.kind === "file" || graph.symbols[graph.parent[at] ?? OUTSIDE]?.kind === "file";
+    return graph.test[at] === true && top && (symbol.kind === "file" || symbol.exported)
+      ? [{ at, kind: "test-runner" as const }]
+      : [];
+  });
+  return reachable({ ...graph, rooted: [...graph.rooted, ...tests] }, flagged(graph, held), {
+    production: false,
+  });
+}
+
+/**
  * The references a loaded consumer makes that the mode counts. A production mode counts
  * none a consumer's test file made, as it counts none of the target's.
  */

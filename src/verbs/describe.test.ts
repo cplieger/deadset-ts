@@ -38,7 +38,7 @@ describe("describe", () => {
         "{\n" +
         '  "name": "deadset-ts",\n' +
         '  "version": "1.2.3",\n' +
-        '  "contract_version": "5.2.0",\n' +
+        '  "contract_version": "5.3.0",\n' +
         '  "schema_versions_accepted": [\n    "7.0.0"\n  ],\n' +
         '  "languages": [\n    "ts"\n  ],\n' +
         '  "conformance": {\n' +
