@@ -277,3 +277,46 @@ describe("the defaults of a library", () => {
     ]);
   });
 });
+
+describe("the confidence of a dead component", () => {
+  // A published export only a test calls, and the test, which falls with it.
+  const root = writeProject({
+    "package.json": `${JSON.stringify({
+      name: "@example/capped",
+      private: true,
+      type: "module",
+      exports: { ".": "./src/index.ts" },
+    })}\n`,
+    "src/index.ts": "export function testedOnly(): number {\n  return 1;\n}\n",
+    "src/index.test.ts": [
+      'import { testedOnly } from "./index.js";',
+      "",
+      "export function probe(): number {",
+      "  return testedOnly();",
+      "}",
+      "",
+    ].join("\n"),
+  });
+  afterAll(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  const reported = (document: Record<string, unknown>): string[] =>
+    findingsOf(
+      emitterInputOf(
+        root,
+        resolve({
+          repository: JSON.stringify({ target: { kind: "library" }, ...document }),
+          repositoryLabel: "deadset.json",
+        }).config,
+      ),
+    ).map((finding) => `${finding.code} ${finding.symbol.name} ${finding.confidence}`);
+
+  it("caps every finding of a component at its weakest root, so the minimum confidence withholds it whole", () => {
+    expect(reported({})).toEqual([]);
+    expect(reported({ analysis: { min_confidence: "possible" } })).toEqual([
+      "DS1005 probe possible",
+      "DS1004 testedOnly possible",
+    ]);
+  });
+});

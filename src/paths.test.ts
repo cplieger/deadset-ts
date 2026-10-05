@@ -4,6 +4,7 @@ import {
   isAbsolutePath,
   joinPath,
   normalizePath,
+  queriedModulePath,
   relativePath,
   resolvePath,
 } from "./paths.ts";
@@ -95,5 +96,21 @@ describe("relativePath", () => {
     { root: "/work", path: "/work/sub/../a.ts", want: "a.ts" },
   ])("answers $want for $path below $root", ({ root, path, want }) => {
     expect(relativePath(root, path)).toBe(want);
+  });
+});
+
+describe("queriedModulePath", () => {
+  it.each([
+    { specifier: "./worker.ts?worker", path: "./worker.ts" },
+    { specifier: "../w.ts?sharedworker&url", path: "../w.ts" },
+    { specifier: "./page.ts?url", path: "./page.ts" },
+    { specifier: "./page.ts?raw", path: undefined },
+    { specifier: "./page.ts?inline&raw", path: undefined },
+    { specifier: "./page.ts?raw=1", path: undefined },
+    { specifier: "./page.ts?rawish", path: "./page.ts" },
+    { specifier: "./page.ts", path: undefined },
+    { specifier: "pkg/page.ts?worker", path: undefined },
+  ])("answers $path for $specifier", ({ specifier, path }) => {
+    expect(queriedModulePath(specifier)).toBe(path);
   });
 });

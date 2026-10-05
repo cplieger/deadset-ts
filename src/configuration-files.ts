@@ -57,7 +57,7 @@ const COUNTERPARTS: readonly (readonly [string, readonly string[]])[] = [
 const APPENDED = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"] as const;
 
 /** The extensions the program's module resolution appends to a specifier written without one. */
-const RESOLVED_EXTENSIONS = [
+export const RESOLVED_EXTENSIONS = [
   ".ts",
   ".tsx",
   ".d.ts",

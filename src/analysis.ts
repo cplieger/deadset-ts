@@ -46,7 +46,8 @@ import { enumGroup } from "./enum-group.ts";
 import { generatedFile } from "./generated-file.ts";
 import { sourceFilesOf } from "./source-files.ts";
 import {
-  detectExemptions,
+  evidenceRecords,
+  heldRecords,
   disabledClasses,
   exemptionsOf,
   holdingWhile,
@@ -56,7 +57,8 @@ import {
   type Detectors,
 } from "./exempt.ts";
 import type { TSExemptionClass } from "./exempt-classes.ts";
-import { heldByInclusion, sourceTree } from "./file-facts.ts";
+import { heldByInclusion, sourcePaths, sourceTree } from "./file-facts.ts";
+import { globExpression } from "./glob.ts";
 import type { Finding } from "./finding.ts";
 import { findingsPass, recordedFindings, rowKey, type PassResult } from "./findings-pass.ts";
 import type { EmitterInput } from "./findings/emitter.ts";
@@ -72,7 +74,7 @@ import { injectionContainer } from "./injection-container.ts";
 import { interfaceSatisfaction } from "./interface-satisfaction.ts";
 import { intraFunctionFacts, projectParts, type ProjectParts } from "./intra-function-parts.ts";
 import { inventory, type Inventory, type InventorySymbol } from "./inventory.ts";
-import { readManifest } from "./manifest.ts";
+import { packageEntries, readManifest } from "./manifest.ts";
 import {
   liveFilesAt,
   matrixOf,
@@ -82,7 +84,7 @@ import {
   type Matrix,
   type SweepResult,
 } from "./matrix.ts";
-import { joinPath, relativePath, resolvePath } from "./paths.ts";
+import { joinPath, normalizePath, relativePath, resolvePath } from "./paths.ts";
 import type { UnansweredQuestion } from "./query.ts";
 import { byPosition, isComponentFile, type Position } from "./position.ts";
 import type { TypeErrorSkip, UnansweredCount } from "./report.ts";
@@ -99,6 +101,7 @@ import { references, testFileRulesOf, type Reference, type TestFileRule } from "
 import { roots, unmatchedEverywhere, type RootKind, type Roots } from "./roots.ts";
 import type { Scope } from "./scope.ts";
 import { serializationContract } from "./serialization-contract.ts";
+import { outsideTestReferences, testFilesAt, type OutsideTest } from "./outside-tests.ts";
 import { supportReferences, testSupportFiles } from "./test-support.ts";
 import { diagnosticsOf, ownedAs, runSession, type Engine, type ProjectView } from "./session.ts";
 import { accessorsOf, storesOf } from "./stores.ts";
@@ -219,6 +222,8 @@ interface ReadProjects<Answer> {
   readonly componentsUnread: readonly ComponentsUnread[];
   /** The convention rows the run applied. */
   readonly conventionsApplied: readonly AppliedConvention[];
+  /** The test files below the target root no project the run reads holds, parsed. */
+  readonly outsideTests: readonly OutsideTest[];
 }
 
 /**
@@ -284,7 +289,15 @@ function readProjects<Answer>(
   const options = {
     host,
     manifest: workspace?.manifest ?? readManifest(host, targetRoot),
-    workspaceEntries: workspace?.entries,
+    otherPackages: [
+      ...(workspace?.entries ?? []),
+      ...packageEntries(
+        host,
+        normalizePath(absoluteRoot),
+        discovered.configFiles,
+        new Set(workspace?.memberDirs ?? []),
+      ),
+    ],
     patterns: config.rootPatterns,
     entryFiles: config.ts.entryFiles,
     conventions,
@@ -304,6 +317,8 @@ function readProjects<Answer>(
   const unbuildable: SetupFailure[] = [];
   const setupDropped: SetupFailure[] = [];
   const consumed = new Map<string, Reference>();
+  const heldFiles = new Set<string>();
+  let outsideTests: readonly OutsideTest[] = [];
   const setupMet = (configFile: string, met: readonly SetupFailure[]): void => {
     const [first] = met;
     if (first !== undefined && isGuess(discovered, configFile)) {
@@ -434,10 +449,24 @@ function readProjects<Answer>(
           generated: generatedFiles(conventions, sourceFilesOf(project, targetRoot)),
         };
       };
+      for (const file of project.ownSourceFiles()) {
+        heldFiles.add(relativePath(absoluteRoot, file.fileName) ?? file.fileName);
+      }
       return stage(project, { configuration, read });
     },
     discovered.derived ? "record" : "refuse",
     workspace?.programs,
+    () => {
+      const patterns = config.ts.testFiles.map(globExpression);
+      outsideTests = testFilesAt(
+        host,
+        targetRoot,
+        sourcePaths(host, targetRoot).filter(
+          (path) => !heldFiles.has(path) && patterns.some((pattern) => pattern.test(path)),
+        ),
+        options.parse,
+      );
+    },
   );
   for (const configFile of session.unopened) {
     if (consumerOf.has(configFile) || !isGuess(discovered, configFile)) {
@@ -475,6 +504,7 @@ function readProjects<Answer>(
     unanswered: session.unanswered,
     componentsUnread: workspace?.componentsUnread ?? [],
     conventionsApplied: conventions.applied,
+    outsideTests,
   };
 }
 
@@ -630,6 +660,17 @@ interface SweptProject<Extra> {
   readonly extra: Extra;
 }
 
+/** What one project's stage reads while its view is open, before the run's test-support code is known. */
+interface ReadProject<Extra> {
+  readonly projectRead: ProjectRead;
+  readonly references: readonly Reference[];
+  readonly testFiles: readonly string[];
+  readonly evidence: readonly Exemption[];
+  readonly componentFiles: readonly string[];
+  readonly componentWarnings: readonly ComponentWarning[];
+  readonly extra: Extra;
+}
+
 /** What a run read of its projects before any sweep: the matrix, its exemptions, and each project's answers. */
 interface ReadRun<Extra> {
   readonly matrix: Matrix;
@@ -674,18 +715,12 @@ function readRun<Extra>(
     ? { delimiters: config.analysis.templateDelimiters, files: [] }
     : readTemplates(host, targetRoot, config.analysis);
   const consumers = scope.consumers.map((consumer) => consumer.path);
-  const read = readProjects<SweptProject<Extra>>(engine, host, scope, config, (project, opened) => {
+  const read = readProjects<ReadProject<Extra>>(engine, host, scope, config, (project, opened) => {
     const projectRead = opened.read();
     const resolved = references(project, projectRead.held, targetRoot, {
       testFiles: config.ts.testFiles,
     });
-    const support = testSupportFiles(
-      projectRead.held.symbols,
-      resolved.references,
-      projectRead.rooted.liveUnderReachability,
-      resolved.testFilePaths,
-    );
-    const detected = detectExemptions(
+    const evidence = evidenceRecords(
       {
         project,
         held: projectRead.held,
@@ -698,43 +733,16 @@ function readRun<Extra>(
           : { generated: projectRead.generated }),
       },
       detectors,
-      {
-        disabled,
-        mode,
-        testFiles: new Set([...resolved.testFilePaths, ...support]),
-      },
+      disabled,
     );
-    const exempt = detected.records;
-    const made = supportReferences(resolved.references, support);
-    const configured: Configured = {
-      configuration: projectRead.configuration,
-      symbols: projectRead.held.symbols,
-      references: [...made, ...evidenceReferences(projectRead.held.symbols, detected.inTestFiles)],
-      roots: projectRead.rooted.liveUnderReachability,
-      testFiles: resolved.testFilePaths,
-      ...(support.size === 0 ? {} : { supportFiles: [...support].sort() }),
-      ...(projectRead.referenceOnly.length === 0
-        ? {}
-        : { referenceOnly: projectRead.referenceOnly }),
-    };
-    const unanswered = [
-      ...projectRead.held.unanswered,
-      ...projectRead.rooted.unanswered,
-      ...made
-        .filter((reference) => reference.resolution === "by-name")
-        .map((reference) => reference.to),
-      ...exempt.filter(isUnansweredRecord).map((record) => record.id),
-    ];
     const components = project.ownSourceFiles().filter(isComponentFile);
     const pathOf = (file: (typeof components)[number]): string =>
       relativePath(targetRoot, file.fileName) ?? file.fileName;
     return {
-      configFile: projectRead.configFile,
-      configured,
-      exempt,
-      unanswered,
-      typeErrorSkips: projectRead.typeErrorSkips,
-      skipped: projectRead.skipped,
+      projectRead,
+      references: resolved.references,
+      testFiles: resolved.testFilePaths,
+      evidence,
       componentFiles: components.map(pathOf),
       componentWarnings: components.flatMap((file) =>
         readComponent(file.originalText).warnings.map((warning) => ({
@@ -743,11 +751,69 @@ function readRun<Extra>(
           reason: warning.reason,
         })),
       ),
-      extra: extra(project, projectRead, made),
+      extra: extra(project, projectRead, resolved.references),
+    };
+  });
+  const outsidePaths = read.outsideTests.map((one) => one.path);
+  const withOutside = read.answers.map((one) => ({
+    ...one,
+    references: [
+      ...one.references,
+      ...outsideTestReferences(read.outsideTests, one.projectRead.held, targetRoot),
+    ],
+    testFiles: [...one.testFiles, ...outsidePaths],
+  }));
+  // Test-support code is code only test code imports in any configuration of the run: a
+  // configuration that holds no test file says nothing about what the tests import.
+  const support = testSupportFiles(
+    withOutside.flatMap((one) => one.projectRead.held.symbols),
+    withOutside.flatMap((one) => one.references),
+    withOutside.flatMap((one) => one.projectRead.rooted.liveUnderReachability),
+    withOutside.flatMap((one) => one.testFiles),
+  );
+  const answers = withOutside.map((one): SweptProject<Extra> => {
+    const { projectRead } = one;
+    const detected = heldRecords(one.evidence, {
+      disabled,
+      mode,
+      testFiles: new Set([...one.testFiles, ...support]),
+    });
+    const exempt = detected.records;
+    const made = supportReferences(one.references, support);
+    const held = new Set(projectRead.held.symbols.map((symbol) => symbol.position.path));
+    const supportFiles = [...support].filter((path) => held.has(path)).sort();
+    const configured: Configured = {
+      configuration: projectRead.configuration,
+      symbols: projectRead.held.symbols,
+      references: [...made, ...evidenceReferences(projectRead.held.symbols, detected.inTestFiles)],
+      roots: projectRead.rooted.liveUnderReachability,
+      testFiles: one.testFiles,
+      ...(supportFiles.length === 0 ? {} : { supportFiles }),
+      ...(projectRead.referenceOnly.length === 0
+        ? {}
+        : { referenceOnly: projectRead.referenceOnly }),
+    };
+    return {
+      configFile: projectRead.configFile,
+      configured,
+      exempt,
+      unanswered: [
+        ...projectRead.held.unanswered,
+        ...projectRead.rooted.unanswered,
+        ...made
+          .filter((reference) => reference.resolution === "by-name")
+          .map((reference) => reference.to),
+        ...exempt.filter(isUnansweredRecord).map((record) => record.id),
+      ],
+      typeErrorSkips: projectRead.typeErrorSkips,
+      skipped: projectRead.skipped,
+      componentFiles: one.componentFiles,
+      componentWarnings: one.componentWarnings,
+      extra: one.extra,
     };
   });
   const consumed = read.consumers.references;
-  const projects = read.answers.map((one) =>
+  const projects = answers.map((one) =>
     consumed.length === 0
       ? one
       : {
@@ -763,7 +829,7 @@ function readRun<Extra>(
     exempt: exemptionsOf(projects.flatMap((one) => one.exempt)),
     unansweredHeld: [
       ...new Set([
-        ...read.answers.flatMap((one) => one.unanswered),
+        ...answers.flatMap((one) => one.unanswered),
         ...consumed.filter((one) => one.resolution === "by-name").map((one) => one.to),
       ]),
     ],

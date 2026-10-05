@@ -3,7 +3,7 @@ import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
 import { writeProject } from "../__test-helpers__/projects.ts";
-import { runAnalysis } from "./analysis.ts";
+import { runAnalysis, type RunAnalysis } from "./analysis.ts";
 import type { Cascade } from "./config.ts";
 import { resolve } from "./resolve.ts";
 import { scopeForDir } from "./scope.ts";
@@ -155,10 +155,10 @@ afterAll(() => {
 type Fails = (accessor: string, locations: readonly string[]) => boolean;
 
 /**
- * The library analyzed under one cascade, with every question for which `fails` answers
+ * The library's analysis under one cascade, with every question for which `fails` answers
  * true failing as a server panic. Every accessor and location asked is recorded in `asked`.
  */
-function analyzed(cascade: Cascade, fails: Fails, asked?: Set<string>): readonly Reported[] {
+function analysisUnder(cascade: Cascade, fails: Fails, asked?: Set<string>): RunAnalysis {
   if (client === undefined) {
     throw new Error("the client is opened before any case runs");
   }
@@ -184,10 +184,14 @@ function analyzed(cascade: Cascade, fails: Fails, asked?: Set<string>): readonly
     repository: JSON.stringify({ target: { kind: "library" }, reporters: { cascade } }),
     repositoryLabel: "deadset.json",
   });
-  const { result } = runAnalysis(engine, host, scopeForDir(host, root), config, provenance, {
+  return runAnalysis(engine, host, scopeForDir(host, root), config, provenance, {
     production: true,
   });
-  return result.findings.map((finding) => ({
+}
+
+/** The findings of {@link analysisUnder}. */
+function analyzed(cascade: Cascade, fails: Fails, asked?: Set<string>): readonly Reported[] {
+  return analysisUnder(cascade, fails, asked).result.findings.map((finding) => ({
     ref: finding.symbol.ref,
     at: `${finding.position.path}:${String(finding.position.line)}`,
     code: finding.code,
@@ -253,7 +257,6 @@ describe("a question the checker does not answer", () => {
     expect(full.map((one) => `${one.code} ${one.ref}`)).toEqual([
       "DS1005 ts://@example/partial/src/internal.test.ts#checksRecurse",
       "DS1003 ts://@example/partial/src/internal.ts#Counter.unused",
-      "DS1003 ts://@example/partial/src/internal.ts#Invocation.other",
       "DS1103 ts://@example/partial/src/internal.ts#deadExported",
       "DS1002 ts://@example/partial/src/internal.ts#deadLocal",
       "DS1006 ts://@example/partial/src/internal.ts#retired",
@@ -266,6 +269,28 @@ describe("a question the checker does not answer", () => {
   it("reports nothing a failure could change when every question fails", () => {
     expect(asked.size).toBeGreaterThan(0);
     expect(analyzed("full", () => true).map((one) => `${one.code} ${one.ref}`)).toEqual([]);
+  });
+
+  it("holds the declarations a published type name the checker leaves unanswered may name", () => {
+    const main = LIBRARY["src/main.ts"] ?? "";
+    // A location is a node's full start, before the space that leads it.
+    const at = `/src/main.ts:${String(main.indexOf("invocation: Invocation") + "invocation:".length)}`;
+    // The reference pass asks about the name in a batch of every name its file writes,
+    // so a batch of this name alone is the published API's question.
+    const analysis = analysisUnder(
+      "full",
+      (accessor, locations) =>
+        accessor === "getSymbolAtLocation" &&
+        locations.length === 1 &&
+        locations[0]?.endsWith(at) === true,
+    );
+    const held = new Set(analysis.swept.heldByUnanswered);
+    expect(
+      analysis.configured
+        .flatMap((one) => one.symbols)
+        .filter((symbol) => held.has(symbol.id))
+        .map((symbol) => symbol.ref),
+    ).toEqual(["ts://@example/partial/src/internal.ts#Invocation"]);
   });
 
   it("withholds findings and never adds or recodes one, for every question failing alone", () => {

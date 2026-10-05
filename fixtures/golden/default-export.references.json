@@ -2,10 +2,10 @@
   {"at":"src/index.ts:1:18","from":"src/index.ts:1:1","to":"src/held.ts:1:1","use":"evaluation","resolution":"batch","test":false},
   {"at":"src/index.ts:2:18","from":"src/index.ts:1:1","to":"src/made.ts:1:1","use":"evaluation","resolution":"batch","test":false},
   {"at":"src/index.ts:3:19","from":"src/index.ts:1:1","to":"src/named.ts:1:1","use":"evaluation","resolution":"batch","test":false},
-  {"at":"src/index.ts:7:10","from":"src/index.ts:6:17","to":"src/held.ts:2:1","use":"read","resolution":"alias","test":false},
-  {"at":"src/index.ts:7:19","from":"src/index.ts:6:17","to":"src/made.ts:7:1","use":"read","resolution":"alias","test":false},
+  {"at":"src/index.ts:7:10","from":"src/index.ts:6:17","to":"src/held.ts:2:8","use":"read","resolution":"alias","test":false},
+  {"at":"src/index.ts:7:19","from":"src/index.ts:6:17","to":"src/made.ts:7:8","use":"read","resolution":"alias","test":false},
   {"at":"src/index.ts:7:26","from":"src/index.ts:6:17","to":"src/named.ts:2:17","use":"read","resolution":"alias","test":false},
-  {"at":"src/index.ts:7:26","from":"src/index.ts:6:17","to":"src/named.ts:7:1","use":"read","resolution":"alias","test":false},
-  {"at":"src/made.ts:7:16","from":"src/made.ts:7:1","to":"src/made.ts:2:10","use":"read","resolution":"batch","test":false},
-  {"at":"src/named.ts:7:16","from":"src/named.ts:7:1","to":"src/named.ts:2:17","use":"read","resolution":"batch","test":false}
+  {"at":"src/index.ts:7:26","from":"src/index.ts:6:17","to":"src/named.ts:7:8","use":"read","resolution":"alias","test":false},
+  {"at":"src/made.ts:7:16","from":"src/made.ts:7:8","to":"src/made.ts:2:10","use":"read","resolution":"batch","test":false},
+  {"at":"src/named.ts:7:16","from":"src/named.ts:7:8","to":"src/named.ts:2:17","use":"read","resolution":"batch","test":false}
 ]

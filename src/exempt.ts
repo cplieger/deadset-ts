@@ -187,12 +187,23 @@ export function detectExemptions<Brand>(
   detectors: Detectors,
   holding: Holding,
 ): Detected {
+  return heldRecords(evidenceRecords(input, detectors, holding.disabled), holding);
+}
+
+/**
+ * Every record one project's detectors found, one per piece of evidence, before the
+ * mode decides which of them hold: what {@link heldRecords} reads.
+ */
+export function evidenceRecords<Brand>(
+  input: DetectorInput<Brand>,
+  detectors: Detectors,
+  disabled: ReadonlySet<ExemptionClass>,
+): readonly Exemption[] {
   const visibility = new Map(input.held.symbols.map((symbol) => [symbol.id, symbol.visibility]));
   const found: Exemption[] = [];
-  const inTestFiles: Exemption[] = [];
   for (const exemptionClass of TS_EXEMPTION_CLASSES) {
     const detect = detectors.get(exemptionClass);
-    if (detect === undefined || holding.disabled.has(exemptionClass)) {
+    if (detect === undefined || disabled.has(exemptionClass)) {
       continue;
     }
     const allowed = typescriptVisibilityOf(exemptionClass);
@@ -200,17 +211,26 @@ export function detectExemptions<Brand>(
       if (!retainable(allowed, visibility.get(evidence.id))) {
         continue;
       }
-      const record = {
+      found.push({
         id: evidence.id,
         class: exemptionClass,
         detail: evidence.detail,
         site: evidence.site,
         ...(evidence.whileLive === undefined ? {} : { whileLive: evidence.whileLive }),
-      };
-      if (holding.mode.production && holding.testFiles.has(evidence.site.path)) {
-        inTestFiles.push(record);
-        continue;
-      }
+      });
+    }
+  }
+  return found;
+}
+
+/** The records that hold under one mode, beside the evidence a production mode found in a test file. */
+export function heldRecords(records: readonly Exemption[], holding: Holding): Detected {
+  const found: Exemption[] = [];
+  const inTestFiles: Exemption[] = [];
+  for (const record of records) {
+    if (holding.mode.production && holding.testFiles.has(record.site.path)) {
+      inTestFiles.push(record);
+    } else {
       found.push(record);
     }
   }

@@ -65,13 +65,11 @@ function lastLine(text: string): number {
 }
 
 /**
- * Every source file below the target root, in path order. A directory that cannot be
- * read is skipped, as discovery skips it, and a file that cannot be read is skipped
- * with it: a tree the analysis may not enter holds no file it can report.
+ * The path below the target root of every source file there, in path order. A directory
+ * that cannot be read is skipped, as discovery skips it.
  */
-export function sourceTree(host: Host, targetRoot: string): readonly TreeFile[] {
-  const scopeOf = packageScope(host, targetRoot);
-  const found: TreeFile[] = [];
+export function sourcePaths(host: Host, targetRoot: string): readonly string[] {
+  const found: string[] = [];
   const pending = [""];
   for (let dir = pending.pop(); dir !== undefined; dir = pending.pop()) {
     let entries: readonly { readonly name: string; readonly directory: boolean }[];
@@ -88,23 +86,29 @@ export function sourceTree(host: Host, targetRoot: string): readonly TreeFile[] 
         }
         continue;
       }
-      if (!SOURCE_FILE.test(entry.name) || DECLARATION_FILE.test(entry.name)) {
-        continue;
+      if (SOURCE_FILE.test(entry.name) && !DECLARATION_FILE.test(entry.name)) {
+        found.push(path);
       }
-      let text: string;
-      try {
-        text = host.readFile(joinPath(targetRoot, path));
-      } catch {
-        continue;
-      }
-      found.push({
-        path,
-        ref: renderRef(scopeOf(path), { of: "module" }),
-        endLine: lastLine(text),
-      });
     }
   }
-  return found.sort((a, b) => (a.path < b.path ? -1 : 1));
+  return found.sort((a, b) => (a < b ? -1 : 1));
+}
+
+/**
+ * Every source file below the target root, in path order. A file that cannot be read is
+ * skipped: a tree the analysis may not enter holds no file it can report.
+ */
+export function sourceTree(host: Host, targetRoot: string): readonly TreeFile[] {
+  const scopeOf = packageScope(host, targetRoot);
+  return sourcePaths(host, targetRoot).flatMap((path) => {
+    let text: string;
+    try {
+      text = host.readFile(joinPath(targetRoot, path));
+    } catch {
+      return [];
+    }
+    return [{ path, ref: renderRef(scopeOf(path), { of: "module" }), endLine: lastLine(text) }];
+  });
 }
 
 /** Whether one file changes what the program sees by being included in it. */

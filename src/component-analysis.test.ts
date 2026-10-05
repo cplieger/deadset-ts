@@ -140,6 +140,7 @@ describe("component files, read through the compiler's content mapper", () => {
       "ts://@example/app/src/Crlf.vue#Row.label\ttemplate-field\tsrc/Crlf.vue:2:13\tnamed by {{ row.label }}",
       "ts://@example/app/src/level.ts#Level.Low\ttemplate-field\tsrc/Status.vue:1:51\tnamed by {{ Level.Low }}",
       'ts://@example/app/src/level.ts#Level.High\ttemplate-field\tsrc/Status.vue:1:36\tnamed by v-if="state === Level.High"',
+      'ts://@example/app/src/level.ts#Level.Templated\ttemplate-field\tsrc/Status.vue:2:27\tnamed by :title="`level ${Level.Templated}`"',
       "",
     ]);
   });
@@ -164,7 +165,7 @@ describe("component files, read through the compiler's content mapper", () => {
     expect(out.text.split("\n").slice(0, 3)).toEqual([
       "symbol: ts://@example/app/src/Legacy.vue#default:alias",
       "declaration: export-alias default",
-      "position: src/Legacy.vue:4:1",
+      "position: src/Legacy.vue:4:8",
     ]);
   });
 

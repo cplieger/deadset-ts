@@ -125,12 +125,74 @@ function stringEnd(text: string, from: number): number {
   return at + 1;
 }
 
-/** The identifiers one action's inner text writes outside a quoted string, with their offsets in it. */
-function identifiersOf(inner: string): readonly { name: string; offset: number }[] {
+/** The end of the `${` substitution whose expression starts at `from`, past its closing brace. */
+function substitutionEnd(text: string, from: number): number {
+  let depth = 1;
+  let at = from;
+  while (at < text.length) {
+    const char = text[at];
+    if (char === '"' || char === "'") {
+      at = stringEnd(text, at);
+      continue;
+    }
+    if (char === "`") {
+      at = templateEnd(text, at, () => undefined);
+      continue;
+    }
+    if (char === "{") {
+      depth += 1;
+    } else if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return at + 1;
+      }
+    }
+    at += 1;
+  }
+  return at;
+}
+
+/** The end of the template literal at `from`; each `${…}` expression goes to `substitution`. */
+function templateEnd(
+  text: string,
+  from: number,
+  substitution: (expression: string, offset: number) => void,
+): number {
+  let at = from + 1;
+  while (at < text.length && text[at] !== "`") {
+    if (text[at] === "\\") {
+      at += 2;
+      continue;
+    }
+    if (text[at] === "$" && text[at + 1] === "{") {
+      const start = at + 2;
+      const end = substitutionEnd(text, start);
+      substitution(text.slice(start, end - 1), start);
+      at = end;
+      continue;
+    }
+    at += 1;
+  }
+  return at + 1;
+}
+
+/**
+ * The identifiers one action's inner text writes outside a quoted string, with their offsets
+ * in it. In `script` text, a component's markup, a template literal's substitutions are code.
+ */
+function identifiersOf(inner: string, script = false): readonly { name: string; offset: number }[] {
   const found: { name: string; offset: number }[] = [];
   let at = 0;
   while (at < inner.length) {
     const char = inner[at] ?? "";
+    if (char === "`" && script) {
+      at = templateEnd(inner, at, (expression, offset) => {
+        for (const one of identifiersOf(expression, true)) {
+          found.push({ name: one.name, offset: offset + one.offset });
+        }
+      });
+      continue;
+    }
     if (char === '"' || char === "'" || char === "`") {
       at = stringEnd(inner, at);
       continue;
@@ -183,7 +245,7 @@ function namesOf(text: string, delimiters: TemplateDelimiters): readonly Named[]
 /** Every identifier the markup of one component file writes in an action. */
 function markupNamesOf(text: string): readonly Named[] {
   return readComponent(text).markup.flatMap((one) =>
-    identifiersOf(one.text).map(({ name, offset }) => ({
+    identifiersOf(one.text, true).map(({ name, offset }) => ({
       name,
       offset: one.start + offset,
       action: one.action,

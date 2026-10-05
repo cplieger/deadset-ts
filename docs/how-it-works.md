@@ -24,7 +24,7 @@ A declaration is reported only when it is dead in every project that holds it.
 
 ## How it finds references
 
-The analysis takes an inventory of every declaration a project's own files hold, down to class and type members. It then resolves every reference over that inventory in one pass, through the compiler's type information rather than a text search. The pass resolves each file's identifiers in batches, and [Batch-cap calibration](batch-cap-calibration.md) is the measurement behind the batch size.
+The analysis takes an inventory of every declaration a project's own files hold, down to class and type members. It then resolves every reference over that inventory in one pass, through the compiler's type information rather than a text search. The pass resolves each file's identifiers in batches, and [Batch-cap calibration](batch-cap-calibration.md) is the measurement behind the batch size. A test file that no compiler configuration includes is still read for the modules it imports, without type information. A helper only such a test imports is then not reported as unused.
 
 The same tree always gives the same report, and the analysis keeps no cache between runs.
 
@@ -32,7 +32,7 @@ The same tree always gives the same report, and the analysis keeps no cache betw
 
 A root is a declaration the analysis keeps live without a reference. `print-roots` lists each one with the rule that made it a root. The roots are:
 
-- What a file exports when the target's manifest, or another workspace package's manifest, names it through `main`, `module`, `types`, `bin` or `exports`, or when `ts.entry_files` matches it
+- What a file exports when the target's manifest, or another workspace package's manifest, names it through `main`, `module`, `types`, `bin` or `exports`, or when `ts.entry_files` matches it. A `package.json` in a directory between the target and one of its compiler configurations counts here too.
 - A library target's published API
 - What a file exports when an applied convention row names it, such as a Next.js page, a SvelteKit route or a Storybook story
 - A configuration file beside a `package.json` whose name is `<stem>.config.<ext>`, `<stem>.<qualifier>.config.<ext>` or `.<stem>rc.<ext>`

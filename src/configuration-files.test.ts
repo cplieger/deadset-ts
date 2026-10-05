@@ -141,7 +141,9 @@ describe("the configuration files of a project", () => {
       "src/rc-module.ts configuration-string ./src/rc-module.ts",
       "src/template.ts configuration-string ./src/template.ts",
       "src/up.ts configuration-string ../src/up.ts",
+      "sub/inner.config.ts configuration-file <stem>.config.<ext>",
       "tool.config.ts configuration-file <stem>.config.<ext>",
+      "tool.lint.config.mts configuration-file <stem>.<qualifier>.config.<ext>",
     ]);
   });
 

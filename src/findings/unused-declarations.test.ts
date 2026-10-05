@@ -462,3 +462,324 @@ describe("a member that is the only part of its type naming a type parameter", (
     expect(findings(`${PAIR}console.log(pair.id, pair.second);\n`)).toEqual(["DS1003 Pair.first"]);
   });
 });
+
+describe("a file whose only statement is its default export", () => {
+  const roots: string[] = [];
+  afterAll(() => {
+    for (const root of roots) {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  /** Every finding, as code, name and place, over `src/main.ts` importing `src/side.ts` for its effect. */
+  function findings(side: string): string[] {
+    const root = writeProject({
+      "package.json": '{ "name": "@example/app", "type": "module", "main": "./src/main.ts" }\n',
+      "src/main.ts": 'import "./side.js";\n',
+      "src/side.ts": side,
+    });
+    roots.push(root);
+    return findingsOf(
+      emitterInputOf(root, configOf('{ "target": { "kind": "application" } }')),
+    ).map(
+      (finding) =>
+        `${finding.code} ${finding.symbol.name} ${String(finding.position.line)}:${String(finding.position.column)}`,
+    );
+  }
+
+  it("reports the unused default export apart from the file the import evaluates", () => {
+    expect(findings("export default function () {}")).toEqual(["DS1001 default 1:8"]);
+    expect(findings("export default 1;")).toEqual(["DS1001 default 1:8"]);
+  });
+});
+
+describe("test-support code a configuration holding no test file compiles too", () => {
+  const roots: string[] = [];
+  afterAll(() => {
+    for (const root of roots) {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("is judged with the tests in every configuration of the run", () => {
+    const root = writeProject({
+      "package.json": '{ "name": "@example/app", "type": "module", "main": "./src/main.ts" }\n',
+      "tsconfig.json": `${JSON.stringify({
+        compilerOptions: { strict: true, module: "NodeNext", noEmit: true },
+        include: ["src/**/*.ts"],
+        exclude: ["src/**/*.test.ts"],
+      })}\n`,
+      "tsconfig.test.json": `${JSON.stringify({ extends: "./tsconfig.json", exclude: [] })}\n`,
+      "src/main.ts": "console.log(1);\n",
+      "src/fakes/outer.ts":
+        'import { inner } from "./inner.js";\n\nexport function outer(): number {\n  return inner();\n}\n',
+      "src/fakes/inner.ts": "export function inner(): number {\n  return 2;\n}\n",
+      "src/main.test.ts": 'import { outer } from "./fakes/outer.js";\n\nconsole.log(outer());\n',
+    });
+    roots.push(root);
+    expect(
+      family(emitterInputOf(root, configOf('{ "target": { "kind": "application" } }'))).map(
+        (finding) => `${finding.code} ${finding.symbol.name}`,
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe("a file only a test reaches through a module specifier with a query", () => {
+  const roots: string[] = [];
+  afterAll(() => {
+    for (const root of roots) {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("is test-support code, and so is what it imports", () => {
+    const root = writeProject({
+      "package.json": '{ "name": "@example/app", "type": "module", "main": "./src/main.ts" }\n',
+      "src/main.ts": "console.log(1);\n",
+      "src/env.d.ts":
+        'declare module "*?worker&url" {\n  const url: string;\n  export default url;\n}\n',
+      "src/fakes/worker.ts": 'import { inner } from "./inner.js";\n\nconsole.log(inner());\n',
+      "src/fakes/inner.ts": "export function inner(): number {\n  return 2;\n}\n",
+      "src/main.test.ts":
+        'import workerUrl from "./fakes/worker.ts?worker&url";\n\nconsole.log(workerUrl);\n',
+    });
+    roots.push(root);
+    expect(
+      findingsOf(emitterInputOf(root, configOf('{ "target": { "kind": "application" } }')))
+        .filter((finding) => finding.position.path.startsWith("src/fakes/"))
+        .map((finding) => `${finding.code} ${finding.symbol.name}`),
+    ).toEqual([]);
+  });
+
+  it("is not test-support code when the query reads the file as text", () => {
+    const root = writeProject({
+      "package.json": '{ "name": "@example/app", "type": "module", "main": "./src/main.ts" }\n',
+      "src/main.ts": "console.log(1);\n",
+      "src/env.d.ts":
+        'declare module "*?raw" {\n  const text: string;\n  export default text;\n}\n',
+      "src/page.ts": 'import { inner } from "./inner.js";\n\nexport const page = inner();\n',
+      "src/inner.ts": "export function inner(): number {\n  return 2;\n}\n",
+      "src/main.test.ts": 'import source from "./page.ts?raw";\n\nconsole.log(source);\n',
+    });
+    roots.push(root);
+    expect(
+      findingsOf(emitterInputOf(root, configOf('{ "target": { "kind": "application" } }')))
+        .filter((finding) => ["src/page.ts", "src/inner.ts"].includes(finding.position.path))
+        .map((finding) => `${finding.code} ${finding.symbol.name}`),
+    ).toEqual(["DS1001 inner", "DS1001 page", "DS1502 src/page.ts"]);
+  });
+});
+
+describe("a test file no configuration of the run holds", () => {
+  const roots: string[] = [];
+  afterAll(() => {
+    for (const root of roots) {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("references what its imports name, so what only it imports is test-support code", () => {
+    const root = writeProject({
+      "package.json": '{ "name": "@example/app", "type": "module", "main": "./src/main.ts" }\n',
+      "tsconfig.json": `${JSON.stringify({
+        compilerOptions: { strict: true, module: "NodeNext", noEmit: true },
+        include: ["src/**/*.ts"],
+        exclude: ["src/**/*.test.ts"],
+      })}\n`,
+      "src/main.ts": "console.log(1);\n",
+      "src/hooks.ts": "export function forTests(): number {\n  return 1;\n}\n",
+      "src/fakes/fake.ts":
+        "function inner(): number {\n  return 2;\n}\n\nexport function fake(): number {\n  return inner();\n}\n\nexport function unusedFake(): number {\n  return 3;\n}\n",
+      "src/main.test.ts":
+        'import { fake } from "./fakes/fake.js";\nimport { forTests } from "./hooks.js";\n\nconsole.log(fake(), forTests());\n',
+    });
+    roots.push(root);
+    expect(
+      findingsOf(emitterInputOf(root, configOf('{ "target": { "kind": "application" } }'))).map(
+        (finding) => `${finding.code} ${finding.symbol.name}`,
+      ),
+    ).toEqual(["DS1001 unusedFake"]);
+  });
+
+  it("references nothing through a specifier whose query reads the file as text", () => {
+    const root = writeProject({
+      "package.json": '{ "name": "@example/app", "type": "module", "main": "./src/main.ts" }\n',
+      "tsconfig.json": `${JSON.stringify({
+        compilerOptions: { strict: true, module: "NodeNext", noEmit: true },
+        include: ["src/**/*.ts"],
+        exclude: ["src/**/*.test.ts"],
+      })}\n`,
+      "src/main.ts": "console.log(1);\n",
+      "src/page.ts": "export default function page(): number {\n  return 1;\n}\n",
+      "src/main.test.ts": 'import source from "./page.ts?raw";\n\nconsole.log(source);\n',
+    });
+    roots.push(root);
+    expect(
+      findingsOf(emitterInputOf(root, configOf('{ "target": { "kind": "application" } }'))).map(
+        (finding) => `${finding.code} ${finding.symbol.name}`,
+      ),
+    ).toEqual(["DS1001 page", "DS1502 src/page.ts"]);
+  });
+
+  it("references a named default export through a default import", () => {
+    const root = writeProject({
+      "package.json": '{ "name": "@example/app", "type": "module", "main": "./src/main.ts" }\n',
+      "tsconfig.json": `${JSON.stringify({
+        compilerOptions: { strict: true, module: "NodeNext", noEmit: true },
+        include: ["src/**/*.ts"],
+        exclude: ["src/**/*.test.ts"],
+      })}\n`,
+      "src/main.ts": "console.log(1);\n",
+      "src/page.ts": "export default function page(): number {\n  return 1;\n}\n",
+      "src/main.test.ts": 'import page from "./page.js";\n\nconsole.log(page());\n',
+    });
+    roots.push(root);
+    expect(
+      findingsOf(emitterInputOf(root, configOf('{ "target": { "kind": "application" } }'))).map(
+        (finding) => `${finding.code} ${finding.symbol.name}`,
+      ),
+    ).toEqual([]);
+  });
+
+  /** Every finding of an application whose one compiler configuration excludes `src/main.test.ts`. */
+  function findingsBeside(files: Readonly<Record<string, string>>): string[] {
+    const root = writeProject({
+      "package.json": '{ "name": "@example/app", "type": "module", "main": "./src/main.ts" }\n',
+      "tsconfig.json": `${JSON.stringify({
+        compilerOptions: { strict: true, module: "NodeNext", noEmit: true, allowJs: true },
+        include: ["src/**/*.ts", "src/**/*.mts", "src/**/*.js"],
+        exclude: ["src/**/*.test.ts"],
+      })}\n`,
+      "src/main.ts": "console.log(1);\n",
+      ...files,
+    });
+    roots.push(root);
+    return findingsOf(
+      emitterInputOf(root, configOf('{ "target": { "kind": "application" } }')),
+    ).map((finding) => `${finding.code} ${finding.symbol.name}`);
+  }
+
+  it("evaluates the file a bare or a namespace import names, and reads no export of it", () => {
+    expect(
+      findingsBeside({
+        "src/setup.ts": "console.log(0);\n",
+        "src/hooks.ts": "export function forTests(): number {\n  return 1;\n}\n",
+        "src/main.test.ts":
+          'import "./setup.js";\nimport * as hooks from "./hooks.js";\n\nconsole.log(hooks);\n',
+      }),
+    ).toEqual(["DS1001 forTests"]);
+  });
+
+  it("references what its re-exports name", () => {
+    expect(
+      findingsBeside({
+        "src/hooks.ts": "export function forTests(): number {\n  return 1;\n}\n",
+        "src/main.test.ts": 'export { forTests } from "./hooks.js";\n',
+      }),
+    ).toEqual([]);
+  });
+
+  it("evaluates the file an import() call of literal text names", () => {
+    expect(
+      findingsBeside({
+        "src/fakes/setup.ts": 'import { inner } from "./inner.js";\n\nconsole.log(inner());\n',
+        "src/fakes/inner.ts": "export function inner(): number {\n  return 2;\n}\n",
+        "src/main.test.ts": 'it("boots", async () => {\n  await import("./fakes/setup.js");\n});\n',
+      }),
+    ).toEqual([]);
+  });
+
+  it("names a JavaScript source and a directory's index the way the module resolution does", () => {
+    expect(
+      findingsBeside({
+        "src/legacy.js": "export function legacy() {\n  return 1;\n}\n",
+        "src/lib/index.mts": "export function fromIndex(): number {\n  return 2;\n}\n",
+        "src/main.test.ts":
+          'import { legacy } from "./legacy";\nimport { fromIndex } from "./lib";\n\nconsole.log(legacy(), fromIndex());\n',
+      }),
+    ).toEqual([]);
+  });
+});
+
+describe("an override of a method its base class calls", () => {
+  const roots: string[] = [];
+  afterAll(() => {
+    for (const root of roots) {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  /** This family's findings over one `src/main.ts` the manifest names as the entry. */
+  function findings(main: string): string[] {
+    const root = writeProject({
+      "package.json": '{ "name": "@example/app", "type": "module", "main": "./src/main.ts" }\n',
+      "src/main.ts": main,
+    });
+    roots.push(root);
+    return family(emitterInputOf(root, configOf('{ "target": { "kind": "application" } }'))).map(
+      (finding) => `${finding.code} ${finding.symbol.name}`,
+    );
+  }
+
+  const SHAPES = [
+    "abstract class Shape {",
+    "  describe(): string {",
+    "    return `${this.name()} ${String(area(this))}`;",
+    "  }",
+    "  protected abstract name(): string;",
+    "  abstract area(): number;",
+    "  abstract perimeter(): number;",
+    "}",
+    "function area(shape: Shape): number {",
+    "  return shape.area();",
+    "}",
+    "class Square extends Shape {",
+    "  protected name(): string {",
+    '    return "square";',
+    "  }",
+    "  area(): number {",
+    "    return 4;",
+    "  }",
+    "  perimeter(): number {",
+    "    return 8;",
+    "  }",
+    "}",
+    "",
+  ].join("\n");
+
+  it("is live while the base calls it through this or a value of the base type, and no other is", () => {
+    expect(findings(`${SHAPES}console.log(new Square().describe());\n`)).toEqual([
+      "DS1003 Shape.perimeter",
+      "DS1003 Square.perimeter",
+    ]);
+  });
+
+  it("falls with the base method that calls it", () => {
+    expect(findings(`${SHAPES}console.log(new Square());\n`)).toContain("DS1003 Square.name");
+  });
+
+  it("is no override where the members are private names, which each class declares alone", () => {
+    expect(
+      findings(
+        [
+          "class Base {",
+          "  run(): number {",
+          "    return this.#step();",
+          "  }",
+          "  #step(): number {",
+          "    return 1;",
+          "  }",
+          "}",
+          "class Child extends Base {",
+          "  #step(): number {",
+          "    return 2;",
+          "  }",
+          "}",
+          "console.log(new Child().run());",
+          "",
+        ].join("\n"),
+      ),
+    ).toEqual(["DS1003 Child.#step"]);
+  });
+});
