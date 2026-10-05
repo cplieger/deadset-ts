@@ -36,14 +36,17 @@ import {
 } from "./discover.ts";
 import {
   conventionFailuresFor,
+  generatedFiles,
   readConventions,
   type AppliedConvention,
   type ConventionManifest,
 } from "./conventions.ts";
 import { readEdgeSides } from "./edges.ts";
 import { enumGroup } from "./enum-group.ts";
+import { generatedFile } from "./generated-file.ts";
+import { sourceFilesOf } from "./source-files.ts";
 import {
-  computeExemptions,
+  detectExemptions,
   disabledClasses,
   exemptionsOf,
   holdingWhile,
@@ -185,6 +188,8 @@ interface ProjectRead {
   readonly typeErrorSkips: readonly TypeErrorSkip[];
   /** The lines each of those skips withholds every finding on. */
   readonly skipped: readonly SkippedUnit[];
+  /** The project's generated files, by path below the target root, each with the row naming it. */
+  readonly generated: ReadonlyMap<string, string>;
 }
 
 /** One target project the run analyzes, as its stage is handed it. */
@@ -284,6 +289,7 @@ function readProjects<Answer>(
     entryFiles: config.ts.entryFiles,
     conventions,
     testFiles: config.ts.testFiles,
+    parse: (fileName: string, text: string) => engine.parseSourceFile(fileName, text),
     publishedAPI: config.targetKind === "library",
   };
   const notBuilt: NotBuilt[] = [...discovered.notBuilt];
@@ -425,6 +431,7 @@ function readProjects<Answer>(
             .ownSourceFiles()
             .filter((file) => referenceOnly(file.fileName))
             .flatMap((file) => relativePath(absoluteRoot, file.fileName) ?? []),
+          generated: generatedFiles(conventions, sourceFilesOf(project, targetRoot)),
         };
       };
       return stage(project, { configuration, read });
@@ -599,6 +606,7 @@ export interface ComponentWarning {
 const DETECTORS: Detectors = new Map<TSExemptionClass, Detector>([
   ["interface-satisfaction", interfaceSatisfaction],
   ["enum-group", enumGroup],
+  ["generated-file", generatedFile],
   ["template-field", templateField],
   ["reflective-lookup", reflectiveLookup],
   ["decorator", decorator],
@@ -677,20 +685,18 @@ function readRun<Extra>(
       projectRead.rooted.liveUnderReachability,
       resolved.testFilePaths,
     );
-    const made = supportReferences(resolved.references, support);
-    const configured: Configured = {
-      configuration: projectRead.configuration,
-      symbols: projectRead.held.symbols,
-      references: made,
-      roots: projectRead.rooted.liveUnderReachability,
-      testFiles: resolved.testFilePaths,
-      ...(support.size === 0 ? {} : { supportFiles: [...support].sort() }),
-      ...(projectRead.referenceOnly.length === 0
-        ? {}
-        : { referenceOnly: projectRead.referenceOnly }),
-    };
-    const exempt = computeExemptions(
-      { project, held: projectRead.held, targetRoot, templates, ts: config.ts, consumers },
+    const detected = detectExemptions(
+      {
+        project,
+        held: projectRead.held,
+        targetRoot,
+        templates,
+        ts: config.ts,
+        consumers,
+        ...(config.analysis.generatedFiles === "include"
+          ? {}
+          : { generated: projectRead.generated }),
+      },
       detectors,
       {
         disabled,
@@ -698,6 +704,19 @@ function readRun<Extra>(
         testFiles: new Set([...resolved.testFilePaths, ...support]),
       },
     );
+    const exempt = detected.records;
+    const made = supportReferences(resolved.references, support);
+    const configured: Configured = {
+      configuration: projectRead.configuration,
+      symbols: projectRead.held.symbols,
+      references: [...made, ...evidenceReferences(projectRead.held.symbols, detected.inTestFiles)],
+      roots: projectRead.rooted.liveUnderReachability,
+      testFiles: resolved.testFilePaths,
+      ...(support.size === 0 ? {} : { supportFiles: [...support].sort() }),
+      ...(projectRead.referenceOnly.length === 0
+        ? {}
+        : { referenceOnly: projectRead.referenceOnly }),
+    };
     const unanswered = [
       ...projectRead.held.unanswered,
       ...projectRead.rooted.unanswered,
@@ -785,6 +804,61 @@ function holdingSweep<Extra>(
 }
 
 /**
+ * The test references exemption evidence written in a test file makes: each is a read of
+ * the declaration it would retain, made by the test file at the evidence's site.
+ */
+function evidenceReferences(
+  symbols: readonly InventorySymbol[],
+  inTestFiles: readonly Exemption[],
+): readonly Reference[] {
+  if (inTestFiles.length === 0) {
+    return [];
+  }
+  const files = new Map(
+    symbols
+      .filter((symbol) => symbol.kind === "file")
+      .map((symbol) => [symbol.position.path, symbol.id]),
+  );
+  return inTestFiles.flatMap((record) => {
+    const from = files.get(record.site.path);
+    return from === undefined
+      ? []
+      : [
+          {
+            from,
+            to: record.id,
+            position: record.site,
+            use: "read",
+            resolution: "syntax",
+            test: true,
+          },
+        ];
+  });
+}
+
+/**
+ * The declarations every reference the mode counts stores into, a loaded consumer's
+ * reference counting as a read: what the write-only kind would report but for a record.
+ */
+function writtenOnly<Extra>(read: ReadRun<Extra>, mode: Mode): ReadonlySet<string> {
+  const written = new Set<string>();
+  const readSome = new Set<string>();
+  for (const { configured } of read.projects) {
+    for (const reference of configured.references) {
+      if (mode.production && reference.test) {
+        continue;
+      }
+      if (reference.use === "write" && reference.consumer === undefined) {
+        written.add(reference.to);
+      } else {
+        readSome.add(reference.to);
+      }
+    }
+  }
+  return new Set([...written].filter((id) => !readSome.has(id)));
+}
+
+/**
  * The sweep of a run read once, under one set of marks. Where a question went unanswered,
  * the run is swept once more without what that question could have kept live and without
  * the references that stood in for its answer, and every declaration that sweep judges
@@ -834,7 +908,7 @@ function sweptOf<Extra>(
     matrix: read.matrix,
     sweep: result,
     exempt,
-    retained: retainedIn(read.matrix, swept),
+    retained: retainedIn(read.matrix, swept, writtenOnly(read, input.mode)),
     notBuilt: read.notBuilt,
     unanswered: read.unanswered,
     heldByUnanswered: [...held],
@@ -874,6 +948,7 @@ interface EmitterExtra {
   readonly needs: ReturnType<typeof projectNeeds>;
   readonly implementations: ReturnType<typeof implementations>;
   readonly heldByInclusion: readonly string[];
+  readonly generated: readonly string[];
   readonly rooted: Roots;
   readonly directives: readonly InlineDirective[];
   readonly declarationsNamed: readonly boolean[];
@@ -900,9 +975,12 @@ function readEmitterRun(
     (project, read, references) => ({
       deprecation: deprecatedDeclarations(project, read.held),
       accessors: accessorsOf(project, read.held),
-      needs: projectNeeds(project, read.held, host, targetRoot),
+      needs: projectNeeds(project, read.held, host, targetRoot, (fileName, text) =>
+        engine.parseSourceFile(fileName, text),
+      ),
       implementations: implementations(project, read.held),
       heldByInclusion: heldByInclusion(project, targetRoot),
+      generated: [...read.generated.keys()],
       rooted: read.rooted,
       directives: inlineDirectives(project, read.held, targetRoot).filter(
         (directive) => !read.referenceOnly.includes(directive.site.path),
@@ -956,6 +1034,7 @@ function emitterInputOver(
     files: {
       tree: sourceTree(host, targetRoot),
       heldByInclusion: new Set(projects.flatMap((one) => one.extra.heldByInclusion)),
+      generated: new Set(projects.flatMap((one) => one.extra.generated)),
     },
     boundary: {
       consumers: {

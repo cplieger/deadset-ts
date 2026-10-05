@@ -29,17 +29,17 @@ describe("the placement of every family's findings in their components", () => {
     const target = fixture("projects", "reads-and-writes");
     const input = emitterInputOf(target, configOf(target));
 
-    expect(input.swept.sweep.components).toHaveLength(5);
+    expect(input.swept.sweep.components).toHaveLength(7);
     expect(placements(findingsOf(input))).toEqual([
-      "DS1002 Unused deadset-ts/c-0005 root 3 4",
-      "DS1104 Flag deadset-ts/c-0006 root 1 0",
-      "DS1301 written deadset-ts/c-0007 root 1 0",
-      "DS1301 shared deadset-ts/c-0008 root 1 0",
-      "DS1301 Gauge.#samples deadset-ts/c-0009 root 1 0",
-      "DS1301 slots deadset-ts/c-0010 root 1 0",
-      "DS1302 Mode.Write deadset-ts/c-0004 root 1 1",
+      "DS1002 Unused deadset-ts/c-0007 root 3 4",
+      "DS1104 Flag deadset-ts/c-0008 root 1 0",
+      "DS1301 written deadset-ts/c-0009 root 1 0",
+      "DS1301 shared deadset-ts/c-0010 root 1 0",
+      "DS1301 Gauge.#samples deadset-ts/c-0011 root 1 0",
+      "DS1301 slots deadset-ts/c-0012 root 1 0",
+      "DS1302 Mode.Write deadset-ts/c-0006 root 1 1",
       "DS1303 first<T> deadset-ts/c-0001 root 1 1",
-      "DS1303 Box.open<V> deadset-ts/c-0002 root 1 1",
+      "DS1303 Box.open<V> deadset-ts/c-0003 root 1 1",
     ]);
   });
 

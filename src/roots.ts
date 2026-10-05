@@ -10,6 +10,7 @@
 
 import type { SourceFile } from "@typescript/native/unstable/ast";
 import { aliasChains } from "./alias-chain.ts";
+import type { ParseFile } from "./configuration-files.ts";
 import { conventionEntries, type Conventions } from "./conventions.ts";
 import { entryPoints, type EntryRule } from "./entry-points.ts";
 import { globExpression } from "./glob.ts";
@@ -112,6 +113,8 @@ export interface RootOptions {
   readonly conventions?: Conventions | undefined;
   /** `ts.test_files` from the resolved configuration. */
   readonly testFiles: readonly string[];
+  /** The parser the configuration files no program holds are read with, where they are read. */
+  readonly parse?: ParseFile | undefined;
   /** Whether the target is a library, so a consumer outside it reaches its published API. */
   readonly publishedAPI: boolean;
 }
@@ -268,7 +271,14 @@ export function roots<Brand>(
     : conventionEntries(options.conventions, files)) {
     enter(file, "convention", row, true);
   }
-  for (const point of entryPoints(project, files, options.testFiles, options.host, targetRoot)) {
+  for (const point of entryPoints(
+    project,
+    files,
+    options.testFiles,
+    options.host,
+    targetRoot,
+    options.parse,
+  )) {
     enter(point.file, point.rule, point.source, point.exports);
   }
   for (const file of files.byPath.values()) {

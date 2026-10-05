@@ -242,7 +242,7 @@ describe("the two private facts", () => {
     }[];
     const reaching = exemptions.filter((entry) => entry.typescript_visibility !== undefined);
 
-    expect(reaching.length, "the Contract states the reach of every TypeScript class").toBe(8);
+    expect(reaching.length, "the Contract states the reach of every TypeScript class").toBe(9);
     expect(
       reaching.filter((entry) => entry.typescript_visibility?.private_name === true),
       "no class reaches a private name, so the two facts can never be collapsed",
@@ -256,6 +256,7 @@ describe("the two private facts", () => {
     ).toEqual([
       "decorator",
       "framework-lifecycle",
+      "generated-file",
       "injection-container",
       "reflective-lookup",
       "serialization-contract",

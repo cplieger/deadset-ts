@@ -412,7 +412,7 @@ describe("a component file of a workspace package", () => {
 
     expect(found(analysis)).toEqual([
       "DS1001 packages/a/src/index.ts usedByNobody",
-      "DS1003 packages/b/src/Widget.vue Row.spare",
+      "DS1301 packages/b/src/Widget.vue Row.spare",
     ]);
   });
 

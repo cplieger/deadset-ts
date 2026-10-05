@@ -1,5 +1,6 @@
 import {
   isArrayLiteralExpression,
+  isAsExpression,
   isBinaryExpression,
   isCallExpression,
   isDecorator,
@@ -32,14 +33,16 @@ import {
 } from "@typescript/native/unstable/ast";
 import type { Symbol as TSSymbol } from "@typescript/native/unstable/sync";
 import { aliasChains, type ChainTarget } from "./alias-chain.ts";
+import { contextualUses, type FlowAt, type LiteralAt } from "./contextual-uses.ts";
 import { destructuring, propertyReadsOf, type PropertyRead } from "./destructuring.ts";
 import { globExpression } from "./glob.ts";
 import { declarationsByName, nodeKey, type Inventory, type InventorySymbol } from "./inventory.ts";
 import { relativePath } from "./paths.ts";
 import { byPosition, isComponentFile, renderPosition, type Position } from "./position.ts";
-import { DEFAULT_BATCH_CAP, UNANSWERED, type Answer } from "./query.ts";
+import { DEFAULT_BATCH_CAP, propertyTables, UNANSWERED, type Answer } from "./query.ts";
 import type { ProjectView } from "./session.ts";
 import { typeQueryAliases } from "./type-query-alias.ts";
+import { handedOn, valuesOf } from "./value-flow.ts";
 
 /**
  * Every use one project's own files make of the project's own declarations.
@@ -68,15 +71,22 @@ import { typeQueryAliases } from "./type-query-alias.ts";
 export type Use = "read" | "write" | "evaluation" | "decorator";
 
 /**
- * Which path answered for one reference: `batch`, the batched lookup over a file's name nodes;
- * `resolved-symbol`, the per-node lookup for the residue a batch left; `shorthand`, the lookup
- * for the value `{ a }` reads; `alias`, a step along an import or export chain; `syntax`, the
- * tree alone, which says what a decorator is attached to and what a component's markup may
- * read; `destructured`, the property a pattern names, on the destructured value's type; and
- * `by-name`, every declaration bearing the name a site spells, where the checker failed.
+ * Which path answered for one reference: `batch`, the batched lookup over a file's names;
+ * `resolved-symbol`, the per-node lookup for a batch's residue; `shorthand`, the value
+ * `{ a }` reads; `alias`, a step along an import or export chain; `syntax`, the tree alone
+ * (a decorator's target, a component's markup); `destructured`, the property a pattern
+ * names; `contextual`, the member a literal property writes or a value's position reads;
+ * `by-name`, every declaration spelled as the site is, where the checker failed.
  */
 export type Resolution =
-  "batch" | "resolved-symbol" | "shorthand" | "alias" | "syntax" | "destructured" | "by-name";
+  | "batch"
+  | "resolved-symbol"
+  | "shorthand"
+  | "alias"
+  | "syntax"
+  | "destructured"
+  | "contextual"
+  | "by-name";
 
 /** One use of one declaration by one declaration. */
 export interface Reference {
@@ -102,6 +112,12 @@ export interface Reference {
    * the consumer's root.
    */
   readonly consumer?: string;
+  /**
+   * On a write, the local names of the writing file's import bindings that only the
+   * values its file writes into the same declaration use, which deleting the
+   * declaration with its writes deletes too.
+   */
+  readonly alone?: readonly string[];
 }
 
 /** The consumer one reference pass reads the files of, beside the target it names. */
@@ -148,6 +164,13 @@ export interface ReferenceCost {
    * pattern destructures, and each step a nested assignment target takes into its value.
    */
   readonly patternLookups: number;
+  /**
+   * Batched lookups for the contextual uses: the contextual types of the object literals
+   * and of the values that carry a member, and the values' types, each per capped run.
+   */
+  readonly contextualBatches: number;
+  /** Per-type lookups for the contextual uses: each distinct type's constituents, properties and symbol. */
+  readonly contextualLookups: number;
 }
 
 /** One project's references, in position order, and what reading them cost. */
@@ -280,7 +303,11 @@ function markWrite(target: Node, writes: Set<number>): void {
     return;
   }
   if (isElementAccessExpression(held)) {
-    markWrite(held.expression, writes);
+    // A store through a member's value lands in storage every holder of the value
+    // reads, so it reads the member; a variable only ever stored into stays written.
+    if (!isPropertyAccessExpression(unparenthesized(held.expression))) {
+      markWrite(held.expression, writes);
+    }
     return;
   }
   if (isArrayLiteralExpression(held)) {
@@ -407,6 +434,8 @@ interface Read extends PropertyRead {
 /** Everything one file's walk found to resolve, and the decorators it needs no resolution for. */
 interface FileSites {
   readonly uses: readonly Site[];
+  readonly literals: readonly LiteralAt[];
+  readonly flows: readonly FlowAt[];
   readonly reads: readonly Read[];
   readonly links: readonly Link[];
   readonly evaluations: readonly Evaluation[];
@@ -492,6 +521,30 @@ function linksOf(
 }
 
 /**
+ * Whether one object literal is a destructuring target, written on the left of an
+ * assignment or as a `for` loop's initializer, through the literals and spreads it nests in.
+ */
+function isAssignmentPattern(node: Node): boolean {
+  let child = node;
+  let parent = node.parent;
+  while (
+    isParenthesizedExpression(parent) ||
+    isArrayLiteralExpression(parent) ||
+    isObjectLiteralExpression(parent) ||
+    isSpreadElement(parent) ||
+    isSpreadAssignment(parent) ||
+    (isPropertyAssignment(parent) && parent.initializer === child)
+  ) {
+    child = parent;
+    parent = parent.parent;
+  }
+  if (isBinaryExpression(parent)) {
+    return parent.operatorToken.kind === SyntaxKind.EqualsToken && parent.left === child;
+  }
+  return (isForInStatement(parent) || isForOfStatement(parent)) && parent.initializer === child;
+}
+
+/**
  * Every name node one file holds that is a use rather than a declaration, in source
  * order, each with its enclosing declaration and its use, and every re-export the file
  * writes. One walk answers all of it, because a second would have to agree with this one
@@ -510,6 +563,8 @@ function sitesOf(
   const links: Link[] = [];
   const evaluations: Evaluation[] = [];
   const decorated: Decorated[] = [];
+  const literals: LiteralAt[] = [];
+  const flows: FlowAt[] = [];
   const writes = new Set<number>();
   const alsoRead = new Set<number>();
   const declared = new Set<number>();
@@ -552,6 +607,13 @@ function sitesOf(
     }
     markNames(node);
     markStores(node, writes, alsoRead);
+    if (isObjectLiteralExpression(node) && !isAssignmentPattern(node)) {
+      literals.push({ literal: node, from: enclosing });
+    }
+    // An assertion needs only comparability, so no member of its operand is read by it.
+    for (const written of isAsExpression(node) ? [] : handedOn(node)) {
+      flows.push(...valuesOf(written).map((value) => ({ value, from: enclosing })));
+    }
     for (const read of propertyReadsOf(node)) {
       reads.push({ ...read, from: enclosing });
     }
@@ -575,8 +637,17 @@ function sitesOf(
   };
 
   file.forEachChild(visit);
-  return { uses: found, reads, links, evaluations, decorated };
+  return { uses: found, literals, flows, reads, links, evaluations, decorated };
 }
+
+/** The declaration kinds of a property an object literal declares. */
+const LITERAL_PROPERTY_KINDS: ReadonlySet<SyntaxKind> = new Set([
+  SyntaxKind.PropertyAssignment,
+  SyntaxKind.ShorthandPropertyAssignment,
+  SyntaxKind.MethodDeclaration,
+  SyntaxKind.GetAccessor,
+  SyntaxKind.SetAccessor,
+]);
 
 /** The rule a file the analysis classified as test-support code is counted under. */
 const TEST_SUPPORT_RULE = "test-support";
@@ -691,6 +762,70 @@ function importBindings(file: SourceFile): readonly { node: Node; whole: boolean
   return found;
 }
 
+/** The value one assignment stores through the name it writes, where it is a plain assignment. */
+function storedValue(name: Node): Node | undefined {
+  let target: Node = name;
+  if (isPropertyAccessExpression(name.parent) && name.parent.name === name) {
+    target = name.parent;
+  }
+  while (isParenthesizedExpression(target.parent)) {
+    target = target.parent;
+  }
+  const parent = target.parent;
+  return isBinaryExpression(parent) &&
+    parent.operatorToken.kind === SyntaxKind.EqualsToken &&
+    parent.left === target
+    ? parent.right
+    : undefined;
+}
+
+/**
+ * The import bindings of one file that only the values written into one declaration
+ * use, for each write into it. A binding is named by an identifier that spells its
+ * local name and is not the member a property access names.
+ */
+function aloneIn(
+  file: SourceFile,
+  uses: readonly Site[],
+  writes: readonly { index: number; value: Node }[],
+  found: readonly Reference[],
+): readonly { index: number; names: readonly string[] }[] {
+  const bindings = new Set(importBindings(file).map((binding) => binding.node.getText()));
+  if (bindings.size === 0) {
+    return [];
+  }
+  const occurrences = new Map<string, Node[]>();
+  for (const site of uses) {
+    const text = site.node.getText();
+    const parent = site.node.parent;
+    if (!bindings.has(text) || (isPropertyAccessExpression(parent) && parent.name === site.node)) {
+      continue;
+    }
+    if (!occurrences.get(text)?.includes(site.node)) {
+      occurrences.set(text, [...(occurrences.get(text) ?? []), site.node]);
+    }
+  }
+  const inside = (node: Node, value: Node): boolean =>
+    node.pos >= value.pos && node.end <= value.end;
+  const result: { index: number; names: readonly string[] }[] = [];
+  for (const write of writes) {
+    const to = found[write.index]?.to;
+    const sameTarget = writes.filter((one) => found[one.index]?.to === to);
+    const names = [...occurrences]
+      .filter(
+        ([, nodes]) =>
+          nodes.some((node) => inside(node, write.value)) &&
+          nodes.every((node) => sameTarget.some((one) => inside(node, one.value))),
+      )
+      .map(([name]) => name)
+      .sort(compare);
+    if (names.length > 0) {
+      result.push({ index: write.index, names });
+    }
+  }
+  return result;
+}
+
 /** Two strings ordered bytewise, which is the order every set of a run is read in. */
 function compare(a: string, b: string): number {
   if (a === b) {
@@ -727,7 +862,8 @@ export function references<Brand>(
   const found: Reference[] = [];
   const tests: string[] = [];
   const chains = aliasChains(project, held);
-  const destructured = destructuring(project, cap);
+  const tables = propertyTables(project.queries);
+  const destructured = destructuring(project, cap, tables);
   let batched = 0;
   let fileBatches = 0;
   let residueFallbacks = 0;
@@ -745,6 +881,7 @@ export function references<Brand>(
               relativePath(consumer.root, file.fileName) !== undefined &&
               relativePath(targetRoot, file.fileName) === undefined,
           );
+  const ownPaths = project.ownPaths();
   const fileIds = new Set(
     held.symbols.filter((symbol) => symbol.kind === "file").map((symbol) => symbol.id),
   );
@@ -859,19 +996,99 @@ export function references<Brand>(
     return project.resolvedSymbolAt(project.handle(site.node));
   };
 
-  for (const file of files) {
+  const walked = files.map((file) => {
+    const fileId = declaredAt(file) ?? "";
+    return { file, fileId, ...sitesOf(file, declarations, fileId, unread) };
+  });
+  const contextual = contextualUses(
+    project,
+    held,
+    chains,
+    walked.flatMap((one) => one.literals),
+    walked.flatMap((one) => one.flows),
+    cap,
+    tables,
+  );
+  const writtenBy = new Map<string, readonly string[]>();
+  for (const write of contextual.writes) {
+    const property = write.at.parent;
+    writtenBy.set(nodeKey(property.getSourceFile(), property), write.ids);
+  }
+  const forwardedCache = new Map<number, readonly ChainTarget[]>();
+  /**
+   * The members a literal property one symbol declares writes: a use of the property
+   * reaches them, because the literal's type carries the data the member describes.
+   */
+  const forwarded = (symbol: TSSymbol): readonly ChainTarget[] => {
+    const known = forwardedCache.get(symbol.id);
+    if (known !== undefined) {
+      return known;
+    }
+    const found: ChainTarget[] = [];
+    if (writtenBy.size > 0) {
+      for (const handle of symbol.declarations) {
+        if (!LITERAL_PROPERTY_KINDS.has(handle.kind) || !ownPaths.has(handle.path)) {
+          continue;
+        }
+        const node = project.declarationAt(handle)?.node;
+        const ids =
+          node === undefined ? undefined : writtenBy.get(nodeKey(node.getSourceFile(), node));
+        for (const id of ids ?? []) {
+          if (!found.some((target) => target.id === id)) {
+            found.push({ id, stepped: true, guessed: false });
+          }
+        }
+      }
+    }
+    forwardedCache.set(symbol.id, found);
+    return found;
+  };
+  /** One resolved symbol's declarations along its chain, and the members its literal properties write. */
+  const targetsOf = (symbol: TSSymbol): readonly ChainTarget[] => {
+    const through = forwarded(symbol);
+    return through.length === 0 ? chains.chainOf(symbol) : [...chains.chainOf(symbol), ...through];
+  };
+  const testFile = new Map<SourceFile, boolean>();
+  for (const { file } of walked) {
     const path = renderPosition(file, root, 0).path;
     const test = patterns.some((pattern) => pattern.test(path));
+    testFile.set(file, test);
     if (test) {
       tests.push(path);
     }
-    const fileId = declaredAt(file) ?? "";
-    const { uses, reads, links, evaluations, decorated } = sitesOf(
-      file,
-      declarations,
-      fileId,
-      unread,
-    );
+  }
+  /** Each write reference's index in `found`, by its file, with the value it stores. */
+  const valued = new Map<SourceFile, { index: number; value: Node }[]>();
+  const holdsValue = (file: SourceFile, value: Node | undefined): void => {
+    if (value !== undefined) {
+      valued.set(file, [...(valued.get(file) ?? []), { index: found.length - 1, value }]);
+    }
+  };
+  for (const [use, sites] of [
+    ["write", contextual.writes],
+    ["read", contextual.reads],
+  ] as const) {
+    for (const site of sites) {
+      const file = site.at.getSourceFile();
+      const position = renderPosition(file, root, site.at.getStart());
+      for (const id of site.ids) {
+        found.push({
+          from: site.from,
+          to: id,
+          position,
+          use,
+          resolution: "contextual",
+          test: testFile.get(file) === true,
+        });
+        if (use === "write") {
+          holdsValue(file, site.at.parent);
+        }
+      }
+    }
+  }
+
+  for (const { file, fileId, uses, reads, links, evaluations, decorated } of walked) {
+    const test = testFile.get(file) === true;
     // A component file's markup may use any binding its blocks declare at the top level.
     const markup = isComponentFile(file);
     const bindings = markup ? importBindings(file) : [];
@@ -1022,7 +1239,7 @@ export function references<Brand>(
               stepped: false,
               guessed: true,
             }))
-          : chains.chainOf(symbol);
+          : targetsOf(symbol);
       for (const target of targets) {
         found.push({
           from: read.from,
@@ -1052,7 +1269,7 @@ export function references<Brand>(
       const targets = throughAliases(
         symbol === UNANSWERED
           ? named(site.node).map((id) => ({ id, stepped: false, guessed: true }))
-          : chains.chainOf(symbol),
+          : targetsOf(symbol),
       );
       for (const target of targets) {
         found.push({
@@ -1063,6 +1280,20 @@ export function references<Brand>(
           resolution: target.guessed ? "by-name" : target.stepped ? "alias" : direct,
           test,
         });
+        if (site.use === "write") {
+          holdsValue(file, storedValue(site.node));
+        }
+      }
+    }
+  }
+
+  const usesOf = new Map(walked.map((one) => [one.file, one.uses]));
+  for (const [file, writes] of valued) {
+    const uses = usesOf.get(file) ?? [];
+    for (const { index, names } of aloneIn(file, uses, writes, found)) {
+      const reference = found[index];
+      if (reference !== undefined) {
+        found[index] = { ...reference, alone: names };
       }
     }
   }
@@ -1090,6 +1321,8 @@ export function references<Brand>(
       aliasSteps: chains.steps,
       patternBatches: destructured.cost.patternBatches,
       patternLookups: destructured.cost.patternLookups,
+      contextualBatches: contextual.batches,
+      contextualLookups: contextual.lookups,
     },
   };
 }

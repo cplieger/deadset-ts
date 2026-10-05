@@ -127,6 +127,32 @@ interface Assignability {
   readonly target: Type;
 }
 
+/**
+ * Each type's properties, asked of the checker once per type for every pass that shares
+ * the tables: the client keeps a type's properties once fetched, so a second pass asking
+ * for the same type makes no request, and only the first ask is counted as one.
+ */
+export interface PropertyTables {
+  /** One type's properties, and whether this call was the one that asked for them. */
+  of(type: Type): { readonly properties: Answer<readonly TSSymbol[]>; readonly asked: boolean };
+}
+
+/** The property tables over one project's questions. */
+export function propertyTables(queries: Pick<Queries, "propertiesOf">): PropertyTables {
+  const held = new Map<number, Answer<readonly TSSymbol[]>>();
+  return {
+    of: (type) => {
+      const known = held.get(type.id);
+      if (known !== undefined) {
+        return { properties: known, asked: false };
+      }
+      const properties = queries.propertiesOf(type);
+      held.set(type.id, properties);
+      return { properties, asked: true };
+    },
+  };
+}
+
 /** The questions one project's analysis asks, each guarded. */
 export interface Queries {
   /** The symbol each node resolves to. */

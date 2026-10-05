@@ -22,6 +22,8 @@ import {
   isNamespaceImport,
   isNoSubstitutionTemplateLiteral,
   isNonNullExpression,
+  isNumericLiteral,
+  isObjectBindingPattern,
   isObjectLiteralExpression,
   isParenthesizedExpression,
   isPropertyAccessExpression,
@@ -33,7 +35,9 @@ import {
   isVariableStatement,
   SyntaxKind,
   type AsExpression,
+  type Identifier,
   type Node,
+  type ObjectBindingPattern,
   type NonNullExpression,
   type ObjectLiteralExpression,
   type ParenthesizedExpression,
@@ -81,6 +85,14 @@ interface ConventionGlob {
   readonly excludes: readonly RegExp[];
 }
 
+/** One directory an applied row names as generated, read against its manifest's directory. */
+interface GeneratedDirectory {
+  readonly dir: string;
+  readonly row: string;
+  /** The directory below the manifest's directory, `/`-separated. */
+  readonly below: string;
+}
+
 /** A setup failure a row met, at the directory of the manifest that declared it. */
 interface ConventionFailure {
   readonly dir: string;
@@ -92,6 +104,7 @@ export interface Conventions {
   /** The rows applied, ordered by name, then manifest, then their compact encoding. */
   readonly applied: readonly AppliedConvention[];
   readonly globs: readonly ConventionGlob[];
+  readonly generated: readonly GeneratedDirectory[];
   readonly failures: readonly ConventionFailure[];
 }
 
@@ -105,9 +118,11 @@ interface ConventionEntry {
 /** Parses one file's text with no program. */
 type ParseSource = (fileName: string, text: string) => SourceFile;
 
+/** The sections an installed package is required by, so its absence fails the run. */
+const REQUIRED_SECTIONS = ["dependencies", "devDependencies"] as const;
+
 const DEPENDENCY_SECTIONS = [
-  "dependencies",
-  "devDependencies",
+  ...REQUIRED_SECTIONS,
   "peerDependencies",
   "optionalDependencies",
 ] as const;
@@ -124,11 +139,15 @@ function readJSON(host: Host, path: string): unknown {
   }
 }
 
-function declares(manifest: unknown, name: string): boolean {
+function declares(
+  manifest: unknown,
+  name: string,
+  sections: readonly string[] = DEPENDENCY_SECTIONS,
+): boolean {
   if (!isRecord(manifest)) {
     return false;
   }
-  return DEPENDENCY_SECTIONS.some((section) => {
+  return sections.some((section) => {
     const held = manifest[section];
     return isRecord(held) && Object.hasOwn(held, name);
   });
@@ -174,19 +193,31 @@ function unwrapped(node: Node): Node {
   return at;
 }
 
-/** The key one property is written with, where it is written as a name or a literal. */
+/** The key one property is written with, where it is written as a name or as literal text. */
 function keyOf(property: Node): string | undefined {
   if (!isPropertyAssignment(property) && !isShorthandPropertyAssignment(property)) {
     return undefined;
   }
   const { name } = property;
-  if (isComputedPropertyName(name)) {
-    return undefined;
-  }
-  if (isIdentifier(name) || isStringLiteral(name) || isNoSubstitutionTemplateLiteral(name)) {
-    return name.text;
+  const key = isComputedPropertyName(name) ? name.expression : name;
+  if (
+    (isIdentifier(key) && key === name) ||
+    isStringLiteral(key) ||
+    isNoSubstitutionTemplateLiteral(key)
+  ) {
+    return key.text;
   }
   return undefined;
+}
+
+/** Whether one member's computed name is no literal, so it may set any key. */
+function computesKey(member: Node): boolean {
+  const name = (member as { readonly name?: Node }).name;
+  if (name === undefined || !isComputedPropertyName(name)) {
+    return false;
+  }
+  const key = name.expression;
+  return !(isStringLiteral(key) || isNumericLiteral(key) || isNoSubstitutionTemplateLiteral(key));
 }
 
 /** The values one file's top-level variable declarations bind, by name. */
@@ -247,6 +278,79 @@ function defaultExports(file: SourceFile): readonly Node[] {
   return found;
 }
 
+/** The declarations whose name is a binding of the scope they are written in. */
+const BINDING_KINDS: ReadonlySet<SyntaxKind> = new Set([
+  SyntaxKind.VariableDeclaration,
+  SyntaxKind.Parameter,
+  SyntaxKind.BindingElement,
+  SyntaxKind.FunctionDeclaration,
+  SyntaxKind.ClassDeclaration,
+  SyntaxKind.ImportClause,
+  SyntaxKind.ImportSpecifier,
+  SyntaxKind.NamespaceImport,
+  SyntaxKind.ImportEqualsDeclaration,
+]);
+
+/** Whether one file declares a binding named `require` at any depth, which shadows the global. */
+function declaresRequire(file: SourceFile): boolean {
+  let found = false;
+  const visit = (node: Node): void => {
+    const name = (node as { readonly name?: Node }).name;
+    if (
+      name !== undefined &&
+      isIdentifier(name) &&
+      name.text === "require" &&
+      BINDING_KINDS.has(node.kind)
+    ) {
+      found = true;
+    }
+    if (!found) {
+      node.forEachChild(visit);
+    }
+  };
+  file.forEachChild(visit);
+  return found;
+}
+
+/**
+ * The top-level `const`, `let` and `var` declarations that bind a `require` of one module,
+ * written with the module's name as its one string-literal argument, in a file that
+ * declares no binding named `require`: each binds as an import of the module does.
+ */
+function requireBindings(
+  file: SourceFile,
+  module: string,
+): readonly (Identifier | ObjectBindingPattern)[] {
+  const found: (Identifier | ObjectBindingPattern)[] = [];
+  for (const statement of file.statements) {
+    if (!isVariableStatement(statement)) {
+      continue;
+    }
+    for (const declaration of statement.declarationList.declarations) {
+      const value =
+        declaration.initializer === undefined ? undefined : unwrapped(declaration.initializer);
+      const [argument, ...rest] =
+        value !== undefined && isCallExpression(value) ? value.arguments : [];
+      if (
+        value === undefined ||
+        !isCallExpression(value) ||
+        !isIdentifier(value.expression) ||
+        value.expression.text !== "require" ||
+        argument === undefined ||
+        rest.length > 0 ||
+        !isStringLiteral(argument) ||
+        argument.text !== module
+      ) {
+        continue;
+      }
+      if (isIdentifier(declaration.name) || isObjectBindingPattern(declaration.name)) {
+        found.push(declaration.name);
+      }
+    }
+  }
+  return found.length > 0 && declaresRequire(file) ? [] : found;
+}
+
 /**
  * The first argument of every call one file makes to one module's export, through a
  * named or a namespace import; `undefined` for a call with no argument.
@@ -254,6 +358,26 @@ function defaultExports(file: SourceFile): readonly Node[] {
 function optionsArguments(file: SourceFile, call: OptionsCall): readonly (Node | undefined)[] {
   const names = new Set<string>();
   const namespaces = new Set<string>();
+  for (const name of requireBindings(file, call.module)) {
+    if (isIdentifier(name)) {
+      namespaces.add(name.text);
+      continue;
+    }
+    for (const element of name.elements) {
+      const local = element.name;
+      const exported = element.propertyName ?? local;
+      if (
+        element.dotDotDotToken === undefined &&
+        local !== undefined &&
+        isIdentifier(local) &&
+        exported !== undefined &&
+        (isIdentifier(exported) || isStringLiteral(exported)) &&
+        exported.text === call.export
+      ) {
+        names.add(local.text);
+      }
+    }
+  }
   for (const statement of file.statements) {
     const bindings = isImportDeclaration(statement)
       ? statement.importClause?.namedBindings
@@ -333,7 +457,7 @@ function readPath(
 ): Node | undefined {
   const [key, ...rest] = keys;
   for (const member of object.properties) {
-    if (isSpreadAssignment(member)) {
+    if (isSpreadAssignment(member) || computesKey(member)) {
       return member;
     }
     if (keyOf(member) !== key) {
@@ -518,6 +642,7 @@ export function readConventions(
 ): Conventions {
   const applied: AppliedConvention[] = [];
   const globs: ConventionGlob[] = [];
+  const generated: GeneratedDirectory[] = [];
   const failures: ConventionFailure[] = [];
   for (const manifest of manifests) {
     const declared = readJSON(host, joinPath(manifest.dir, "package.json"));
@@ -532,7 +657,7 @@ export function readConventions(
       }
       const version = versions.get(row.package);
       if (version === undefined) {
-        if (missing.has(row.package)) {
+        if (missing.has(row.package) || !declares(declared, row.package, REQUIRED_SECTIONS)) {
           continue;
         }
         missing.add(row.package);
@@ -580,6 +705,9 @@ export function readConventions(
       const excludes = [
         ...new Set((row.excludes ?? []).flatMap((one) => expand(one, resolved))),
       ].map(globExpression);
+      for (const below of new Set((row.generated ?? []).flatMap((one) => expand(one, resolved)))) {
+        generated.push({ dir: manifest.dir, row: row.name, below });
+      }
       for (const glob of new Set(row.entries.flatMap((entry) => expand(entry, resolved)))) {
         globs.push({
           dir: manifest.dir,
@@ -597,7 +725,27 @@ export function readConventions(
       compare(a.manifest, b.manifest) ||
       compare(JSON.stringify(a), JSON.stringify(b)),
   );
-  return { applied: unique, globs, failures };
+  return { applied: unique, globs, generated, failures };
+}
+
+/**
+ * Every own file of one project below a directory an applied row names as generated, by
+ * its path below the target root, with the name of the first such row.
+ */
+export function generatedFiles(
+  conventions: Conventions,
+  files: SourceFiles,
+): ReadonlyMap<string, string> {
+  const found = new Map<string, string>();
+  for (const { dir, row, below } of conventions.generated) {
+    const root = joinPath(dir, below);
+    for (const [path, file] of files.byPath) {
+      if (!found.has(path) && relativePath(root, file.fileName) !== undefined) {
+        found.set(path, row);
+      }
+    }
+  }
+  return found;
 }
 
 /** Every own file of one project an applied row's globs match, once per row. */

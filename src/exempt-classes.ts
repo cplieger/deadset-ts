@@ -49,7 +49,12 @@ export const EXEMPTION_CLASSES = [
     confidence: "certain",
     typescriptVisibility: { private: false, privateName: false },
   },
-  { class: "generated-file", languages: ["go"], confidence: "certain" },
+  {
+    class: "generated-file",
+    languages: ["go", "ts"],
+    confidence: "certain",
+    typescriptVisibility: { private: true, privateName: false },
+  },
   { class: "linkname-cgo-asm-plugin", languages: ["go"], confidence: "certain" },
   {
     class: "template-field",

@@ -163,6 +163,8 @@ const NO_REFERENCE_COST: ReferenceCost = {
   aliasSteps: 0,
   patternBatches: 0,
   patternLookups: 0,
+  contextualBatches: 0,
+  contextualLookups: 0,
 };
 
 const NO_INVENTORY_COST: InventoryCost = { batches: 0, exportTables: 0, memberTables: 0 };
@@ -222,6 +224,8 @@ function onePass(dir: string, cap: Cap): Pass {
         aliasSteps: sum.aliasSteps + reference.aliasSteps,
         patternBatches: sum.patternBatches + reference.patternBatches,
         patternLookups: sum.patternLookups + reference.patternLookups,
+        contextualBatches: sum.contextualBatches + reference.contextualBatches,
+        contextualLookups: sum.contextualLookups + reference.contextualLookups,
       }),
       NO_REFERENCE_COST,
     ),

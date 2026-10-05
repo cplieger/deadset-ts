@@ -25,7 +25,13 @@ import {
   type Node,
 } from "@typescript/native/unstable/ast";
 import { TypeFlags, type Symbol as TSSymbol, type Type } from "@typescript/native/unstable/sync";
-import { isAnswered, UNANSWERED, type Answer } from "./query.ts";
+import {
+  isAnswered,
+  propertyTables,
+  UNANSWERED,
+  type Answer,
+  type PropertyTables,
+} from "./query.ts";
 import type { ProjectView } from "./session.ts";
 
 /** One property one object pattern reads. */
@@ -228,7 +234,11 @@ type Found = Answer<Type | undefined>;
  * read once per type for the whole project, since one type is destructured in many
  * places and a table answers every name of it.
  */
-export function destructuring<Brand>(project: ProjectView<Brand>, cap: number): Destructuring {
+export function destructuring<Brand>(
+  project: ProjectView<Brand>,
+  cap: number,
+  properties: PropertyTables = propertyTables(project.queries),
+): Destructuring {
   const queries = project.queries;
   const tables = new Map<number, Answer<ReadonlyMap<string, TSSymbol>>>();
   let patternBatches = 0;
@@ -241,10 +251,10 @@ export function destructuring<Brand>(project: ProjectView<Brand>, cap: number): 
     }
     let table: Answer<ReadonlyMap<string, TSSymbol>> = new Map<string, TSSymbol>();
     if ((type.flags & TypeFlags.AnyOrUnknown) === 0) {
-      patternLookups += 1;
-      const properties = queries.propertiesOf(type);
-      table = isAnswered(properties)
-        ? new Map(properties.map((property) => [property.name, property]))
+      const read = properties.of(type);
+      patternLookups += read.asked ? 1 : 0;
+      table = isAnswered(read.properties)
+        ? new Map(read.properties.map((property) => [property.name, property]))
         : UNANSWERED;
     }
     tables.set(type.id, table);

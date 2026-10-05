@@ -42,7 +42,7 @@ export function sweepOnly(config: Config, swept: RunSweep): EmitterInput {
     config,
     swept,
     deprecated: new Set(),
-    stores: { references: [], accessors: new Set(), exempt: new Set() },
+    stores: { references: [], readInTests: new Set(), accessors: new Set(), exempt: new Set() },
     dependencies: {
       manifest: { package: ".", path: "package.json" },
       declared: [],

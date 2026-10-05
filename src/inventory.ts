@@ -303,7 +303,10 @@ function typeParametersOf(node: Node): readonly Node[] {
   if (
     isFunctionDeclaration(node) ||
     isMethodDeclaration(node) ||
-    isMethodSignatureDeclaration(node)
+    isMethodSignatureDeclaration(node) ||
+    isClassDeclaration(node) ||
+    isInterfaceDeclaration(node) ||
+    isTypeAliasDeclaration(node)
   ) {
     return node.typeParameters ?? [];
   }

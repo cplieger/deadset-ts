@@ -31,6 +31,7 @@ function compare(a: string, b: string): number {
 function indexed(input: EmitterInput): {
   readonly symbolOf: (id: string) => InventorySymbol | undefined;
   readonly inTest: (id: string) => boolean;
+  readonly inSupport: (id: string) => boolean;
   readonly candidateOf: (id: string) => Candidate | undefined;
   readonly implementationsOf: (id: string) => readonly PositionedSymbol[];
 } {
@@ -43,6 +44,7 @@ function indexed(input: EmitterInput): {
   return {
     symbolOf,
     inTest: (id) => union.test[union.at(id)] === true,
+    inSupport: (id) => union.support[union.at(id)] === true,
     candidateOf: (id) => candidates.get(id),
     implementationsOf: (id) =>
       [...(input.implementations.classes.get(id) ?? [])]
@@ -80,14 +82,19 @@ function findingOf(
  * interface, whose members fall with it unreported; and `DS1203`, a method of a live
  * interface no reference names, unless it is a marker, a method whose every
  * implementation has an empty body. A test file's declaration is neither kind's
- * subject, because a production sweep counts none of the references it can have.
+ * subject, because a production sweep counts none of the references it can have, and
+ * neither is a test-support declaration test code references, which that code keeps live.
  */
 export const interfaces: Emitter = (input) => {
   const run = indexed(input);
   const found: Finding[] = [];
   for (const candidate of input.swept.sweep.candidates) {
     const symbol = run.symbolOf(candidate.id);
-    if (symbol === undefined || run.inTest(candidate.id)) {
+    if (
+      symbol === undefined ||
+      run.inTest(candidate.id) ||
+      (run.inSupport(candidate.id) && candidate.testRefs > 0)
+    ) {
       continue;
     }
     if (symbol.kind === "interface") {

@@ -75,6 +75,7 @@ describe("the class registry", () => {
     expectTypeOf<TSExemptionClass>().toEqualTypeOf<
       | "interface-satisfaction"
       | "enum-group"
+      | "generated-file"
       | "template-field"
       | "reflective-lookup"
       | "decorator"

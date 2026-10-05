@@ -47,6 +47,8 @@ export interface FileFacts {
    * reference names is included by the file that names it.
    */
   readonly heldByInclusion: ReadonlySet<string>;
+  /** The paths below the target root of the files below a directory an applied row names as generated. */
+  readonly generated?: ReadonlySet<string>;
 }
 
 /** The line of the last character of one text, counted from one; an empty text is one line. */

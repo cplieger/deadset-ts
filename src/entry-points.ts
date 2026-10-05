@@ -30,7 +30,12 @@ import {
   type SourceFile,
 } from "@typescript/native/unstable/ast";
 import { SymbolFlags } from "@typescript/native/unstable/sync";
-import { configurationFiles, filesNamedBy, moduleStrings } from "./configuration-files.ts";
+import {
+  configurationFiles,
+  filesNamedBy,
+  moduleStrings,
+  type ParseFile,
+} from "./configuration-files.ts";
 import { globExpression } from "./glob.ts";
 import type { Host } from "./host.ts";
 import { dirnamePath, relativePath, resolvePath } from "./paths.ts";
@@ -260,8 +265,9 @@ function configurationEntries(
   host: Host,
   targetRoot: string,
   files: SourceFiles,
+  parse: ParseFile | undefined,
 ): readonly EntryPoint[] {
-  const { modules, documents } = configurationFiles(host, targetRoot, files);
+  const { modules, documents, outside } = configurationFiles(host, targetRoot, files, parse);
   const found: EntryPoint[] = [];
   const strings = (dir: string, texts: readonly string[]): void => {
     for (const text of texts) {
@@ -279,6 +285,12 @@ function configurationEntries(
   }
   for (const document of documents) {
     strings(dirnamePath(document.path), document.strings);
+  }
+  for (const { file } of outside) {
+    strings(
+      dirnamePath(file.fileName),
+      moduleStrings(file).map((one) => one.text),
+    );
   }
   return found;
 }
@@ -507,8 +519,9 @@ export function entryPoints<Brand>(
   testFiles: readonly string[],
   host: Host,
   targetRoot: string,
+  parse?: ParseFile,
 ): readonly EntryPoint[] {
-  const found: EntryPoint[] = [...configurationEntries(host, targetRoot, files)];
+  const found: EntryPoint[] = [...configurationEntries(host, targetRoot, files, parse)];
   const tests = testFiles.map((pattern) => ({ pattern, expression: globExpression(pattern) }));
   for (const [path, file] of files.byPath) {
     const name = basename(path);

@@ -1,9 +1,77 @@
 {
-  "corpus_version": "2.1.1",
+  "corpus_version": "2.2.0",
   "product": { "name": "deadset-ts", "version": "0.1.0", "language": "ts" },
   "result": "pass",
-  "totals": { "fixtures": 34, "pass": 33, "gap": 1, "fail": 0 },
+  "totals": { "fixtures": 61, "pass": 61, "gap": 0, "fail": 0 },
   "fixtures": [
+    {
+      "fixture": "component-confidence-cap",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "Internal",
+          "result": "pass",
+          "actual": {
+            "report": "DS1004",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "Kept", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Live",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "possible",
+            "reachability_class": "possible",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "Published",
+          "result": "pass",
+          "actual": {
+            "report": "DS1004",
+            "symbol_kind": "function",
+            "confidence": "possible",
+            "reachability_class": "possible",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "TestInternal",
+          "result": "pass",
+          "actual": {
+            "report": "DS1005",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "TestPublished",
+          "result": "pass",
+          "actual": {
+            "report": "DS1005",
+            "symbol_kind": "function",
+            "confidence": "possible",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
     {
       "fixture": "component-files",
       "result": "pass",
@@ -70,6 +138,356 @@
         { "symbol": "UsedByModule", "result": "pass", "actual": { "report": "none" } },
         { "symbol": "prepare", "result": "pass", "actual": { "report": "none" } }
       ],
+      "unexpected": []
+    },
+    {
+      "fixture": "configuration-module-outside-the-program",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "LintPreset", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "ListedPreset", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "TypedPreset", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "UnusedKit",
+          "result": "pass",
+          "actual": {
+            "report": "DS1601",
+            "symbol_kind": "dependency",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "details": { "dependency_class": "dev-dependency" }
+          }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "convention-computed-key-literal",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "DefaultRoot",
+          "result": "pass",
+          "actual": {
+            "report": "DS1502",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        { "symbol": "MovedRoot", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "convention-computed-key-not-literal",
+      "result": "pass",
+      "expectations": [],
+      "unexpected": []
+    },
+    {
+      "fixture": "convention-default-export-function",
+      "result": "pass",
+      "expectations": [],
+      "unexpected": []
+    },
+    {
+      "fixture": "convention-default-export-through-a-specifier",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "DefaultRoot",
+          "result": "pass",
+          "actual": {
+            "report": "DS1502",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        { "symbol": "MovedRoot", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "convention-default-export-through-module-exports",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "DefaultRoot",
+          "result": "pass",
+          "actual": {
+            "report": "DS1502",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        { "symbol": "MovedRoot", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "convention-directory-moved-by-a-literal",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "DefaultRoot",
+          "result": "pass",
+          "actual": {
+            "report": "DS1502",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        { "symbol": "MovedRoot", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "convention-exclude-globs",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "Draft",
+          "result": "pass",
+          "actual": {
+            "report": "DS1502",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        { "symbol": "Index", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "convention-generated-directory",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "RouteName", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "UnusedGenerated",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["generated-file"] }
+        },
+        {
+          "symbol": "UnusedWritten",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "variable",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "convention-intermediate-key-not-followed",
+      "result": "pass",
+      "expectations": [],
+      "unexpected": []
+    },
+    {
+      "fixture": "convention-options-of-a-call",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "DefaultRoot",
+          "result": "pass",
+          "actual": {
+            "report": "DS1502",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        { "symbol": "MovedRoot", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "OtherRoot",
+          "result": "pass",
+          "actual": {
+            "report": "DS1502",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "convention-options-of-a-required-call",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "DefaultRoot",
+          "result": "pass",
+          "actual": {
+            "report": "DS1502",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        { "symbol": "MovedRoot", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "SecondRoot", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "convention-package-not-installed",
+      "result": "pass",
+      "expectations": [],
+      "unexpected": []
+    },
+    {
+      "fixture": "convention-parameter-matchers",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "Beside",
+          "result": "pass",
+          "actual": {
+            "report": "DS1502",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        { "symbol": "Matcher", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "convention-peer-and-optional-installed",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "Orphan",
+          "result": "pass",
+          "actual": {
+            "report": "DS1502",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        { "symbol": "Page", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Story", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "convention-peer-and-optional-not-installed",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "NextPeer",
+          "result": "pass",
+          "actual": {
+            "report": "DS1601",
+            "symbol_kind": "dependency",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "details": { "dependency_class": "peer-dependency" }
+          }
+        },
+        {
+          "symbol": "Orphan",
+          "result": "pass",
+          "actual": {
+            "report": "DS1502",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        {
+          "symbol": "Page",
+          "result": "pass",
+          "actual": {
+            "report": "DS1502",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        {
+          "symbol": "Story",
+          "result": "pass",
+          "actual": {
+            "report": "DS1502",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        { "symbol": "StorybookOptional", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "convention-property-not-literal",
+      "result": "pass",
+      "expectations": [],
+      "unexpected": []
+    },
+    {
+      "fixture": "convention-row-applies",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "Orphan",
+          "result": "pass",
+          "actual": {
+            "report": "DS1502",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        { "symbol": "Page", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "convention-row-out-of-range",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "Orphan",
+          "result": "pass",
+          "actual": {
+            "report": "DS1502",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        {
+          "symbol": "Page",
+          "result": "pass",
+          "actual": {
+            "report": "DS1502",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "convention-top-level-spread",
+      "result": "pass",
+      "expectations": [],
       "unexpected": []
     },
     {
@@ -400,14 +818,12 @@
     },
     {
       "fixture": "private-member-unread",
-      "result": "gap",
+      "result": "pass",
       "expectations": [
         {
           "symbol": "ReachedByStringIndex",
-          "result": "gap",
-          "capability": "reflective-lookup",
-          "actual": { "report": "none" },
-          "message": "want the retained listing to name [\"reflective-lookup\"] at target/registry.ts:4, got []"
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["reflective-lookup"] }
         },
         {
           "symbol": "UnreadPrivate",
@@ -626,6 +1042,65 @@
       "unexpected": []
     },
     {
+      "fixture": "store-through-a-reference-field",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "Scan.members", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Scan.total",
+          "result": "pass",
+          "actual": {
+            "report": "DS1301",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "template-field-member-kinds",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "Model.caption",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["template-field"] }
+        },
+        {
+          "symbol": "Model.spare",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "method",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "Tone.Loud",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["template-field"] }
+        },
+        {
+          "symbol": "Tone.Quiet",
+          "result": "pass",
+          "actual": {
+            "report": "DS1302",
+            "symbol_kind": "enum-member",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "test-and-script-defaults",
       "result": "pass",
       "expectations": [
@@ -769,6 +1244,35 @@
       "unexpected": []
     },
     {
+      "fixture": "test-file-exemption-evidence",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "Draft.Name",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "Sample.Name",
+          "result": "pass",
+          "actual": {
+            "report": "DS1004",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "test-of-dead-code",
       "result": "pass",
       "expectations": [
@@ -871,6 +1375,32 @@
       "unexpected": []
     },
     {
+      "fixture": "test-support-helper-use",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "Detached", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Drain", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Live", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Sink", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "TestDetached", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "TestDrain", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Unused",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "fixture", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "type-error-skips-its-function",
       "result": "pass",
       "expectations": [
@@ -890,6 +1420,39 @@
         },
         { "symbol": "helper", "result": "pass", "actual": { "report": "none" } },
         { "symbol": "panel", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "type-parameter-brand-member",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "Handle.id", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Handle.project", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Ledger.claims",
+          "result": "pass",
+          "actual": {
+            "report": "DS1301",
+            "symbol_kind": "type-member",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "Ledger.total", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Note.label",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "type-member",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
       ],
       "unexpected": []
     },
@@ -1175,6 +1738,60 @@
       "fixture": "workspace-member-without-source",
       "result": "pass",
       "expectations": [],
+      "unexpected": []
+    },
+    {
+      "fixture": "write-only-type-member",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "Entry.key", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Entry.note",
+          "result": "pass",
+          "actual": {
+            "report": "DS1301",
+            "symbol_kind": "type-member",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "Entry.spare",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "type-member",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "Entry.tag",
+          "result": "pass",
+          "actual": {
+            "report": "DS1301",
+            "symbol_kind": "type-member",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "Row.id", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Row.source",
+          "result": "pass",
+          "actual": {
+            "report": "DS1301",
+            "symbol_kind": "type-member",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
       "unexpected": []
     },
     {
