@@ -22,87 +22,87 @@ Both packages not in the numbers are refused by one rule. A target the compiler 
 
 ### @cplieger/actions
 
-| Cap      | File batches | Round trips | Round-trip latency (ms) | Server time (ms) | Bytes sent | Bytes received | Median wall clock (ms) |
-| -------- | ------------ | ----------- | ----------------------- | ---------------- | ---------- | -------------- | ---------------------- |
-| `256`    | 44           | 764         | 243                     | 219              | 512585     | 3232732        | 293                    |
-| `1024`   | 34           | 754         | 254                     | 228              | 511560     | 3232686        | 305                    |
-| `4096`   | 34           | 754         | 255                     | 230              | 511560     | 3232737        | 307                    |
-| `16384`  | 34           | 754         | 242                     | 218              | 511560     | 3232699        | 294                    |
-| uncapped | 34           | 754         | 235                     | 210              | 511560     | 3232711        | 283                    |
+| Cap | File batches | Round trips | Round-trip latency (ms) | Server time (ms) | Bytes sent | Bytes received | Median wall clock (ms) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `256` | 44 | 764 | 243 | 219 | 512585 | 3232732 | 293 |
+| `1024` | 34 | 754 | 254 | 228 | 511560 | 3232686 | 305 |
+| `4096` | 34 | 754 | 255 | 230 | 511560 | 3232737 | 307 |
+| `16384` | 34 | 754 | 242 | 218 | 511560 | 3232699 | 294 |
+| uncapped | 34 | 754 | 235 | 210 | 511560 | 3232711 | 283 |
 
 ### @cplieger/fetch
 
-| Cap      | File batches | Round trips | Round-trip latency (ms) | Server time (ms) | Bytes sent | Bytes received | Median wall clock (ms) |
-| -------- | ------------ | ----------- | ----------------------- | ---------------- | ---------- | -------------- | ---------------------- |
-| `256`    | 12           | 455         | 126                     | 113              | 164899     | 850175         | 142                    |
-| `1024`   | 10           | 453         | 134                     | 120              | 164698     | 850173         | 152                    |
-| `4096`   | 10           | 453         | 117                     | 106              | 164698     | 850173         | 131                    |
-| `16384`  | 10           | 453         | 135                     | 119              | 164698     | 850173         | 153                    |
-| uncapped | 10           | 453         | 136                     | 122              | 164698     | 850167         | 155                    |
+| Cap | File batches | Round trips | Round-trip latency (ms) | Server time (ms) | Bytes sent | Bytes received | Median wall clock (ms) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `256` | 12 | 455 | 126 | 113 | 164899 | 850175 | 142 |
+| `1024` | 10 | 453 | 134 | 120 | 164698 | 850173 | 152 |
+| `4096` | 10 | 453 | 117 | 106 | 164698 | 850173 | 131 |
+| `16384` | 10 | 453 | 135 | 119 | 164698 | 850173 | 153 |
+| uncapped | 10 | 453 | 136 | 122 | 164698 | 850167 | 155 |
 
 ### @cplieger/reactive
 
-| Cap      | File batches | Round trips | Round-trip latency (ms) | Server time (ms) | Bytes sent | Bytes received | Median wall clock (ms) |
-| -------- | ------------ | ----------- | ----------------------- | ---------------- | ---------- | -------------- | ---------------------- |
-| `256`    | 82           | 961         | 589                     | 523              | 1370883    | 8004026        | 744                    |
-| `1024`   | 46           | 925         | 590                     | 519              | 1367049    | 8003999        | 740                    |
-| `4096`   | 43           | 922         | 471                     | 422              | 1366728    | 8004007        | 604                    |
-| `16384`  | 43           | 922         | 491                     | 442              | 1366728    | 8003977        | 624                    |
-| uncapped | 43           | 922         | 451                     | 404              | 1366728    | 8003990        | 574                    |
+| Cap | File batches | Round trips | Round-trip latency (ms) | Server time (ms) | Bytes sent | Bytes received | Median wall clock (ms) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `256` | 82 | 961 | 589 | 523 | 1370883 | 8004026 | 744 |
+| `1024` | 46 | 925 | 590 | 519 | 1367049 | 8003999 | 740 |
+| `4096` | 43 | 922 | 471 | 422 | 1366728 | 8004007 | 604 |
+| `16384` | 43 | 922 | 491 | 442 | 1366728 | 8003977 | 624 |
+| uncapped | 43 | 922 | 451 | 404 | 1366728 | 8003990 | 574 |
 
 ### @cplieger/ui-primitives
 
-| Cap      | File batches | Round trips | Round-trip latency (ms) | Server time (ms) | Bytes sent | Bytes received | Median wall clock (ms) |
-| -------- | ------------ | ----------- | ----------------------- | ---------------- | ---------- | -------------- | ---------------------- |
-| `256`    | 114          | 1364        | 700                     | 624              | 1859896    | 11275325       | 870                    |
-| `1024`   | 65           | 1315        | 680                     | 603              | 1854482    | 11275321       | 871                    |
-| `4096`   | 60           | 1310        | 614                     | 557              | 1853927    | 11275339       | 782                    |
-| `16384`  | 60           | 1310        | 652                     | 586              | 1853927    | 11275299       | 791                    |
-| uncapped | 60           | 1310        | 621                     | 567              | 1853927    | 11275325       | 778                    |
+| Cap | File batches | Round trips | Round-trip latency (ms) | Server time (ms) | Bytes sent | Bytes received | Median wall clock (ms) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `256` | 114 | 1364 | 700 | 624 | 1859896 | 11275325 | 870 |
+| `1024` | 65 | 1315 | 680 | 603 | 1854482 | 11275321 | 871 |
+| `4096` | 60 | 1310 | 614 | 557 | 1853927 | 11275339 | 782 |
+| `16384` | 60 | 1310 | 652 | 586 | 1853927 | 11275299 | 791 |
+| uncapped | 60 | 1310 | 621 | 567 | 1853927 | 11275325 | 778 |
 
 ### @cplieger/web-terminal-engine
 
-| Cap      | File batches | Round trips | Round-trip latency (ms) | Server time (ms) | Bytes sent | Bytes received | Median wall clock (ms) |
-| -------- | ------------ | ----------- | ----------------------- | ---------------- | ---------- | -------------- | ---------------------- |
-| `256`    | 249          | 3032        | 1040                    | 912              | 4801218    | 36292054       | 1413                   |
-| `1024`   | 138          | 2921        | 1012                    | 885              | 4787862    | 36291929       | 1351                   |
-| `4096`   | 126          | 2909        | 1248                    | 1058             | 4786425    | 36291922       | 1694                   |
-| `16384`  | 126          | 2909        | 1365                    | 1144             | 4786425    | 36291902       | 1926                   |
-| uncapped | 126          | 2909        | 3128                    | 2738             | 4786425    | 36291789       | 4109                   |
+| Cap | File batches | Round trips | Round-trip latency (ms) | Server time (ms) | Bytes sent | Bytes received | Median wall clock (ms) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `256` | 249 | 3032 | 1040 | 912 | 4801218 | 36292054 | 1413 |
+| `1024` | 138 | 2921 | 1012 | 885 | 4787862 | 36291929 | 1351 |
+| `4096` | 126 | 2909 | 1248 | 1058 | 4786425 | 36291922 | 1694 |
+| `16384` | 126 | 2909 | 1365 | 1144 | 4786425 | 36291902 | 1926 |
+| uncapped | 126 | 2909 | 3128 | 2738 | 4786425 | 36291789 | 4109 |
 
 ### @cplieger/web-terminal-ui
 
-| Cap      | File batches | Round trips | Round-trip latency (ms) | Server time (ms) | Bytes sent | Bytes received | Median wall clock (ms) |
-| -------- | ------------ | ----------- | ----------------------- | ---------------- | ---------- | -------------- | ---------------------- |
-| `256`    | 322          | 3101        | 2859                    | 2441             | 6222132    | 44787239       | 3806                   |
-| `1024`   | 166          | 2945        | 3723                    | 3172             | 6204589    | 44787005       | 4984                   |
-| `4096`   | 136          | 2915        | 3345                    | 2870             | 6201219    | 44786975       | 4439                   |
-| `16384`  | 134          | 2913        | 2211                    | 1920             | 6200993    | 44787051       | 2970                   |
-| uncapped | 134          | 2913        | 2021                    | 1723             | 6200993    | 44787037       | 2764                   |
+| Cap | File batches | Round trips | Round-trip latency (ms) | Server time (ms) | Bytes sent | Bytes received | Median wall clock (ms) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `256` | 322 | 3101 | 2859 | 2441 | 6222132 | 44787239 | 3806 |
+| `1024` | 166 | 2945 | 3723 | 3172 | 6204589 | 44787005 | 4984 |
+| `4096` | 136 | 2915 | 3345 | 2870 | 6201219 | 44786975 | 4439 |
+| `16384` | 134 | 2913 | 2211 | 1920 | 6200993 | 44787051 | 2970 |
+| uncapped | 134 | 2913 | 2021 | 1723 | 6200993 | 44787037 | 2764 |
 
 ### web-terminal-kiro-static-src
 
-| Cap      | File batches | Round trips | Round-trip latency (ms) | Server time (ms) | Bytes sent | Bytes received | Median wall clock (ms) |
-| -------- | ------------ | ----------- | ----------------------- | ---------------- | ---------- | -------------- | ---------------------- |
-| `256`    | 14           | 768         | 1064                    | 1021             | 309523     | 1229370        | 1102                   |
-| `1024`   | 10           | 764         | 1233                    | 1179             | 309019     | 1229410        | 1268                   |
-| `4096`   | 9            | 763         | 979                     | 945              | 308893     | 1229398        | 1014                   |
-| `16384`  | 9            | 763         | 950                     | 910              | 308893     | 1229409        | 985                    |
-| uncapped | 9            | 763         | 968                     | 925              | 308893     | 1229374        | 994                    |
+| Cap | File batches | Round trips | Round-trip latency (ms) | Server time (ms) | Bytes sent | Bytes received | Median wall clock (ms) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `256` | 14 | 768 | 1064 | 1021 | 309523 | 1229370 | 1102 |
+| `1024` | 10 | 764 | 1233 | 1179 | 309019 | 1229410 | 1268 |
+| `4096` | 9 | 763 | 979 | 945 | 308893 | 1229398 | 1014 |
+| `16384` | 9 | 763 | 950 | 910 | 308893 | 1229409 | 985 |
+| uncapped | 9 | 763 | 968 | 925 | 308893 | 1229374 | 994 |
 
 ## The bound on a run's round trips
 
 Three terms bound the round trips a run makes. The file batches are one per capped run of a file's name nodes. The residue fallbacks are one per name node a batch left unresolved. The pair assignability calls are one declared-type read per interface of the conversion set, plus one assignability check per class-and-interface pair in it. The third is zero in every row below, because the interface-satisfaction pass makes those calls and the sweep runs only the inventory and the reference pass.
 
-| Package                       | File batches at `4096` | Residue fallbacks | Pair assignability calls |
-| ----------------------------- | ---------------------- | ----------------- | ------------------------ |
-| @cplieger/actions             | 34                     | 0                 | 0                        |
-| @cplieger/fetch               | 10                     | 0                 | 0                        |
-| @cplieger/reactive            | 43                     | 0                 | 0                        |
-| @cplieger/ui-primitives       | 60                     | 4                 | 0                        |
-| @cplieger/web-terminal-engine | 126                    | 9                 | 0                        |
-| @cplieger/web-terminal-ui     | 136                    | 0                 | 0                        |
-| web-terminal-kiro-static-src  | 9                      | 0                 | 0                        |
+| Package | File batches at `4096` | Residue fallbacks | Pair assignability calls |
+| --- | --- | --- | --- |
+| @cplieger/actions | 34 | 0 | 0 |
+| @cplieger/fetch | 10 | 0 | 0 |
+| @cplieger/reactive | 43 | 0 | 0 |
+| @cplieger/ui-primitives | 60 | 4 | 0 |
+| @cplieger/web-terminal-engine | 126 | 9 | 0 |
+| @cplieger/web-terminal-ui | 136 | 0 | 0 |
+| web-terminal-kiro-static-src | 9 | 0 | 0 |
 
 ## The default the numbers chose
 
