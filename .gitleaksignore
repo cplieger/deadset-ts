@@ -1,0 +1,5 @@
+# resolve.test.ts:70 and :76 at commit e2ca3fcf hold the dotted configuration
+# paths severity.DS1703 and severity.DS17, not credentials. The history scan
+# fingerprints per commit, so no later edit can clear these two findings.
+e2ca3fcfa93f10db8e6130dfb7ae859e4eab81b2:src/resolve.test.ts:generic-api-key:70
+e2ca3fcfa93f10db8e6130dfb7ae859e4eab81b2:src/resolve.test.ts:generic-api-key:76
