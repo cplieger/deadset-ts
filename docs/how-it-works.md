@@ -66,6 +66,7 @@ Any other value is the setup failure `convention-not-literal`. So is an object o
 | `remix`        | `@remix-run/dev`        | `>=2.0.0 <3.0.0`   | The same files as `react-router`, which `appDirectory` moves                                                                                                           |
 | `solidstart`   | `@solidjs/start`        | `>=1.0.0 <3.0.0`   | `app`, `entry-client`, `entry-server`, the middleware and the routes below `src`, which `appRoot` and `routeDir` move                                                  |
 | `storybook`    | `storybook`             | `>=7.0.0 <11.0.0`  | The `.storybook` configuration files and every `*.stories.*` file                                                                                                      |
+| `stryker`      | `@stryker-mutator/core` | `>=7.1.0 <11.0.0`  | No file. The runner and checker packages its configuration names in `testRunner` and `checkers` count as used                                                          |
 | `sveltekit`    | `@sveltejs/kit`         | `>=2.0.0 <4.0.0`   | Route files, hooks, params, the service worker and `instrumentation.server` below `src`, which the `files` options move                                                |
 | `vitest`       | `vitest`                | `>=3.2.0 <6.0.0`   | Every `vitest.config.*` and `vite.config.*` file, with or without a qualifier                                                                                          |
 

@@ -1,0 +1,5 @@
+{
+  "name": "@stryker-mutator/typescript-checker",
+  "version": "10.0.0",
+  "private": true
+}

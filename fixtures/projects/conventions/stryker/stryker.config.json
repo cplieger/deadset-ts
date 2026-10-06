@@ -1,0 +1,5 @@
+{
+  "testRunner": "vitest",
+  "checkers": ["typescript"],
+  "mutate": ["src/main.ts"]
+}

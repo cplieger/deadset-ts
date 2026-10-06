@@ -122,6 +122,8 @@ interface ConventionEntry {
 /** Parses one file's text with no program. */
 type ParseSource = (fileName: string, text: string) => SourceFile;
 
+const JSON_EXTENSION = ".json";
+
 /** The sections an installed package is required by, so its absence fails the run. */
 const REQUIRED_SECTIONS = ["dependencies", "devDependencies"] as const;
 
@@ -248,8 +250,16 @@ function isModuleExports(node: Node): boolean {
   );
 }
 
-/** Every expression or declaration one file exports as its default, in any module syntax. */
+/**
+ * Every expression or declaration one file exports as its default, in any module syntax.
+ * A JSON module's default export is its document's value.
+ */
 function defaultExports(file: SourceFile): readonly Node[] {
+  if (file.fileName.endsWith(JSON_EXTENSION)) {
+    return file.statements.flatMap((statement) =>
+      isExpressionStatement(statement) ? [statement.expression] : [],
+    );
+  }
   const found: Node[] = [];
   for (const statement of file.statements) {
     if (isExportAssignment(statement)) {
