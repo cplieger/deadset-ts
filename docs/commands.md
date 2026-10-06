@@ -4,16 +4,16 @@ This page lists every verb of the `deadset-ts` command, the options each one tak
 
 ## Verbs
 
-| Verb             | Job                                                                                |
-| ---------------- | ---------------------------------------------------------------------------------- |
-| `analyze`        | Analyze a project and write the report, its renderings and a baseline              |
-| `explain`        | Explain one declaration: the relation, the roots and the references that decide it |
-| `print-config`   | Print the resolved configuration and where each setting came from                  |
-| `print-projects` | Print the identifier of every project a run analyzes                               |
-| `print-roots`    | Print every declaration the analysis keeps live without a reference, and why       |
-| `print-retained` | Print every declaration an exemption held back: each class, its site and detail    |
-| `describe`       | Describe the analyzer: versions, accepted report schemas, languages, conformance   |
-| `version`        | Print the analyzer and Contract versions                                           |
+| Verb | Job |
+| --- | --- |
+| `analyze` | Analyze a project and write the report, its renderings and a baseline |
+| `explain` | Explain one declaration: the relation, the roots and the references that decide it |
+| `print-config` | Print the resolved configuration and where each setting came from |
+| `print-projects` | Print the identifier of every project a run analyzes |
+| `print-roots` | Print every declaration the analysis keeps live without a reference, and why |
+| `print-retained` | Print every declaration an exemption held back: each class, its site and detail |
+| `describe` | Describe the analyzer: versions, accepted report schemas, languages, conformance |
+| `version` | Print the analyzer and Contract versions |
 
 Any other invocation, and no arguments at all, prints the usage line and exits 2. deadset-ts reports and never edits a source file. An option whose name contains `fix`, `edit`, `delete` or `rewrite` is refused with exit code 2 before anything runs.
 
@@ -21,17 +21,17 @@ Any other invocation, and no arguments at all, prints the usage line and exits 2
 
 Each option is written `--name=value`.
 
-| Option             | Description                                                             | Default                 |
-| ------------------ | ----------------------------------------------------------------------- | ----------------------- |
-| `--target`         | The directory to analyze                                                | `.`                     |
-| `--config`         | The configuration file to read in place of `deadset.json` at the target | `<target>/deadset.json` |
-| `--central`        | A central configuration, read beneath the repository one                | _(unset)_               |
-| `--scope`          | A scope document naming the target and the consumers loaded beside it   | _(unset)_               |
-| `--min-confidence` | Sets `analysis.min_confidence`                                          | from the configuration  |
-| `--sort`           | Sets `reporters.sort`                                                   | from the configuration  |
-| `--cascade`        | Sets `reporters.cascade`                                                | from the configuration  |
-| `--max-findings`   | Sets `reporters.max_findings`                                           | from the configuration  |
-| `--fail-on`        | Sets `reporters.fail_on`                                                | from the configuration  |
+| Option | Description | Default |
+| --- | --- | --- |
+| `--target` | The directory to analyze | `.` |
+| `--config` | The configuration file to read in place of `deadset.json` at the target | `<target>/deadset.json` |
+| `--central` | A central configuration, read beneath the repository one | _(unset)_ |
+| `--scope` | A scope document naming the target and the consumers loaded beside it | _(unset)_ |
+| `--min-confidence` | Sets `analysis.min_confidence` | from the configuration |
+| `--sort` | Sets `reporters.sort` | from the configuration |
+| `--cascade` | Sets `reporters.cascade` | from the configuration |
+| `--max-findings` | Sets `reporters.max_findings` | from the configuration |
+| `--fail-on` | Sets `reporters.fail_on` | from the configuration |
 
 An option that sets a setting wins over `deadset.json`, which wins over the central configuration. [Configuration](configuration.md) describes each setting.
 
@@ -41,13 +41,13 @@ An option that sets a setting wins over `deadset.json`, which wins over the cent
 
 Each rendering is written beside the report, at `PATH` with the format's suffix appended:
 
-| Format     | Suffix         | Content                                                        |
-| ---------- | -------------- | -------------------------------------------------------------- |
-| `text`     | `.txt`         | One finding per line, position first, then a summary line      |
-| `json`     | `.json`        | The report document                                            |
-| `github`   | `.annotations` | One GitHub workflow command per finding                        |
-| `sarif`    | `.sarif`       | A SARIF 2.1.0 log                                              |
-| `template` | `.tmpl`        | The template `--template=FILE` names, rendered over the report |
+| Format | Suffix | Content |
+| --- | --- | --- |
+| `text` | `.txt` | One finding per line, position first, then a summary line |
+| `json` | `.json` | The report document |
+| `github` | `.annotations` | One GitHub workflow command per finding |
+| `sarif` | `.sarif` | A SARIF 2.1.0 log |
+| `template` | `.tmpl` | The template `--template=FILE` names, rendered over the report |
 
 `--format` is repeatable. The formats you name replace `reporters.formats`, which is `text` by default, and a format named twice is refused with exit code 2.
 
@@ -75,12 +75,12 @@ The report names the target relative to the directory the run is invoked from. R
 
 ## Exit codes
 
-| Code | Meaning                                                                                                                                            |
-| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0    | No finding at or above `reporters.fail_on`, no stale suppression and no pending finding. Under `--exit-code=off`, every run with a verdict exits 0 |
-| 1    | The report holds a finding at or above `reporters.fail_on`, which is `deny` by default, or a stale suppression                                     |
-| 2    | A usage error: a malformed invocation, a refused setting, no `target.kind`, an unreadable or unparsable template, or a request to edit source      |
-| 3    | A failure: a named project or a consumer that does not load, a setup failure, a target the report cannot name, or an unwritable rendering          |
-| 4    | The report holds a pending finding, one a declared cross-language edge holds until a merge resolves it                                             |
+| Code | Meaning |
+| --- | --- |
+| 0 | No finding at or above `reporters.fail_on`, no stale suppression and no pending finding. Under `--exit-code=off`, every run with a verdict exits 0 |
+| 1 | The report holds a finding at or above `reporters.fail_on`, which is `deny` by default, or a stale suppression |
+| 2 | A usage error: a malformed invocation, a refused setting, no `target.kind`, an unreadable or unparsable template, or a request to edit source |
+| 3 | A failure: a named project or a consumer that does not load, a setup failure, a target the report cannot name, or an unwritable rendering |
+| 4 | The report holds a pending finding, one a declared cross-language edge holds until a merge resolves it |
 
 Codes 2 and 3 end a run before any verdict exists, and no finding list is printed. When a rendering cannot be written, the report itself is already written. When more than one verdict holds, the highest code wins, so 4 outranks 1 and 1 outranks 0.
