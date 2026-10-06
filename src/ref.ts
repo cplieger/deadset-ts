@@ -60,6 +60,7 @@ const REF_FORMS: readonly RegExp[] = REF_EXPRESSIONS.map(
 
 const IDENTIFIER = new RegExp(`^${TS_IDENT}$`, "u");
 const PRIVATE_NAME = new RegExp(`^#${TS_IDENT}$`, "u");
+// Stryker disable next-line Regex: its \v to \V mutant is no valid escape under the u flag, so the whole module fails to parse
 const ASCII_WHITESPACE = /[\t\n\v\f\r ]/gu;
 
 /** The section of a manifest that declares a dependency. */
