@@ -208,6 +208,8 @@ interface Building {
 /** A container whose members are read from a symbol table, from the tree, or both. */
 interface Container {
   readonly owner: Building;
+  /** The declaration that writes the container, which owns the members written inside it. */
+  readonly declaration: Node;
   /** The container's name node, which is what a batch resolves to its symbol. */
   readonly nameNode: Node | undefined;
   readonly members: readonly Node[];
@@ -473,6 +475,15 @@ export function nodeKey(file: SourceFile, node: Node): string {
   return `${file.fileName}:${String(node.pos)}:${String(node.end)}:${String(node.kind)}`;
 }
 
+/** Whether `node` is written inside `declaration`, compared by file and range. */
+function writtenInside(declaration: Node, node: Node): boolean {
+  return (
+    node.getSourceFile().fileName === declaration.getSourceFile().fileName &&
+    declaration.pos <= node.pos &&
+    node.end <= declaration.end
+  );
+}
+
 /** `export default`, up to the keyword that stands where an unnamed default export's name would. */
 const DEFAULT_EXPORT = /^export\s+(?=default\b)/u;
 
@@ -642,6 +653,7 @@ export function inventory<Brand>(
       });
       containers.push({
         owner: record,
+        declaration: node,
         nameNode: node.name,
         members: node.members,
         memberKind: "class-member",
@@ -661,6 +673,7 @@ export function inventory<Brand>(
       });
       containers.push({
         owner: record,
+        declaration: node,
         nameNode: node.name,
         members: node.members,
         memberKind: "interface-method",
@@ -684,6 +697,7 @@ export function inventory<Brand>(
       if (members.length > 0) {
         containers.push({
           owner: record,
+          declaration: node,
           nameNode: undefined,
           members,
           memberKind: "type-member",
@@ -704,6 +718,7 @@ export function inventory<Brand>(
       });
       containers.push({
         owner: record,
+        declaration: node,
         nameNode: node.name,
         members: node.members,
         memberKind: "enum-member",
@@ -897,7 +912,9 @@ export function inventory<Brand>(
         outside += declarations.length;
         continue;
       }
-      for (const held of own) {
+      // A merged symbol's table holds the members every one of its declarations writes,
+      // and each member is kept once, by the declaration that writes it.
+      for (const held of own.filter((one) => writtenInside(container.declaration, one.node))) {
         keepMember(container, held.node, seen, areStatic);
       }
     }

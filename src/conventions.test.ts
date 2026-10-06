@@ -369,6 +369,27 @@ describe("a row's short names", () => {
     ]);
   });
 
+  it("reads a JSON configuration file's document as its default export", () => {
+    const json: ConventionRow = {
+      ...ROW,
+      shortNames: [
+        { property: "plugin.name", files: ["tool.config.json"], package: "tool-plugin-{}" },
+      ],
+    };
+
+    expect(
+      decide(
+        {
+          "/repo/package.json": manifest,
+          "/repo/tool.config.json": '{ "plugin": { "name": ["b", "missing"] } }',
+          ...INSTALLED,
+        },
+        [],
+        [json],
+      ).uses,
+    ).toEqual(["tool-plugin-b"]);
+  });
+
   it("uses every declared dependency the package name can stand for where the value is not a literal, and fails nothing", () => {
     const decided = decide(
       {
@@ -583,5 +604,19 @@ describe("the convention rows over a project", () => {
 
   it("root a tool's configuration in a directory that holds no manifest", () => {
     expect(analyzed("tool-configurations")).toMatchObject({ code: 0, findings: [] });
+  });
+
+  it("use the runner and checker packages a JSON configuration names by their short names", () => {
+    const answer = analyzed("stryker");
+
+    expect(answer.applied).toEqual([
+      {
+        name: "stryker",
+        package: "@stryker-mutator/core",
+        version: "10.0.0",
+        manifest: "package.json",
+      },
+    ]);
+    expect(answer.findings).toEqual(["DS1601 package.json"]);
   });
 });

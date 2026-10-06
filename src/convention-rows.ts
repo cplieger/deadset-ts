@@ -98,6 +98,8 @@ const SOLIDSTART_PLUGIN = { module: "@solidjs/start/config", export: "solidStart
 
 const NUXT_CONFIG = [`nuxt.config.${ANY_MODULE}`];
 
+const STRYKER_CONFIG = "{stryker,.stryker}.{conf,config}.{json,js,mjs,cjs}";
+
 /** Every row, ordered by name and then by range. */
 export const CONVENTION_ROWS: readonly ConventionRow[] = [
   {
@@ -324,6 +326,25 @@ export const CONVENTION_ROWS: readonly ConventionRow[] = [
       "**/*.stories.{js,jsx,mjs,ts,tsx,mts,svelte,vue}",
     ],
     moves: [],
+  },
+  {
+    name: "stryker",
+    package: "@stryker-mutator/core",
+    range: ">=7.0.0 <11.0.0",
+    entries: [],
+    moves: [],
+    shortNames: [
+      {
+        property: "testRunner",
+        files: [STRYKER_CONFIG],
+        package: "@stryker-mutator/{}-runner",
+      },
+      {
+        property: "checkers",
+        files: [STRYKER_CONFIG],
+        package: "@stryker-mutator/{}-checker",
+      },
+    ],
   },
   {
     name: "sveltekit",

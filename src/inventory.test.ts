@@ -284,6 +284,31 @@ describe("a type alias that writes more than one object type", () => {
   });
 });
 
+describe("a symbol two declarations merge", () => {
+  it("keeps each member once, under the declaration that writes it", () => {
+    const analyzed = analyzeProject({
+      "src/base.ts": "export interface Registry {\n  base: number;\n}\n",
+      "src/augment.ts":
+        'import "./base.ts";\n' +
+        'declare module "./base.ts" {\n  interface Registry {\n    extra: number;\n  }\n}\n',
+      "src/twice.ts":
+        "export interface Twice {\n  first: number;\n}\nexport interface Twice {\n  second: number;\n}\n",
+    });
+
+    expect(
+      (analyzed.inventories[0]?.symbols ?? [])
+        .filter((symbol) => symbol.kind === "type-member")
+        .map((symbol) => `${symbol.ref} ${symbol.position.path}:${String(symbol.position.line)}`)
+        .sort(),
+    ).toEqual([
+      "ts://./src/augment.ts#'./base.ts'.Registry.extra src/augment.ts:4",
+      "ts://./src/base.ts#Registry.base src/base.ts:2",
+      "ts://./src/twice.ts#Twice.first src/twice.ts:2",
+      "ts://./src/twice.ts#Twice.second src/twice.ts:5",
+    ]);
+  });
+});
+
 describe("a parenthesized type under a type alias", () => {
   it("declares the members its own constituents declare, the parentheses aside", () => {
     const analyzed = analyzeProject({
