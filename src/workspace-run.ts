@@ -41,10 +41,9 @@ export interface WorkspaceRun {
   referenceOnly(configFile: string, compiled?: readonly string[]): (file: string) => boolean;
   /**
    * Whether one file a target configuration's program holds is the target's own. A
-   * workspace package's file is by its path alone, whichever import reached it: the
-   * compiler's answer for a file reached both through `node_modules` and from source
-   * depends on which import it followed first. Any other file is unless the compiler
-   * reached it as a library's.
+   * workspace package's file is by its path alone: the run reads another package from
+   * its source, so the compiler holds that package's files as the importer's own, not
+   * as a library's. Any other file is unless the compiler reached it as a library's.
    */
   ownFile(file: string, fromExternalLibrary: boolean): boolean;
   /** The target's own manifest, its targets read back to source. */
