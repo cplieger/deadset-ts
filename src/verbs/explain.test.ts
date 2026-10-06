@@ -381,7 +381,7 @@ describe("explain", () => {
           "  held by: a question the checker did not answer, which could have kept it live, so no finding names it",
           "",
         ].join("\n"),
-        err: `deadset-ts: the checker answered 1 question with a failure (tsconfig.json: 1); every declaration an answer could have kept live is kept live and reported by nothing\n`,
+        err: `deadset-ts: the checker answered 1 question with a failure (tsconfig.json: 1), so every declaration an answer could have kept live is kept live and reported by nothing\n`,
       });
     },
     LOAD_TIMEOUT,

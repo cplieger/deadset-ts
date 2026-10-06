@@ -38,7 +38,7 @@ export function partialNotes(partial: Partial): readonly string[] {
     }
     const where = [...byProject].map(([configFile, n]) => `${configFile}: ${String(n)}`).join(", ");
     notes.push(
-      `the checker answered ${counted(partial.unanswered.length, "question", "questions")} with a failure (${where}); every declaration an answer could have kept live is kept live and reported by nothing`,
+      `the checker answered ${counted(partial.unanswered.length, "question", "questions")} with a failure (${where}), so every declaration an answer could have kept live is kept live and reported by nothing`,
     );
   }
   return notes;
