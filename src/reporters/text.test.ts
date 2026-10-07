@@ -165,4 +165,14 @@ describe("the text reporter", () => {
       "withheld by analysis.min_confidence: 3 probable, shown with analysis.min_confidence set to probable",
     );
   });
+
+  it("names the probable and possible counts and never the certain one", () => {
+    const withheld = { certain: 4, probable: 0, possible: 1 };
+    const base = report([], []);
+    const [line] = textOf({ ...base, totals: { ...base.totals, withheld } }).split("\n");
+
+    expect(line).toBe(
+      "withheld by analysis.min_confidence: 1 possible, shown with analysis.min_confidence set to possible",
+    );
+  });
 });
