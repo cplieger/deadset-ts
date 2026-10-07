@@ -17,7 +17,7 @@ import type {
 import { isStringLiteralLikeNode } from "@typescript/native/unstable/ast";
 import type { StringLiteralLikeNode } from "@typescript/native/unstable/ast";
 import type { Host } from "./host.ts";
-import { dirnamePath, joinPath, resolvePath } from "./paths.ts";
+import { dirnamePath, resolvePath } from "./paths.ts";
 import type { Engine } from "./session.ts";
 import type { WorkspaceResolver } from "./workspace-resolution.ts";
 
@@ -82,34 +82,6 @@ function analysisOptions(parsed: Parsed): CreateSnapshotProgramParams["compilerO
   return composite === true ? { ...kept, declaration: true } : kept;
 }
 
-/**
- * The references a built program can carry: only where every referenced
- * configuration reads and is composite with output, because the compiler reports a
- * broken reference at syntax a built program does not have.
- */
-function carriedReferences(
-  engine: Engine,
-  parsed: Parsed,
-): NonNullable<Parsed["projectReferences"]> {
-  const references = parsed.projectReferences ?? [];
-  for (const reference of references) {
-    // A reference that names a directory names the `tsconfig.json` in it.
-    const configFile = reference.path.endsWith(".json")
-      ? reference.path
-      : joinPath(reference.path, "tsconfig.json");
-    let options: Parsed["options"];
-    try {
-      options = engine.parseConfigFile(configFile).options;
-    } catch {
-      return [];
-    }
-    if (options.composite !== true || options.noEmit === true) {
-      return [];
-    }
-  }
-  return references;
-}
-
 /** The conditions an `exports` lookup under one configuration and one resolution mode reads. */
 function conditionsOf(parsed: Parsed, mode: ResolutionMode | undefined): ReadonlySet<string> {
   const resolution = parsed.options.moduleResolution;
@@ -132,7 +104,6 @@ function resolutionMode(kind: ModuleKind): ResolutionMode | undefined {
 interface Reading {
   readonly configFile: string;
   readonly parsed: Parsed;
-  readonly references: NonNullable<Parsed["projectReferences"]>;
   readonly entries: ModuleResolutionEntry[];
   readonly seen: Set<string>;
   /** Per member specifier, every file an import of it is read as. */
@@ -181,7 +152,7 @@ function configurationOf(
   if (reason !== undefined) {
     return { kind: "unread", reason };
   }
-  const { options } = reading.parsed;
+  const { options, projectReferences: references = [] } = reading.parsed;
   const raw: unknown = (options as Record<string, unknown>)["pathsBasePath"];
   const base = typeof raw === "string" ? raw : dirnamePath(reading.configFile);
   const paths: Record<string, string[]> = {};
@@ -204,8 +175,8 @@ function configurationOf(
       ...(options.composite === true ? { composite: false, declaration: true } : {}),
       paths,
     },
-    ...(reading.references.length > 0
-      ? { references: reading.references.map((reference) => ({ path: reference.path })) }
+    ...(references.length > 0
+      ? { references: references.map((reference) => ({ path: reference.path })) }
       : {}),
     ...(exclude === undefined ? {} : { exclude }),
   });
@@ -240,6 +211,7 @@ function programOf(
   reading: Reading,
 ): { readonly params: CreateSnapshotProgramParams; readonly resolver: ModuleResolver } {
   const compilerOptions = analysisOptions(reading.parsed);
+  const references = reading.parsed.projectReferences ?? [];
   const resolver = engine.createModuleResolver(compilerOptions, reading.entries);
   return {
     resolver,
@@ -249,7 +221,7 @@ function programOf(
       options: {
         moduleResolver: resolver,
         configFileParsingDiagnostics: reading.parsed.errors,
-        ...(reading.references.length > 0 ? { projectReferences: reading.references } : {}),
+        ...(references.length > 0 ? { projectReferences: references } : {}),
       },
     },
   };
@@ -436,7 +408,6 @@ export function workspacePrograms(
       {
         configFile,
         parsed,
-        references: carriedReferences(engine, parsed),
         entries: [],
         seen: new Set<string>(),
         bound: new Map<string, Set<string>>(),
