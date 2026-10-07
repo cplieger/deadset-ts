@@ -170,6 +170,15 @@ export function renderRef(module: Module, fragment: Fragment): string {
 }
 
 /**
+ * One declaration's key among a run's: its reference and the file that declares it. Two
+ * packages of one name spell one reference for two declarations, so the reference alone
+ * keys neither.
+ */
+export function declarationKey(ref: string, path: string): string {
+  return `${ref}\u0000${path}`;
+}
+
+/**
  * Whether one string is a reference of this language's grammar, in its canonical
  * spelling. A string that is not, whether misspelled or spelled in a form the
  * grammar does not define, matches no symbol; a reference of another language is

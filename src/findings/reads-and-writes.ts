@@ -2,6 +2,7 @@ import type { Finding, FindingDetails, FindingPosition } from "../finding.ts";
 import type { InventorySymbol } from "../inventory.ts";
 import type { MatrixCandidate } from "../matrix.ts";
 import { positionKey } from "../position.ts";
+import { declarationKey } from "../ref.ts";
 import type { Emitter, EmitterInput } from "./emitter.ts";
 
 /** The codes of this family. */
@@ -242,12 +243,16 @@ function unusedTypeParameters(run: Run): readonly Finding[] {
 }
 
 /**
- * The references of the declarations the write-only kind reports, whatever the
+ * The keys of the declarations the write-only kind reports, whatever the
  * severity: a narrowing kind yields each to it, since deleting the declaration
  * supersedes narrowing it.
  */
 export function writeOnlyDeclarations(input: EmitterInput): ReadonlySet<string> {
-  return new Set(writeOnlySymbols(indexed(input)).map((finding) => finding.symbol.ref));
+  return new Set(
+    writeOnlySymbols(indexed(input)).map((finding) =>
+      declarationKey(finding.symbol.ref, finding.position.path),
+    ),
+  );
 }
 
 /**

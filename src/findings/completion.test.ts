@@ -125,6 +125,26 @@ describe("the completion of every family's findings", () => {
     ]);
   });
 
+  it("reads each subject's facts from its own file where two packages of one name spell one reference", () => {
+    expect(
+      claims(
+        reportedUnder("shared-package-name").filter(
+          (finding) => finding.symbol.name === "onlyTested",
+        ),
+      ),
+    ).toEqual(["DS1004 onlyTested certain/certain reference-counting test-only [a/tsconfig.json]"]);
+  });
+
+  it("reads each subject's facts from its own position where two declarations of one file spell one reference", () => {
+    expect(
+      claims(
+        reportedUnder("ambient-default-aliases").filter(
+          (finding) => finding.symbol.kind === "export-alias",
+        ),
+      ),
+    ).toEqual(["DS1001 '*.partly'.default certain/certain reference-counting - [tsconfig.json]"]);
+  });
+
   it("marks a subject only test files name test-only", () => {
     expect(claims(reportedUnder("interfaces"))).toContain(
       "DS1201 Probe certain/certain reference-counting test-only [tsconfig.json]",

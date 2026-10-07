@@ -1,6 +1,7 @@
 import type { Confidence, Severity } from "../config.ts";
 import { jsonChunks } from "../json-chunks.ts";
 import { KINDS, type KindRow } from "../kinds.ts";
+import { declarationKey } from "../ref.ts";
 import type { Report, WireFinding, WireStaleSuppression } from "../report.ts";
 import { lineHashes, symbolFingerprint } from "./fingerprint.ts";
 import { RenderError, type RenderOptions } from "./reporter.ts";
@@ -160,7 +161,10 @@ function relatedOf(found: WireFinding): readonly Related[] {
     related.push({ label: "write", at, endLine: at.end_line });
   }
   for (const one of found.component.members ?? []) {
-    if (one.ref !== found.symbol.ref) {
+    if (
+      declarationKey(one.ref, one.position.path) !==
+      declarationKey(found.symbol.ref, found.position.path)
+    ) {
       related.push({ label: "member", at: one.position, endLine: one.position.end_line });
     }
   }
