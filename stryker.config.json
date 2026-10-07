@@ -7,7 +7,7 @@
   "checkers": ["typescript"],
   "tsconfigFile": "tsconfig.json",
   "typescriptChecker": {
-    "prioritizePerformanceOverAccuracy": false
+    "prioritizePerformanceOverAccuracy": true
   },
   "mutate": ["src/**/*.ts", "!src/**/*.test.ts", "!src/conformance-record.ts"],
   "mutator": {
