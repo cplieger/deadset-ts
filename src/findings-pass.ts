@@ -8,7 +8,7 @@ import type { AnalysisInputs } from "./analysis.ts";
 import { fails, type Config } from "./config.ts";
 import type { EdgeEvaluation } from "./edges.ts";
 import type { CompletedFinding, Finding } from "./finding.ts";
-import { decidedFindings } from "./findings/emitters.ts";
+import { decidedFindings, type Withheld } from "./findings/emitters.ts";
 import {
   fileRefsOf,
   staleSuppressions,
@@ -26,6 +26,8 @@ export interface PassTotals {
   readonly staleSuppressions: number;
   /** The evaluations that hold a finding pending. */
   readonly pending: number;
+  /** The findings the minimum confidence withheld, by confidence. */
+  readonly withheld: Withheld;
 }
 
 /** What the pass answers about one run. */
@@ -98,6 +100,7 @@ export function findingsPass(inputs: AnalysisInputs): PassResult {
       reasonsRecorded: counts.reasonsRecorded,
       staleSuppressions: records.length,
       pending: decided.evaluations.filter((one) => one.finding !== undefined).length,
+      withheld: decided.withheld,
     },
     ledger,
   };

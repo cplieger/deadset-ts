@@ -127,6 +127,7 @@ function report(findings: readonly WireFinding[], stale: readonly WireStaleSuppr
       stale_suppressions: stale.length,
       pending: 0,
       omitted: 0,
+      withheld: { certain: 0, probable: 0, possible: 0 },
     },
   };
 }

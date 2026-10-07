@@ -1,7 +1,7 @@
 import type { Finding, FindingPosition, PositionedSymbol } from "../finding.ts";
 import type { InventorySymbol } from "../inventory.ts";
 import { byPosition } from "../position.ts";
-import type { Candidate } from "../sweep.ts";
+import type { MatrixCandidate } from "../matrix.ts";
 import type { Emitter, EmitterInput } from "./emitter.ts";
 
 const UNUSED_INTERFACE = "DS1201";
@@ -31,7 +31,7 @@ function compare(a: string, b: string): number {
 function indexed(input: EmitterInput): {
   readonly symbolOf: (id: string) => InventorySymbol | undefined;
   readonly inTest: (id: string) => boolean;
-  readonly candidateOf: (id: string) => Candidate | undefined;
+  readonly candidateOf: (id: string) => MatrixCandidate | undefined;
   readonly implementationsOf: (id: string) => readonly PositionedSymbol[];
 } {
   const union = input.swept.matrix.union;
@@ -79,15 +79,16 @@ function findingOf(
  * The findings of the interfaces family, `DS1200` to `DS1299`: `DS1201`, a dead
  * interface, whose members fall with it unreported; and `DS1203`, a method of a live
  * interface no reference names, unless it is a marker, a method whose every
- * implementation has an empty body. A test file's declaration is neither kind's
- * subject, because a production sweep counts none of the references it can have.
+ * implementation has an empty body. A test file's declaration is neither kind's subject,
+ * because a production sweep counts none of the references it can have, save an interface
+ * the run that counts test references does not reach, which is `DS1201`'s.
  */
 export const interfaces: Emitter = (input) => {
   const run = indexed(input);
   const found: Finding[] = [];
   for (const candidate of input.swept.sweep.candidates) {
     const symbol = run.symbolOf(candidate.id);
-    if (symbol === undefined || run.inTest(candidate.id)) {
+    if (symbol === undefined || (run.inTest(candidate.id) && !candidate.unreferencedTest)) {
       continue;
     }
     if (symbol.kind === "interface") {
@@ -122,7 +123,7 @@ export const interfaces: Emitter = (input) => {
 };
 
 /** What one unused interface's finding says, by the references the sweep counted. */
-function unusedMessage(candidate: Candidate): string {
+function unusedMessage(candidate: MatrixCandidate): string {
   if (candidate.relation === "reachability") {
     return UNUSED_DEAD_MESSAGE;
   }

@@ -18,8 +18,6 @@ ts://@example/entry-rules/src/outside.spec.ts#	test-runner	**/*.spec.*
 ts://@example/entry-rules/src/sw.ts#	worker	./sw.ts
 ts://@example/entry-rules/src/unit.test.ts#	test-runner	**/*.test.{ts,tsx,mts,cts}
 ts://@example/entry-rules/src/worker.ts#	worker	./worker.ts
-ts://@example/entry-rules/stryker.conf.mjs#	mutation-testing	stryker.conf.*
-ts://@example/entry-rules/stryker.conf.mjs#default:alias	mutation-testing	stryker.conf.*
 ts://@example/entry-rules/vitest.config.ts#	configuration-file	<stem>.config.<ext>
 ts://@example/entry-rules/vitest.config.ts#	configuration-string	./vitest.config.ts
 ts://@example/entry-rules/vitest.config.ts#default:alias	configuration-file	<stem>.config.<ext>

@@ -9,4 +9,5 @@ src/orphan.ts:1:1: file src/orphan.ts: no import reaches this file and no root n
 src/orphan.ts:1:17: function orphan: exported function has no reference in the target and none from any loaded consumer [certain] (DS1001)
 src/orphan.ts:5:10: function double: unexported function is referenced only from declarations that are themselves dead [certain] (DS1002)
 src/referenced.ts:1:14: variable referenced: exported variable has no reference in the target and none from any loaded consumer [certain] (DS1001)
+withheld by analysis.min_confidence: 1 possible, shown with analysis.min_confidence set to possible
 summary: 11 findings (0 allow, 0 warn, 11 deny), 22 deletable lines, 0 suppressions in effect, 0 reasons recorded, 0 stale suppressions, 0 pending, 0 omitted

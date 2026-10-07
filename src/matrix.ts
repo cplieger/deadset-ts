@@ -10,7 +10,14 @@ import type { InventorySymbol } from "./inventory.ts";
 import { byPosition } from "./position.ts";
 import type { Reference } from "./references.ts";
 import type { Root } from "./roots.ts";
-import { sweep, type Candidate, type Liveness, type Relation, type SweepInput } from "./sweep.ts";
+import {
+  reachedWithTheTests,
+  sweep,
+  type Candidate,
+  type Liveness,
+  type Relation,
+  type SweepInput,
+} from "./sweep.ts";
 
 /** What the passes answered for one configuration of the run. */
 export interface Configured {
@@ -62,6 +69,12 @@ export interface MatrixCandidate extends Candidate {
    * declaration it contains is a member of a dead component.
    */
   readonly heldByTests: string | undefined;
+  /**
+   * Whether a test file declares it, no test of dead code, and the run that counts test
+   * references does not reach it: it is reported as a production declaration of its
+   * shape nothing references would be.
+   */
+  readonly unreferencedTest: boolean;
 }
 
 /** One run's sweep. */
@@ -186,32 +199,61 @@ export function sweepMatrix(matrix: Matrix, input: SweepInput): SweepResult {
   const dead = union.symbols.map(() => false);
   const testOfDeadCode = union.symbols.map(() => false);
   const heldBy: (string | undefined)[] = union.symbols.map(() => undefined);
-  const candidates: MatrixCandidate[] = [];
-  union.symbols.forEach((symbol, at) => {
+  const unreferencedTest = union.symbols.map(() => false);
+  const testReached = reachedWithTheTests(union, [
+    ...input.marked,
+    ...(input.exempt ?? []).map((record) => record.id),
+    ...(input.unanswered ?? []),
+  ]);
+  const judged = union.symbols.map((symbol, at): readonly Candidate[] | undefined => {
     const held = matrix.heldIn[at] ?? [];
     const found = held.map((configuration) => byConfiguration.get(configuration)?.get(symbol.id));
-    if (held.length === 0 || found.some((candidate) => candidate === undefined)) {
+    return held.length === 0 || found.some((candidate) => candidate === undefined)
+      ? undefined
+      : found.filter((candidate): candidate is Candidate => candidate !== undefined);
+  });
+  // A configuration that does not hold a test's subject's caller finds the subject dead,
+  // so a test is of dead code only where every production subject it names is dead in
+  // every configuration that holds it.
+  const subjectsDead = (at: number): boolean =>
+    (union.out[at] ?? []).every(
+      (edge) =>
+        union.test[edge.to] === true ||
+        union.support[edge.to] === true ||
+        union.subject[edge.to] !== true ||
+        judged[edge.to] !== undefined,
+    );
+  const candidates: MatrixCandidate[] = [];
+  union.symbols.forEach((symbol, at) => {
+    const all = judged[at];
+    if (all === undefined) {
       return;
     }
-    const all = found.filter((candidate): candidate is Candidate => candidate !== undefined);
-    const admitted = all.every((candidate) => candidate.testOfDeadCode);
+    const held = matrix.heldIn[at] ?? [];
+    const admitted = all.every((candidate) => candidate.testOfDeadCode) && subjectsDead(at);
     const testRefs = union.made[at]?.test ?? 0;
     const heldByTests =
       heldBy[union.parent[at] ?? OUTSIDE] ??
       (union.support[at] === true && testRefs > 0 && !admitted ? symbol.id : undefined);
+    const unreferenced = union.test[at] === true && !admitted && testReached[at] !== true;
     dead[at] = true;
     testOfDeadCode[at] = admitted;
     heldBy[at] = heldByTests;
+    unreferencedTest[at] = unreferenced;
+    const productionRefs = union.made[at]?.production ?? 0;
+    const counted = all.every((candidate) => candidate.relation === "reference-counting");
     candidates.push({
       id: symbol.id,
-      productionRefs: union.made[at]?.production ?? 0,
+      productionRefs,
       testRefs,
-      relation: all.every((candidate) => candidate.relation === "reference-counting")
+      // The run that judges a test-file declaration counts its test references.
+      relation: (unreferenced ? productionRefs + testRefs === 0 : counted)
         ? "reference-counting"
         : "reachability",
       testOfDeadCode: admitted,
       configurations: held,
       heldByTests,
+      unreferencedTest: unreferenced,
     });
   });
 
@@ -222,6 +264,7 @@ export function sweepMatrix(matrix: Matrix, input: SweepInput): SweepResult {
       union,
       dead.map((one, at) => one && heldBy[at] === undefined),
       testOfDeadCode,
+      unreferencedTest,
     ),
   };
 }

@@ -118,7 +118,7 @@ function typesAt<Brand>(project: ProjectView<Brand>, nodes: readonly Node[]): Ma
 }
 
 /** Whether one class member is a method whose every written body holds no statement. */
-function emptyImplementation<Brand>(project: ProjectView<Brand>, member: TSSymbol): boolean {
+export function emptyImplementation<Brand>(project: ProjectView<Brand>, member: TSSymbol): boolean {
   const own = project.ownPaths();
   let bodies = 0;
   for (const handle of member.declarations) {

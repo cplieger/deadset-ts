@@ -4,4 +4,4 @@
  * independently of the analyzer's own version, which is the one the host answers
  * from the package the analyzer was installed from.
  */
-export const CONTRACT_VERSION = "5.3.0";
+export const CONTRACT_VERSION = "6.0.0";

@@ -62,17 +62,18 @@ export function listing(component: Component, cascade: Cascade): Listing {
 
 /**
  * Groups the declarations `dead` marks into components, ordered by their first member's
- * site; `dead` and `testOfDeadCode` hold one flag per declaration of the graph. Root
- * members sit on the cycles no other cycle references. A cycle two roots both reach is
- * dead only through both, so a component is a weakly connected part of the dead
- * subgraph: no dead declaration of one references a declaration of another.
+ * site; `dead`, `testOfDeadCode` and `unreferencedTest` hold one flag per declaration of
+ * the graph. Root members sit on the cycles no other cycle references. A cycle two roots
+ * both reach is dead only through both, so a component is a weakly connected part of the
+ * dead subgraph: no dead declaration of one references a declaration of another.
  */
 export function componentsOf(
   graph: Graph,
   dead: readonly boolean[],
   testOfDeadCode: readonly boolean[],
+  unreferencedTest: readonly boolean[] = [],
 ): readonly Component[] {
-  const { at, adjacent } = deadSubgraph(graph, dead, testOfDeadCode);
+  const { at, adjacent } = deadSubgraph(graph, dead, testOfDeadCode, unreferencedTest);
   if (at.length === 0) {
     return [];
   }
@@ -133,21 +134,22 @@ function linesSpanned(symbols: readonly (InventorySymbol | undefined)[]): number
 
 /**
  * The dead declarations by their place in the subgraph, a test file's declaration only
- * where it is a test of dead code, and the edges between them: each
- * reference one makes to another, an edge each way between a dead member and its dead
- * container (one direction alone leaves the member a component the container reaches),
- * and an edge back from each production target of an admitted test, which puts the test in
- * the component of the code it exercises because a subject never references its test.
+ * where it is a test of dead code or nothing the tests reach, and the edges between them:
+ * each reference one makes to another, except an unreferenced test-file declaration's
+ * reference to production code, which decides nothing of its target, an edge each way
+ * between a dead member and its dead container, and an edge back from each production
+ * target of an admitted test, which puts the test in its subject's component.
  */
 function deadSubgraph(
   graph: Graph,
   dead: readonly boolean[],
   testOfDeadCode: readonly boolean[],
+  unreferencedTest: readonly boolean[],
 ): { readonly at: readonly number[]; readonly adjacent: readonly (readonly number[])[] } {
   const at: number[] = [];
   const position = graph.symbols.map((_symbol, index) => {
-    // A test file's declaration belongs to a component only as a test of dead code.
-    if (dead[index] !== true || (graph.test[index] === true && testOfDeadCode[index] !== true)) {
+    const judged = testOfDeadCode[index] === true || unreferencedTest[index] === true;
+    if (dead[index] !== true || (graph.test[index] === true && !judged)) {
       return UNVISITED;
     }
     at.push(index);
@@ -157,7 +159,7 @@ function deadSubgraph(
   at.forEach((index, from) => {
     for (const edge of graph.out[index] ?? []) {
       const to = position[edge.to] ?? UNVISITED;
-      if (to === UNVISITED) {
+      if (to === UNVISITED || (unreferencedTest[index] === true && graph.test[edge.to] !== true)) {
         continue;
       }
       adjacent[from]?.push(to);

@@ -1,0 +1,9 @@
+{
+  "name": "@example/web",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "devDependencies": {
+    "member-web": "1.0.0"
+  }
+}

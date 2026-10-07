@@ -1,10 +1,10 @@
 /**
- * The dependencies the target's manifest declares, and what the projects' own files
- * need from outside the target. A file needs a package it imports, re-exports from,
- * augments or references the types of, by name or through the file the specifier
- * resolves to; a compiler configuration needs one it names, and a configuration file a
- * tool loads needs each dependency its strings spell. A package one dependency pulls in
- * for itself is that dependency's need, not the target's.
+ * The dependencies the target's manifest and its workspace members' manifests declare, and
+ * what the projects' own files need from outside the target. A file needs a package it
+ * imports, re-exports from, augments or references the types of, by name or through the
+ * file the specifier resolves to; a compiler configuration needs one it names, and a
+ * configuration file a tool loads needs each dependency its strings spell. A package one
+ * dependency pulls in for itself is that dependency's need, not the target's.
  */
 
 import {
@@ -32,7 +32,7 @@ import {
 import type { FindingPosition } from "./finding.ts";
 import type { Host } from "./host.ts";
 import { nodeKey, packageScope, type Inventory } from "./inventory.ts";
-import { dirnamePath, isAbsolutePath, joinPath, resolvePath } from "./paths.ts";
+import { dirnamePath, isAbsolutePath, joinPath, relativePath, resolvePath } from "./paths.ts";
 import type { DependencySection, Module } from "./ref.ts";
 import { UNANSWERED } from "./query.ts";
 import type { Handle, ProjectView } from "./session.ts";
@@ -53,12 +53,14 @@ const SECTIONS: readonly (readonly [string, DependencySection])[] = [
 /** The owner of a use no declaration of the inventory holds: a configuration's. */
 const PROJECT_OWNER = "";
 
-/** One dependency the target's manifest declares. */
+/** One dependency a manifest the run reads declares. */
 export interface DeclaredDependency {
   readonly name: string;
   readonly section: DependencySection;
   /** Where the manifest writes the dependency's key, below the target root. */
   readonly position: FindingPosition;
+  /** The scope the dependency's reference is written in: its manifest's. */
+  readonly manifest: Module;
 }
 
 /** What a configuration's own reading needs: packages no deletion of a declaration removes. */
@@ -97,9 +99,7 @@ export interface ProjectNeeds {
 
 /** The run's dependency evidence. */
 export interface Dependencies {
-  /** The scope every dependency's reference is written in: the target's manifest. */
-  readonly manifest: Module;
-  /** Every declared dependency, in the order the manifest writes them. */
+  /** Every declared dependency, manifest by manifest, in the order each writes them. */
   readonly declared: readonly DeclaredDependency[];
   /** The installed copy of each declared dependency the run found, by name. */
   readonly installed: ReadonlyMap<string, InstalledDependency>;
@@ -608,8 +608,13 @@ function installedOf(host: Host, root: string, name: string): InstalledDependenc
   }
 }
 
-/** Every dependency the manifest text declares, in the order the text writes them. */
-function declaredIn(text: string, manifest: Record<string, unknown>): DeclaredDependency[] {
+/** Every dependency the manifest text at `path` declares, in the order the text writes them. */
+function declaredIn(
+  text: string,
+  manifest: Record<string, unknown>,
+  path: string,
+  scope: Module,
+): DeclaredDependency[] {
   const sections = membersAt(text, skipWhitespace(text, 0));
   const declared: { readonly dependency: DeclaredDependency; readonly at: number }[] = [];
   for (const [member, section] of SECTIONS) {
@@ -621,7 +626,12 @@ function declaredIn(text: string, manifest: Record<string, unknown>): DeclaredDe
     for (const [name, { key }] of membersAt(text, held.value)) {
       const { line, column } = lineAndColumn(text, key);
       declared.push({
-        dependency: { name, section, position: { path: MANIFEST, line, column, endLine: line } },
+        dependency: {
+          name,
+          section,
+          position: { path, line, column, endLine: line },
+          manifest: scope,
+        },
         at: key,
       });
     }
@@ -630,11 +640,10 @@ function declaredIn(text: string, manifest: Record<string, unknown>): DeclaredDe
 }
 
 /**
- * The run's dependency evidence: the target's manifest read with the position of every
- * dependency it declares, the installed copy of each, what the projects need, and the
- * last uses each deletion candidate holds.
- *
- * Only the manifest at the target root is read, as for entry points. A manifest the
+ * The run's dependency evidence: the target's manifest and each workspace member's in
+ * `members` below the target root, read with the position of every dependency each
+ * declares, the installed copy of each found from its manifest's directory, what the
+ * projects need, and the last uses each deletion candidate holds. A manifest the
  * program cannot read declares nothing.
  */
 export function dependenciesOf(
@@ -642,20 +651,31 @@ export function dependenciesOf(
   targetRoot: string,
   perProject: readonly ProjectNeeds[],
   candidates: readonly string[],
+  members: readonly string[] = [],
 ): Dependencies {
-  const read = readJSON(host, joinPath(targetRoot, MANIFEST));
-  const manifest = isRecord(read?.value) ? read.value : undefined;
-  const scope = packageScope(host, targetRoot)(MANIFEST);
-  const declared =
-    read !== undefined && manifest !== undefined ? declaredIn(read.text, manifest) : [];
-
   const root = resolvePath(host.workingDirectory(), targetRoot);
+  const scopeOf = packageScope(host, targetRoot);
+  const manifests = new Map<string, string>([[root, MANIFEST]]);
+  for (const dir of members) {
+    const below = relativePath(root, dir);
+    if (below !== undefined && !manifests.has(dir)) {
+      manifests.set(dir, `${below}/${MANIFEST}`);
+    }
+  }
+  const declared: DeclaredDependency[] = [];
   const installed = new Map<string, InstalledDependency>();
-  for (const dependency of declared) {
-    if (!installed.has(dependency.name)) {
-      const found = installedOf(host, root, dependency.name);
-      if (found !== undefined) {
-        installed.set(dependency.name, found);
+  for (const [dir, path] of manifests) {
+    const read = readJSON(host, joinPath(dir, MANIFEST));
+    if (read === undefined || !isRecord(read.value)) {
+      continue;
+    }
+    for (const dependency of declaredIn(read.text, read.value, path, scopeOf(path))) {
+      declared.push(dependency);
+      if (!installed.has(dependency.name)) {
+        const found = installedOf(host, dir, dependency.name);
+        if (found !== undefined) {
+          installed.set(dependency.name, found);
+        }
       }
     }
   }
@@ -691,5 +711,5 @@ export function dependenciesOf(
       );
     }
   }
-  return { manifest: scope, declared, installed, needed, lastUses };
+  return { declared, installed, needed, lastUses };
 }

@@ -71,7 +71,7 @@ import { frameworkLifecycle } from "./framework-lifecycle.ts";
 import type { Host } from "./host.ts";
 import { implementations, mergeImplementations } from "./implementations.ts";
 import { injectionContainer } from "./injection-container.ts";
-import { interfaceSatisfaction } from "./interface-satisfaction.ts";
+import { interfaceSatisfaction, settledSatisfaction } from "./interface-satisfaction.ts";
 import { intraFunctionFacts, projectParts, type ProjectParts } from "./intra-function-parts.ts";
 import { inventory, type Inventory, type InventorySymbol } from "./inventory.ts";
 import { packageEntries, readManifest } from "./manifest.ts";
@@ -224,6 +224,8 @@ interface ReadProjects<Answer> {
   readonly conventionsApplied: readonly AppliedConvention[];
   /** The dependencies the applied rows' short names use. */
   readonly conventionUses: readonly string[];
+  /** The directory of every workspace member, absolute. */
+  readonly memberDirs: readonly string[];
   /** The test files below the target root no project the run reads holds, parsed. */
   readonly outsideTests: readonly OutsideTest[];
 }
@@ -508,6 +510,7 @@ function readProjects<Answer>(
     componentsUnread: workspace?.componentsUnread ?? [],
     conventionsApplied: conventions.applied,
     conventionUses: conventions.uses,
+    memberDirs: workspace?.memberDirs ?? [],
     outsideTests,
   };
 }
@@ -694,6 +697,8 @@ interface ReadRun<Extra> {
   readonly conventionsApplied: readonly AppliedConvention[];
   /** The dependencies the applied rows' short names use. */
   readonly conventionUses: readonly string[];
+  /** The directory of every workspace member, absolute. */
+  readonly memberDirs: readonly string[];
 }
 
 /**
@@ -777,15 +782,20 @@ function readRun<Extra>(
     withOutside.flatMap((one) => one.projectRead.rooted.liveUnderReachability),
     withOutside.flatMap((one) => one.testFiles),
   );
-  const answers = withOutside.map((one): SweptProject<Extra> => {
+  const settled = settledSatisfaction(
+    withOutside.map((one) => ({ evidence: one.evidence, held: one.projectRead.held })),
+    [...withOutside.flatMap((one) => one.references), ...read.consumers.references],
+  );
+  const answers = withOutside.map((one, index): SweptProject<Extra> => {
     const { projectRead } = one;
-    const detected = heldRecords(one.evidence, {
+    const satisfied = settled[index];
+    const detected = heldRecords(satisfied?.evidence ?? one.evidence, {
       disabled,
       mode,
       testFiles: new Set([...one.testFiles, ...support]),
     });
     const exempt = detected.records;
-    const made = supportReferences(one.references, support);
+    const made = supportReferences([...one.references, ...(satisfied?.references ?? [])], support);
     const held = new Set(projectRead.held.symbols.map((symbol) => symbol.position.path));
     const supportFiles = [...support].filter((path) => held.has(path)).sort();
     const configured: Configured = {
@@ -846,6 +856,7 @@ function readRun<Extra>(
     componentsUnread: read.componentsUnread,
     conventionsApplied: read.conventionsApplied,
     conventionUses: read.conventionUses,
+    memberDirs: read.memberDirs,
   };
 }
 
@@ -1071,6 +1082,30 @@ function readEmitterRun(
 }
 
 /**
+ * The workspace members whose manifest the run reads whole enough to judge its
+ * dependencies: a built project holds a file below the member's directory, and no derived
+ * configuration at or below it was dropped. A file no built project holds may import any
+ * dependency the member declares.
+ */
+function membersWhollyRead(
+  host: Host,
+  targetRoot: string,
+  read: ReadRun<EmitterExtra>,
+): readonly string[] {
+  const root = resolvePath(host.workingDirectory(), targetRoot);
+  const held = new Set(read.matrix.union.symbols.map((symbol) => symbol.position.path));
+  const dropped = read.notBuilt.map((one) => relativePath(root, one.configFile) ?? "");
+  return read.memberDirs.filter((dir) => {
+    const below = relativePath(root, dir);
+    if (below === undefined) {
+      return false;
+    }
+    const inside = (path: string): boolean => path.startsWith(`${below}/`);
+    return [...held].some(inside) && !dropped.some(inside);
+  });
+}
+
+/**
  * The input every emitter reads over one sweep of a read run: the facts beside the sweep
  * each kind family reads, every per-project one read in the same session as the sweep.
  */
@@ -1102,6 +1137,7 @@ function emitterInputOver(
       targetRoot,
       [...projects.map((one) => one.extra.needs), configurationNeeds(read.conventionUses)],
       swept.sweep.candidates.map((candidate) => candidate.id),
+      membersWhollyRead(host, targetRoot, read),
     ),
     implementations: mergeImplementations(projects.map((one) => one.extra.implementations)),
     files: {

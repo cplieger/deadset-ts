@@ -20,6 +20,7 @@ import {
   isPropertyDeclaration,
   isPropertySignatureDeclaration,
   isSetAccessorDeclaration,
+  isStringLiteral,
   isTypeAliasDeclaration,
   isTypeLiteralNode,
   isUnionTypeNode,
@@ -178,6 +179,8 @@ export interface Inventory {
    * component, its declared name where that differs, and a type parameter's own name.
    */
   readonly byName: ReadonlyMap<string, readonly string[]>;
+  /** Each `declare module` declaration whose name is a string literal, by id, to that name. */
+  readonly modules: ReadonlyMap<string, string>;
 }
 
 /** A declaration under construction, before its reference is rendered. */
@@ -532,6 +535,7 @@ export function inventory<Brand>(
   const exportScopes: ExportScope[] = [];
   const containers: Container[] = [];
   const starReExports: string[] = [];
+  const modules: (readonly [Building, string])[] = [];
   let outsideOwnFiles = 0;
 
   const keep = (record: Building): Building => {
@@ -737,6 +741,9 @@ export function inventory<Brand>(
         localName: undefined,
       });
       exportScopes.push({ owner: record, nameNode: node.name });
+      if (isStringLiteral(node.name)) {
+        modules.push([record, node.name.text]);
+      }
       const body = node.body;
       if (body === undefined) {
         return;
@@ -1022,6 +1029,7 @@ export function inventory<Brand>(
       .filter((symbol) => underUnanswered(byId.get(symbol.id), unansweredOwners))
       .map((symbol) => symbol.id),
     byName: namesOf(building),
+    modules: new Map(modules.map(([record, name]) => [positionKey(record.position), name])),
   };
 }
 

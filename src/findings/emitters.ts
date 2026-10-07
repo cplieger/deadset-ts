@@ -1,3 +1,4 @@
+import type { Confidence } from "../config.ts";
 import { evaluateEdges, type EdgeEvaluation } from "../edges.ts";
 import type { CompletedFinding } from "../finding.ts";
 import { liveFilesAt } from "../matrix.ts";
@@ -82,7 +83,12 @@ export interface DecidedFindings {
   readonly ledger: Ledger<CompletedFinding>;
   /** Every finding a record could name: the run's with no mark, then the run's as swept. */
   readonly would: readonly CompletedFinding[];
+  /** The findings the minimum confidence withheld, by confidence. */
+  readonly withheld: Withheld;
 }
+
+/** How many findings the minimum confidence withheld at each confidence. */
+export type Withheld = Readonly<Record<Confidence, number>>;
 
 /** Every family's findings over one sweep, and those of any further emitter, completed by one step. */
 function completedOver(
@@ -116,12 +122,12 @@ function dialsOver(
 }
 
 /**
- * Every finding of one run swept under its suppressions' marks, decided in one pass: every
- * family's findings completed by one step, so every component number is minted once, a
- * pending finding's among them; the finding each record claims withheld, whatever its
- * kind; the rest withheld by the dials, so a root one family reports withholds what
- * another family reports in its component; and every declared edge evaluated over what
- * remains, so a finding it holds pending is in its evaluation and nowhere else.
+ * Every finding of one run swept under its suppressions' marks, decided in one pass: each
+ * family's findings completed by one step, so every component number is minted once, the
+ * finding each record claims withheld, the rest withheld by the dials, so a root one family
+ * reports withholds what another reports in its component, and every declared edge
+ * evaluated over what remains, so a pending finding is in its evaluation alone. What the
+ * minimum confidence withheld is what the same decision at the lowest minimum adds.
  */
 export function decidedFindings(
   input: EmitterInput,
@@ -130,6 +136,43 @@ export function decidedFindings(
   const found = completedOver(input);
   const unmarked =
     suppressed.records.length === 0 ? [] : completedOver(suppressed.unmarked, fallenMembers);
+  const would = [...unmarked, ...found];
+  const decided = dialledOver(input, suppressed, found, unmarked);
+  const shown =
+    input.config.analysis.minConfidence === "possible"
+      ? decided
+      : dialledOver(
+          atPossible(input),
+          {
+            unmarked: atPossible(suppressed.unmarked),
+            records: suppressed.records,
+          },
+          found,
+          unmarked,
+        );
+  return { ...decided, would, withheld: withheldOf(decided.findings, shown.findings) };
+}
+
+/** The run's input with the minimum confidence at its lowest, which withholds nothing. */
+function atPossible(input: EmitterInput): EmitterInput {
+  const { config } = input;
+  return {
+    ...input,
+    config: { ...config, analysis: { ...config.analysis, minConfidence: "possible" } },
+  };
+}
+
+/**
+ * The run's completed findings decided under its dials: the finding each record claims
+ * withheld, the rest withheld by the dials, and every declared edge evaluated over what
+ * remains.
+ */
+function dialledOver(
+  input: EmitterInput,
+  suppressed: Suppressed,
+  found: readonly CompletedFinding[],
+  unmarked: readonly CompletedFinding[],
+): Omit<DecidedFindings, "would" | "withheld"> {
   const would = [...unmarked, ...found];
   const ledger = ledgerOf(suppressed.records, would, dialsOver(input, found, suppressed, unmarked));
   const unanswered = heldRefs(input);
@@ -145,12 +188,28 @@ export function decidedFindings(
     ),
   );
   const evaluated = evaluateEdges(kept, input.boundary.edges, input.swept.matrix.union.symbols);
-  return {
-    findings: evaluated.findings,
-    evaluations: evaluated.evaluations,
-    ledger,
-    would,
-  };
+  return { findings: evaluated.findings, evaluations: evaluated.evaluations, ledger };
+}
+
+/** The findings the lowest minimum would report that the run does not, counted by confidence. */
+function withheldOf(
+  reported: readonly CompletedFinding[],
+  shown: readonly CompletedFinding[],
+): Withheld {
+  const kept = new Set(reported.map(findingKey));
+  const counts = { certain: 0, probable: 0, possible: 0 };
+  for (const finding of shown) {
+    if (!kept.has(findingKey(finding))) {
+      counts[finding.confidence] += 1;
+    }
+  }
+  return counts;
+}
+
+/** A finding's identity across two decisions of one run: its position, code and subject. */
+function findingKey(finding: CompletedFinding): string {
+  const { path, line, column } = finding.position;
+  return JSON.stringify([path, line, column, finding.code, finding.symbol.ref]);
 }
 
 /** Every finding the run reports, each family's in table order. */

@@ -77,6 +77,7 @@ function result(
       reasonsRecorded: 3,
       staleSuppressions: staleSuppressions.length,
       pending: 0,
+      withheld: { certain: 0, probable: 2, possible: 5 },
     },
     ledger: { verdicts: [], claims: [], withheld: () => false },
   };
@@ -203,6 +204,7 @@ describe("the report", () => {
       stale_suppressions: 0,
       pending: 0,
       omitted: 0,
+      withheld: { certain: 0, probable: 2, possible: 5 },
     });
   });
 

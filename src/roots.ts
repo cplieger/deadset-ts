@@ -15,6 +15,7 @@ import {
   isQualifiedName,
   isTypeQueryNode,
   isTypeReferenceNode,
+  isVariableStatement,
   type Node,
   type SourceFile,
 } from "@typescript/native/unstable/ast";
@@ -297,6 +298,7 @@ export function roots<Brand>(
     options.host,
     targetRoot,
     options.parse,
+    options.conventions?.selected,
   );
   const published: SourceFile[] = [];
   const entries = [
@@ -379,7 +381,7 @@ export function roots<Brand>(
   }
 
   const api = options.publishedAPI
-    ? publishedAPI(project, published, exportsOf, held, files.byPath)
+    ? publishedAPI(project, published, exportsOf, held, files.byPath, releaseTagged(held, files))
     : { ids: [], guessed: [] };
   for (const id of api.ids) {
     add(id, "published-api", "");
@@ -453,16 +455,59 @@ function exportTables<Brand>(
   return { tables, answered };
 }
 
+/** A release tag of a documentation comment: `@` and its name, between white space or the ends. */
+const RELEASE_TAG = /(?:^|\s)@(?:public|beta|alpha)(?=\s|$)/u;
+
+/**
+ * Whether the documentation comment of the statement that starts at `start`, the last
+ * `/** *\/` comment before it with only white space between the two, holds a release tag.
+ */
+function releaseTagIn(text: string, from: number, start: number): boolean {
+  const leading = text.slice(from, start);
+  const open = leading.lastIndexOf("/**");
+  const close = open < 0 ? -1 : leading.indexOf("*/", open + 3);
+  if (close < 0 || leading.slice(close + 2).trim() !== "") {
+    return false;
+  }
+  return RELEASE_TAG.test(leading.slice(open + 3, close));
+}
+
+/** The exported top-level declarations of the program's files a release tag marks. */
+function releaseTagged(
+  held: Inventory,
+  files: { readonly byPath: ReadonlyMap<string, SourceFile> },
+): readonly string[] {
+  const exported = new Set(held.symbols.filter((symbol) => symbol.exported).map((one) => one.id));
+  const found: string[] = [];
+  for (const file of files.byPath.values()) {
+    for (const statement of file.statements) {
+      if (!releaseTagIn(file.text, statement.pos, statement.getStart())) {
+        continue;
+      }
+      const nodes: readonly Node[] = isVariableStatement(statement)
+        ? statement.declarationList.declarations
+        : [statement];
+      for (const node of nodes) {
+        const id = held.declarations.get(nodeKey(file, node));
+        if (id !== undefined && exported.has(id)) {
+          found.push(id);
+        }
+      }
+    }
+  }
+  return found;
+}
+
 /** The kinds of container whose export table, not its members' visibility, says what it publishes. */
 const EXPORTING_CONTAINERS: ReadonlySet<string> = new Set(["file", "namespace"]);
 
 /**
- * Every declaration a consumer of the library can name: what the published files export
- * and, below each, the members a consumer writes: a namespace's exported ones, any other
- * declaration's public and protected ones, never a private one or a type parameter. A
- * declaration a published one's type names is published too, exported or not. A type name
- * the checker leaves unanswered publishes every declaration spelled as it is, and those are
- * `guessed`. A published file is not itself published.
+ * Every declaration a consumer of the library can name: what the published files export,
+ * and below each the members a consumer writes, a namespace's exported ones and any other
+ * declaration's public and protected ones. A declaration a published one's type names is
+ * published too, and so is an exported declaration a release tag marks. A type name the
+ * checker leaves unanswered publishes every declaration spelled as it is, as `guessed`. A
+ * published file is not itself published.
  */
 function publishedAPI<Brand>(
   project: ProjectView<Brand>,
@@ -470,6 +515,7 @@ function publishedAPI<Brand>(
   exportsOf: ReadonlyMap<string, readonly string[]>,
   held: Inventory,
   byPath: ReadonlyMap<string, SourceFile>,
+  tagged: readonly string[],
 ): { readonly ids: readonly string[]; readonly guessed: readonly string[] } {
   const byId = new Map(held.symbols.map((symbol) => [symbol.id, symbol]));
   const children = childrenOf(held);
@@ -484,6 +530,9 @@ function publishedAPI<Brand>(
       pending.push(id);
     }
   };
+  for (const id of tagged) {
+    reach(id);
+  }
   for (const file of published) {
     for (const id of exportsOf.get(file.fileName) ?? []) {
       if (byId.get(id)?.kind === "file") {

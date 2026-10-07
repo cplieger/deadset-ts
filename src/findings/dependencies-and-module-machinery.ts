@@ -37,7 +37,7 @@ function neededBy(dependencies: Dependencies): ReadonlySet<string> {
 }
 
 /**
- * A dependency, development dependency or peer dependency of the target's manifest
+ * A dependency, development dependency or peer dependency of a manifest the run reads
  * that the target does not need, at the position of its key.
  */
 function unusedDependencies(dependencies: Dependencies): Finding[] {
@@ -48,7 +48,7 @@ function unusedDependencies(dependencies: Dependencies): Finding[] {
       code: UNUSED_DEPENDENCY,
       position: dependency.position,
       symbol: {
-        ref: renderRef(dependencies.manifest, {
+        ref: renderRef(dependency.manifest, {
           of: "dependency",
           name: dependency.name,
           section: dependency.section,

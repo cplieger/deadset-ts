@@ -42,6 +42,9 @@ import { specifierCandidates } from "./configuration-files.ts";
 import { namespaceUses } from "./namespace-objects.ts";
 import { globExpression } from "./glob.ts";
 import { declarationsByName, nodeKey, type Inventory, type InventorySymbol } from "./inventory.ts";
+import { augmentationReferences } from "./augmentations.ts";
+import { indexedAccessReferences } from "./indexed-access.ts";
+import { moduleDeclarationReferences } from "./module-declarations.ts";
 import { overrideReferences } from "./overrides.ts";
 import { dirnamePath, queriedModulePath, relativePath, resolvePath } from "./paths.ts";
 import { byPosition, isComponentFile, renderPosition, type Position } from "./position.ts";
@@ -1494,7 +1497,10 @@ export function references<Brand>(
 
   if (consumer === undefined) {
     found.push(...overrideReferences(project, held, chains, new Set(tests)));
+    found.push(...indexedAccessReferences(project, held, chains, root, new Set(tests)));
+    found.push(...moduleDeclarationReferences(project, held, root, new Set(tests)));
   }
+  found.push(...augmentationReferences(held, found));
   found.sort(
     (a, b) =>
       byPosition(a.position, b.position) ||

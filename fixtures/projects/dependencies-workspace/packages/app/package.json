@@ -1,0 +1,10 @@
+{
+  "name": "@example/app",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "devDependencies": {
+    "member-unused": "1.0.0",
+    "member-used": "1.0.0"
+  }
+}

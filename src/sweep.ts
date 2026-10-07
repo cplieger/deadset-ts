@@ -27,6 +27,18 @@ export interface Exemption {
    * record holds only while that file is live.
    */
   readonly whileLive?: string;
+  /**
+   * The interface methods the retained member implements, and whether its body is empty.
+   * The record holds only while one of them is called through its interface.
+   */
+  readonly implementing?: Implementing;
+}
+
+/** The interface methods one retained class member implements, and whether its body is empty. */
+export interface Implementing {
+  /** The declarations of the interface's methods the member answers, by identifier. */
+  readonly methods: readonly string[];
+  readonly empty: boolean;
 }
 
 /**

@@ -12,8 +12,10 @@ import {
   isBinaryExpression,
   isBlock,
   isBreakStatement,
+  isBindingElement,
   isCallExpression,
   isCaseClause,
+  isCatchClause,
   isClassDeclaration,
   isClassExpression,
   isContinueStatement,
@@ -24,6 +26,7 @@ import {
   isExportSpecifier,
   isExpressionStatement,
   isFunctionDeclaration,
+  isFunctionExpression,
   isHeritageClause,
   isIdentifier,
   isIfStatement,
@@ -35,6 +38,8 @@ import {
   isNamespaceImport,
   isNoSubstitutionTemplateLiteral,
   isNumericLiteral,
+  isObjectBindingPattern,
+  isObjectLiteralExpression,
   isParenthesizedExpression,
   isPrefixUnaryExpression,
   isPropertyAccessExpression,
@@ -50,8 +55,10 @@ import {
   isVoidExpression,
   NodeFlags,
   SyntaxKind,
+  type BindingName,
   type Block,
   type CallExpression,
+  type CatchClause,
   type Identifier,
   type Node,
   type SourceFile,
@@ -81,6 +88,16 @@ export interface PartFact {
   readonly message: string;
   /** Whether the project found the part in use, which takes it out of the answer. */
   readonly used: boolean;
+  /** Where the part is a parameter's name, what a function used as a value decides it by. */
+  readonly parameter?: ParameterPlace;
+}
+
+/** What decides a parameter of a function used as a value: a caller may pass it more arguments. */
+interface ParameterPlace {
+  /** Whether a parameter after this one, which is no binding-pattern name, is read. */
+  readonly beforeARead: boolean;
+  /** Whether no declaration of the inventory declares the function, which is then a value. */
+  readonly inValue: boolean;
 }
 
 /** What one declaration's signature answers to beside its body. */
@@ -118,9 +135,6 @@ const NO_VALUE: ReadonlySet<string> = new Set([
   "Promise<undefined>",
   "Promise<never>",
 ]);
-
-/** The prefix that marks a parameter as unused on purpose, as the compiler's own rule reads it. */
-const UNUSED_PREFIX = "_";
 
 /** The rendered position of one node, from its first token to its last line. */
 function spanOf(file: SourceFile, root: string, node: Node): FindingPosition {
@@ -410,9 +424,31 @@ function readsBinding(
   return at === undefined || at === UNANSWERED || own === UNANSWERED || at === own;
 }
 
+/** A function written as a value that no inventory declaration declares, and what holds it. */
+interface ValueFunction {
+  readonly holder: string;
+  readonly signature: SignatureNode;
+}
+
+/** One name a parameter binds, whole or through a binding pattern. */
+interface ParameterName {
+  readonly name: Identifier;
+  /** The parameter's index in its list. */
+  readonly at: number;
+  readonly pattern: boolean;
+  /** A name beside a rest element of its object pattern: removing it changes what the rest holds. */
+  readonly exempt: boolean;
+}
+
 /** What one file's walk collects before the batch that resolves its names. */
 interface FileWalk {
   readonly declared: Declared[];
+  readonly values: ValueFunction[];
+  readonly catches: {
+    readonly clause: CatchClause;
+    readonly name: Identifier;
+    readonly holder: string;
+  }[];
   readonly blocks: Block[];
   readonly unreachable: { readonly statement: Statement; readonly holder: string }[];
   readonly cases: { readonly clause: Node; readonly text: string; readonly holder: string }[];
@@ -443,6 +479,8 @@ export function projectParts<Brand>(
       const id = held.declarations.get(nodeKey(file, node));
       return id === undefined || kinds.get(id) === "file" ? undefined : id;
     };
+    // A part no declaration holds belongs to the file, which is judged while the file is live.
+    const fileId = held.declarations.get(nodeKey(file, file));
     const holderOf = (node: Node): string | undefined => {
       for (let at = node.parent; at.kind !== SyntaxKind.SourceFile; at = at.parent) {
         const id = declarationAt(at);
@@ -450,9 +488,17 @@ export function projectParts<Brand>(
           return id;
         }
       }
-      return undefined;
+      return fileId;
     };
-    const walk: FileWalk = { declared: [], blocks: [], unreachable: [], cases: [] };
+    const walk: FileWalk = {
+      declared: [],
+      values: [],
+      catches: [],
+      blocks: [],
+      unreachable: [],
+      cases: [],
+    };
+    const covered = new Set<Node>();
     const position = (node: Node): string =>
       positionKey(renderPosition(file, targetRoot, node.getStart()));
 
@@ -483,6 +529,19 @@ export function projectParts<Brand>(
       const signature = id === undefined ? undefined : signatureOf(node);
       if (id !== undefined && signature !== undefined) {
         walk.declared.push({ id, node, signature });
+        covered.add(signature);
+      }
+      const value = covered.has(node) ? undefined : valueSignature(node);
+      const valueHolder = id ?? holderOf(node);
+      if (value !== undefined && valueHolder !== undefined && !isStub(value)) {
+        walk.values.push({ holder: valueHolder, signature: value });
+      }
+      if (isCatchClause(node) && node.variableDeclaration !== undefined) {
+        const name = node.variableDeclaration.name;
+        const holder = holderOf(node);
+        if (isIdentifier(name) && holder !== undefined && silenced === 0) {
+          walk.catches.push({ clause: node, name, holder });
+        }
       }
       if (isCallExpression(node)) {
         const name = calleeName(node);
@@ -532,16 +591,24 @@ export function projectParts<Brand>(
 
     // One batch per file resolves every name a parameter or a local is read through.
     const asked: Identifier[] = [];
-    const readers = new Map<Declared, { names: Identifier[]; uses: Identifier[] }>();
-    for (const one of walk.declared) {
-      const names = one.signature.parameters
-        .map((parameter) => parameter.name)
-        .filter(isIdentifier);
-      const spelled = new Set(names.map((name) => name.text));
-      const uses = identifiersNaming(one.signature, spelled).filter((use) => !names.includes(use));
-      readers.set(one, { names, uses });
-      asked.push(...names, ...uses);
+    const readers = new Map<SignatureNode, { names: ParameterName[]; uses: Identifier[] }>();
+    for (const signature of [
+      ...walk.declared.map((one) => one.signature),
+      ...walk.values.map((one) => one.signature),
+    ]) {
+      const names = parameterNames(signature);
+      const declaredNames = new Set<Node>(names.map((one) => one.name));
+      const spelled = new Set(names.map((one) => one.name.text));
+      const uses = identifiersNaming(signature, spelled).filter((use) => !declaredNames.has(use));
+      readers.set(signature, { names, uses });
+      asked.push(...names.map((one) => one.name), ...uses);
     }
+    const caught = walk.catches.map(({ clause, name }) =>
+      identifiersNaming(clause.block, new Set([name.text])),
+    );
+    walk.catches.forEach(({ name }, at) => {
+      asked.push(name, ...(caught[at] ?? []));
+    });
     const stores = walk.blocks.map((block) => localsOf(block));
     for (const store of stores) {
       asked.push(...store.flatMap((local) => [local.name, ...local.uses]));
@@ -555,9 +622,30 @@ export function projectParts<Brand>(
         stub: isStub(one.signature),
         fixed: hierarchyFixes(one.node, extended),
       });
-      const { uses } = readers.get(one) ?? { uses: [] };
-      parts.push(...parameterParts(file, targetRoot, one, uses, ids));
+      const reader = readers.get(one.signature);
+      if (reader !== undefined) {
+        parts.push(...parameterParts(file, targetRoot, one.id, one.signature, reader, ids, false));
+      }
     }
+    for (const one of walk.values) {
+      const reader = readers.get(one.signature);
+      if (reader !== undefined) {
+        parts.push(
+          ...parameterParts(file, targetRoot, one.holder, one.signature, reader, ids, true),
+        );
+      }
+    }
+    walk.catches.forEach(({ name, holder }, at) => {
+      parts.push({
+        code: DEAD_STORE,
+        declaration: holder,
+        kind: "store",
+        name: name.text,
+        position: spanOf(file, targetRoot, name),
+        message: `value written to ${name.text} is never read`,
+        used: (caught[at] ?? []).some((use) => readsBinding(use, name, ids)),
+      });
+    });
     walk.blocks.forEach((block, at) => {
       const holder = holderOf(block);
       if (holder !== undefined) {
@@ -592,41 +680,107 @@ export function projectParts<Brand>(
   return { parts, signatures, calls, specifiers };
 }
 
-/** Each named parameter of one function and whether the function reads it. */
+/**
+ * A function written in place that no declaration declares: an arrow, a function
+ * expression, a nested function declaration, or a method of an object literal.
+ */
+function valueSignature(node: Node): SignatureNode | undefined {
+  if (isArrowFunction(node) || isFunctionExpression(node)) {
+    return node;
+  }
+  if (isFunctionDeclaration(node)) {
+    return node.body === undefined ? undefined : node;
+  }
+  return isMethodDeclaration(node) &&
+    node.body !== undefined &&
+    isObjectLiteralExpression(node.parent)
+    ? node
+    : undefined;
+}
+
+/**
+ * Every name one function's parameters bind, a binding pattern's names one by one. A
+ * `this` parameter receives no argument and a decorated one is read by its decorator, so
+ * neither binds a subject.
+ */
+function parameterNames(signature: SignatureNode): ParameterName[] {
+  const found: ParameterName[] = [];
+  const patternNames = (pattern: BindingName, at: number): void => {
+    if (isIdentifier(pattern)) {
+      found.push({ name: pattern, at, pattern: true, exempt: false });
+      return;
+    }
+    const rest =
+      isObjectBindingPattern(pattern) &&
+      pattern.elements.some((element) => element.dotDotDotToken !== undefined);
+    for (const element of pattern.elements) {
+      if (!isBindingElement(element) || element.name === undefined) {
+        continue;
+      }
+      if (isIdentifier(element.name)) {
+        const exempt = rest && element.dotDotDotToken === undefined;
+        found.push({ name: element.name, at, pattern: true, exempt });
+      } else {
+        patternNames(element.name, at);
+      }
+    }
+  };
+  signature.parameters.forEach((parameter, at) => {
+    const name = parameter.name;
+    if (
+      ((parameter as { readonly modifiers?: readonly Node[] }).modifiers ?? []).some(isDecorator)
+    ) {
+      return;
+    }
+    if (isIdentifier(name)) {
+      if (name.text !== "this") {
+        found.push({ name, at, pattern: false, exempt: false });
+      }
+      return;
+    }
+    patternNames(name, at);
+  });
+  return found;
+}
+
+/**
+ * Each name one function's parameters bind and whether the function reads it. A binding
+ * pattern counts as read where its function reads any name it binds.
+ */
 function parameterParts(
   file: SourceFile,
   root: string,
-  one: Declared,
-  uses: readonly Identifier[],
+  declaration: string,
+  signature: SignatureNode,
+  reader: { readonly names: readonly ParameterName[]; readonly uses: readonly Identifier[] },
   ids: ReadonlyMap<Node, Answer<number>>,
+  inValue: boolean,
 ): PartFact[] {
-  const signature = one.signature;
   // A function that reads `arguments` reads every parameter by position.
   const readsArguments =
     !isArrowFunction(signature) && identifiersNaming(signature, new Set(["arguments"])).length > 0;
+  const read = reader.names.map(
+    ({ name }) =>
+      readsArguments ||
+      reader.uses.some((use) => use.text === name.text && readsBinding(use, name, ids)),
+  );
+  const lastRead = Math.max(-1, ...reader.names.filter((_, at) => read[at]).map((one) => one.at));
   const found: PartFact[] = [];
-  for (const parameter of signature.parameters) {
-    const name = parameter.name;
-    if (
-      !isIdentifier(name) ||
-      name.text === "this" ||
-      name.text.startsWith(UNUSED_PREFIX) ||
-      ((parameter as { readonly modifiers?: readonly Node[] }).modifiers ?? []).some(isDecorator)
-    ) {
-      continue;
+  reader.names.forEach(({ name, at, pattern, exempt }, index) => {
+    if (exempt) {
+      return;
     }
     found.push({
       code: UNUSED_PARAMETER,
-      declaration: one.id,
+      declaration,
       kind: "parameter",
       name: name.text,
       position: spanOf(file, root, name),
       message: `parameter ${name.text} is never read in the body`,
-      used:
-        readsArguments ||
-        uses.some((use) => use.text === name.text && readsBinding(use, name, ids)),
+      used: read[index] === true,
+      parameter: { beforeARead: !pattern && at < lastRead, inValue },
     });
-  }
+  });
   return found;
 }
 
@@ -823,6 +977,8 @@ export interface IntraFunctionFacts {
   readonly parts: readonly PartFact[];
   /** The declarations whose signature is free to change. */
   readonly free: ReadonlySet<string>;
+  /** The declarations whose signature is free but for a use as a value. */
+  readonly freeButValued: ReadonlySet<string>;
   /**
    * The declarations every reference of which is a call in the loaded program that
    * discards the call's value, with at least one such call.
@@ -882,8 +1038,13 @@ export function intraFunctionFacts(
       .map((one) => one.declaration)
       .filter((id) => !fixed.has(id) && !exempted.has(id) && !valued.has(id)),
   );
+  const freeButValued = new Set(
+    signatures
+      .map((one) => one.declaration)
+      .filter((id) => !fixed.has(id) && !exempted.has(id) && valued.has(id)),
+  );
   const discardedEverywhere = new Set(
     [...called].filter(([id, all]) => all && !valued.has(id)).map(([id]) => id),
   );
-  return { parts: [...parts.values()], free, discardedEverywhere };
+  return { parts: [...parts.values()], free, freeButValued, discardedEverywhere };
 }

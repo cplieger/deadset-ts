@@ -40,7 +40,6 @@ describe("the entry-point rules", () => {
     ["vitest.stryker.config.ts", ["configuration-file <stem>.<qualifier>.config.<ext>"]],
     ["playwright.config.ts", ["configuration-file <stem>.config.<ext>"]],
     ["vitest.workspace.ts", ["test-runner vitest.workspace.*"]],
-    ["stryker.conf.mjs", ["mutation-testing stryker.conf.*"]],
     [
       "e2e/home.spec.ts",
       ["browser-tests **/*.{spec,test}.{js,ts,jsx,tsx,cjs,cts,cjsx,ctsx,mjs,mts,mjsx,mtsx}"],

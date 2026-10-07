@@ -101,9 +101,9 @@ const ROWS: readonly KindRow[] = [
     code: "DS1101",
     name: "unnecessary-export",
     languages: ["go", "ts"],
-    rule: "An exported symbol whose every reference is inside the symbol's own package or module, reported as a candidate for unexporting. The subject is a package-level declaration or a method, and three subjects are excluded: an interface method, whose exportedness is the contract of the interface that declares it; a struct field, which an encoder reads by name; and a method that satisfies an interface some symbol uses as a type, which cannot be unexported without its type ceasing to satisfy that interface. The finding names the narrower visibility the references support. A declared cross-language edge counts as an out-of-package reference; where the edge's other side is unknown to the analyzer the finding is emitted pending.",
+    rule: "An exported symbol whose every reference is inside the symbol's own package or module, reported as a candidate for unexporting. The subject is a package-level declaration or a method. Three subjects are excluded. An interface method is excluded because its exportedness is the contract of the interface that declares it. A struct field is excluded because an encoder reads it by name. A method that satisfies an interface some symbol uses as a type is excluded because it cannot be unexported without its type ceasing to satisfy that interface. The finding names the narrower visibility the references support. A declared cross-language edge counts as an out-of-package reference. Where the edge's other side is unknown to the analyzer, the finding is emitted pending.",
     precondition:
-      "Closed world only. Reported always for a main package and an internal/ directory tree, and for a published package only when the configuration declares the consumer set complete and every declared consumer loads. A library with no consumer loaded and no complete consumer set declared gets this finding on its internal/ tree and its main packages and never on its published API. A symbol the rule of DS1301 holds for is not reported under this code, whatever severity the configuration gives DS1301, because the write-only finding names the defect to fix first. A type that a parameter or a result of an exported function or method of its own package names is not reported when a reference from outside the package references that function or method, because the caller holds values of the type, and unexporting it would leave an exported signature naming a type its callers cannot name.",
+      "Closed world only. A Go main package, and an internal/ directory tree for importers outside its parent, are closed worlds whatever the configuration declares, because no other program can import them, so this finding is reported there always. A published package is a closed world only when the configuration declares the consumer set complete and every declared consumer loads. A library with no consumer loaded and no complete consumer set declared gets this finding on its internal/ tree and its main packages and never on its published API. A symbol the rule of DS1301 holds for is not reported under this code, whatever severity the configuration gives DS1301, because the write-only finding names the defect to fix first. A type that a parameter or a result of an exported function or method of its own package names is not reported when a reference from outside the package references that function or method, because the caller holds values of the type, and unexporting it would leave an exported signature naming a type its callers cannot name.",
     defaultSeverity: "warn",
     maxClass: "certain",
     fixability: "narrowable",
@@ -113,7 +113,7 @@ const ROWS: readonly KindRow[] = [
     code: "DS1102",
     name: "unnecessary-exposure",
     languages: ["go"],
-    rule: "An exported symbol of a non-internal package whose every reference is inside the target module, reported as a candidate for relocation behind an internal boundary. The subject is a package-level declaration or a method, and three subjects are excluded: an interface method, whose exportedness is the contract of the interface that declares it; a struct field, which an encoder reads by name; and a method that satisfies an interface some symbol uses as a type, which cannot be unexported without its type ceasing to satisfy that interface. The finding names the narrower visibility the references support. A declared cross-language edge counts as an out-of-package reference; where the edge's other side is unknown to the analyzer the finding is emitted pending.",
+    rule: "An exported symbol of a non-internal package whose every reference is inside the target module, reported as a candidate for relocation behind an internal boundary. The subject is a package-level declaration or a method. Three subjects are excluded. An interface method is excluded because its exportedness is the contract of the interface that declares it. A struct field is excluded because an encoder reads it by name. A method that satisfies an interface some symbol uses as a type is excluded because it cannot be unexported without its type ceasing to satisfy that interface. The finding names the narrower visibility the references support. A declared cross-language edge counts as an out-of-package reference. Where the edge's other side is unknown to the analyzer, the finding is emitted pending.",
     precondition:
       "Closed world only. Reported always for a main package and an internal/ directory tree, and for a published package only when the configuration declares the consumer set complete and every declared consumer loads. A library with no consumer loaded and no complete consumer set declared gets this finding on its internal/ tree and its main packages and never on its published API. A symbol the rule of DS1301 holds for is not reported under this code, whatever severity the configuration gives DS1301, because the write-only finding names the defect to fix first. A type that a parameter or a result of an exported function or method of its own package names is not reported when a reference from outside the target module references that function or method, because the caller holds values of the type, and moving it behind an internal boundary would leave an exported signature naming a type its callers cannot name.",
     defaultSeverity: "warn",
@@ -137,7 +137,7 @@ const ROWS: readonly KindRow[] = [
     languages: ["ts"],
     rule: "An exported declaration used only inside its own file, reported as a candidate for removing the export keyword. The finding names the narrower visibility the references support.",
     precondition:
-      "Closed world only. Reported in a file that is not an entry file and that either belongs to a project whose consumer set the configuration declares complete or is reached by no manifest export. A declared cross-language edge counts as a reference from outside the file; where the edge's other side is unknown to the analyzer the finding is emitted pending. A symbol the rule of DS1301 holds for is not reported under this code, whatever severity the configuration gives DS1301, because the write-only finding names the defect to fix first.",
+      "Closed world only. Reported in a file that is not an entry file and that either belongs to a project whose consumer set the configuration declares complete or is reached by no manifest export. A declared cross-language edge counts as a reference from outside the file. Where the edge's other side is unknown to the analyzer, the finding is emitted pending. A symbol the rule of DS1301 holds for is not reported under this code, whatever severity the configuration gives DS1301, because the write-only finding names the defect to fix first.",
     defaultSeverity: "warn",
     maxClass: "certain",
     fixability: "narrowable",
@@ -157,9 +157,9 @@ const ROWS: readonly KindRow[] = [
     code: "DS1203",
     name: "uncalled-interface-method",
     languages: ["go", "ts"],
-    rule: "An interface method that no call site invokes or selects through the interface, whatever the number of implementations. The finding names the concrete implementations and their positions.",
+    rule: "An interface method that no call site invokes or selects through the interface, whatever the number of implementations. The finding names the concrete implementations and their positions. Each method that implements it and that nothing else keeps is reported under the code its own references select. Such a method counts as referenced by the interface method alone, so it belongs to this finding's dead component, whose root member is the interface method.",
     precondition:
-      "Exempt: in Go, every method of an interface that declares an unexported method, the sum-type shape whose method set exists to restrict the implementors, a shape a TypeScript interface cannot take because it declares no member less visible than itself; and, in both languages, every marker method, an interface method whose every implementation carries an empty body.",
+      "In Go, every method of an interface that declares an unexported method is exempt. That is the sum-type shape, whose method set exists to restrict the implementors, and a TypeScript interface cannot take it because it declares no member less visible than itself. In both languages, every marker method is exempt, an interface method whose every implementation carries an empty body.",
     defaultSeverity: "warn",
     maxClass: "certain",
     fixability: "manual",
@@ -213,7 +213,7 @@ const ROWS: readonly KindRow[] = [
     languages: ["go", "ts"],
     rule: "A source file no configuration in the build matrix builds. On the Go side the finding names the build constraint that excluded the file. A file whose build constraint is the ignore tag is never reported: the toolchain applies no build constraint to a file named on its own command line, so that tag is the toolchain's convention for a file built by hand. A file any other custom tag excludes is reported under a matrix the configuration declares complete, because completeness is the maintainer's assertion that the listed configurations are every one the target builds, and a configuration the maintainer builds by hand belongs in that list.",
     precondition:
-      'Reported only when the configuration declares the build matrix complete, and never for a file the toolchain ignored solely because it imports "C" under a build with cgo disabled; such a file is recorded as excluded by cgo rather than as never built.',
+      'Reported only when the configuration declares the build matrix complete, and never for a file the toolchain ignored solely because it imports "C" under a build with cgo disabled. Such a file is recorded as excluded by cgo rather than as never built.',
     defaultSeverity: "deny",
     maxClass: "certain",
     fixability: "deletable",
@@ -235,7 +235,7 @@ const ROWS: readonly KindRow[] = [
     languages: ["go", "ts"],
     rule: "A directly declared dependency that no import in the target needs. On the Go side, a direct require whose module provides no package any target package or test variant imports. On the TypeScript side, a manifest dependency, development dependency or peer dependency the project's import closure does not need. A deletion finding whose fix would remove the last use of a dependency names that dependency.",
     precondition:
-      "On the Go side the rule is the semantics of `go mod tidy -diff` exactly: a requirement marked indirect is never reported, because it exists to pin a transitive version and removing it changes the build list. On the TypeScript side the import closure is the files of the run's projects, and three more dependencies are needed: one whose installed manifest declares a command, because a command is run by name rather than imported; one that the installed manifest of a needed dependency declares as a peer and does not mark optional; and, to a fixpoint, the required peers of every dependency so held. An installed manifest is the package's manifest in the nearest node_modules directory at or above the target, and a dependency with none is decided by the import closure alone.",
+      "On the Go side the rule is the semantics of `go mod tidy -diff` exactly: a requirement marked indirect is never reported, because it exists to pin a transitive version and removing it changes the build list. On the TypeScript side the import closure is the files of the run's projects, and four more dependencies are needed. The first is one whose installed manifest declares a command, because a command is run by name rather than imported. The second is one that the installed manifest of a needed dependency declares as a peer and does not mark optional. The third is every required peer of a dependency so held, to a fixpoint. The fourth is one that a string names under a manifest key of an applied convention row, as grammar/analysis.md states. An installed manifest is the package's manifest in the nearest node_modules directory at or above the target, and a dependency with none is decided by the import closure alone.",
     defaultSeverity: "deny",
     maxClass: "certain",
     fixability: "manual",
@@ -247,7 +247,7 @@ const ROWS: readonly KindRow[] = [
     languages: ["go"],
     rule: "A replace directive whose target module is absent from the build list, the one case in which the directive is exactly a no-op.",
     precondition:
-      "Only a replace whose target is absent from the build list. No other module-file directive is reported: not an exclude directive, because not selected is a counterfactual about a resolution that did not happen; not a workspace use entry and not a tool directive, because each is an external entry point whose invocation lives outside anything the analysis reads.",
+      "Only a replace whose target is absent from the build list. No other module-file directive is reported. An exclude directive is not, because not selected is a counterfactual about a resolution that did not happen. A workspace use entry and a tool directive are not, because each is an external entry point whose invocation lives outside anything the analysis reads.",
     defaultSeverity: "warn",
     maxClass: "certain",
     fixability: "deletable",
@@ -267,7 +267,7 @@ const ROWS: readonly KindRow[] = [
     code: "DS1702",
     name: "unscoped-ignore-entry",
     languages: ["go", "ts"],
-    rule: "An ignore-file entry or a baseline row that names a symbol and no file path. The entry is reported rather than matched, so a bare name cannot mask a match anywhere else in the project; the inline directive is scoped by its position and cannot be unscoped.",
+    rule: "An ignore-file entry or a baseline row that names a symbol and no file path. The entry is reported rather than matched, so a bare name cannot mask a match anywhere else in the project. The inline directive is scoped by its position and cannot be unscoped.",
     defaultSeverity: "deny",
     maxClass: "certain",
     fixability: "none",
@@ -319,7 +319,7 @@ const ROWS: readonly KindRow[] = [
     languages: ["go", "ts"],
     rule: "A parameter with no reference inside its function body, on a function whose signature is free to change.",
     precondition:
-      "The signature must be free, defined as follows: the function is not a method retained by interface satisfaction, is not used as a value, is not a go:linkname or cgo target, is not a function the Go test driver runs (a test, benchmark or fuzz test of a test file, or TestMain), and is not a stub whose body is empty or only panics. A parameter its body never names is dead whatever the callers, so a published declaration of a library is reported too, with the fixability the vocabulary gives the kind: the signature change is a breaking change.",
+      "The signature must be free, defined as follows: the function is not a method retained by interface satisfaction, is not used as a value, is not a go:linkname or cgo target, is not a function the Go test driver runs (a test, benchmark or fuzz test of a test file, or TestMain), and is not a stub whose body is empty or only panics. A parameter its body never names is dead whatever the callers, so a published declaration of a library is reported too, with the fixability the vocabulary gives the kind: the signature change is a breaking change. In TypeScript a caller may pass a function used as a value more arguments than it declares parameters, so in such a function whose signature is free but for that use, a parameter its body never reads is reported when its body reads no parameter after it, and an unread parameter before the last read one is not. A TypeScript parameter that is a binding pattern is judged by the names it binds: each name the body never reads is reported wherever the pattern stands, because removing it from the pattern moves no argument, except a name beside a rest element of the same object pattern, whose removal changes what that element holds, and the pattern counts as a read parameter when the body reads any name it binds. A rest parameter is judged as the last parameter. A TypeScript `this` parameter declares the type of `this` and receives no argument, so it is never reported. No name exempts a parameter. A TypeScript parameter whose name starts with an underscore is judged as any other is, and a Go parameter named by the blank identifier declares no name a body could read and is never reported.",
     defaultSeverity: "warn",
     maxClass: "certain",
     fixability: "manual",
@@ -367,11 +367,13 @@ const ROWS: readonly KindRow[] = [
     name: "dead-store",
     languages: ["go", "ts"],
     rule: "A write to a local variable with no read before the next write to it or the end of its scope, computed on the same read-and-write classification the write-only-symbol kind uses. The finding names the write position.",
+    precondition:
+      "In TypeScript the binding of a catch clause is a local variable the clause writes when it catches, so a binding that is a name and that the clause's block never reads is a dead store, positioned at the binding: the clause written with no binding behaves the same.",
     defaultSeverity: "deny",
     maxClass: "certain",
     fixability: "deletable",
     fixed: false,
-    overlap: ["eslint no-useless-assignment"],
+    overlap: ["eslint no-useless-assignment", "@typescript-eslint/no-unused-vars"],
   },
   {
     code: "DS1809",

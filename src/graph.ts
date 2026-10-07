@@ -39,11 +39,11 @@ const SWEPT: Readonly<Record<SymbolKind, boolean>> = {
 
 /**
  * Whether a root of each kind names a caller, which holds it live under both relations: a
- * tool reads the configuration it loads and the files its strings name, a runtime runs a
- * test file, a setup file, a worker, a page's module script, a command and a script, the
- * manifest names what enters the package, an alias global stands for the export it names,
- * and an entry file, a configured root and a pattern assert a caller. A library's
- * published API only supposes an unseen consumer, so it is live under reachability alone.
+ * tool reads what it loads and what its strings name, a runtime runs a test, setup or
+ * worker file, a page's module script, a command, a script or a workflow step, the manifest
+ * names what enters the package, an alias global stands for its export, and an entry file,
+ * a configured root and a pattern assert a caller. A library's published API only supposes
+ * an unseen consumer, so it is live under reachability alone.
  */
 const NAMES_A_CALLER: Readonly<Record<RootKind, boolean>> = {
   "entry-file": true,
@@ -59,10 +59,10 @@ const NAMES_A_CALLER: Readonly<Record<RootKind, boolean>> = {
   "configuration-file": true,
   "configuration-string": true,
   "test-runner": true,
-  "mutation-testing": true,
   "browser-tests": true,
   worker: true,
   "html-entry": true,
+  "workflow-step": true,
 };
 
 /** Whether the sweep judges a declaration of one kind. */

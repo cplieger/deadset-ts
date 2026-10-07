@@ -19,7 +19,7 @@ import type { StaleSuppression } from "./findings/self-check.ts";
 import type { TestFileRule } from "./references.ts";
 
 /** The version of the report schema this analyzer writes a report to. */
-const SCHEMA_VERSION = "7.0.0";
+const SCHEMA_VERSION = "8.0.0";
 
 /** Every report schema version this analyzer reads: the one the Contract it implements admits. */
 export const SCHEMA_VERSIONS_ACCEPTED: readonly string[] = [SCHEMA_VERSION];
@@ -131,6 +131,11 @@ export interface WireTotals {
   readonly stale_suppressions: number;
   readonly pending: number;
   readonly omitted: number;
+  readonly withheld: {
+    readonly certain: number;
+    readonly probable: number;
+    readonly possible: number;
+  };
 }
 
 /** One project configuration of the matrix a run analyzed. */
@@ -438,6 +443,11 @@ function totalsOf(findings: readonly WireFinding[], result: PassResult): WireTot
     stale_suppressions: result.staleSuppressions.length,
     pending: result.totals.pending,
     omitted: 0,
+    withheld: {
+      certain: result.totals.withheld.certain,
+      probable: result.totals.withheld.probable,
+      possible: result.totals.withheld.possible,
+    },
   };
 }
 

@@ -24,7 +24,7 @@ import { byPosition, positionKey, type Position } from "./position.ts";
 import { Unanswerable } from "./query.ts";
 import type { ProjectView } from "./session.ts";
 import type { Templates } from "./template-field.ts";
-import { sweep, type Exemption, type Mode, type SweepInput } from "./sweep.ts";
+import { sweep, type Exemption, type Implementing, type Mode, type SweepInput } from "./sweep.ts";
 
 /** One declaration a detector holds back, and where and why. */
 export interface Evidence {
@@ -35,6 +35,8 @@ export interface Evidence {
   readonly site: Position;
   /** The component file, below the target root, whose markup holds the evidence. */
   readonly whileLive?: string;
+  /** Where the evidence is an implementation of interface methods, which and how. */
+  readonly implementing?: Implementing;
 }
 
 /** What a detector reads of one project, while the project's view is open. */
@@ -214,6 +216,7 @@ export function evidenceRecords<Brand>(
         detail: evidence.detail,
         site: evidence.site,
         ...(evidence.whileLive === undefined ? {} : { whileLive: evidence.whileLive }),
+        ...(evidence.implementing === undefined ? {} : { implementing: evidence.implementing }),
       });
     }
   }

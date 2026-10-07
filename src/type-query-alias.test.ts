@@ -50,7 +50,6 @@ describe("a global a declaration file declares as an alias of a module's export"
     expect(FINDINGS.filter((line) => line.startsWith("DS1001 counter.ts"))).toEqual([
       "DS1001 counter.ts:13 unusedIndexed",
       "DS1001 counter.ts:17 unusedQualified",
-      "DS1001 counter.ts:21 useInSource",
     ]);
   });
 
@@ -75,6 +74,9 @@ describe("a global a declaration file declares as an alias of a module's export"
 
   it("is no alias when a source file that is no declaration file declares it", () => {
     expect(ROOTS.filter((line) => line.startsWith("source-globals.ts"))).toEqual([]);
-    expect(FINDINGS).toContain("DS1001 counter.ts:21 useInSource");
+    expect(
+      FINDINGS.filter((line) => line.endsWith(" useInSource")),
+      "the global's literal indexed-access type references the export as any such type does",
+    ).toEqual([]);
   });
 });

@@ -50,9 +50,11 @@ import {
   CONVENTION_ROWS,
   type ConventionRow,
   type DirectoryMove,
+  type MoveReading,
   type OptionsCall,
   type ShortNameReading,
 } from "./convention-rows.ts";
+import { documentStrings } from "./configuration-files.ts";
 import { globExpression } from "./glob.ts";
 import type { Host } from "./host.ts";
 import { dirnamePath, joinPath, normalizePath, relativePath, resolvePath } from "./paths.ts";
@@ -108,8 +110,18 @@ export interface Conventions {
   readonly globs: readonly ConventionGlob[];
   readonly generated: readonly GeneratedDirectory[];
   readonly failures: readonly ConventionFailure[];
-  /** The dependencies the applied rows' short names use, by name, each once. */
+  /** The dependencies the applied rows' short names and manifest keys use, by name, each once. */
   readonly uses: readonly string[];
+  /** Per configuration file, absolute, the strings its applied rows' selection keys hold. */
+  readonly selected: ReadonlyMap<string, Selected>;
+}
+
+/** The strings one configuration file holds at selection keys, which root no file. */
+export interface Selected {
+  /** Where each string starts in the file's text. */
+  readonly starts: ReadonlySet<number>;
+  /** Each string's text, once per occurrence. */
+  readonly texts: readonly string[];
 }
 
 /** One file a row roots. */
@@ -520,6 +532,86 @@ function readPath(
   return undefined;
 }
 
+/**
+ * Every string literal one file writes at one property's path inside the objects it is
+ * read from, as {@link readProperty} reads them: the value itself, or each element of an
+ * array value, whatever else the path holds.
+ */
+function stringsAt(file: SourceFile, property: string, call?: OptionsCall): readonly Node[] {
+  const declared = declaredValues(file);
+  const objects =
+    call === undefined
+      ? defaultExports(file).map((one) => objectOf(one, declared, true))
+      : optionsArguments(file, call).map((one) =>
+          one === undefined ? undefined : objectOf(one, declared, false),
+        );
+  const found: Node[] = [];
+  const visit = (object: Node, keys: readonly string[]): void => {
+    if (!isObjectLiteralExpression(object)) {
+      return;
+    }
+    const [key, ...rest] = keys;
+    for (const member of object.properties) {
+      if (!isPropertyAssignment(member) || keyOf(member) !== key) {
+        continue;
+      }
+      const held = unwrapped(member.initializer);
+      if (rest.length > 0) {
+        visit(held, rest);
+      } else if (literalText(held) !== undefined) {
+        found.push(held);
+      } else if (isArrayLiteralExpression(held)) {
+        found.push(...held.elements.map(unwrapped).filter((one) => literalText(one) !== undefined));
+      }
+    }
+  };
+  for (const object of objects) {
+    if (object !== undefined) {
+      visit(object, property.split("."));
+    }
+  }
+  return found;
+}
+
+/** The strings an applied row's selection keys hold, added per configuration file to `into`. */
+function selectedStrings(
+  host: Host,
+  parse: ParseSource,
+  dir: string,
+  readings: readonly MoveReading[],
+  into: Map<string, { starts: Set<number>; texts: string[] }>,
+): void {
+  for (const reading of readings) {
+    for (const { name, file } of readingFiles(host, parse, dir, reading.files)) {
+      const path = joinPath(dir, name);
+      const held = into.get(path) ?? { starts: new Set<number>(), texts: [] };
+      for (const node of stringsAt(file, reading.property, reading.call)) {
+        held.starts.add(node.getStart());
+        held.texts.push(literalText(node) ?? "");
+      }
+      into.set(path, held);
+    }
+  }
+}
+
+/**
+ * The dependencies one manifest declares that a string at any depth of one of its members
+ * names, alone or followed by `/` and a subpath, a member's name aside.
+ */
+function manifestKeyUses(manifest: unknown, keys: readonly string[]): readonly string[] {
+  if (!isRecord(manifest)) {
+    return [];
+  }
+  const declared = DEPENDENCY_SECTIONS.flatMap((section) => {
+    const held = manifest[section];
+    return isRecord(held) ? Object.keys(held) : [];
+  });
+  const strings = keys.flatMap((key) => documentStrings(manifest[key]));
+  return declared.filter((name) =>
+    strings.some((text) => text === name || text.startsWith(`${name}/`)),
+  );
+}
+
 /** What one configuration file states about one property. */
 interface PropertyReading {
   /** The literal values the file sets the property to. */
@@ -740,6 +832,7 @@ export function readConventions(
   const generated: GeneratedDirectory[] = [];
   const failures: ConventionFailure[] = [];
   const uses = new Set<string>();
+  const selected = new Map<string, { starts: Set<number>; texts: string[] }>();
   for (const manifest of manifests) {
     const declared = readJSON(host, joinPath(manifest.dir, "package.json"));
     const versions = new Map<string, string | undefined>();
@@ -801,6 +894,10 @@ export function readConventions(
       for (const name of shortNameUses(host, parse, manifest.dir, declared, row.shortNames ?? [])) {
         uses.add(name);
       }
+      for (const name of manifestKeyUses(declared, row.manifestKeys ?? [])) {
+        uses.add(name);
+      }
+      selectedStrings(host, parse, manifest.dir, row.selections ?? [], selected);
       const excludes = [
         ...new Set((row.excludes ?? []).flatMap((one) => expand(one, resolved))),
       ].map(globExpression);
@@ -824,7 +921,14 @@ export function readConventions(
       compare(a.manifest, b.manifest) ||
       compare(JSON.stringify(a), JSON.stringify(b)),
   );
-  return { applied: unique, globs, generated, failures, uses: [...uses].sort(compare) };
+  return {
+    applied: unique,
+    globs,
+    generated,
+    failures,
+    uses: [...uses].sort(compare),
+    selected,
+  };
 }
 
 /**

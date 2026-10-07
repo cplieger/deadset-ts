@@ -136,6 +136,7 @@ interface ExpectationFile {
   readonly languages: readonly string[];
   readonly target_kind: string;
   readonly min_confidence?: string;
+  readonly consumer_tests?: string;
   readonly type_error_skips?: readonly string[];
   readonly notes?: readonly NoteExpectation[];
   readonly conventions_applied?: readonly ConventionExpectation[];
@@ -404,11 +405,13 @@ function configOf(file: ExpectationFile): string {
       ? {}
       : { disabled_conventions: file.disabled_conventions }),
   };
+  const analysis = {
+    ...(file.min_confidence === undefined ? {} : { min_confidence: file.min_confidence }),
+    ...(file.consumer_tests === undefined ? {} : { consumer_tests: file.consumer_tests }),
+  };
   return `${JSON.stringify({
     target: { kind: file.target_kind },
-    ...(file.min_confidence === undefined
-      ? {}
-      : { analysis: { min_confidence: file.min_confidence } }),
+    ...(Object.keys(analysis).length > 0 ? { analysis } : {}),
     ...(world.includes("consumers") ? { consumers: { complete: true } } : {}),
     ...(patterns.length > 0 ? { roots: { patterns } } : {}),
     ...(Object.keys(ts).length > 0 ? { ts } : {}),

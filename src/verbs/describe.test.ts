@@ -38,8 +38,8 @@ describe("describe", () => {
         "{\n" +
         '  "name": "deadset-ts",\n' +
         '  "version": "1.2.3",\n' +
-        '  "contract_version": "5.3.0",\n' +
-        '  "schema_versions_accepted": [\n    "7.0.0"\n  ],\n' +
+        '  "contract_version": "6.0.0",\n' +
+        '  "schema_versions_accepted": [\n    "8.0.0"\n  ],\n' +
         '  "languages": [\n    "ts"\n  ],\n' +
         '  "conformance": {\n' +
         `    "corpus_version": "${CONFORMANCE.corpusVersion}",\n` +
