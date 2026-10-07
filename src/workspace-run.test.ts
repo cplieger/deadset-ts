@@ -279,6 +279,27 @@ describe("a workspace package imported by name", () => {
     expect(found(analyze(root))).toEqual([]);
   });
 
+  it("is read from source through the output of a configuration referenced beside one with no composite output", () => {
+    const root = writeWorkspace({
+      ...UNBUILT,
+      "packages/a/tsconfig.json": tsconfig({ composite: true, outDir: "dist", rootDir: "src" }),
+      "packages/c/package.json": manifest({ name: "c", private: true }),
+      "packages/c/tsconfig.json": tsconfig(),
+      "packages/c/src/index.ts": "export const unrelated = 1;\n",
+      "packages/b/tsconfig.json": tsconfig(
+        {},
+        { references: [{ path: "../c" }, { path: "../a/tsconfig.json" }] },
+      ),
+      "packages/b/src/main.ts":
+        'import { usedBySibling } from "a";\nimport { usedByNobody } from "../../a/dist/index.js";\n\nconsole.log(usedBySibling(), usedByNobody());\n',
+    });
+
+    expect(found(analyze(root))).toEqual([
+      "DS1001 packages/c/src/index.ts unrelated",
+      "DS1502 packages/c/src/index.ts packages/c/src/index.ts",
+    ]);
+  });
+
   it("is read from source by an importer whose root directory holds only its own source", () => {
     const root = writeWorkspace({
       ...UNBUILT,

@@ -4,7 +4,7 @@
 
 deadset-ts finds dead code in TypeScript projects, down to class members, type members and dead stores inside functions, and writes a report your CI can fail on.
 
-It reads your `tsconfig.json` projects, `allowJs` JavaScript and Vue, Svelte and Astro scripts included, with the type information of TypeScript 7.1.0-dev.20261006.1, its one dependency. Your project keeps its own TypeScript version. A type error under that version skips the function or statement that holds it. deadset-ts reports and never edits your code. It is pre-release, tested only on Linux, needs Node.js 24 or later and is licensed under GPL-3.0-or-later.
+It reads your `tsconfig.json` projects, `allowJs` JavaScript and Vue, Svelte and Astro scripts included, with the type information of TypeScript 7.1.0-dev.20261007.1, its one dependency. Your project keeps its own TypeScript version. A type error under that version skips the function or statement that holds it. deadset-ts reports and never edits your code. It is pre-release, tested only on Linux, needs Node.js 24 or later and is licensed under GPL-3.0-or-later.
 
 ## Why use it
 
