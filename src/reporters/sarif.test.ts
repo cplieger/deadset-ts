@@ -238,6 +238,38 @@ describe("the SARIF rendering", () => {
     ]);
   });
 
+  it("names a component member that shares the finding's reference in another file", () => {
+    const own = { ref: NARROWING.symbol.ref, name: "x", position: NARROWING.position };
+    const twin = {
+      ...own,
+      position: { path: "b/x.ts", line: 1, column: 1, end_line: 1 },
+    };
+    const [result] = onlyRun(
+      rendered(
+        report(
+          [
+            {
+              ...NARROWING,
+              component: { ...NARROWING.component, symbol_count: 2, members: [own, twin] },
+            },
+          ],
+          [],
+        ),
+      ),
+    ).results;
+
+    expect(result?.["relatedLocations"]).toEqual([
+      {
+        id: 1,
+        physicalLocation: {
+          artifactLocation: { uri: "b/x.ts", uriBaseId: "%SRCROOT%" },
+          region: { startLine: 1, startColumn: 1, endLine: 1 },
+        },
+        message: { text: "member" },
+      },
+    ]);
+  });
+
   it("renders a stale suppression after the findings, at error, with no member bag", () => {
     const results = onlyRun(rendered(report([NARROWING], [STALE]))).results;
 

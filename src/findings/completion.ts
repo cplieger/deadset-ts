@@ -10,7 +10,8 @@ import type { Cascade, Confidence, Severity } from "../config.ts";
 import type { CompletedFinding, Finding, FindingComponent, PositionedSymbol } from "../finding.ts";
 import { OUTSIDE, type Graph } from "../graph.ts";
 import { KINDS, type KindRow } from "../kinds.ts";
-import { byPosition } from "../position.ts";
+import { byPosition, positionKey } from "../position.ts";
+import { declarationKey } from "../ref.ts";
 import { FAMILY_KEY_LENGTH } from "../resolve.ts";
 import { isPartSubject, isRowSubject, type Dials } from "../suppress.ts";
 import type { Boundary } from "./boundary.ts";
@@ -149,7 +150,9 @@ export function completed(
 ): readonly CompletedFinding[] {
   const { swept } = input;
   const union = swept.matrix.union;
-  const positions = new Map(union.symbols.map((symbol, at) => [symbol.ref, at]));
+  const positions = new Map(
+    union.symbols.map((symbol, at) => [declarationKey(symbol.ref, symbol.position.path), at]),
+  );
   const candidates = new Map(swept.sweep.candidates.map((candidate) => [candidate.id, candidate]));
   const classOf = reachabilityClasses(input);
   const componentOf = findingComponents(swept, input.config.reporters.cascade);
@@ -168,10 +171,14 @@ export function completed(
       throw new Error(`${finding.code} names no live row of the issue-kind vocabulary`);
     }
     // A row's reference may spell a declaration's, as an ignore entry naming one does, and
-    // a row is still never the declaration.
+    // a row is still never the declaration. Two declarations of one file can share a
+    // reference, so the one the finding is positioned at is the subject where there is one.
+    const declared = union.at(positionKey(finding.position));
     const at = isRowSubject(finding.symbol.kind)
       ? OUTSIDE
-      : (positions.get(finding.symbol.ref) ?? OUTSIDE);
+      : union.symbols[declared]?.ref === finding.symbol.ref
+        ? declared
+        : (positions.get(declarationKey(finding.symbol.ref, finding.position.path)) ?? OUTSIDE);
     // A part names the declaration that holds it, and is decided inside it rather than by
     // the declaration's liveness, so it carries none of the declaration's sweep facts.
     const part = isPartSubject(finding.symbol.kind);

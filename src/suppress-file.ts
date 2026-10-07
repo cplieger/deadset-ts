@@ -11,6 +11,7 @@ import { jsonChunks } from "./json-chunks.ts";
 import { joinPath } from "./paths.ts";
 import { positionAt, walkDocument } from "./json-document.ts";
 import type { Position } from "./position.ts";
+import { declarationKey } from "./ref.ts";
 import {
   CODE_FORM,
   SUPPRESSION_WITHOUT_REASON,
@@ -84,10 +85,6 @@ interface Read {
 /** The declarations of the run by reference and file, which is what an entry names. */
 type ByReference = ReadonlyMap<string, readonly InventorySymbol[]>;
 
-function referenceKey(ref: string, path: string): string {
-  return `${ref}\u0000${path}`;
-}
-
 /**
  * Reads one entry or row: the records it binds, the refusals it carries, or the
  * malformed value that ends the run.
@@ -148,7 +145,7 @@ function readRecord(value: unknown, site: Position, byReference: ByReference, sh
   if (refusals.length > 0) {
     return { records: [], refusals };
   }
-  const named = byReference.get(referenceKey(symbol, written.path)) ?? [];
+  const named = byReference.get(declarationKey(symbol, written.path)) ?? [];
   if (named.length === 0) {
     return { records: [{ ...written, bound: "" }], refusals: [] };
   }
@@ -158,7 +155,7 @@ function readRecord(value: unknown, site: Position, byReference: ByReference, sh
 function byReferenceOf(symbols: readonly InventorySymbol[]): ByReference {
   const byReference = new Map<string, InventorySymbol[]>();
   for (const symbol of symbols) {
-    const key = referenceKey(symbol.ref, symbol.position.path);
+    const key = declarationKey(symbol.ref, symbol.position.path);
     byReference.set(key, [...(byReference.get(key) ?? []), symbol]);
   }
   return byReference;

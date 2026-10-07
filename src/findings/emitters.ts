@@ -2,6 +2,7 @@ import type { Confidence } from "../config.ts";
 import { evaluateEdges, type EdgeEvaluation } from "../edges.ts";
 import type { CompletedFinding } from "../finding.ts";
 import { liveFilesAt } from "../matrix.ts";
+import { declarationKey } from "../ref.ts";
 import { ledgerOf, type Dials, type Ledger, type SuppressionRecord } from "../suppress.ts";
 import { insideSkipped } from "../type-errors.ts";
 import { completed, dialsOf, reportable } from "./completion.ts";
@@ -28,10 +29,10 @@ export const EMITTERS: Emitters = new Map<string, Emitter>([
 ]);
 
 /**
- * The references of every declaration an unanswered question could have kept live, which
- * the run reports nothing about: a finding about one would be computed from the gap.
+ * The keys of every declaration an unanswered question could have kept live, which the run
+ * reports nothing about: a finding about one would be computed from the gap.
  */
-function heldRefs(input: EmitterInput): ReadonlySet<string> {
+function heldKeys(input: EmitterInput): ReadonlySet<string> {
   const held = new Set(input.swept.heldByUnanswered);
   if (held.size === 0) {
     return held;
@@ -39,16 +40,16 @@ function heldRefs(input: EmitterInput): ReadonlySet<string> {
   return new Set(
     input.swept.matrix.union.symbols
       .filter((symbol) => held.has(symbol.id))
-      .map((symbol) => symbol.ref),
+      .map((symbol) => declarationKey(symbol.ref, symbol.position.path)),
   );
 }
 
 /**
- * The references of every top-level declaration of a live component file. The file's
+ * The keys of every top-level declaration of a live component file. The file's
  * markup may use each of them, which no analysis of the markup can rule out, so the run
  * reports nothing about one while the file is live.
  */
-function markupRefs(input: EmitterInput): ReadonlySet<string> {
+function markupKeys(input: EmitterInput): ReadonlySet<string> {
   const { swept } = input;
   if (swept.componentFiles.length === 0) {
     return new Set();
@@ -61,7 +62,7 @@ function markupRefs(input: EmitterInput): ReadonlySet<string> {
   return new Set(
     swept.matrix.union.symbols
       .filter((symbol) => live.has(symbol.parent))
-      .map((symbol) => symbol.ref),
+      .map((symbol) => declarationKey(symbol.ref, symbol.position.path)),
   );
 }
 
@@ -175,17 +176,19 @@ function dialledOver(
 ): Omit<DecidedFindings, "would" | "withheld"> {
   const would = [...unmarked, ...found];
   const ledger = ledgerOf(suppressed.records, would, dialsOver(input, found, suppressed, unmarked));
-  const unanswered = heldRefs(input);
-  const markup = markupRefs(input);
+  const unanswered = heldKeys(input);
+  const markup = markupKeys(input);
   const kept = reportable(
     input,
-    found.filter(
-      (finding) =>
+    found.filter((finding) => {
+      const key = declarationKey(finding.symbol.ref, finding.position.path);
+      return (
         !ledger.withheld(finding) &&
-        !unanswered.has(finding.symbol.ref) &&
-        !markup.has(finding.symbol.ref) &&
-        !insideSkipped(input.swept.skipped, finding.position),
-    ),
+        !unanswered.has(key) &&
+        !markup.has(key) &&
+        !insideSkipped(input.swept.skipped, finding.position)
+      );
+    }),
   );
   const evaluated = evaluateEdges(kept, input.boundary.edges, input.swept.matrix.union.symbols);
   return { findings: evaluated.findings, evaluations: evaluated.evaluations, ledger };

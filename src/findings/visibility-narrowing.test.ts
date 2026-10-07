@@ -323,6 +323,16 @@ describe("an export the write-only kind reports", () => {
       "DS1301 loose",
     ]);
   });
+
+  it("leaves to that kind only its own subject, not a declaration another package of one name spells alike", () => {
+    const findings = findingsOf(inputOf(fixture("projects", "shared-package-name")));
+
+    expect(
+      findings
+        .filter((finding) => finding.symbol.name === "hits")
+        .map((finding) => `${finding.code} ${finding.position.path}`),
+    ).toEqual(["DS1104 a/state.ts", "DS1301 b/state.ts"]);
+  });
 });
 
 describe("the table's visibility-narrowing emitter", () => {

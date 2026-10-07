@@ -2,6 +2,7 @@ import type { Finding } from "../finding.ts";
 import { OUTSIDE, type Graph } from "../graph.ts";
 import type { InventorySymbol, SymbolKind } from "../inventory.ts";
 import type { MatrixCandidate } from "../matrix.ts";
+import { declarationKey } from "../ref.ts";
 import type { RootKind } from "../roots.ts";
 import type { Emitter, EmitterInput } from "./emitter.ts";
 import { writeOnlyDeclarations } from "./reads-and-writes.ts";
@@ -159,7 +160,7 @@ function narrowing(
   const file = facts.fileOf[at] ?? OUTSIDE;
   if (
     !topLevelExport(facts, at, symbol) ||
-    world.writeOnly.has(symbol.ref) ||
+    world.writeOnly.has(declarationKey(symbol.ref, symbol.position.path)) ||
     symbol.kind === "export-alias" ||
     entersByName(facts.rootedBy[at]) ||
     entersByName(facts.rootedBy[file]) ||
