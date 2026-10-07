@@ -90,6 +90,7 @@ function report(findings: readonly WireFinding[], stale: readonly WireStaleSuppr
       stale_suppressions: stale.length,
       pending: 0,
       omitted: 1,
+      withheld: { certain: 0, probable: 0, possible: 0 },
     },
   };
 }
@@ -141,6 +142,27 @@ describe("the text reporter", () => {
   it("writes the summary alone when every finding is omitted", () => {
     expect(textOf(report([], []))).toBe(
       "summary: 1 finding (0 allow, 0 warn, 1 deny), 1 deletable line, 1 suppression in effect, 2 reasons recorded, 0 stale suppressions, 0 pending, 1 omitted\n",
+    );
+  });
+
+  it("names each withheld count and the setting that shows them after the stale suppressions", () => {
+    const withheld = { certain: 0, probable: 2, possible: 5 };
+    const base = report([FINDING], [STALE]);
+    const lines = textOf({ ...base, totals: { ...base.totals, withheld } }).split("\n");
+
+    expect(lines[2]).toBe(
+      "withheld by analysis.min_confidence: 2 probable, 5 possible, shown with analysis.min_confidence set to possible",
+    );
+    expect(LINE.test(lines[2] ?? "")).toBe(false);
+  });
+
+  it("names only the confidences whose count is not 0, the setting at the lowest named", () => {
+    const withheld = { certain: 0, probable: 3, possible: 0 };
+    const base = report([], []);
+    const [line] = textOf({ ...base, totals: { ...base.totals, withheld } }).split("\n");
+
+    expect(line).toBe(
+      "withheld by analysis.min_confidence: 3 probable, shown with analysis.min_confidence set to probable",
     );
   });
 });

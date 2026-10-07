@@ -16,7 +16,7 @@ export interface OptionsCall {
 }
 
 /** One configuration property, and the configuration files it is read from. */
-interface MoveReading {
+export interface MoveReading {
   /** The property's path through nested object literals, its keys joined by `.`. */
   readonly property: string;
   /** Globs naming the configuration files, matched in the manifest's directory alone. */
@@ -64,6 +64,13 @@ export interface ConventionRow {
   readonly moves: readonly DirectoryMove[];
   /** The properties that name a package the configuration uses by a short name. */
   readonly shortNames?: readonly ShortNameReading[];
+  /**
+   * The properties whose value only selects files to test, mutate, cover or ignore, so a
+   * string there names no file the tool runs or loads.
+   */
+  readonly selections?: readonly MoveReading[];
+  /** The members of a `package.json` the tool reads its configuration from. */
+  readonly manifestKeys?: readonly string[];
 }
 
 const SCRIPT = "{js,jsx,ts,tsx}";
@@ -99,6 +106,8 @@ const SOLIDSTART_PLUGIN = { module: "@solidjs/start/config", export: "solidStart
 const NUXT_CONFIG = [`nuxt.config.${ANY_MODULE}`];
 
 const STRYKER_CONFIG = "{stryker,.stryker}.{conf,config}.{json,js,mjs,cjs}";
+const STRYKER_MODULE = "{stryker,.stryker}.{conf,config}.{js,mjs,cjs}";
+const VITEST_CONFIG = `{vitest,vite}.config.${ANY_MODULE}`;
 
 /** Every row, ordered by name and then by range. */
 export const CONVENTION_ROWS: readonly ConventionRow[] = [
@@ -213,6 +222,14 @@ export const CONVENTION_ROWS: readonly ConventionRow[] = [
         readings: [{ property: "serverDir", files: NUXT_CONFIG }],
       },
     ],
+  },
+  {
+    name: "prettier",
+    package: "prettier",
+    range: ">=3.0.0 <4.0.0",
+    entries: [`{prettier.config,.prettierrc}.${ANY_MODULE}`],
+    moves: [],
+    manifestKeys: ["prettier"],
   },
   {
     name: "qwik-city",
@@ -331,8 +348,9 @@ export const CONVENTION_ROWS: readonly ConventionRow[] = [
     name: "stryker",
     package: "@stryker-mutator/core",
     range: ">=7.0.0 <11.0.0",
-    entries: [],
+    entries: [STRYKER_MODULE],
     moves: [],
+    selections: [{ property: "mutate", files: [STRYKER_CONFIG] }],
     shortNames: [
       {
         property: "testRunner",
@@ -476,9 +494,13 @@ export const CONVENTION_ROWS: readonly ConventionRow[] = [
     shortNames: [
       {
         property: "test.coverage.provider",
-        files: [`{vitest,vite}.config.${ANY_MODULE}`],
+        files: [VITEST_CONFIG],
         package: "@vitest/coverage-{}",
       },
+    ],
+    selections: [
+      { property: "test.coverage.include", files: [VITEST_CONFIG] },
+      { property: "test.coverage.exclude", files: [VITEST_CONFIG] },
     ],
   },
 ];

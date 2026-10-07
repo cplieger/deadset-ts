@@ -1,0 +1,9 @@
+{
+  "name": "@example/tool",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "devDependencies": {
+    "member-tool": "1.0.0"
+  }
+}

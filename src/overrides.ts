@@ -1,8 +1,9 @@
 /**
- * The overrides of the target's class members. A call through the base class, `this`
- * in the base's own body or a value typed as the base, names the base's member and
- * runs the override of whichever subclass the value is, so the base member's
- * declaration references every override as a use of it.
+ * The overrides of the target's class members. A call through the base class names the
+ * base's member and runs the override of whichever subclass the value is, so the base
+ * member's declaration references every override. A method overriding a member of a class
+ * declared outside the target, at any depth of its `extends` chain, is called by outside
+ * code holding the instance through that class, so its own class references it.
  */
 
 import {
@@ -18,6 +19,7 @@ import {
 import type { AliasChains } from "./alias-chain.ts";
 import { memberComponent } from "./class-members.ts";
 import { nodeKey, type Inventory, type InventorySymbol } from "./inventory.ts";
+import { SymbolFlags, type Symbol as TSSymbol } from "@typescript/native/unstable/sync";
 import { UNANSWERED } from "./query.ts";
 import type { Reference } from "./references.ts";
 import type { ProjectView } from "./session.ts";
@@ -58,9 +60,10 @@ function extending<Brand>(
 
 /**
  * The references each base class member makes to its overrides, for the classes of one
- * project that extend another class of the target. A member a nearer base already
- * overrides is reached through that override. A private member is not overridden.
- * Each reference is placed at the override and made by its file.
+ * project that extend another class of the target, and each class makes to its methods
+ * that override a member of a class declared outside the target. A member a nearer base
+ * already overrides is reached through that override. A private member is not
+ * overridden. Each reference is placed at the override and made by its file.
  */
 export function overrideReferences<Brand>(
   project: ProjectView<Brand>,
@@ -89,17 +92,28 @@ export function overrideReferences<Brand>(
     members.set(symbol.parent, own);
   }
   const bases = new Map<string, readonly string[]>();
+  const outsideBases = new Map<string, TSSymbol>();
+  const own = project.ownPaths();
   const symbols = project.symbolsAt(classes.map((one) => project.handle(one.base)));
   classes.forEach(({ id }, index) => {
     const symbol = symbols[index];
     if (symbol !== undefined && symbol !== UNANSWERED) {
-      bases.set(
-        id,
-        chains
-          .chainOf(symbol)
-          .map((target) => target.id)
-          .filter((target) => byId.get(target)?.kind === "class" && target !== id),
-      );
+      const inTarget = chains
+        .chainOf(symbol)
+        .map((target) => target.id)
+        .filter((target) => byId.get(target)?.kind === "class" && target !== id);
+      bases.set(id, inTarget);
+      const declared =
+        (symbol.flags & SymbolFlags.Alias) === 0 ? symbol : project.queries.aliased(symbol);
+      if (
+        inTarget.length === 0 &&
+        declared !== UNANSWERED &&
+        (declared.flags & SymbolFlags.Class) !== 0 &&
+        declared.declarations.length > 0 &&
+        declared.declarations.every((handle) => !own.has(handle.path))
+      ) {
+        outsideBases.set(id, declared);
+      }
     }
   });
 
@@ -117,6 +131,21 @@ export function overrideReferences<Brand>(
   };
 
   const found: Reference[] = [];
+  const outsideNames = outsideMemberNames(project, bases, outsideBases);
+  for (const [classId, names] of outsideNames) {
+    for (const [component, member] of members.get(classId) ?? []) {
+      if (member.kind === "method" && names.has(component)) {
+        found.push({
+          from: classId,
+          to: member.id,
+          position: member.position,
+          use: "read",
+          resolution: "override",
+          test: testFiles.has(member.position.path),
+        });
+      }
+    }
+  }
   for (const [classId, baseIds] of bases) {
     for (const [component, member] of members.get(classId) ?? []) {
       const seen = new Set([classId]);
@@ -133,4 +162,41 @@ export function overrideReferences<Brand>(
     }
   }
   return found;
+}
+
+/**
+ * Per class of the target with a class declared outside the target in its `extends`
+ * chain, the names of the members that outside class's instances carry.
+ */
+function outsideMemberNames<Brand>(
+  project: ProjectView<Brand>,
+  bases: ReadonlyMap<string, readonly string[]>,
+  outsideBases: ReadonlyMap<string, TSSymbol>,
+): ReadonlyMap<string, ReadonlySet<string>> {
+  const direct = new Map<string, ReadonlySet<string>>();
+  for (const [classId, base] of outsideBases) {
+    const type = project.queries.declaredTypeOf(base);
+    const properties = type === UNANSWERED ? UNANSWERED : project.queries.propertiesOf(type);
+    if (properties !== UNANSWERED) {
+      direct.set(classId, new Set(properties.map((property) => property.escapedName)));
+    }
+  }
+  const names = new Map<string, ReadonlySet<string>>();
+  const above = (classId: string, seen: Set<string>): ReadonlySet<string> => {
+    if (seen.has(classId)) {
+      return new Set();
+    }
+    seen.add(classId);
+    return new Set([
+      ...(direct.get(classId) ?? []),
+      ...(bases.get(classId) ?? []).flatMap((base) => [...above(base, seen)]),
+    ]);
+  };
+  for (const classId of bases.keys()) {
+    const found = above(classId, new Set());
+    if (found.size > 0) {
+      names.set(classId, found);
+    }
+  }
+  return names;
 }

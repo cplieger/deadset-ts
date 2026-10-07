@@ -71,8 +71,15 @@ function codeOf(judged: Judged): string | undefined {
   if (candidate.testOfDeadCode) {
     return "DS1005";
   }
-  if (judged.test || judged.containerDead || NOT_THIS_FAMILY.has(symbol.kind)) {
+  if (
+    (judged.test && !candidate.unreferencedTest) ||
+    judged.containerDead ||
+    NOT_THIS_FAMILY.has(symbol.kind)
+  ) {
     return undefined;
+  }
+  if (candidate.unreferencedTest) {
+    return unreferencedCode(symbol);
   }
   const referenced = candidate.productionRefs + candidate.testRefs > 0;
   if (symbol.kind === "enum-member" && !referenced) {
@@ -94,6 +101,14 @@ function codeOf(judged: Judged): string | undefined {
     return "DS1002";
   }
   return judged.unreachable ? undefined : "DS1001";
+}
+
+/** The code a declaration nothing references carries, by its shape and its visibility. */
+function unreferencedCode(symbol: InventorySymbol): string {
+  if (MEMBERS.has(symbol.kind)) {
+    return "DS1003";
+  }
+  return symbol.exported ? "DS1001" : "DS1002";
 }
 
 /** The visibility a member's message names, where it narrows the member's reach. */

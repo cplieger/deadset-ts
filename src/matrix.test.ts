@@ -120,6 +120,29 @@ describe("a run over two compiler configurations", () => {
     ]);
   });
 
+  it("admits a test of dead code only when its subjects are dead in the whole run", () => {
+    const target = fixture("projects", "test-of-code-live-elsewhere");
+    const host = nodeHost();
+    const document = join(target, "deadset.json");
+    const swept = runSweep(
+      openEngine({ collectTiming: false }),
+      host,
+      scopeForDir(host, target),
+      resolve({ repository: readFileSync(document, "utf8"), repositoryLabel: document }).config,
+      { marked: [], mode: { production: true } },
+    );
+    const names = new Map(swept.matrix.union.symbols.map((symbol) => [symbol.id, symbol.name]));
+    const admitted = swept.sweep.candidates
+      .filter((candidate) => candidate.testOfDeadCode)
+      .map((candidate) => names.get(candidate.id));
+
+    expect(
+      admitted,
+      "the application's configuration alone finds usedByScript dead, while the scripts' " +
+        "configuration uses it, so the test of it is no test of dead code",
+    ).toEqual(["checksTheDeadValue"]);
+  });
+
   it("names the configurations of the root set in the same order", () => {
     const host = nodeHost();
     const { config, provenance } = fixtureConfig();

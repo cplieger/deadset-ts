@@ -203,11 +203,17 @@ export interface Queries {
   constituents(type: Type): Answer<readonly Type[]>;
   /** The generic type a type reference instantiates; the type itself for another type. */
   targetOf(type: Type): Answer<Type>;
+  /** The constraint of a type parameter, where it declares one; none for another type. */
+  constraintOf(type: Type): Answer<Type | undefined>;
   /** The symbol a type is declared by. */
   symbolOfType(type: Type): Answer<TSSymbol | undefined>;
   signaturesOf(type: Type, kind: SignatureKind): Answer<readonly Signature[]>;
   resolvedSignature(node: Node): Answer<Signature | undefined>;
   parameterType(signature: Signature, index: number): Answer<Type | undefined>;
+  /** The generic signature an instantiated one instantiates; none for another signature. */
+  genericOf(signature: Signature): Answer<Signature | undefined>;
+  /** The type of the parameter an argument at one position binds, a rest element's included. */
+  typeAtPosition(signature: Signature, index: number): Answer<Type>;
   signatureOf(declaration: Node): Answer<Signature | undefined>;
   returnTypeOf(signature: Signature): Answer<Type | undefined>;
   typeToString(type: Type): Answer<string>;
@@ -502,6 +508,14 @@ export function queriesOf(
             () => type.getTarget(),
           )
         : type,
+    constraintOf: (type) =>
+      type.isTypeParameter()
+        ? one(
+            "getConstraint",
+            () => typeLocation(type),
+            () => type.getConstraint(),
+          )
+        : undefined,
     symbolOfType: (type) =>
       one(
         "getSymbol",
@@ -525,6 +539,20 @@ export function queriesOf(
         "getParameterType",
         () => `signature ${String(signature.id)} parameter ${String(index)}`,
         () => checker.getParameterType(signature, index),
+      ),
+    genericOf: (signature) =>
+      signature.target === undefined
+        ? undefined
+        : one(
+            "getTarget",
+            () => `signature ${String(signature.id)}`,
+            () => signature.getTarget(),
+          ),
+    typeAtPosition: (signature, index) =>
+      one(
+        "getTypeParameterAtPosition",
+        () => `signature ${String(signature.id)} position ${String(index)}`,
+        () => signature.getTypeParameterAtPosition(index),
       ),
     signatureOf: (declaration) =>
       one(

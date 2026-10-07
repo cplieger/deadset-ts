@@ -127,7 +127,7 @@ describe("interface satisfaction", () => {
     ]);
   });
 
-  it("asks the client one batch for the positions, one for the pairs, and one question per interface", () => {
+  it("asks the client one batch for the positions, one for the pairs, one question per interface and per argument", () => {
     const { requests } = measure();
     // Reading the conversion set: one batched type lookup over the class names, the
     // clause and the values; one target lookup for the first array type a value
@@ -141,8 +141,11 @@ describe("interface satisfaction", () => {
     const interfaces = 3;
     // One property list for each class of a satisfied pair, naming its members.
     const classes = 8;
+    // The signature each of the four calls taking a value resolves to; for the generic
+    // `push`, the signature it instantiates, the parameter's type there and its constraint.
+    const signatures = 4 + 3;
 
-    expect(requests).toBe(reading + interfaces + pairs + classes);
+    expect(requests).toBe(reading + interfaces + pairs + classes + signatures);
   });
 });
 

@@ -100,6 +100,7 @@ describe("the suppressions of a target", () => {
       reasonsRecorded: 7,
       staleSuppressions: 5,
       pending: 0,
+      withheld: { certain: 0, probable: 0, possible: 0 },
     });
   });
 

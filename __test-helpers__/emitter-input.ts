@@ -44,7 +44,6 @@ export function sweepOnly(config: Config, swept: RunSweep): EmitterInput {
     deprecated: new Set(),
     stores: { references: [], readInTests: new Set(), accessors: new Set(), exempt: new Set() },
     dependencies: {
-      manifest: { package: ".", path: "package.json" },
       declared: [],
       installed: new Map(),
       needed: new Set(),
@@ -54,6 +53,11 @@ export function sweepOnly(config: Config, swept: RunSweep): EmitterInput {
     files: { tree: [], heldByInclusion: new Set() },
     boundary: { consumers: { declared: [], loaded: [] }, encapsulated: false, edges: [] },
     selfCheck: NO_SELF_CHECK,
-    intraFunction: { parts: [], free: new Set(), discardedEverywhere: new Set() },
+    intraFunction: {
+      parts: [],
+      free: new Set(),
+      freeButValued: new Set(),
+      discardedEverywhere: new Set(),
+    },
   };
 }

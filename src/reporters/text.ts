@@ -24,11 +24,29 @@ function summary(totals: WireTotals): string {
   ].join(", ");
 }
 
+/** The confidences a withheld line names, from the highest the minimum can withhold. */
+const WITHHELD_ORDER = ["probable", "possible"] as const;
+
+/**
+ * The line naming what the minimum confidence withheld and the setting that shows it all,
+ * or undefined where it withheld nothing.
+ */
+export function withheldLine(totals: WireTotals): string | undefined {
+  const named = WITHHELD_ORDER.filter((confidence) => totals.withheld[confidence] > 0);
+  const lowest = named.at(-1);
+  if (lowest === undefined) {
+    return undefined;
+  }
+  const counts = named.map((confidence) => `${String(totals.withheld[confidence])} ${confidence}`);
+  return `withheld by analysis.min_confidence: ${counts.join(", ")}, shown with analysis.min_confidence set to ${lowest}`;
+}
+
 /**
  * One line per finding in the report's order, then one per stale suppression, then the
- * summary. A finding line is `path:line:col: kind name: message [confidence] (CODE)`; the
- * summary is deliberately not in that shape, so a filter for finding lines yields exactly
- * them. Nothing else is written: no timestamp, duration or host detail.
+ * withheld line where the minimum withheld a finding, then the summary. A finding line is
+ * `path:line:col: kind name: message [confidence] (CODE)`; the summary is deliberately not
+ * in that shape, so a filter for finding lines yields exactly them. Nothing else is
+ * written: no timestamp, duration or host detail.
  */
 export const text = (report: Report): Iterable<string> =>
   coalesced(
@@ -38,6 +56,10 @@ export const text = (report: Report): Iterable<string> =>
       }
       for (const stale of report.stale_suppressions) {
         yield `${stale.position.path}:${String(stale.position.line)}:${String(stale.position.column)}: ${STALE_KIND} ${stale.symbol}: ${stale.message} [${STALE_CONFIDENCE}] (${stale.code})\n`;
+      }
+      const withheld = withheldLine(report.totals);
+      if (withheld !== undefined) {
+        yield `${withheld}\n`;
       }
       yield `${summary(report.totals)}\n`;
     })(),

@@ -5,6 +5,7 @@ import type { Report, WireFinding, WireStaleSuppression } from "../report.ts";
 import { lineHashes, symbolFingerprint } from "./fingerprint.ts";
 import { RenderError, type RenderOptions } from "./reporter.ts";
 import { utf8Bytes } from "./sha256.ts";
+import { withheldLine } from "./text.ts";
 
 const SCHEMA =
   "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json";
@@ -271,6 +272,7 @@ export function sarif(report: Report, options: RenderOptions): Iterable<string> 
     ...report.stale_suppressions.map((stale) => staleResult(stale, index, hashOf)),
   ];
   const languages = [...report.analyzer.languages].sort().join("+");
+  const withheld = withheldLine(report.totals);
   const log = {
     $schema: SCHEMA,
     version: VERSION,
@@ -288,7 +290,8 @@ export function sarif(report: Report, options: RenderOptions): Iterable<string> 
         columnKind: COLUMN_KIND,
         originalUriBaseIds: { [URI_BASE_ID]: { description: { text: ROOT_DESCRIPTION } } },
         results,
-        properties: { totals: report.totals },
+        properties:
+          withheld === undefined ? { totals: report.totals } : { totals: report.totals, withheld },
       },
     ],
   };

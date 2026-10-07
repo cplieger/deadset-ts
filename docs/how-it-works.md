@@ -33,18 +33,19 @@ The same tree always gives the same report, and the analysis keeps no cache betw
 A root is a declaration the analysis keeps live without a reference. `print-roots` lists each one with the rule that made it a root. The roots are:
 
 - What a file exports when the target's manifest, or another workspace package's manifest, names it through `main`, `module`, `types`, `bin` or `exports`, or when `ts.entry_files` matches it. A `package.json` in a directory between the target and one of its compiler configurations counts here too. A build output it names, such as `dist/cli/main.js`, is read back to the rooted source file of the same name.
-- A library target's published API
+- A library target's published API, which includes an exported declaration whose documentation comment holds `@public`, `@beta` or `@alpha`
 - What a file exports when an applied convention row names it, such as a Next.js page, a SvelteKit route or a Storybook story
 - A configuration file beside a `package.json` whose name is `<stem>.config.<ext>`, `<stem>.<qualifier>.config.<ext>` or `.<stem>rc.<ext>`
-- A file that a string names, read against the directory of such a configuration file or of its JSON form, like `<stem>.config.json` or `.<stem>rc`. A string that starts with `/` or holds a glob character names no file.
+- A file that a string names, read against the directory of such a configuration file or of its JSON form, like `<stem>.config.json` or `.<stem>rc`. A string that starts with `/` or holds a glob character names no file. Nor does a string at a key that only selects files, such as Stryker's `mutate` or Vitest's `test.coverage.include`.
 - A file that a token of a `package.json` script names, such as `node ./scripts/seed.ts`
-- The test files, Vitest's workspace configuration and the setup files it names, Stryker's `stryker.conf.*`, `.stryker.conf.*` and `.stryker.config.*` files, and the test files in Playwright's test directory
+- A file that a `run:` step of a workflow in `.github/workflows` names by its path from the target root, such as `node scripts/check.ts`
+- The test files, Vitest's workspace configuration and the setup files it names, and the test files in Playwright's test directory
 - A global that a declaration file declares as `typeof import("<module>")["<name>"]`, which stands for that export, so using the global uses the export
 - A worker or service worker that a call addresses by a string literal. A module URL, `new URL("./x.ts", import.meta.url)` or `import.meta.resolve("./x.ts")`, imports its file for its effects.
 - A file that a module script of an HTML file below the target loads, through its `src` attribute or an import in its inline content
 - Every declaration a `roots.patterns` entry names
 
-A string in such a configuration file that spells a dependency its `package.json` declares, alone or followed by a subpath, keeps that dependency from `DS1601`. So does a string in a module such a configuration file imports by a relative specifier. A data file it imports, such as `./package.json`, is not read for strings. Both kinds of module are read whether or not a compiler configuration includes the file.
+A string in such a configuration file that spells a dependency its `package.json` declares, alone or followed by a subpath, keeps that dependency from `DS1601`. So does a string in a module such a configuration file imports by a relative specifier. A data file it imports, such as `./package.json`, is not read for strings. Both kinds of module are read whether or not a compiler configuration includes the file. `DS1601` also checks each workspace member's `package.json` once a built project holds a file below the member and no derived configuration there was dropped.
 
 A `roots.patterns` entry that names nothing is reported as `DS1704` and fails the run. Other entry-point conventions are not read, and the `DECLINED_CONVENTIONS` export lists each one with the reason.
 
@@ -66,7 +67,8 @@ Any other value is the setup failure `convention-not-literal`. So is an object o
 | `remix` | `@remix-run/dev` | `>=2.0.0 <3.0.0` | The same files as `react-router`, which `appDirectory` moves |
 | `solidstart` | `@solidjs/start` | `>=1.0.0 <3.0.0` | `app`, `entry-client`, `entry-server`, the middleware and the routes below `src`, which `appRoot` and `routeDir` move |
 | `storybook` | `storybook` | `>=7.0.0 <11.0.0` | The `.storybook` configuration files and every `*.stories.*` file |
-| `stryker` | `@stryker-mutator/core` | `>=7.1.0 <11.0.0` | No file. The runner and checker packages its configuration names in `testRunner` and `checkers` count as used |
+| `prettier` | `prettier` | `>=3.0.0 <4.0.0` | Every `prettier.config.*` and `.prettierrc.*` module. A package that the `prettier` key of the declaring `package.json` names counts as used |
+| `stryker` | `@stryker-mutator/core` | `>=7.0.0 <11.0.0` | Every `stryker.conf.*` and `stryker.config.*` module, with or without a leading dot. The runner and checker packages `testRunner` and `checkers` name count as used |
 | `sveltekit` | `@sveltejs/kit` | `>=2.0.0 <4.0.0` | Route files, hooks, params, the service worker and `instrumentation.server` below `src`, which the `files` options move |
 | `vitest` | `vitest` | `>=3.2.0 <6.0.0` | Every `vitest.config.*` and `vite.config.*` file, with or without a qualifier |
 
@@ -76,7 +78,7 @@ An exemption holds a declaration back from the report when something the compile
 
 | Class | What it holds back |
 | --- | --- |
-| `interface-satisfaction` | A member an interface requires of a class whose value reaches that interface |
+| `interface-satisfaction` | A member an interface requires of a class whose value reaches that interface, unless the member only implements interface methods nothing calls |
 | `enum-group` | Every member of an enum whose value arrives by conversion, such as a number asserted to the enum type, rather than by a member's name |
 | `decorator` | A decorated member, and every member of a decorated class |
 | `injection-container` | A decorated property of a class a dependency-injection container constructs: one passed to a call `ts.injection_registrations` names, or one with a decorated constructor parameter |

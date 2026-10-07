@@ -157,6 +157,8 @@ describe("the intra-function family", () => {
         partsOf(APPLICATION, ENTRY).map(({ code, name, line }) => ({ code, name, line })),
       ).toEqual([
         { code: "DS1801", name: "unread", line: 11 },
+        { code: "DS1801", name: "ignored", line: 15 },
+        { code: "DS1801", name: "_value", line: 27 },
         { code: "DS1803", name: "result", line: 31 },
         { code: "DS1805", name: "statement", line: 46 },
         { code: "DS1807", name: "value", line: 57 },
@@ -191,6 +193,26 @@ describe("the intra-function family", () => {
           writes: undefined,
         },
         {
+          code: "DS1801",
+          kind: "parameter",
+          ref: "ts://@example/parts/src/main.ts#onEvent",
+          message:
+            "parameter ignored is never read in the body; also reported by tsc --noUnusedParameters and @typescript-eslint/no-unused-vars",
+          overlap: ["tsc --noUnusedParameters", "@typescript-eslint/no-unused-vars"],
+          relation: undefined,
+          writes: undefined,
+        },
+        {
+          code: "DS1801",
+          kind: "parameter",
+          ref: "ts://@example/parts/src/main.ts#marked",
+          message:
+            "parameter _value is never read in the body; also reported by tsc --noUnusedParameters and @typescript-eslint/no-unused-vars",
+          overlap: ["tsc --noUnusedParameters", "@typescript-eslint/no-unused-vars"],
+          relation: undefined,
+          writes: undefined,
+        },
+        {
           code: "DS1803",
           kind: "result",
           ref: "ts://@example/parts/src/main.ts#compute",
@@ -214,8 +236,8 @@ describe("the intra-function family", () => {
           kind: "store",
           ref: "ts://@example/parts/src/main.ts#overwritten",
           message:
-            "value written to value is never read; also reported by eslint no-useless-assignment",
-          overlap: ["eslint no-useless-assignment"],
+            "value written to value is never read; also reported by eslint no-useless-assignment and @typescript-eslint/no-unused-vars",
+          overlap: ["eslint no-useless-assignment", "@typescript-eslint/no-unused-vars"],
           relation: undefined,
           writes: [57],
         },
@@ -327,7 +349,7 @@ describe("the intra-function family", () => {
     () => {
       expect(
         partsOf(APPLICATION, { ...ENTRY, severity: { DS1805: "allow" } }).map(({ code }) => code),
-      ).toEqual(["DS1801", "DS1803", "DS1807", "DS1809"]);
+      ).toEqual(["DS1801", "DS1801", "DS1801", "DS1803", "DS1807", "DS1809"]);
     },
     LOAD_TIMEOUT,
   );

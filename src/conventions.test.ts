@@ -194,6 +194,7 @@ describe("readConventions", () => {
       generated: [],
       failures: [],
       uses: [],
+      selected: new Map(),
     });
   });
 
@@ -219,7 +220,14 @@ describe("readConventions", () => {
       "/repo/node_modules/tool/package.json": '{ "version": "3.0.0" }',
     });
 
-    expect(decided).toEqual({ applied: [], globs: [], generated: [], failures: [], uses: [] });
+    expect(decided).toEqual({
+      applied: [],
+      globs: [],
+      generated: [],
+      failures: [],
+      uses: [],
+      selected: new Map(),
+    });
   });
 
   it("fails as missing-module where no installed manifest is found", () => {
@@ -266,7 +274,14 @@ describe("readConventions", () => {
       "tool",
     ]);
 
-    expect(decided).toEqual({ applied: [], globs: [], generated: [], failures: [], uses: [] });
+    expect(decided).toEqual({
+      applied: [],
+      globs: [],
+      generated: [],
+      failures: [],
+      uses: [],
+      selected: new Map(),
+    });
   });
 
   it("reads the globs against the default directory where no configuration sets it", () => {
@@ -617,6 +632,12 @@ describe("the convention rows over a project", () => {
         manifest: "package.json",
       },
     ]);
+    expect(answer.findings).toEqual(["DS1601 package.json"]);
+  });
+
+  it("root a stryker.conf module and read the runner its default export names", () => {
+    const answer = analyzed("stryker-conf");
+
     expect(answer.findings).toEqual(["DS1601 package.json"]);
   });
 });

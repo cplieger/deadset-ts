@@ -1,3 +1,7 @@
+src/classes.ts:16:3: method Wire.close: method is referenced only from declarations that are themselves dead [certain] (DS1003)
+src/classes.ts:28:3: method Pipe.close: method is referenced only from declarations that are themselves dead [certain] (DS1003)
+src/classes.ts:56:3: method Flag.raise: method is referenced only from declarations that are themselves dead [certain] (DS1003)
+src/classes.ts:60:12: class-member Arrowed.raise: class member is referenced only from declarations that are themselves dead [certain] (DS1003)
 src/contracts.ts:4:18: interface Unused: nothing in the target names the interface as a type [certain] (DS1201)
 src/contracts.ts:10:18: interface OnlyDead: the interface is named as a type only from declarations that are themselves dead [certain] (DS1201)
 src/contracts.ts:14:10: function orphan: unexported function has no reference in the target [certain] (DS1002)
@@ -7,4 +11,4 @@ src/contracts.ts:53:3: interface-method Listener.notify: no call site invokes or
 src/contracts.ts:57:18: interface Probe: the interface is named as a type only from test files [certain] (DS1201)
 src/contracts.ts:68:10: function resetAll: unexported function has no reference in the target [certain] (DS1002)
 src/probe.test.ts:10:17: function testProbe: every target symbol this test references is reported dead [certain] (DS1005)
-summary: 9 findings (0 allow, 3 warn, 6 deny), 25 deletable lines, 0 suppressions in effect, 0 reasons recorded, 0 stale suppressions, 0 pending, 0 omitted
+summary: 13 findings (0 allow, 3 warn, 10 deny), 31 deletable lines, 0 suppressions in effect, 0 reasons recorded, 0 stale suppressions, 0 pending, 0 omitted

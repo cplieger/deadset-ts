@@ -1,0 +1,11 @@
+{
+  "name": "@example/root",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "workspaces": ["packages/*"],
+  "devDependencies": {
+    "root-unused": "1.0.0",
+    "root-used": "1.0.0"
+  }
+}

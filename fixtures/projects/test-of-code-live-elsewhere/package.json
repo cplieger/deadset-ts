@@ -1,0 +1,7 @@
+{
+  "name": "@example/test-of-code-live-elsewhere",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "bin": { "build": "./scripts/build.ts" }
+}

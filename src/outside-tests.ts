@@ -1,9 +1,10 @@
 /**
  * The test files no compiler configuration of a run holds. The runner executes them all
  * the same, so each module one names is a test reference: the own file a relative
- * specifier names, and the declarations that file exports under the names read from it.
- * Such a file is read without a program, so what its body references beyond the modules
- * it names is not known.
+ * specifier names, and the declarations that file exports under the names read from it,
+ * or a module declaration the specifier names by name or pattern and its members of
+ * those names. Such a file is read without a program, so what its body references
+ * beyond the modules it names is not known.
  */
 
 import {
@@ -22,6 +23,7 @@ import { RESOLVED_EXTENSIONS, type ParseFile } from "./configuration-files.ts";
 import { emittedFrom } from "./emit-map.ts";
 import type { Host } from "./host.ts";
 import type { Inventory } from "./inventory.ts";
+import { namedBy, namesImported } from "./module-declarations.ts";
 import { dirnamePath, joinPath, normalizePath, queriedModulePath } from "./paths.ts";
 import { renderPosition } from "./position.ts";
 import { nameComponent } from "./ref.ts";
@@ -75,21 +77,15 @@ function modulesNamed(file: SourceFile): readonly NamedModule[] {
       const bindings = clause?.namedBindings;
       name(
         statement.moduleSpecifier,
-        [
-          ...(clause?.name === undefined ? [] : ["default"]),
-          ...(bindings === undefined || isNamespaceImport(bindings)
-            ? []
-            : bindings.elements.map((one) => (one.propertyName ?? one.name).text)),
-        ],
+        namesImported(statement),
         bindings === undefined ? clause?.name === undefined : isNamespaceImport(bindings),
       );
     } else if (isExportDeclaration(statement) && statement.moduleSpecifier !== undefined) {
       const clause = statement.exportClause;
-      const star = clause === undefined || isNamespaceExport(clause);
       name(
         statement.moduleSpecifier,
-        star ? [] : clause.elements.map((one) => (one.propertyName ?? one.name).text),
-        star,
+        namesImported(statement),
+        clause === undefined || isNamespaceExport(clause),
       );
     }
   }
@@ -158,11 +154,21 @@ export function outsideTestReferences(
       exported.set(key, [...(exported.get(key) ?? []), symbol.id]);
     }
   }
+  const declared = namedBy(held);
   const found: Reference[] = [];
   for (const { path, file } of tests) {
     const from = `${path}#`;
     const dir = dirnamePath(path) === "." ? "" : dirnamePath(path);
     for (const named of modulesNamed(file)) {
+      const position = renderPosition(file, targetRoot, named.specifier.getStart());
+      const read = (to: string, use: Reference["use"]): void => {
+        found.push({ from, to, position, use, resolution: "syntax", test: true, unheld: true });
+      };
+      for (const declaration of declared(named.text, named.names)) {
+        for (const to of [declaration.id, ...declaration.members]) {
+          read(to, "read");
+        }
+      }
       const written = named.text.includes("?") ? queriedModulePath(named.text) : named.text;
       if (written === undefined) {
         continue;
@@ -173,10 +179,6 @@ export function outsideTestReferences(
       if (fileId === undefined) {
         continue;
       }
-      const position = renderPosition(file, targetRoot, named.specifier.getStart());
-      const read = (to: string, use: Reference["use"]): void => {
-        found.push({ from, to, position, use, resolution: "syntax", test: true, unheld: true });
-      };
       if (named.evaluates) {
         read(fileId, "evaluation");
       }

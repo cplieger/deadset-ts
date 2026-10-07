@@ -20,6 +20,24 @@ function overlapClause(overlap: readonly string[]): string {
 }
 
 /**
+ * Whether one parameter's name is reported: every unread one of a function whose
+ * signature is free, and of a function used as a value only one no read parameter follows,
+ * because a caller may pass such a function more arguments than it declares.
+ */
+function parameterReported(
+  part: PartFact,
+  free: ReadonlySet<string>,
+  freeButValued: ReadonlySet<string>,
+): boolean {
+  const place = part.parameter;
+  if (place?.inValue !== true && free.has(part.declaration)) {
+    return true;
+  }
+  const valued = place?.inValue === true || freeButValued.has(part.declaration);
+  return valued && place?.beforeARead !== true;
+}
+
+/**
  * Whether one part is reported. A parameter needs its function's signature free to
  * change; a result needs that, every call in the loaded program to discard it, and every
  * call site to be in the loaded program, so a function with a root or one a module
@@ -34,10 +52,10 @@ function reported(
   if (part.used) {
     return false;
   }
-  const { free, discardedEverywhere } = input.intraFunction;
+  const { free, freeButValued, discardedEverywhere } = input.intraFunction;
   switch (part.code) {
     case UNUSED_PARAMETER:
-      return free.has(part.declaration);
+      return parameterReported(part, free, freeButValued);
     case UNUSED_RESULT:
       return (
         free.has(part.declaration) &&

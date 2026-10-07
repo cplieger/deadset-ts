@@ -47,8 +47,8 @@ describe("the placement of every family's findings in their components", () => {
     const target = fixture("projects", "interfaces");
     const placed = placements(findingsOf(emitterInputOf(target, configOf(target))));
 
-    expect(placed).toContain("DS1201 Unused deadset-ts/c-0001 root 3 4");
-    expect(placed).toContain("DS1201 OnlyDead deadset-ts/c-0002 3 6");
+    expect(placed).toContain("DS1201 Unused deadset-ts/c-0003 root 3 4");
+    expect(placed).toContain("DS1201 OnlyDead deadset-ts/c-0004 3 6");
   });
 
   describe("over a manifest row", () => {

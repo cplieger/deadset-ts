@@ -162,3 +162,42 @@ describe("an import no package resolves and no manifest declares", () => {
     expect(err.text).not.toContain("setup failure");
   });
 });
+
+describe("a workspace whose members declare dependencies", () => {
+  const target = mkdtempSync(join(tmpdir(), "deadset-ts-dependencies-workspace-"));
+  cpSync(fixture("projects", "dependencies-workspace"), target, { recursive: true });
+  renameSync(join(target, "installed"), join(target, "node_modules"));
+  afterAll(() => {
+    rmSync(target, { recursive: true, force: true });
+  });
+
+  it("reports an unneeded dependency of a member's manifest at its key, in the member's scope", () => {
+    expect(
+      sweepFixture(target).findings.map(
+        (finding) =>
+          `${finding.symbol.ref} ${finding.position.path}:${String(finding.position.line)}`,
+      ),
+    ).toEqual([
+      "ts://@example/root/package.json#root-unused:dev-dependency package.json:8",
+      "ts://@example/app/package.json#member-unused:dev-dependency packages/app/package.json:7",
+    ]);
+  });
+
+  it("judges no member whose files no built project holds", () => {
+    expect(
+      sweepFixture(target)
+        .findings.map((finding) => finding.symbol.ref)
+        .filter((ref) => ref.startsWith("ts://@example/tool/")),
+      "packages/tool/scripts/run.mjs imports member-tool, and no configuration holds it",
+    ).toEqual([]);
+  });
+
+  it("judges no member below which a derived configuration was dropped", () => {
+    expect(
+      sweepFixture(target)
+        .findings.map((finding) => finding.symbol.ref)
+        .filter((ref) => ref.startsWith("ts://@example/web/")),
+      "packages/web/tsconfig.json matches no input, so files it would hold go unread",
+    ).toEqual([]);
+  });
+});

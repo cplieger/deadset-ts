@@ -43,7 +43,7 @@ Each rendering is written beside the report, at `PATH` with the format's suffix 
 
 | Format | Suffix | Content |
 | --- | --- | --- |
-| `text` | `.txt` | One finding per line, position first, then a summary line |
+| `text` | `.txt` | One finding per line, position first, then a line counting the findings `analysis.min_confidence` withheld, when it withheld any, then a summary line |
 | `json` | `.json` | The report document |
 | `github` | `.annotations` | One GitHub workflow command per finding |
 | `sarif` | `.sarif` | A SARIF 2.1.0 log |
