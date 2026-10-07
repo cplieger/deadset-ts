@@ -1,1 +1,1 @@
-{ "name": "@types/runtime", "version": "1.0.0", "types": "./index.d.ts" }
+{ "name": "@types/runtime", "version": "1.0.0", "private": true, "types": "./index.d.ts" }

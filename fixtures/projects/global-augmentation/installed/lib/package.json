@@ -1,1 +1,1 @@
-{ "name": "lib", "version": "1.0.0", "types": "./index.d.ts" }
+{ "name": "lib", "version": "1.0.0", "private": true, "types": "./index.d.ts" }
