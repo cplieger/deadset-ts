@@ -1,16 +1,16 @@
 {
   "description": "The deadset-spec release this analyzer implements, and the digest of the copy of that release's documents committed under fixtures/. tag and commit name the release; every file under fixtures/contract is byte-identical to that commit's contract/ tree, which the copy holds whole so that a page's links to its siblings resolve, every file under fixtures/vectors/<set> is byte-identical to the same commit's vectors/<set>/ case directories for each of the config, sarif, baseline and template sets, with the sarif and baseline sets' README.md, which the copied contract pages link to, every file under fixtures/examples/negatives, fixtures/examples/scope and fixtures/examples/describe is byte-identical to the same commit's examples/negatives/, examples/scope/ and examples/describe/ trees, fixtures/corpus-document holds the same commit's corpus/corpus.json, and fixtures/corpus holds, for every fixture whose expectation file lists ts, that fixture's directory under the same commit's corpus/fixtures/ less its go.txtar rendering, each file byte-identical, so `git diff` against a clone of the tag verifies each of them. digest is sha256 over, for each file below the named directory in ascending path order, the path, a newline, the file's sha256 in lowercase hexadecimal and a newline; the suite recomputes it, so an edit to a committed copy fails a test rather than moving the Contract this analyzer is tested against. contract_version is the version contract/contract.json carries at that commit, which the analyzer names in every resolved configuration it prints.",
-  "tag": "v6.0.2",
-  "commit": "5159e661785b0a59fff05238ce03a9ff72758717",
-  "contract_version": "6.0.0",
+  "tag": "v6.1.1",
+  "commit": "18ed233b86d072a0013e1569f50ae54ce80b8fa0",
+  "contract_version": "6.1.0",
   "reason": "The release whose closed configuration key list, exit-code table, issue-kind vocabulary, exemption classes, analysis rules, scope and describe documents, stable-symbol-reference grammar with its token and pattern corpora, template and SARIF pages, published configuration, SARIF, baseline and template vectors, refused documents and conformance corpus this analyzer is written against.",
   "digests": {
-    "fixtures/contract": "34863029df685e834d7f4afa1573cc9e34a4dafc0f8e7e2a2d9cef68b04b6ed5",
-    "fixtures/corpus": "b9cbea7dbabab7fea41feb0e728e03cdeab989ef6eadbdfec6fa1254cab6112a",
-    "fixtures/corpus-document": "c91ae142f380e6270f3c7138fb4c81b6a7eda9f17b61bc981dea19074b088973",
-    "fixtures/examples/describe": "3422a67cbf5e941a37baddaa5b50ea92c2a8a9f5060ed3e6aac4b15733a1e45d",
-    "fixtures/examples/negatives": "c1c6aa56180478dee406f6c78fac944cb16ba775a3db0cd96dc9cfee0315cd15",
+    "fixtures/contract": "dcae9021b1709ca52423e30f755388c4c9df71bfc7bcb9a9c9c5f99a73df114a",
+    "fixtures/corpus": "60d2b3e4dcd9c536233675da88fe5268863152990826d98c2c26db8818e7473f",
+    "fixtures/corpus-document": "cc2c96b4888ad96cdc763c6dbc32a0f3189eddb9c13feed0120e2f371cf1d33a",
+    "fixtures/examples/describe": "7dccd7ddb2522efdd4474a188618068bd6da41d4ef5ba552d72f1cafa555511e",
+    "fixtures/examples/negatives": "c0c78aa7c60dbf74ec619eb07268146e60b9ba58f5790cf223f2c6ff1e1f9d1f",
     "fixtures/examples/scope": "f49f66169cb5ec0580840a90b66f9009ff3c907495f0b35d4e3e0a17ffa93e6f",
-    "fixtures/vectors": "df18deede0d6e2c2c2134b66092a96c8505299d0ef233bc2122e9f39deb5d7a1"
+    "fixtures/vectors": "2bc6e8b0ef8b1219c16ea6c1a819a27c133a5e4315e2d32261f530fa008955f5"
   }
 }

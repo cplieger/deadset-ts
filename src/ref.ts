@@ -47,7 +47,7 @@ const MANIFEST_SCOPE = `${PREFIX}${TS_PACKAGE}/package\\.json`;
 export const REF_EXPRESSIONS: readonly string[] = [
   `^${SCOPE}#$`,
   `^${SCOPE}#${TS_HEAD}$`,
-  `^${SCOPE}#${TS_HEAD}:alias$`,
+  `^${SCOPE}#(?:${TS_QUOTED}\\.)?${TS_HEAD}:alias$`,
   `^${SCOPE}#${TS_HEAD}(?:\\.${TS_MEMBER})+$`,
   `^${SCOPE}#${TS_HEAD}(?:\\.${TS_MEMBER})+:static$`,
   `^${SCOPE}#${TS_HEAD}(?:\\.${TS_MEMBER})*(?::static)?<${TS_IDENT}>$`,
@@ -107,8 +107,12 @@ export type Fragment =
       readonly static: boolean;
       readonly typeParameter?: string;
     }
-  /** One export specifier, a symbol of its own beside the declaration it names. */
-  | { readonly of: "alias"; readonly name: string }
+  /**
+   * One export specifier, a symbol of its own beside the declaration it names. One
+   * written inside a `declare module` block carries the block's name, which is always
+   * quoted, so the aliases two blocks of one file declare under one name stay apart.
+   */
+  | { readonly of: "alias"; readonly name: string; readonly block?: string }
   /** One dependency of a manifest, scoped by that manifest. */
   | { readonly of: "dependency"; readonly name: string; readonly section: DependencySection };
 
@@ -124,6 +128,10 @@ export function nameComponent(name: string): string {
   if (IDENTIFIER.test(name) || PRIVATE_NAME.test(name)) {
     return name;
   }
+  return quoted(name);
+}
+
+function quoted(name: string): string {
   const escaped = name
     .replaceAll("\\", "\\\\")
     .replaceAll("'", "\\'")
@@ -142,6 +150,12 @@ export function computedComponent(text: string): string {
   return `[${text.replaceAll(ASCII_WHITESPACE, "")}]`;
 }
 
+/** The fragment of an export alias, inside the `declare module` block named, if one is. */
+export function aliasFragment(name: string, block?: string): string {
+  const head = block === undefined ? "" : `${quoted(block)}.`;
+  return `${head}${nameComponent(name)}:alias`;
+}
+
 function spell(component: Component): string {
   return component.computed ? computedComponent(component.text) : nameComponent(component.text);
 }
@@ -157,7 +171,7 @@ export function renderRef(module: Module, fragment: Fragment): string {
     case "module":
       return `${scope}#`;
     case "alias":
-      return `${scope}#${nameComponent(fragment.name)}:alias`;
+      return `${scope}#${aliasFragment(fragment.name, fragment.block)}`;
     case "dependency":
       return `${scope}#${fragment.name}:${fragment.section}`;
     case "declaration": {

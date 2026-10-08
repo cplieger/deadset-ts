@@ -1,8 +1,8 @@
 {
-  "corpus_version": "4.0.0",
+  "corpus_version": "4.1.0",
   "product": { "name": "deadset-ts", "version": "0.1.0", "language": "ts" },
   "result": "pass",
-  "totals": { "fixtures": 105, "pass": 105, "gap": 0, "fail": 0 },
+  "totals": { "fixtures": 111, "pass": 111, "gap": 0, "fail": 0 },
   "fixtures": [
     {
       "fixture": "bundler-output-manifest-entry",
@@ -599,6 +599,24 @@
           },
           "suppression": { "suppressed": true, "stale": false }
         }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "convention-ignore-list-selection-key",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "Ignored",
+          "result": "pass",
+          "actual": {
+            "report": "DS1502",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        { "symbol": "Imported", "result": "pass", "actual": { "report": "none" } }
       ],
       "unexpected": []
     },
@@ -1368,6 +1386,67 @@
       "unexpected": []
     },
     {
+      "fixture": "module-declaration-aliases-apart",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "IconsCount", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "IconsDefault",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "export-alias",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "ThemeDefault", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "ThemeVersion", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "module-declaration-component-import",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "ShimComponent", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "ShimDefault", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "ShimMeta",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "variable",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "module-declaration-outside-the-program",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "PngModule", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "SvgModule",
+          "result": "pass",
+          "actual": {
+            "report": "DS1002",
+            "symbol_kind": "namespace",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "component": { "root": true }
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "module-declarations-by-import",
       "result": "pass",
       "expectations": [
@@ -1468,6 +1547,41 @@
           "suppression": { "suppressed": true, "stale": false }
         },
         { "symbol": "Alert.onclick", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "overrides-of-outside-class-properties",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "Card.label", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Card.palette",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "class-member",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "Card.properties", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Card.renderRoot", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Card.styles", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Orphan",
+          "result": "pass",
+          "actual": {
+            "report": "DS1002",
+            "symbol_kind": "class",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "component": { "root": true }
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "Orphan.styles", "result": "pass", "actual": { "report": "none" } }
       ],
       "unexpected": []
     },
@@ -1670,6 +1784,35 @@
           "suppression": { "suppressed": true, "stale": false }
         },
         { "symbol": "Published", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "reference-spelled-by-two-packages",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "Encoders", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "First.body",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "Second.body",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "Unsent.body",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "class-member",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
       ],
       "unexpected": []
     },

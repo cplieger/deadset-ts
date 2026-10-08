@@ -138,11 +138,11 @@ describe("the completion of every family's findings", () => {
   it("reads each subject's facts from its own position where two declarations of one file spell one reference", () => {
     expect(
       claims(
-        reportedUnder("ambient-default-aliases").filter(
-          (finding) => finding.symbol.kind === "export-alias",
+        reportedUnder("global-blocks-of-one-file").filter(
+          (finding) => finding.symbol.name === "global",
         ),
       ),
-    ).toEqual(["DS1001 '*.partly'.default certain/certain reference-counting - [tsconfig.json]"]);
+    ).toEqual(["DS1002 global certain/certain reference-counting - [tsconfig.json]"]);
   });
 
   it("marks a subject only test files name test-only", () => {

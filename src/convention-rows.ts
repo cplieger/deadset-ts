@@ -31,6 +31,20 @@ export interface ShortNameReading extends MoveReading {
   readonly package: string;
 }
 
+/**
+ * One configuration property whose value makes the tool's output import a runtime helper
+ * package, so the package is used where the property holds that value.
+ */
+export interface HelperReading extends MoveReading {
+  /**
+   * The value: `true`, or a string the property holds, alone, as an element of an array,
+   * or as the first element of an array that is such an element.
+   */
+  readonly value: true | string;
+  /** The package the output imports its helpers from. */
+  readonly package: string;
+}
+
 /** One directory a row's globs name that a configuration property moves. */
 export interface DirectoryMove {
   /** The placeholder the row's globs and later moves write as `<id>`. */
@@ -71,6 +85,8 @@ export interface ConventionRow {
   readonly selections?: readonly MoveReading[];
   /** The members of a `package.json` the tool reads its configuration from. */
   readonly manifestKeys?: readonly string[];
+  /** The settings that make the tool's output import a runtime helper package. */
+  readonly helpers?: readonly HelperReading[];
 }
 
 const SCRIPT = "{js,jsx,ts,tsx}";
@@ -105,6 +121,12 @@ const SOLIDSTART_PLUGIN = { module: "@solidjs/start/config", export: "solidStart
 
 const NUXT_CONFIG = [`nuxt.config.${ANY_MODULE}`];
 
+const BABEL_CONFIG = [
+  "babel.config.{json,js,cjs,mjs,cts,mts,ts}",
+  ".babelrc",
+  ".babelrc.{json,js,cjs,mjs,cts}",
+];
+
 const STRYKER_CONFIG = "{stryker,.stryker}.{conf,config}.{json,js,mjs,cjs}";
 const STRYKER_MODULE = "{stryker,.stryker}.{conf,config}.{js,mjs,cjs}";
 const VITEST_CONFIG = `{vitest,vite}.config.${ANY_MODULE}`;
@@ -131,6 +153,19 @@ export const CONVENTION_ROWS: readonly ConventionRow[] = [
         readings: [{ property: "srcDir", files: [`astro.config.${ANY_MODULE}`] }],
       },
     ],
+  },
+  {
+    name: "babel",
+    package: "@babel/core",
+    range: ">=7.0.0 <9.0.0",
+    entries: [],
+    moves: [],
+    helpers: ["@babel/plugin-transform-runtime", "@babel/transform-runtime"].map((value) => ({
+      property: "plugins",
+      files: BABEL_CONFIG,
+      value,
+      package: "@babel/runtime",
+    })),
   },
   {
     name: "eslint",
@@ -305,6 +340,21 @@ export const CONVENTION_ROWS: readonly ConventionRow[] = [
     ],
   },
   {
+    name: "rolldown",
+    package: "rolldown",
+    range: ">=1.0.0 <2.0.0",
+    entries: [],
+    moves: [],
+    helpers: [
+      {
+        property: "transform.helpers.mode",
+        files: [`rolldown.config.${ANY_MODULE}`],
+        value: "Runtime",
+        package: "@oxc-project/runtime",
+      },
+    ],
+  },
+  {
     name: "solidstart",
     package: "@solidjs/start",
     range: ">=1.0.0 <3.0.0",
@@ -350,7 +400,10 @@ export const CONVENTION_ROWS: readonly ConventionRow[] = [
     range: ">=7.0.0 <11.0.0",
     entries: [STRYKER_MODULE],
     moves: [],
-    selections: [{ property: "mutate", files: [STRYKER_CONFIG] }],
+    selections: [
+      { property: "mutate", files: [STRYKER_CONFIG] },
+      { property: "ignorePatterns", files: [STRYKER_CONFIG] },
+    ],
     shortNames: [
       {
         property: "testRunner",
@@ -478,6 +531,36 @@ export const CONVENTION_ROWS: readonly ConventionRow[] = [
         readings: [
           { property: "files.serviceWorker", files: [VITE_CONFIG], call: SVELTEKIT_PLUGIN },
         ],
+      },
+    ],
+  },
+  {
+    name: "swc",
+    package: "@swc/core",
+    range: ">=1.0.0 <2.0.0",
+    entries: [],
+    moves: [],
+    helpers: [
+      {
+        property: "jsc.externalHelpers",
+        files: [".swcrc"],
+        value: true,
+        package: "@swc/helpers",
+      },
+    ],
+  },
+  {
+    name: "vite",
+    package: "vite",
+    range: ">=8.0.0 <9.0.0",
+    entries: [],
+    moves: [],
+    helpers: [
+      {
+        property: "oxc.helpers.mode",
+        files: [VITE_CONFIG],
+        value: "Runtime",
+        package: "@oxc-project/runtime",
       },
     ],
   },

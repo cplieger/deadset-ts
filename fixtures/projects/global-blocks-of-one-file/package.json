@@ -1,5 +1,5 @@
 {
-  "name": "@example/ambient-default-aliases",
+  "name": "@example/global-blocks-of-one-file",
   "version": "0.0.0",
   "private": true,
   "type": "module",

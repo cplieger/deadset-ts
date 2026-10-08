@@ -1,9 +1,10 @@
 /**
  * The overrides of the target's class members. A call through the base class names the
  * base's member and runs the override of whichever subclass the value is, so the base
- * member's declaration references every override. A method overriding a member of a class
- * declared outside the target, at any depth of its `extends` chain, is called by outside
- * code holding the instance through that class, so its own class references it.
+ * member's declaration references every override. A method, an accessor or a property,
+ * static or not, overriding a member of a class declared outside the target, at any depth
+ * of its `extends` chain, is used by outside code holding the instance or the class
+ * through that class, so its own class references it.
  */
 
 import {
@@ -19,8 +20,9 @@ import {
 import type { AliasChains } from "./alias-chain.ts";
 import { memberComponent } from "./class-members.ts";
 import { nodeKey, type Inventory, type InventorySymbol } from "./inventory.ts";
-import { SymbolFlags, type Symbol as TSSymbol } from "@typescript/native/unstable/sync";
+import { SymbolFlags, type Symbol as TSSymbol, type Type } from "@typescript/native/unstable/sync";
 import { UNANSWERED } from "./query.ts";
+import { nameComponent } from "./ref.ts";
 import type { Reference } from "./references.ts";
 import type { ProjectView } from "./session.ts";
 
@@ -60,7 +62,7 @@ function extending<Brand>(
 
 /**
  * The references each base class member makes to its overrides, for the classes of one
- * project that extend another class of the target, and each class makes to its methods
+ * project that extend another class of the target, and each class makes to its members
  * that override a member of a class declared outside the target. A member a nearer base
  * already overrides is reached through that override. A private member is not
  * overridden. Each reference is placed at the override and made by its file.
@@ -134,7 +136,7 @@ export function overrideReferences<Brand>(
   const outsideNames = outsideMemberNames(project, bases, outsideBases);
   for (const [classId, names] of outsideNames) {
     for (const [component, member] of members.get(classId) ?? []) {
-      if (member.kind === "method" && names.has(component)) {
+      if (names.has(component)) {
         found.push({
           from: classId,
           to: member.id,
@@ -166,7 +168,8 @@ export function overrideReferences<Brand>(
 
 /**
  * Per class of the target with a class declared outside the target in its `extends`
- * chain, the names of the members that outside class's instances carry.
+ * chain, the member components that outside class's instances and constructor carry, a
+ * static one spelled as a static member's component is.
  */
 function outsideMemberNames<Brand>(
   project: ProjectView<Brand>,
@@ -175,10 +178,16 @@ function outsideMemberNames<Brand>(
 ): ReadonlyMap<string, ReadonlySet<string>> {
   const direct = new Map<string, ReadonlySet<string>>();
   for (const [classId, base] of outsideBases) {
-    const type = project.queries.declaredTypeOf(base);
-    const properties = type === UNANSWERED ? UNANSWERED : project.queries.propertiesOf(type);
-    if (properties !== UNANSWERED) {
-      direct.set(classId, new Set(properties.map((property) => property.escapedName)));
+    const instance = project.queries.declaredTypeOf(base);
+    const statics = project.queries.typeOfSymbol(base);
+    const components = [
+      ...namesOf(project, instance === UNANSWERED ? undefined : instance).map(nameComponent),
+      ...namesOf(project, statics === UNANSWERED ? undefined : statics).map(
+        (name) => `${nameComponent(name)}:static`,
+      ),
+    ];
+    if (components.length > 0) {
+      direct.set(classId, new Set(components));
     }
   }
   const names = new Map<string, ReadonlySet<string>>();
@@ -199,4 +208,10 @@ function outsideMemberNames<Brand>(
     }
   }
   return names;
+}
+
+/** The names of a type's properties; none where the type or its properties are unanswered. */
+function namesOf<Brand>(project: ProjectView<Brand>, type: Type | undefined): readonly string[] {
+  const properties = type === undefined ? UNANSWERED : project.queries.propertiesOf(type);
+  return properties === UNANSWERED ? [] : properties.map((property) => property.name);
 }

@@ -783,3 +783,47 @@ describe("an override of a method its base class calls", () => {
     ).toEqual(["DS1003 Child.#step"]);
   });
 });
+
+describe("an override of a member of a class a dependency declares", () => {
+  const roots: string[] = [];
+  afterAll(() => {
+    for (const root of roots) {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("is live where the member's name is quoted or starts with two underscores", () => {
+    const root = writeProject({
+      "package.json":
+        '{ "name": "@example/app", "type": "module", "main": "./src/main.ts", "dependencies": { "@example/elements": "1.0.0" } }\n',
+      "node_modules/@example/elements/package.json":
+        '{ "name": "@example/elements", "version": "1.0.0", "type": "module", "types": "./index.d.ts" }\n',
+      "node_modules/@example/elements/index.d.ts": [
+        "export declare class Element {",
+        '  "data-x": string;',
+        "  __state(): number;",
+        "}",
+        "",
+      ].join("\n"),
+      "src/main.ts": [
+        'import { Element } from "@example/elements";',
+        "class Card extends Element {",
+        '  override "data-x" = "card";',
+        "  override __state(): number {",
+        "    return 1;",
+        "  }",
+        '  palette = "blue";',
+        "}",
+        "new Card();",
+        "",
+      ].join("\n"),
+    });
+    roots.push(root);
+
+    expect(
+      family(emitterInputOf(root, configOf('{ "target": { "kind": "application" } }'))).map(
+        (finding) => `${finding.code} ${finding.symbol.name}`,
+      ),
+    ).toEqual(["DS1003 Card.palette"]);
+  });
+});

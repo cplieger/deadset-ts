@@ -352,6 +352,7 @@ function isMerged(name: string): boolean {
 describe("the published SARIF vectors", () => {
   it("are the case set this suite runs, the merged ones being the orchestrator's", () => {
     expect(sarifCases().filter((name) => !isMerged(name))).toEqual([
+      "component-member-sharing-the-finding-reference",
       "findings-and-a-stale-suppression",
       "implementations-and-component-members",
       "line-fingerprints",
