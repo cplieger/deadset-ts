@@ -237,6 +237,25 @@ describe("the evaluation of declared sides", () => {
     expect(evaluated.findings).toEqual([discarded]);
   });
 
+  it("evaluates a side once for each declaration two packages of one name spell with its reference", () => {
+    const twin: InventorySymbol = {
+      ...dead,
+      id: "examples/b/src/a.ts:1:1",
+      position: { path: "examples/b/src/a.ts", line: 1, column: 1 },
+    };
+    const evaluated = evaluateEdges(
+      [deadFinding],
+      [{ edge: "t", side: "used_by", symbol: dead.ref }],
+      [dead, twin],
+    );
+
+    expect(evaluated.evaluations).toEqual([
+      { edge: "t", side: "used_by", symbol: dead.ref, state: "dead", finding: deadFinding },
+      { edge: "t", side: "used_by", symbol: dead.ref, state: "live" },
+    ]);
+    expect(evaluated.findings).toEqual([]);
+  });
+
   it("finds a side absent when only a file of the run carries its reference", () => {
     const file: InventorySymbol = {
       ...declaration("", 1),

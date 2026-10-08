@@ -2,9 +2,9 @@
 // Regenerate it with `UPDATE_GOLDEN=1 npx vitest --run src/conformance.corpus.test.ts`.
 export const RECORD = {
   conformance: {
-    corpusVersion: "4.0.0",
+    corpusVersion: "4.1.0",
     result: "pass",
-    digest: "sha256:8250b61deb71467139bf4cbcaf10802cdabb1a2c2261a11a571fc1ff55bfc3dc",
+    digest: "sha256:167f770cdff2776fa7ab28b7ff6121c4d7bdb01d83c5ba0057d9303281614008",
   },
   gaps: [],
 } as const;

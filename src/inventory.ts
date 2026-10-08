@@ -1110,7 +1110,12 @@ function refOf(record: Building, chain: readonly Component[]): string {
     return renderRef(record.module, { of: "module" });
   }
   if (record.kind === "export-alias") {
-    return renderRef(record.module, { of: "alias", name: record.component.text });
+    const block = record.parentChain.at(-1);
+    return renderRef(record.module, {
+      of: "alias",
+      name: record.component.text,
+      ...(block === undefined ? {} : { block: block.text }),
+    });
   }
   return renderRef(record.module, {
     of: "declaration",

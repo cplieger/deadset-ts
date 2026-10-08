@@ -44,11 +44,11 @@ describe("a module declaration an import names by its name or pattern", () => {
     ]);
   });
 
-  it("is named by a test file read without a program, by pattern and by exact name", () => {
+  it("is named by no import of a test file no configuration holds, by pattern or by exact name", () => {
     expect(FINDINGS.filter((line) => / '(\*\.svg|virtual:config)'/u.test(line))).toEqual([
-      "DS1004 src/shims.d.ts:11 '*.svg'.raw",
+      "DS1001 src/shims.d.ts:11 '*.svg'.raw",
       "DS1001 src/shims.d.ts:12 '*.svg'.inline",
-      "DS1004 src/shims.d.ts:15 'virtual:config'",
+      "DS1002 src/shims.d.ts:15 'virtual:config'",
     ]);
   });
 

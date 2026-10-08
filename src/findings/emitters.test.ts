@@ -53,6 +53,22 @@ describe("decidedFindings", () => {
     expect(atPossible.withheld).toEqual({ certain: 0, probable: 0, possible: 0 });
     expect(atPossible.findings.length - atDefault.findings.length).toBe(2);
   });
+
+  it("counts a withheld finding an edge side names, which the lowest minimum holds pending", () => {
+    const { config } = resolve({
+      repository: JSON.stringify({ target: { kind: "library" } }),
+      repositoryLabel: "deadset.json",
+    });
+    const input = emitterInputOf(fixture("projects", "unused-declarations-library"), config);
+    const symbol = "ts://@example/unused-declarations-library/src/index.ts#makePublished";
+    const decided = decidedFindings({
+      ...input,
+      boundary: { ...input.boundary, edges: [{ edge: "e", side: "used_by", symbol }] },
+    });
+
+    expect(decided.withheld).toEqual({ certain: 0, probable: 0, possible: 2 });
+    expect(decided.evaluations.map((one) => one.state)).toEqual(["live"]);
+  });
 });
 
 describe("the findings a gap or a component file's markup withholds", () => {

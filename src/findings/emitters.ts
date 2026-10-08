@@ -127,8 +127,7 @@ function dialsOver(
  * family's findings completed by one step, so every component number is minted once, the
  * finding each record claims withheld, the rest withheld by the dials, so a root one family
  * reports withholds what another reports in its component, and every declared edge
- * evaluated over what remains, so a pending finding is in its evaluation alone. What the
- * minimum confidence withheld is what the same decision at the lowest minimum adds.
+ * evaluated over what remains, so a pending finding is in its evaluation alone.
  */
 export function decidedFindings(
   input: EmitterInput,
@@ -138,20 +137,7 @@ export function decidedFindings(
   const unmarked =
     suppressed.records.length === 0 ? [] : completedOver(suppressed.unmarked, fallenMembers);
   const would = [...unmarked, ...found];
-  const decided = dialledOver(input, suppressed, found, unmarked);
-  const shown =
-    input.config.analysis.minConfidence === "possible"
-      ? decided
-      : dialledOver(
-          atPossible(input),
-          {
-            unmarked: atPossible(suppressed.unmarked),
-            records: suppressed.records,
-          },
-          found,
-          unmarked,
-        );
-  return { ...decided, would, withheld: withheldOf(decided.findings, shown.findings) };
+  return { ...dialledOver(input, suppressed, found, unmarked), would };
 }
 
 /** The run's input with the minimum confidence at its lowest, which withholds nothing. */
@@ -173,46 +159,44 @@ function dialledOver(
   suppressed: Suppressed,
   found: readonly CompletedFinding[],
   unmarked: readonly CompletedFinding[],
-): Omit<DecidedFindings, "would" | "withheld"> {
+): Omit<DecidedFindings, "would"> {
   const would = [...unmarked, ...found];
   const ledger = ledgerOf(suppressed.records, would, dialsOver(input, found, suppressed, unmarked));
   const unanswered = heldKeys(input);
   const markup = markupKeys(input);
-  const kept = reportable(
-    input,
-    found.filter((finding) => {
-      const key = declarationKey(finding.symbol.ref, finding.position.path);
-      return (
-        !ledger.withheld(finding) &&
-        !unanswered.has(key) &&
-        !markup.has(key) &&
-        !insideSkipped(input.swept.skipped, finding.position)
-      );
-    }),
-  );
+  const candidates = found.filter((finding) => {
+    const key = declarationKey(finding.symbol.ref, finding.position.path);
+    return (
+      !ledger.withheld(finding) &&
+      !unanswered.has(key) &&
+      !markup.has(key) &&
+      !insideSkipped(input.swept.skipped, finding.position)
+    );
+  });
+  const kept = reportable(input, candidates);
   const evaluated = evaluateEdges(kept, input.boundary.edges, input.swept.matrix.union.symbols);
-  return { findings: evaluated.findings, evaluations: evaluated.evaluations, ledger };
+  return {
+    findings: evaluated.findings,
+    evaluations: evaluated.evaluations,
+    ledger,
+    withheld: withheldOf(input, candidates),
+  };
 }
 
-/** The findings the lowest minimum would report that the run does not, counted by confidence. */
-function withheldOf(
-  reported: readonly CompletedFinding[],
-  shown: readonly CompletedFinding[],
-): Withheld {
-  const kept = new Set(reported.map(findingKey));
+/**
+ * The findings the dials withhold only because their confidence is below the minimum, each
+ * counted at the confidence this run gives it: the dials at the lowest minimum keep them.
+ */
+function withheldOf(input: EmitterInput, candidates: readonly CompletedFinding[]): Withheld {
+  const dials = dialsOf(input, candidates);
+  const lowest = dialsOf(atPossible(input), candidates);
   const counts = { certain: 0, probable: 0, possible: 0 };
-  for (const finding of shown) {
-    if (!kept.has(findingKey(finding))) {
+  for (const finding of candidates) {
+    if (dials.withholds(finding) && !lowest.withholds(finding)) {
       counts[finding.confidence] += 1;
     }
   }
   return counts;
-}
-
-/** A finding's identity across two decisions of one run: its position, code and subject. */
-function findingKey(finding: CompletedFinding): string {
-  const { path, line, column } = finding.position;
-  return JSON.stringify([path, line, column, finding.code, finding.symbol.ref]);
 }
 
 /** Every finding the run reports, each family's in table order. */

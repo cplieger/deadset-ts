@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it, onTestFinished } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
 import { fixture } from "../__test-helpers__/fixtures.ts";
-import type { ConventionRow, OptionsCall } from "./convention-rows.ts";
+import { CONVENTION_ROWS, type ConventionRow, type OptionsCall } from "./convention-rows.ts";
 import { readConventions, readProperty, type Conventions } from "./conventions.ts";
 import type { DirectoryEntry, Host, PathKind } from "./host.ts";
 import { run, type Writer } from "./run.ts";
@@ -435,6 +435,93 @@ describe("a row's short names", () => {
   });
 });
 
+describe("a row's helper settings", () => {
+  /** The dependencies one row's helper settings use over a manifest declaring the tool and the package. */
+  const uses = (
+    name: string,
+    tool: string,
+    helpers: string,
+    config: Readonly<Record<string, string>>,
+  ): readonly string[] => {
+    const row = CONVENTION_ROWS.find((one) => one.name === name);
+    if (row === undefined) {
+      throw new Error(`no row ${name}`);
+    }
+    const manifest = JSON.stringify({
+      dependencies: { [helpers]: "1" },
+      devDependencies: { [tool]: "1" },
+    });
+    const version = /\d+\.\d+\.\d+/u.exec(row.range)?.[0] ?? "";
+    const files = Object.fromEntries(
+      Object.entries(config).map(([file, text]) => [`/repo/${file}`, text]),
+    );
+    return decide(
+      {
+        "/repo/package.json": manifest,
+        [`/repo/node_modules/${tool}/package.json`]: JSON.stringify({ version }),
+        ...files,
+      },
+      [],
+      [row],
+    ).uses;
+  };
+
+  it("uses @babel/runtime where a Babel configuration lists the transform-runtime plugin, by either name", () => {
+    const babel = (config: Readonly<Record<string, string>>) =>
+      uses("babel", "@babel/core", "@babel/runtime", config);
+
+    expect(
+      babel({ "babel.config.json": '{ "plugins": ["@babel/plugin-transform-runtime"] }' }),
+    ).toEqual(["@babel/runtime"]);
+    expect(
+      babel({
+        ".babelrc": '{ "plugins": [["@babel/transform-runtime", { "version": "^8.0.0" }]] }',
+      }),
+    ).toEqual(["@babel/runtime"]);
+    expect(
+      babel({
+        "babel.config.js": 'module.exports = { plugins: ["@babel/plugin-transform-runtime"] };',
+      }),
+    ).toEqual(["@babel/runtime"]);
+    expect(babel({ "babel.config.json": '{ "presets": ["@babel/preset-env"] }' })).toEqual([]);
+  });
+
+  it("uses @swc/helpers where .swcrc sets jsc.externalHelpers, and not where it leaves it false", () => {
+    expect(
+      uses("swc", "@swc/core", "@swc/helpers", {
+        ".swcrc": '{ "jsc": { "externalHelpers": true } }',
+      }),
+    ).toEqual(["@swc/helpers"]);
+    expect(
+      uses("swc", "@swc/core", "@swc/helpers", {
+        ".swcrc": '{ "jsc": { "externalHelpers": false } }',
+      }),
+    ).toEqual([]);
+    expect(
+      uses("swc", "@swc/core", "@swc/helpers", { ".swcrc": '{ "jsc": { "target": "es5" } }' }),
+    ).toEqual([]);
+  });
+
+  it("uses @oxc-project/runtime where a Vite or Rolldown configuration sets the runtime helper mode", () => {
+    expect(
+      uses("vite", "vite", "@oxc-project/runtime", {
+        "vite.config.ts":
+          'import { defineConfig } from "vite";\nexport default defineConfig({ oxc: { helpers: { mode: "Runtime" } } });',
+      }),
+    ).toEqual(["@oxc-project/runtime"]);
+    expect(
+      uses("rolldown", "rolldown", "@oxc-project/runtime", {
+        "rolldown.config.mjs": 'export default { transform: { helpers: { mode: "Runtime" } } };',
+      }),
+    ).toEqual(["@oxc-project/runtime"]);
+    expect(
+      uses("vite", "vite", "@oxc-project/runtime", {
+        "vite.config.ts": 'export default { oxc: { helpers: { mode: "External" } } };',
+      }),
+    ).toEqual([]);
+  });
+});
+
 class MemoryWriter implements Writer {
   text = "";
   write(text: string): void {
@@ -463,6 +550,8 @@ interface Answer {
   readonly code: number;
   readonly applied: readonly unknown[];
   readonly findings: readonly string[];
+  /** The name of each dependency a finding reports, sorted. */
+  readonly dependencies: readonly string[];
   readonly err: string;
 }
 
@@ -479,16 +568,24 @@ function analyzed(name: string): Answer {
     host,
   );
   if (!existsSync(report)) {
-    return { code, applied: [], findings: [], err: err.text };
+    return { code, applied: [], findings: [], dependencies: [], err: err.text };
   }
   const parsed = JSON.parse(host.readFile(report)) as {
     conventions_applied: unknown[];
-    findings: { code: string; position: { path: string } }[];
+    findings: {
+      code: string;
+      position: { path: string };
+      symbol: { kind: string; name: string };
+    }[];
   };
   return {
     code,
     applied: parsed.conventions_applied,
     findings: parsed.findings.map((one) => `${one.code} ${one.position.path}`).sort(),
+    dependencies: parsed.findings
+      .filter((one) => one.symbol.kind === "dependency")
+      .map((one) => one.symbol.name)
+      .sort(),
     err: err.text,
   };
 }
@@ -634,6 +731,21 @@ describe("the convention rows over a project", () => {
     ]);
     expect(answer.findings).toEqual(["DS1601 package.json"]);
   });
+
+  it.each([
+    ["helpers-babel", "babel", "@babel/core"],
+    ["helpers-rolldown", "rolldown", "rolldown"],
+    ["helpers-swc", "swc", "@swc/core"],
+    ["helpers-vite", "vite", "vite"],
+  ])(
+    "use the runtime helper package the %s configuration's setting imports, and report the tool nothing runs",
+    (name, row, tool) => {
+      const answer = analyzed(name);
+
+      expect(answer.applied.map((one) => (one as { name: string }).name)).toEqual([row]);
+      expect(answer.dependencies).toEqual([tool]);
+    },
+  );
 
   it("root a stryker.conf module and read the runner its default export names", () => {
     const answer = analyzed("stryker-conf");

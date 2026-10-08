@@ -1,10 +1,10 @@
 /**
  * The test files no compiler configuration of a run holds. The runner executes them all
  * the same, so each module one names is a test reference: the own file a relative
- * specifier names, and the declarations that file exports under the names read from it,
- * or a module declaration the specifier names by name or pattern and its members of
- * those names. Such a file is read without a program, so what its body references
- * beyond the modules it names is not known.
+ * specifier names, and the declarations that file exports under the names read from it.
+ * No compiler run reads a module declaration for such a file, so its imports name none.
+ * Such a file is read without a program, so what its body references beyond the modules
+ * it names is not known.
  */
 
 import {
@@ -23,7 +23,7 @@ import { RESOLVED_EXTENSIONS, type ParseFile } from "./configuration-files.ts";
 import { emittedFrom } from "./emit-map.ts";
 import type { Host } from "./host.ts";
 import type { Inventory } from "./inventory.ts";
-import { namedBy, namesImported } from "./module-declarations.ts";
+import { namesImported } from "./module-declarations.ts";
 import { dirnamePath, joinPath, normalizePath, queriedModulePath } from "./paths.ts";
 import { renderPosition } from "./position.ts";
 import { nameComponent } from "./ref.ts";
@@ -154,7 +154,6 @@ export function outsideTestReferences(
       exported.set(key, [...(exported.get(key) ?? []), symbol.id]);
     }
   }
-  const declared = namedBy(held);
   const found: Reference[] = [];
   for (const { path, file } of tests) {
     const from = `${path}#`;
@@ -164,11 +163,6 @@ export function outsideTestReferences(
       const read = (to: string, use: Reference["use"]): void => {
         found.push({ from, to, position, use, resolution: "syntax", test: true, unheld: true });
       };
-      for (const declaration of declared(named.text, named.names)) {
-        for (const to of [declaration.id, ...declaration.members]) {
-          read(to, "read");
-        }
-      }
       const written = named.text.includes("?") ? queriedModulePath(named.text) : named.text;
       if (written === undefined) {
         continue;

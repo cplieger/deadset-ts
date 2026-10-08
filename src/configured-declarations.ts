@@ -207,8 +207,8 @@ function modulesNamed<Brand>(
 }
 
 /**
- * The declaration each entry names in one project. A symbol entry names the
- * inventory's declaration whose reference it spells exactly; a module entry names the
+ * The declaration each entry names in one project. A symbol entry names every
+ * declaration of the inventory whose reference it spells exactly; a module entry names the
  * declaration its path reaches from the exports of the module its specifier resolves
  * to; a global entry names the declaration its path reaches from the global scope.
  * Every alias along a path is followed to the declaration it stands for.
@@ -221,15 +221,17 @@ export function resolveEntries<Brand>(
   if (entries.length === 0) {
     return [];
   }
-  const byRef = new Map(held.symbols.map((symbol) => [symbol.ref, symbol.id]));
+  const byRef = new Map<string, string[]>();
+  for (const symbol of held.symbols) {
+    byRef.set(symbol.ref, [...(byRef.get(symbol.ref) ?? []), symbol.id]);
+  }
   const modules = modulesNamed(
     project,
     new Set(entries.flatMap((entry) => (entry.shape === "module" ? [entry.module] : []))),
   );
   return entries.map((entry) => {
     if (entry.shape === "symbol") {
-      const id = byRef.get(entry.symbol);
-      return { entry, handles: new Set<string>(), ids: new Set(id === undefined ? [] : [id]) };
+      return { entry, handles: new Set<string>(), ids: new Set(byRef.get(entry.symbol) ?? []) };
     }
     const { components, static: isStatic } = componentsOf(
       entry.shape === "module" ? entry.name : entry.global,

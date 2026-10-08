@@ -26,7 +26,7 @@ import {
 import { nodeKey, type Inventory, type InventorySymbol } from "./inventory.ts";
 import { renderPosition } from "./position.ts";
 import { UNANSWERED } from "./query.ts";
-import { nameComponent } from "./ref.ts";
+import { aliasFragment, nameComponent } from "./ref.ts";
 import type { Reference } from "./references.ts";
 import type { ProjectView } from "./session.ts";
 
@@ -110,7 +110,7 @@ interface Named {
  * The module declarations of an inventory a specifier names by name or pattern, each with
  * the members that hold the export names given.
  */
-export function namedBy(
+function namedBy(
   held: Inventory,
 ): (specifier: string, names: readonly string[]) => readonly Named[] {
   if (held.modules.size === 0) {
@@ -139,7 +139,7 @@ export function namedBy(
       const wanted = new Set(
         names.flatMap((one) => [
           `${ref}.${nameComponent(one)}`,
-          `${scope}#${nameComponent(one)}:alias`,
+          `${scope}#${aliasFragment(one, name)}`,
         ]),
       );
       const members = (children.get(id) ?? []).filter((child) => wanted.has(child.ref));

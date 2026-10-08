@@ -200,9 +200,10 @@ function compare(a: string, b: string): number {
 
 /**
  * Evaluates every declared side of this language over the run's findings. A side naming a
- * symbol the run enumerates nothing under is `absent`; one naming a symbol the run holds a
- * finding about is `dead` and carries that finding, pending until a merge reads the other
- * side and reported nowhere else, a narrowing finding included; any other is `live`.
+ * symbol the run enumerates nothing under is `absent`; otherwise it is evaluated once per
+ * declaration its reference spells. A declaration the run holds a finding about is `dead`
+ * and carries that finding, pending until a merge reads the other side and reported
+ * nowhere else, a narrowing finding included; any other is `live`.
  */
 export function evaluateEdges<F extends Finding>(
   findings: readonly F[],
@@ -212,10 +213,10 @@ export function evaluateEdges<F extends Finding>(
   if (sides.length === 0) {
     return { findings, evaluations: [] };
   }
-  const byRef = new Map<string, string>();
+  const byRef = new Map<string, string[]>();
   for (const symbol of symbols) {
-    if (symbol.kind !== "file" && !byRef.has(symbol.ref)) {
-      byRef.set(symbol.ref, symbol.id);
+    if (symbol.kind !== "file") {
+      byRef.set(symbol.ref, [...(byRef.get(symbol.ref) ?? []), symbol.id]);
     }
   }
   const held = new Map<string, number>();
@@ -226,18 +227,20 @@ export function evaluateEdges<F extends Finding>(
   });
 
   const pending = new Set<number>();
-  const evaluations = sides.map((side): EdgeEvaluation<F> => {
-    const id = byRef.get(side.symbol);
-    if (id === undefined) {
-      return { ...side, state: "absent" };
+  const evaluations = sides.flatMap((side): EdgeEvaluation<F>[] => {
+    const ids = byRef.get(side.symbol);
+    if (ids === undefined) {
+      return [{ ...side, state: "absent" }];
     }
-    const at = held.get(id);
-    const finding = at === undefined ? undefined : findings[at];
-    if (at === undefined || finding === undefined) {
-      return { ...side, state: "live" };
-    }
-    pending.add(at);
-    return { ...side, state: "dead", finding };
+    return ids.map((id) => {
+      const at = held.get(id);
+      const finding = at === undefined ? undefined : findings[at];
+      if (at === undefined || finding === undefined) {
+        return { ...side, state: "live" };
+      }
+      pending.add(at);
+      return { ...side, state: "dead", finding };
+    });
   });
   evaluations.sort((a, b) => compare(a.edge, b.edge) || compare(a.side, b.side));
   return { findings: findings.filter((_finding, at) => !pending.has(at)), evaluations };

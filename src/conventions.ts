@@ -50,6 +50,7 @@ import {
   CONVENTION_ROWS,
   type ConventionRow,
   type DirectoryMove,
+  type HelperReading,
   type MoveReading,
   type OptionsCall,
   type ShortNameReading,
@@ -110,7 +111,10 @@ export interface Conventions {
   readonly globs: readonly ConventionGlob[];
   readonly generated: readonly GeneratedDirectory[];
   readonly failures: readonly ConventionFailure[];
-  /** The dependencies the applied rows' short names and manifest keys use, by name, each once. */
+  /**
+   * The dependencies the applied rows' short names, manifest keys and helper settings use,
+   * by name, each once.
+   */
   readonly uses: readonly string[];
   /** Per configuration file, absolute, the strings its applied rows' selection keys hold. */
   readonly selected: ReadonlyMap<string, Selected>;
@@ -135,6 +139,9 @@ interface ConventionEntry {
 type ParseSource = (fileName: string, text: string) => SourceFile;
 
 const JSON_EXTENSION = ".json";
+
+/** A configuration file with no extension that its tool reads as a JSON document. */
+const JSON_RC = /^\.[\w-]+rc$/u;
 
 /** The sections an installed package is required by, so its absence fails the run. */
 const REQUIRED_SECTIONS = ["dependencies", "devDependencies"] as const;
@@ -533,11 +540,10 @@ function readPath(
 }
 
 /**
- * Every string literal one file writes at one property's path inside the objects it is
- * read from, as {@link readProperty} reads them: the value itself, or each element of an
- * array value, whatever else the path holds.
+ * Every value one file writes at one property's path inside the objects it is read from,
+ * as {@link readProperty} reads them, whatever else the path holds.
  */
-function stringsAt(file: SourceFile, property: string, call?: OptionsCall): readonly Node[] {
+function valuesAt(file: SourceFile, property: string, call?: OptionsCall): readonly Node[] {
   const declared = declaredValues(file);
   const objects =
     call === undefined
@@ -558,10 +564,8 @@ function stringsAt(file: SourceFile, property: string, call?: OptionsCall): read
       const held = unwrapped(member.initializer);
       if (rest.length > 0) {
         visit(held, rest);
-      } else if (literalText(held) !== undefined) {
+      } else {
         found.push(held);
-      } else if (isArrayLiteralExpression(held)) {
-        found.push(...held.elements.map(unwrapped).filter((one) => literalText(one) !== undefined));
       }
     }
   };
@@ -571,6 +575,36 @@ function stringsAt(file: SourceFile, property: string, call?: OptionsCall): read
     }
   }
   return found;
+}
+
+/** The string literals among values: each value itself, or each element of an array value. */
+function stringsAt(file: SourceFile, property: string, call?: OptionsCall): readonly Node[] {
+  return valuesAt(file, property, call).flatMap((held) => {
+    if (literalText(held) !== undefined) {
+      return [held];
+    }
+    return isArrayLiteralExpression(held)
+      ? held.elements.map(unwrapped).filter((one) => literalText(one) !== undefined)
+      : [];
+  });
+}
+
+/** Whether one value holds a helper setting's value, as {@link HelperReading} states it. */
+function holdsValue(held: Node, value: true | string): boolean {
+  if (value === true) {
+    return held.kind === SyntaxKind.TrueKeyword;
+  }
+  if (literalText(held) === value) {
+    return true;
+  }
+  return (
+    isArrayLiteralExpression(held) &&
+    held.elements.some((element) => {
+      const one = unwrapped(element);
+      const first = isArrayLiteralExpression(one) ? one.elements[0] : one;
+      return first !== undefined && literalText(first) === value;
+    })
+  );
 }
 
 /** The strings an applied row's selection keys hold, added per configuration file to `into`. */
@@ -760,7 +794,11 @@ function readingFiles(
       } catch {
         continue;
       }
-      found.push({ name, text, file: parse(path, text) });
+      found.push({
+        name,
+        text,
+        file: parse(JSON_RC.test(name) ? `${path}${JSON_EXTENSION}` : path, text),
+      });
     }
   }
   return found;
@@ -806,6 +844,33 @@ function shortNameUses(
     }
   }
   return [...used].filter((name) => declared.has(name)).sort(compare);
+}
+
+/** The declared dependencies an applied row's helper settings use. */
+function helperUses(
+  host: Host,
+  parse: ParseSource,
+  dir: string,
+  manifest: unknown,
+  readings: readonly HelperReading[],
+): readonly string[] {
+  const declared = new Set(
+    DEPENDENCY_SECTIONS.flatMap((section) => {
+      const held = isRecord(manifest) ? manifest[section] : undefined;
+      return isRecord(held) ? Object.keys(held) : [];
+    }),
+  );
+  return readings
+    .filter(
+      (reading) =>
+        declared.has(reading.package) &&
+        readingFiles(host, parse, dir, reading.files).some(({ file }) =>
+          valuesAt(file, reading.property, reading.call).some((held) =>
+            holdsValue(held, reading.value),
+          ),
+        ),
+    )
+    .map((reading) => reading.package);
 }
 
 /** Two strings ordered bytewise. */
@@ -895,6 +960,9 @@ export function readConventions(
         uses.add(name);
       }
       for (const name of manifestKeyUses(declared, row.manifestKeys ?? [])) {
+        uses.add(name);
+      }
+      for (const name of helperUses(host, parse, manifest.dir, declared, row.helpers ?? [])) {
         uses.add(name);
       }
       selectedStrings(host, parse, manifest.dir, row.selections ?? [], selected);

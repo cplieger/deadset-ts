@@ -58,6 +58,7 @@ Any other value is the setup failure `convention-not-literal`. So is an object o
 | Row | Package | Versions | What it roots |
 | --- | --- | --- | --- |
 | `astro` | `astro` | `>=5.0.0 <8.0.0` | Pages other than `_`-prefixed files and directories, middleware, actions and the content configuration below `src`, which `srcDir` moves |
+| `babel` | `@babel/core` | `>=7.0.0 <9.0.0` | Nothing. `@babel/runtime` counts as used where a Babel configuration file lists `@babel/plugin-transform-runtime` in `plugins` |
 | `eslint` | `eslint` | `>=10.0.0 <11.0.0` | Every `eslint.config.*` file |
 | `expo-router` | `expo-router` | `>=3.0.0 <58.0.0` | Every module below `app` or `src/app` |
 | `next` | `next` | `>=13.4.0 <17.0.0` | The App Router's special and metadata files, `pages`, and `proxy`, `middleware`, `instrumentation` and `mdx-components`, at the root or below `src` |
@@ -65,11 +66,14 @@ Any other value is the setup failure `convention-not-literal`. So is an object o
 | `qwik-city` | `@builder.io/qwik-city` | `>=1.0.0 <2.0.0` | `root`, the `entry.*` files and the routes, which `srcDir` and `routesDir` move |
 | `react-router` | `@react-router/dev` | `>=7.0.0 <9.0.0` | `root`, `routes`, `entry.client`, `entry.server` and the `routes` directory below `app`, which `appDirectory` moves |
 | `remix` | `@remix-run/dev` | `>=2.0.0 <3.0.0` | The same files as `react-router`, which `appDirectory` moves |
+| `rolldown` | `rolldown` | `>=1.0.0 <2.0.0` | Nothing. `@oxc-project/runtime` counts as used where `rolldown.config.*` sets `transform.helpers.mode` to `Runtime` |
 | `solidstart` | `@solidjs/start` | `>=1.0.0 <3.0.0` | `app`, `entry-client`, `entry-server`, the middleware and the routes below `src`, which `appRoot` and `routeDir` move |
 | `storybook` | `storybook` | `>=7.0.0 <11.0.0` | The `.storybook` configuration files and every `*.stories.*` file |
 | `prettier` | `prettier` | `>=3.0.0 <4.0.0` | Every `prettier.config.*` and `.prettierrc.*` module. A package that the `prettier` key of the declaring `package.json` names counts as used |
 | `stryker` | `@stryker-mutator/core` | `>=7.0.0 <11.0.0` | Every `stryker.conf.*` and `stryker.config.*` module, with or without a leading dot. The runner and checker packages `testRunner` and `checkers` name count as used |
 | `sveltekit` | `@sveltejs/kit` | `>=2.0.0 <4.0.0` | Route files, hooks, params, the service worker and `instrumentation.server` below `src`, which the `files` options move |
+| `swc` | `@swc/core` | `>=1.0.0 <2.0.0` | Nothing. `@swc/helpers` counts as used where `.swcrc` sets `jsc.externalHelpers` to `true` |
+| `vite` | `vite` | `>=8.0.0 <9.0.0` | Nothing. `@oxc-project/runtime` counts as used where `vite.config.*` sets `oxc.helpers.mode` to `Runtime` |
 | `vitest` | `vitest` | `>=3.2.0 <6.0.0` | Every `vitest.config.*` and `vite.config.*` file, with or without a qualifier |
 
 ## What an exemption holds back
