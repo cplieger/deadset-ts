@@ -41,6 +41,25 @@
     "code": "DS1601",
     "position": {
       "path": "package.json",
+      "line": 22,
+      "column": 5,
+      "endLine": 22
+    },
+    "symbol": {
+      "ref": "ts://@example/dependencies/package.json#host-peer:dev-dependency",
+      "kind": "dependency",
+      "name": "host-peer",
+      "sizeLines": 1
+    },
+    "message": "no import in the target needs the declared development dependency",
+    "details": {
+      "dependencyClass": "dev-dependency"
+    }
+  },
+  {
+    "code": "DS1601",
+    "position": {
+      "path": "package.json",
       "line": 24,
       "column": 5,
       "endLine": 24

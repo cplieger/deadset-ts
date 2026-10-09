@@ -278,34 +278,46 @@ function reachable(graph: Graph, held: readonly boolean[], mode: Mode): readonly
 /**
  * Admits every test declaration whose set of referenced production declarations is
  * non-empty and wholly dead, and returns which it admitted. The set is read from every
- * reference the test makes, not the ones the mode counts: a production sweep counts none,
- * which is what makes the targets dead. A test referencing one live target is never
- * admitted, and neither is a marked or exempt test.
+ * reference the test makes, which a production sweep does not count. A test-support
+ * declaration that a test referencing a live target also references is a live target of
+ * every test referencing it. A marked or exempt test is never admitted.
  */
 function admitTestsOfDeadCode(
   graph: Graph,
   dead: boolean[],
   held: readonly boolean[],
 ): readonly boolean[] {
-  const admitted = graph.symbols.map(() => false);
-  graph.symbols.forEach((_symbol, at) => {
-    const testCode = graph.test[at] === true || graph.support[at] === true;
-    if (!testCode || graph.subject[at] !== true || held[at] === true) {
-      return;
-    }
+  const testCode = (at: number): boolean => graph.test[at] === true || graph.support[at] === true;
+  const judged = graph.symbols.map((_symbol, at) => {
     let targets = 0;
     let live = 0;
-    for (const edge of graph.out[at] ?? []) {
-      const target = graph.test[edge.to] === true || graph.support[edge.to] === true;
-      if (target || graph.subject[edge.to] !== true) {
-        continue;
-      }
-      targets += 1;
-      if (dead[edge.to] !== true) {
-        live += 1;
+    if (testCode(at) && graph.subject[at] === true && held[at] !== true) {
+      for (const edge of graph.out[at] ?? []) {
+        if (testCode(edge.to) || graph.subject[edge.to] !== true) {
+          continue;
+        }
+        targets += 1;
+        if (dead[edge.to] !== true) {
+          live += 1;
+        }
       }
     }
-    if (targets > 0 && live === 0) {
+    return { targets, live };
+  });
+  const shared = new Set<number>();
+  judged.forEach(({ live }, at) => {
+    if (live > 0) {
+      for (const edge of graph.out[at] ?? []) {
+        if (graph.support[edge.to] === true) {
+          shared.add(edge.to);
+        }
+      }
+    }
+  });
+  const admitted = graph.symbols.map(() => false);
+  judged.forEach(({ targets, live }, at) => {
+    const sharing = (graph.out[at] ?? []).some((edge) => shared.has(edge.to) && edge.to !== at);
+    if (targets > 0 && live === 0 && !sharing) {
       dead[at] = true;
       admitted[at] = true;
     }

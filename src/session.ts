@@ -347,7 +347,13 @@ function viewOf<Brand>(
       if ((symbol.flags & SymbolFlags.Alias) === 0) {
         return undefined;
       }
-      const held = queries.immediateAliased(symbol);
+      // An alias the checker synthesizes declares nothing, the default a module that assigns
+      // its export gets under esModuleInterop, and the immediate step fails on it while the
+      // whole resolution answers.
+      const held =
+        symbol.declarations.length === 0
+          ? queries.aliased(symbol)
+          : queries.immediateAliased(symbol);
       // An alias that resolves to nothing answers with the checker's own unknown
       // symbol, which declares nothing; a symbol that is no alias answers with
       // nothing at all.

@@ -63,8 +63,13 @@ export interface ContextualUses {
   readonly lookups: number;
 }
 
-/** The name one literal property is written under, where the name is literal text. */
-function propertyName(property: Node): { node: Node; text: string } | undefined {
+/**
+ * The name one literal property is written under: its literal text, or the computed name
+ * node whose key the checker names, a unique symbol among them.
+ */
+function propertyName(
+  property: Node,
+): { node: Node; text: string } | { node: Node; text: undefined } | undefined {
   if (
     !isPropertyAssignment(property) &&
     !isShorthandPropertyAssignment(property) &&
@@ -83,6 +88,7 @@ function propertyName(property: Node): { node: Node; text: string } | undefined 
     if (isStringLiteral(key) || isNumericLiteral(key) || isNoSubstitutionTemplateLiteral(key)) {
       return { node: name, text: key.text };
     }
+    return { node: name, text: undefined };
   }
   return undefined;
 }
@@ -183,6 +189,31 @@ export function contextualUses<Brand>(
     literals.map((one) => one.literal),
     cap,
   );
+  // A computed name that is not literal text names the property the literal declares
+  // under the checker's own key, which is how a type declares a member a unique symbol
+  // keys: asked once, for the literals that have a contextual type.
+  const computed = literals.flatMap(({ literal }, index) =>
+    contexts[index] === undefined || !isAnswered(contexts[index])
+      ? []
+      : literal.properties.flatMap((property) => {
+          const name = propertyName(property);
+          return name !== undefined && name.text === undefined ? [name.node] : [];
+        }),
+  );
+  batches += batchesOf(computed.length);
+  const keys = new Map<Node, string>();
+  (computed.length === 0
+    ? []
+    : project.symbolsAt(
+        computed.map((node) => project.handle(node)),
+        cap,
+      )
+  ).forEach((symbol, index) => {
+    const node = computed[index];
+    if (node !== undefined && symbol !== undefined && isAnswered(symbol)) {
+      keys.set(node, symbol.name);
+    }
+  });
   literals.forEach(({ literal, from }, index) => {
     const context = contexts[index];
     if (context === undefined || !isAnswered(context)) {
@@ -191,10 +222,11 @@ export function contextualUses<Brand>(
     const tablesOf = partsOf(context).map(membersOf);
     for (const property of literal.properties) {
       const name = propertyName(property);
-      if (name === undefined) {
+      const text = name?.text ?? (name === undefined ? undefined : keys.get(name.node));
+      if (name === undefined || text === undefined) {
         continue;
       }
-      const ids = [...new Set(tablesOf.flatMap((table) => table.get(name.text)?.ids ?? []))];
+      const ids = [...new Set(tablesOf.flatMap((table) => table.get(text)?.ids ?? []))];
       if (ids.length > 0) {
         writes.push({ at: name.node, from, ids });
       }

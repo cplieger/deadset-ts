@@ -126,7 +126,7 @@ function unstatable(reading: Reading): string | undefined {
 }
 
 /** The path beside `configFile` its written configuration takes, which no file has. */
-function writtenPath(host: Host, configFile: string): string {
+export function writtenPath(host: Host, configFile: string): string {
   const stem = configFile.replace(/\.json$/u, "");
   for (let counter = 0; ; counter += 1) {
     const path = `${stem}.deadset-ts${counter === 0 ? "" : `-${String(counter)}`}.json`;

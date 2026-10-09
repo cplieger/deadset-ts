@@ -109,6 +109,11 @@ export function schemaValidator(
             fail(`is below ${String(argument)}`);
           }
           break;
+        case "maximum":
+          if (typeof value === "number" && value > Number(argument)) {
+            fail(`is above ${String(argument)}`);
+          }
+          break;
         case "required":
           if (isObject(value)) {
             for (const member of argument as string[]) {

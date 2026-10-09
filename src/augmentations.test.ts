@@ -102,4 +102,44 @@ describe("a module augmentation of a library's interface", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it("is used through the member a literal key passed to the library's generic selects", () => {
+    const root = writeProject({
+      "deadset.json": '{ "target": { "kind": "application" } }\n',
+      "package.json": '{ "name": "app", "private": true, "type": "module", "main": "./main.ts" }\n',
+      "node_modules/lib/package.json": '{ "name": "lib", "types": "./index.d.ts" }\n',
+      "node_modules/lib/index.d.ts": [
+        "export interface ProvidedContext {}",
+        "export declare function inject<K extends keyof ProvidedContext>(key: K): ProvidedContext[K];",
+        "",
+      ].join("\n"),
+      "main.ts": [
+        'import { inject } from "lib";',
+        "",
+        'declare module "lib" {',
+        "  interface ProvidedContext {",
+        "    token: string;",
+        "    unusedKey: number;",
+        "  }",
+        "}",
+        "",
+        'console.log(inject("token"));',
+        "",
+      ].join("\n"),
+    });
+    try {
+      const document = join(root, "deadset.json");
+      const { config } = resolve({
+        repository: readFileSync(document, "utf8"),
+        repositoryLabel: document,
+      });
+      expect(
+        findingsOf(emitterInputOf(root, config)).map(
+          (finding) => `${finding.code} ${finding.symbol.name}`,
+        ),
+      ).toEqual(["DS1003 lib.ProvidedContext.unusedKey"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

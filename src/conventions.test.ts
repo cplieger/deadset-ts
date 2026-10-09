@@ -435,6 +435,56 @@ describe("a row's short names", () => {
   });
 });
 
+describe("a row's package keys", () => {
+  const row: ConventionRow = {
+    ...ROW,
+    packageKeys: [{ key: "builder", files: ["tool.json", "tool.config.ts"] }],
+  };
+  const manifest = JSON.stringify({
+    dependencies: { tool: "2" },
+    devDependencies: { exact: "1", "@scope/sub": "1", "@scope/run": "1", named: "1", bare: "1" },
+    peerDependencies: { elsewhere: "1", "member-name": "1" },
+  });
+  const uses = (files: Readonly<Record<string, string>>): readonly string[] =>
+    decide({ "/repo/package.json": manifest, ...files, ...INSTALLED }, [], [row]).uses;
+
+  it("uses each dependency a string under the key names exactly, by a subpath or before a colon, at any depth", () => {
+    expect(
+      uses({
+        "/repo/tool.json": JSON.stringify({
+          projects: {
+            app: {
+              targets: {
+                build: { builder: "@scope/run:application" },
+                test: { builder: { main: "exact", extra: ["@scope/sub/theme.css"] } },
+              },
+            },
+          },
+        }),
+      }),
+    ).toEqual(["@scope/run", "@scope/sub", "exact"]);
+  });
+
+  it("uses no dependency a member's name, another member's string or a bare colon spells", () => {
+    expect(
+      uses({
+        "/repo/tool.json": JSON.stringify({
+          builder: { "member-name": "bare:", elsewhere: "named:build" },
+          other: "exact",
+        }),
+      }),
+    ).toEqual(["named"]);
+  });
+
+  it("reads a module's default export as it reads a JSON document", () => {
+    expect(
+      uses({
+        "/repo/tool.config.ts": 'export default defineConfig({ builder: ["named:build"] });',
+      }),
+    ).toEqual(["named"]);
+  });
+});
+
 describe("a row's helper settings", () => {
   /** The dependencies one row's helper settings use over a manifest declaring the tool and the package. */
   const uses = (
@@ -751,5 +801,109 @@ describe("the convention rows over a project", () => {
     const answer = analyzed("stryker-conf");
 
     expect(answer.findings).toEqual(["DS1601 package.json"]);
+  });
+});
+
+describe("the rows of a documentation site and an Angular CLI project", () => {
+  /** The rows of `name` applied over a manifest declaring `tool` at `version`, and whether each path is rooted. */
+  const rooted = (
+    name: string,
+    tool: string,
+    version: string,
+    paths: readonly string[],
+  ): { applied: readonly string[]; rooted: readonly string[] } => {
+    const rows = CONVENTION_ROWS.filter((one) => one.name === name);
+    const decided = decide(
+      {
+        "/repo/package.json": JSON.stringify({ devDependencies: { [tool]: version } }),
+        [`/repo/node_modules/${tool}/package.json`]: JSON.stringify({ version }),
+      },
+      [],
+      rows,
+    );
+    return {
+      applied: decided.applied.map((one) => `${one.name} ${one.version}`),
+      rooted: paths.filter((path) => matches(decided, path).length > 0),
+    };
+  };
+
+  it("applies the VitePress row to a prerelease of its next major and roots its configuration, theme, loaders and components", () => {
+    expect(
+      rooted("vitepress", "vitepress", "2.0.0-alpha.20", [
+        ".vitepress/config.ts",
+        ".vitepress/theme/index.ts",
+        ".vitepress/theme/Hero.vue",
+        "blog.data.ts",
+        ".vitepress/meta.ts",
+      ]),
+    ).toEqual({
+      applied: ["vitepress 2.0.0-alpha.20"],
+      rooted: [
+        ".vitepress/config.ts",
+        ".vitepress/theme/index.ts",
+        ".vitepress/theme/Hero.vue",
+        "blog.data.ts",
+      ],
+    });
+  });
+
+  it("uses the builders, polyfills, styles and scripts angular.json names, and no required peer of them", () => {
+    const decided = decide(
+      {
+        "/repo/package.json": JSON.stringify({
+          dependencies: {
+            "@angular/compiler": "20.0.0",
+            "@angular/material": "20.0.0",
+            "zone.js": "0.15.0",
+            "chart-lib": "1.0.0",
+          },
+          devDependencies: { "@angular/build": "20.0.0", "@angular/compiler-cli": "20.0.0" },
+        }),
+        "/repo/node_modules/@angular/build/package.json": JSON.stringify({ version: "20.0.0" }),
+        "/repo/angular.json": JSON.stringify({
+          projects: {
+            app: {
+              prefix: "app",
+              architect: {
+                build: {
+                  builder: "@angular/build:application",
+                  options: {
+                    polyfills: ["zone.js"],
+                    styles: ["@angular/material/prebuilt-themes/azure-blue.css", "src/styles.css"],
+                    scripts: ["chart-lib/dist/chart.js"],
+                  },
+                },
+              },
+            },
+          },
+        }),
+      },
+      [],
+      CONVENTION_ROWS.filter((one) => one.name === "angular"),
+    );
+
+    expect(decided.uses).toEqual(["@angular/build", "@angular/material", "chart-lib", "zone.js"]);
+  });
+
+  it("roots an Angular CLI project's browser, server and test entries at the root and below projects", () => {
+    expect(
+      rooted("angular", "@angular/build", "20.0.0", [
+        "src/main.ts",
+        "src/main.server.ts",
+        "server.ts",
+        "projects/admin/src/main.ts",
+        "projects/kit/src/public-api.ts",
+        "src/app/app.ts",
+      ]),
+    ).toEqual({
+      applied: ["angular 20.0.0"],
+      rooted: [
+        "src/main.ts",
+        "src/main.server.ts",
+        "server.ts",
+        "projects/admin/src/main.ts",
+        "projects/kit/src/public-api.ts",
+      ],
+    });
   });
 });

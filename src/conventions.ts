@@ -53,6 +53,7 @@ import {
   type HelperReading,
   type MoveReading,
   type OptionsCall,
+  type PackageKey,
   type ShortNameReading,
 } from "./convention-rows.ts";
 import { documentStrings } from "./configuration-files.ts";
@@ -873,6 +874,60 @@ function helperUses(
     .map((reading) => reading.package);
 }
 
+/**
+ * The dependencies one manifest declares that an applied row's package keys use: each
+ * whose name a string under a member of a key's name equals, or begins followed by `/` or
+ * by `:` and a name. A member's own name is no such string.
+ */
+function packageKeyUses(
+  host: Host,
+  parse: ParseSource,
+  dir: string,
+  manifest: unknown,
+  keys: readonly PackageKey[],
+): readonly string[] {
+  const declared = DEPENDENCY_SECTIONS.flatMap((section) => {
+    const held = isRecord(manifest) ? manifest[section] : undefined;
+    return isRecord(held) ? Object.keys(held) : [];
+  });
+  const strings: string[] = [];
+  const collect = (node: Node): void => {
+    const text = literalText(node);
+    if (text !== undefined) {
+      strings.push(text);
+    } else if (isPropertyAssignment(node)) {
+      collect(node.initializer);
+    } else {
+      node.forEachChild(collect);
+    }
+  };
+  for (const { key, files } of keys) {
+    const visit = (node: Node): void => {
+      if (isPropertyAssignment(node) && keyOf(node) === key) {
+        collect(node.initializer);
+      }
+      node.forEachChild(visit);
+    };
+    for (const { file } of readingFiles(host, parse, dir, files)) {
+      const values = declaredValues(file);
+      for (const one of defaultExports(file)) {
+        const object = objectOf(one, values, true);
+        if (object !== undefined) {
+          visit(object);
+        }
+      }
+    }
+  }
+  return declared.filter((name) =>
+    strings.some(
+      (text) =>
+        text === name ||
+        text.startsWith(`${name}/`) ||
+        (text.startsWith(`${name}:`) && text.length > name.length + 1),
+    ),
+  );
+}
+
 /** Two strings ordered bytewise. */
 function compare(a: string, b: string): number {
   if (a === b) {
@@ -957,6 +1012,10 @@ export function readConventions(
         manifest: manifest.path,
       });
       for (const name of shortNameUses(host, parse, manifest.dir, declared, row.shortNames ?? [])) {
+        uses.add(name);
+      }
+      const keys = row.packageKeys ?? [];
+      for (const name of packageKeyUses(host, parse, manifest.dir, declared, keys)) {
         uses.add(name);
       }
       for (const name of manifestKeyUses(declared, row.manifestKeys ?? [])) {

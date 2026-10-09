@@ -6,6 +6,7 @@
  */
 
 import {
+  isArrayBindingPattern,
   isArrowFunction,
   isAwaitExpression,
   isBigIntLiteral,
@@ -55,10 +56,12 @@ import {
   isVoidExpression,
   NodeFlags,
   SyntaxKind,
+  type ArrowFunction,
   type BindingName,
   type Block,
   type CallExpression,
   type CatchClause,
+  type FunctionExpression,
   type Identifier,
   type Node,
   type SourceFile,
@@ -473,6 +476,7 @@ export function projectParts<Brand>(
   const calls = new Map<string, boolean>();
   const specifiers = new Set<string>();
   const sites: { readonly file: SourceFile; readonly declared: Declared }[] = [];
+  const contextual: ContextualParameter[] = [];
 
   for (const file of files) {
     const declarationAt = (node: Node): string | undefined => {
@@ -624,15 +628,25 @@ export function projectParts<Brand>(
       });
       const reader = readers.get(one.signature);
       if (reader !== undefined) {
-        parts.push(...parameterParts(file, targetRoot, one.id, one.signature, reader, ids, false));
+        const found = parameterParts(file, targetRoot, one.id, one.signature, reader, ids, false);
+        parts.push(...found.parts);
+        contextual.push(...found.contextual);
       }
     }
     for (const one of walk.values) {
       const reader = readers.get(one.signature);
       if (reader !== undefined) {
-        parts.push(
-          ...parameterParts(file, targetRoot, one.holder, one.signature, reader, ids, true),
+        const found = parameterParts(
+          file,
+          targetRoot,
+          one.holder,
+          one.signature,
+          reader,
+          ids,
+          true,
         );
+        parts.push(...found.parts);
+        contextual.push(...found.contextual);
       }
     }
     walk.catches.forEach(({ name, holder }, at) => {
@@ -677,7 +691,7 @@ export function projectParts<Brand>(
   }
 
   parts.push(...resultParts(project, targetRoot, sites, references, calls));
-  return { parts, signatures, calls, specifiers };
+  return { parts: withContextualRead(project, parts, contextual), signatures, calls, specifiers };
 }
 
 /**
@@ -743,9 +757,38 @@ function parameterNames(signature: SignatureNode): ParameterName[] {
   return found;
 }
 
+/** An unread name of a parameter that a contextual type of its function expression keeps. */
+interface ContextualParameter {
+  readonly part: PartFact;
+  readonly signature: ArrowFunction | FunctionExpression;
+}
+
 /**
- * Each name one function's parameters bind and whether the function reads it. A binding
- * pattern counts as read where its function reads any name it binds.
+ * The parts with each name of `contextual` read where the compiler gives its function a
+ * contextual type: the inference of the call holding the function may read a parameter's
+ * annotation, and the code handing the argument may act on what an object pattern reads.
+ * A question the checker leaves unanswered keeps the name read.
+ */
+function withContextualRead<Brand>(
+  project: ProjectView<Brand>,
+  parts: readonly PartFact[],
+  contextual: readonly ContextualParameter[],
+): readonly PartFact[] {
+  if (contextual.length === 0) {
+    return parts;
+  }
+  const signatures = [...new Set(contextual.map((one) => one.signature))];
+  const answers = project.queries.contextualTypes(signatures);
+  const typed = new Set(signatures.filter((_signature, at) => answers[at] !== undefined));
+  const read = new Set(contextual.filter((one) => typed.has(one.signature)).map((one) => one.part));
+  return parts.map((part) => (read.has(part) ? { ...part, used: true } : part));
+}
+
+/**
+ * Each name one function's parameters bind and whether the function reads it, and the
+ * unread names a contextual type of a function expression may keep: those of a parameter
+ * that carries a type annotation or is an object binding pattern. A binding pattern counts
+ * as read where its function reads any name it binds.
  */
 function parameterParts(
   file: SourceFile,
@@ -755,7 +798,7 @@ function parameterParts(
   reader: { readonly names: readonly ParameterName[]; readonly uses: readonly Identifier[] },
   ids: ReadonlyMap<Node, Answer<number>>,
   inValue: boolean,
-): PartFact[] {
+): { readonly parts: PartFact[]; readonly contextual: ContextualParameter[] } {
   // A function that reads `arguments` reads every parameter by position.
   const readsArguments =
     !isArrowFunction(signature) && identifiersNaming(signature, new Set(["arguments"])).length > 0;
@@ -766,11 +809,14 @@ function parameterParts(
   );
   const lastRead = Math.max(-1, ...reader.names.filter((_, at) => read[at]).map((one) => one.at));
   const found: PartFact[] = [];
+  const contextual: ContextualParameter[] = [];
+  const expression =
+    isArrowFunction(signature) || isFunctionExpression(signature) ? signature : undefined;
   reader.names.forEach(({ name, at, pattern, exempt }, index) => {
     if (exempt) {
       return;
     }
-    found.push({
+    const part: PartFact = {
       code: UNUSED_PARAMETER,
       declaration,
       kind: "parameter",
@@ -779,9 +825,19 @@ function parameterParts(
       message: `parameter ${name.text} is never read in the body`,
       used: read[index] === true,
       parameter: { beforeARead: !pattern && at < lastRead, inValue },
-    });
+    };
+    found.push(part);
+    const parameter = signature.parameters[at];
+    if (
+      expression !== undefined &&
+      !part.used &&
+      parameter !== undefined &&
+      (parameter.type !== undefined || isObjectBindingPattern(parameter.name))
+    ) {
+      contextual.push({ part, signature: expression });
+    }
   });
-  return found;
+  return { parts: found, contextual };
 }
 
 /** One local a block declares by name, and every identifier of the block that spells it. */
@@ -790,6 +846,22 @@ interface Local {
   readonly statement: number;
   readonly initialized: boolean;
   readonly uses: readonly Identifier[];
+}
+
+/**
+ * The names one declaration binds that a write of its initializer stores each on its own:
+ * the declared name, or each element name of an array binding pattern at any depth.
+ */
+function arrayPatternNames(name: BindingName): readonly Identifier[] {
+  if (isIdentifier(name)) {
+    return [name];
+  }
+  if (!isArrayBindingPattern(name)) {
+    return [];
+  }
+  return name.elements.flatMap((element) =>
+    isBindingElement(element) && element.name !== undefined ? arrayPatternNames(element.name) : [],
+  );
 }
 
 /** The locals one block declares with `let` or `const`, each with the names that spell it. */
@@ -807,9 +879,9 @@ function localsOf(block: Block): readonly Local[] {
       return;
     }
     for (const declaration of list.declarations) {
-      if (isIdentifier(declaration.name)) {
+      for (const name of arrayPatternNames(declaration.name)) {
         declared.push({
-          name: declaration.name,
+          name,
           statement: at,
           initialized: declaration.initializer !== undefined,
         });

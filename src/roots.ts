@@ -15,6 +15,8 @@ import {
   isQualifiedName,
   isTypeQueryNode,
   isTypeReferenceNode,
+  isPropertyDeclaration,
+  isVariableDeclaration,
   isVariableStatement,
   type Node,
   type SourceFile,
@@ -31,6 +33,7 @@ import { relativePath, resolvePath } from "./paths.ts";
 import { byPosition } from "./position.ts";
 import { UNANSWERED } from "./query.ts";
 import type { ProjectView } from "./session.ts";
+import type { Symbol as TSSymbol, Type } from "@typescript/native/unstable/sync";
 import { sourceFilesOf } from "./source-files.ts";
 import { typeQueryAliases } from "./type-query-alias.ts";
 
@@ -128,6 +131,26 @@ export interface RootOptions {
   readonly parse?: ParseFile | undefined;
   /** Whether the target is a library, so a consumer outside it reaches its published API. */
   readonly publishedAPI: boolean;
+  /**
+   * The directories of the workspace members whose manifest is not private, each a library
+   * inside the target whose entries are published API whatever the target's kind.
+   */
+  readonly publishedMembers?: ReadonlySet<string> | undefined;
+}
+
+/** Whether one declaration is written below the directory of a published workspace member. */
+function inPublishedMember(
+  held: Inventory,
+  id: string,
+  root: string,
+  members: ReadonlySet<string> | undefined,
+): boolean {
+  const path = held.symbols.find((symbol) => symbol.id === id)?.position.path;
+  if (path === undefined || members === undefined) {
+    return false;
+  }
+  const file = resolvePath(root, path);
+  return [...members].some((dir) => file.startsWith(`${dir}/`));
 }
 
 /** The kind of root each role of a manifest entry makes. */
@@ -305,10 +328,16 @@ export function roots<Brand>(
     ...options.manifest.entries.map((entry) => ({
       entry,
       publishes:
+        options.publishedAPI &&
         entry.published &&
         (options.manifest.declaresExports ? entry.member.startsWith("exports") : true),
     })),
-    ...(options.otherPackages ?? []).map((entry) => ({ entry, publishes: entry.published })),
+    ...(options.otherPackages ?? []).map((entry) => ({
+      entry,
+      publishes:
+        entry.published &&
+        (options.publishedAPI || options.publishedMembers?.has(entry.dir) === true),
+    })),
   ];
   const scripted = entries.flatMap(({ entry }) =>
     entry.role === "script" ? files.named(entry.path) : [],
@@ -324,7 +353,7 @@ export function roots<Brand>(
       : readBackByName(options.host, entry, readBackTo);
   };
   for (const { entry, publishes } of entries) {
-    if (options.publishedAPI && publishes) {
+    if (publishes) {
       published.push(...entryFiles(entry));
     }
   }
@@ -380,9 +409,14 @@ export function roots<Brand>(
     }
   }
 
-  const api = options.publishedAPI
-    ? publishedAPI(project, published, exportsOf, held, files.byPath, releaseTagged(held, files))
-    : { ids: [], guessed: [] };
+  const tagged = releaseTagged(held, files).filter(
+    (id) =>
+      options.publishedAPI || inPublishedMember(held, id, targetRoot, options.publishedMembers),
+  );
+  const api =
+    published.length > 0 || tagged.length > 0
+      ? publishedAPI(project, published, exportsOf, held, files.byPath, tagged)
+      : { ids: [], guessed: [] };
   for (const id of api.ids) {
     add(id, "published-api", "");
   }
@@ -560,6 +594,18 @@ function publishedAPI<Brand>(
       const symbol = byId.get(id);
       return symbol === undefined || symbol.kind === "file" ? [] : nodes.typeNamesOf(symbol);
     });
+    for (const symbol of inferredTypeSymbols(
+      project,
+      round.flatMap((id) => {
+        const symbol = byId.get(id);
+        const node = symbol === undefined ? undefined : nodes.nodeOf(symbol);
+        return node === undefined ? [] : [node];
+      }),
+    )) {
+      for (const target of chains.chainOf(symbol)) {
+        reach(target.id);
+      }
+    }
     project.symbolsAt(named.map((node) => project.handle(node))).forEach((symbol, index) => {
       if (symbol === UNANSWERED) {
         for (const id of held.byName.get(named[index]?.getText() ?? "") ?? []) {
@@ -580,7 +626,10 @@ function publishedAPI<Brand>(
 function declarationNodes(
   held: Inventory,
   byPath: ReadonlyMap<string, SourceFile>,
-): { typeNamesOf(symbol: InventorySymbol): readonly Node[] } {
+): {
+  typeNamesOf(symbol: InventorySymbol): readonly Node[];
+  nodeOf(symbol: InventorySymbol): Node | undefined;
+} {
   const walked = new Map<string, { byId: Map<string, Node>; nodes: Set<Node> }>();
   const nodesIn = (path: string): { byId: Map<string, Node>; nodes: Set<Node> } => {
     const known = walked.get(path);
@@ -611,7 +660,81 @@ function declarationNodes(
       const declaration = byId.get(symbol.id);
       return declaration === undefined ? [] : typeNamesOf(declaration, nodes);
     },
+    nodeOf: (symbol) => nodesIn(symbol.position.path).byId.get(symbol.id),
   };
+}
+
+/** How deep the type arguments and constituents of an inferred type are followed. */
+const INFERRED_DEPTH = 4;
+
+/**
+ * The declarations of the types the compiler infers where a declaration writes none: the
+ * type of a variable or a property with no annotation, and the result of a function or a
+ * method with no result annotation, each with the types its type arguments and its union
+ * or intersection constituents name, to a fixed depth. A question the checker leaves
+ * unanswered names nothing.
+ */
+function inferredTypeSymbols<Brand>(
+  project: ProjectView<Brand>,
+  declarations: readonly Node[],
+): readonly TSSymbol[] {
+  const { queries } = project;
+  const valued = declarations.flatMap((node) =>
+    (isVariableDeclaration(node) || isPropertyDeclaration(node)) &&
+    node.type === undefined &&
+    !isFunctionLikeDeclaration(node.initializer ?? node)
+      ? [node.name]
+      : [],
+  );
+  const types: Type[] = [];
+  queries.typesAt(valued).forEach((type) => {
+    if (type !== UNANSWERED && type !== undefined) {
+      types.push(type);
+    }
+  });
+  for (const node of declarations) {
+    const signature = isFunctionLikeDeclaration(node)
+      ? node
+      : isVariableDeclaration(node) &&
+          node.type === undefined &&
+          node.initializer !== undefined &&
+          isFunctionLikeDeclaration(node.initializer)
+        ? node.initializer
+        : undefined;
+    if (signature === undefined || signature.type !== undefined || signature.body === undefined) {
+      continue;
+    }
+    const typed = queries.signatureOf(signature);
+    const result =
+      typed === UNANSWERED || typed === undefined ? undefined : queries.returnTypeOf(typed);
+    if (result !== UNANSWERED && result !== undefined) {
+      types.push(result);
+    }
+  }
+  const found = new Map<number, TSSymbol>();
+  const seen = new Set<Type>();
+  const visit = (type: Type, depth: number): void => {
+    if (depth > INFERRED_DEPTH || seen.has(type)) {
+      return;
+    }
+    seen.add(type);
+    const symbol = queries.symbolOfType(type);
+    if (symbol !== UNANSWERED && symbol !== undefined) {
+      found.set(symbol.id, symbol);
+    }
+    const parts = queries.constituents(type);
+    const args = queries.typeArguments(type);
+    for (const next of [
+      ...(parts === UNANSWERED || (parts.length === 1 && parts[0] === type) ? [] : parts),
+      ...(args === UNANSWERED ? [] : args),
+    ]) {
+      visit(next, depth + 1);
+    }
+  };
+  types.forEach((type) => {
+    visit(type, 0);
+  });
+  return [...found.values()];
 }
 
 /**

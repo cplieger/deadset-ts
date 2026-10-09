@@ -10,12 +10,14 @@ function source(name: string): Readonly<Record<string, string>> {
   return { [`src/${name}.ts`]: `console.log("${name}");\n` };
 }
 
-/** An application whose only entry points are the module scripts of its HTML files. */
+/** An application whose only entry points are the scripts of its HTML files. */
 const PROJECT: Readonly<Record<string, string>> = {
   "package.json": '{ "name": "@example/app", "type": "module" }\n',
   ...source("cased"),
   ...source("unquoted"),
   ...source("classic"),
+  ...source("typed"),
+  ...source("data"),
   ...source("remote"),
   ...source("inline"),
   ...source("after"),
@@ -26,6 +28,8 @@ const PROJECT: Readonly<Record<string, string>> = {
     "<SCRIPT Type='module' SRC='./src/cased.ts'></SCRIPT>",
     "<script type=module src=src/unquoted.ts></script>",
     '<script src="./src/classic.ts"></script>',
+    '<script type="Text/JavaScript" src="./src/typed.ts"></script>',
+    '<script type="application/json" src="./src/data.ts"></script>',
     '<script type="module" src="//src/remote.ts"></script>',
     '<script type="module">import "./src/inline.ts";</script>',
     '<p>import "./src/after.ts";</p>',
@@ -54,24 +58,55 @@ function neverImported(): string[] {
     .sort();
 }
 
-describe("the module scripts of an HTML file", () => {
+describe("the scripts of an HTML file", () => {
   const found = neverImported();
 
   it.each([
     ["src/cased.ts", "an attribute whose name is written in capitals, its value single-quoted"],
     ["src/unquoted.ts", "an unquoted value with no leading ./"],
     ["src/inline.ts", "an import of an inline module script"],
+    ["src/classic.ts", "a classic script with no type"],
+    ["src/typed.ts", "a classic script whose JavaScript type is written in capitals"],
     ["src/nested.ts", "a value starting with / read against the manifest's directory"],
   ])("root %s, named by %s", (path) => {
     expect(found).not.toContain(path);
   });
 
   it.each([
-    ["src/classic.ts", "a script whose type is not module"],
+    ["src/data.ts", "a script whose type is neither module nor JavaScript"],
     ["src/remote.ts", "a value naming another origin"],
     ["src/after.ts", "text after the end tag of an inline module script"],
     ["src/hidden.ts", "an HTML file inside a node_modules directory"],
   ])("leave %s unloaded, named by %s", (path) => {
     expect(found).toContain(path);
+  });
+});
+
+describe("a page that loads a configuration's compiled output", () => {
+  it("roots the source each relative or root-absolute src reads back to, and no other", () => {
+    const root = writeProject({
+      "package.json": '{ "name": "@example/app", "type": "module" }\n',
+      "web/tsconfig.json": JSON.stringify({
+        compilerOptions: { rootDir: ".", outDir: "../public", module: "nodenext" },
+        include: ["*.ts"],
+      }),
+      "web/app.ts": 'console.log("app");\n',
+      "web/panel.ts": 'console.log("panel");\n',
+      "web/orphan.ts": 'console.log("orphan");\n',
+      "public/index.html": [
+        '<script type="module" src="./app.js"></script>',
+        '<script type="module" src="/panel.js"></script>',
+        "",
+      ].join("\n"),
+    });
+    roots.push(root);
+    const repository = JSON.stringify({ target: { kind: "application" } });
+    const { config } = resolve({ repository, repositoryLabel: "deadset.json" });
+
+    expect(
+      findingsOf(emitterInputOf(root, config))
+        .filter((finding) => finding.code === "DS1502")
+        .map((finding) => finding.position.path),
+    ).toEqual(["web/orphan.ts"]);
   });
 });
