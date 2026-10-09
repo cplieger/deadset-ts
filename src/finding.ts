@@ -83,6 +83,8 @@ export interface Finding {
   readonly message: string;
   /** Absent where the code carries nothing. */
   readonly details?: FindingDetails;
+  /** The reachability class of a subject that is no declaration, where it is not `certain`. */
+  readonly reachabilityClass?: Confidence;
 }
 
 /** The dead component a finding names, as the finding schema spells its members. */

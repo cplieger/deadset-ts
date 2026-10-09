@@ -67,9 +67,10 @@ describe("the placement of every family's findings in their components", () => {
       expect(placements(rows)).toEqual([
         "DS1601 unused-runtime deadset-ts/c-0003 root 1 0",
         "DS1601 @types/bundled deadset-ts/c-0004 root 1 0",
-        "DS1601 optional-peer deadset-ts/c-0005 root 1 0",
-        "DS1601 unused-dev deadset-ts/c-0006 root 1 0",
-        "DS1601 peer-unused deadset-ts/c-0007 root 1 0",
+        "DS1601 host-peer deadset-ts/c-0005 root 1 0",
+        "DS1601 optional-peer deadset-ts/c-0006 root 1 0",
+        "DS1601 unused-dev deadset-ts/c-0007 root 1 0",
+        "DS1601 peer-unused deadset-ts/c-0008 root 1 0",
       ]);
     });
   });

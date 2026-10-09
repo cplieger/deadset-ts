@@ -45,8 +45,9 @@ export function sweepOnly(config: Config, swept: RunSweep): EmitterInput {
     stores: { references: [], readInTests: new Set(), accessors: new Set(), exempt: new Set() },
     dependencies: {
       declared: [],
-      installed: new Map(),
       needed: new Set(),
+      ran: new Set(),
+      unbuilt: new Set(),
       lastUses: new Map(),
     },
     implementations: { classes: new Map(), bodies: new Map(), unknown: new Set() },

@@ -1,19 +1,22 @@
 /**
- * The dependencies the target's manifest and its workspace members' manifests declare, and
- * what the projects' own files need from outside the target. A file needs a package it
- * imports, re-exports from, augments or references the types of, by name or through the
- * file the specifier resolves to; a compiler configuration needs one it names, and a
- * configuration file a tool loads needs each dependency its strings spell. A package one
- * dependency pulls in for itself is that dependency's need, not the target's.
+ * The dependencies the target's manifest and its workspace members' manifests declare, and what the
+ * projects' own files need from outside the target. A file needs a package it imports, re-exports
+ * from, augments, references the types of or asks the runtime to resolve, by name or through the
+ * file the specifier resolves to; a compiler configuration needs one it names, and a configuration
+ * file a tool loads needs each dependency its strings spell. A package one dependency pulls in for
+ * itself is that dependency's need, not the target's.
  */
 
 import {
+  isCallExpression,
   isExportDeclaration,
   isExternalModuleReference,
   isIdentifier,
   isImportDeclaration,
   isImportEqualsDeclaration,
+  isMetaProperty,
   isNamespaceExport,
+  isPropertyAccessExpression,
   isShorthandPropertyAssignment,
   isStringLiteral,
   isNoSubstitutionTemplateLiteral,
@@ -32,11 +35,13 @@ import {
 import type { FindingPosition } from "./finding.ts";
 import type { Host } from "./host.ts";
 import { nodeKey, packageScope, type Inventory } from "./inventory.ts";
+import { scriptTokens } from "./manifest.ts";
 import { dirnamePath, isAbsolutePath, joinPath, relativePath, resolvePath } from "./paths.ts";
 import type { DependencySection, Module } from "./ref.ts";
 import { UNANSWERED } from "./query.ts";
 import type { Handle, ProjectView } from "./session.ts";
 import { sourceFilesOf } from "./source-files.ts";
+import { workflowTokens } from "./workflow-steps.ts";
 
 const MANIFEST = "package.json";
 const MODULES_DIR = "node_modules";
@@ -68,16 +73,14 @@ export function configurationNeeds(packages: readonly string[]): ProjectNeeds {
   return {
     packages: new Set(packages),
     uses: new Map([[PROJECT_OWNER, new Set(packages)]]),
-    unanswered: false,
+    unanswered: [],
   };
 }
 
 /** What the installed copy of one declared dependency states about itself. */
 export interface InstalledDependency {
-  /** Whether its manifest declares a command. */
-  readonly command: boolean;
-  /** The peer dependencies its manifest requires: every peer not marked optional. */
-  readonly peers: readonly string[];
+  /** The commands its manifest's `bin` declares, by name. */
+  readonly commands: readonly string[];
 }
 
 /** What one project's own files and configuration need from outside the target. */
@@ -91,20 +94,29 @@ export interface ProjectNeeds {
    */
   readonly uses: ReadonlyMap<string, ReadonlySet<string>>;
   /**
-   * Whether the checker left a module specifier unanswered, so the project may use any
-   * dependency the manifest declares.
+   * The files writing a module specifier the checker left unanswered, each of which may
+   * use any dependency a manifest at or above it declares.
    */
-  readonly unanswered: boolean;
+  readonly unanswered: readonly string[];
 }
 
 /** The run's dependency evidence. */
 export interface Dependencies {
   /** Every declared dependency, manifest by manifest, in the order each writes them. */
   readonly declared: readonly DeclaredDependency[];
-  /** The installed copy of each declared dependency the run found, by name. */
-  readonly installed: ReadonlyMap<string, InstalledDependency>;
   /** Every package some project needs. */
   readonly needed: ReadonlySet<string>;
+  /**
+   * The declared dependencies whose command a script entry of the manifest declaring them,
+   * or a workflow step for the target's manifest, runs, each by {@link declarationKey}.
+   */
+  readonly ran: ReadonlySet<string>;
+  /**
+   * The manifests, by their path below the target root, whose directory holds source only
+   * in configurations the run could not build, so a dependency they declare that nothing
+   * needs is reported at `possible`.
+   */
+  readonly unbuilt: ReadonlySet<string>;
   /**
    * Per deletion candidate, the declared dependencies whose last use in the target is
    * written inside it, sorted bytewise; a candidate holding no last use has no entry.
@@ -325,9 +337,11 @@ export function projectNeeds<Brand>(
   };
   use([PROJECT_OWNER], packages);
 
-  let unanswered = false;
+  const unanswered: string[] = [];
   for (const file of project.ownSourceFiles()) {
-    unanswered = fileNeeds(project, held, file, programPackages, use) || unanswered;
+    if (fileNeeds(project, held, file, programPackages, use)) {
+      unanswered.push(file.fileName);
+    }
   }
 
   const beside = new Map<string, readonly string[]>();
@@ -491,7 +505,41 @@ function fileNeeds<Brand>(
   for (const reference of file.typeReferenceDirectives) {
     use(ownersOf(file, held, file), typePackages(reference.fileName, programPackages));
   }
+  for (const specifier of resolvedSpecifiers(file)) {
+    const named = packageOfSpecifier(specifier.text);
+    if (named !== undefined) {
+      use(ownersOf(file, held, specifier), [named]);
+    }
+  }
   return resolved.slice(0, specifiers.length).includes(UNANSWERED);
+}
+
+/**
+ * The literal specifiers one file asks the runtime to resolve, through `import.meta.resolve`
+ * or `require.resolve`, each of which needs the package it names installed.
+ */
+function resolvedSpecifiers(file: SourceFile): readonly Texted[] {
+  const found: Texted[] = [];
+  if (!file.text.includes(".resolve(")) {
+    return found;
+  }
+  const visit = (node: Node): void => {
+    if (isCallExpression(node) && isPropertyAccessExpression(node.expression)) {
+      const callee = node.expression;
+      const [argument] = node.arguments;
+      const receiver = callee.expression;
+      const resolving =
+        callee.name.text === "resolve" &&
+        ((isMetaProperty(receiver) && receiver.name.text === "meta") ||
+          (isIdentifier(receiver) && receiver.text === "require"));
+      if (resolving && argument !== undefined && isLiteralText(argument)) {
+        found.push(argument);
+      }
+    }
+    node.forEachChild(visit);
+  };
+  visit(file);
+  return found;
 }
 
 /** The offset just past the JSON value that starts at `at` in text the parser has accepted. */
@@ -585,21 +633,17 @@ function installedOf(host: Host, root: string, name: string): InstalledDependenc
   for (let dir = root; ; dir = dirnamePath(dir)) {
     const read = readJSON(host, joinPath(dir, MODULES_DIR, name, MANIFEST));
     if (read !== undefined && isRecord(read.value)) {
-      const manifest = read.value;
-      const bin = manifest["bin"];
-      const peers = manifest["peerDependencies"];
-      const meta = isRecord(manifest["peerDependenciesMeta"])
-        ? manifest["peerDependenciesMeta"]
-        : {};
+      const bin = read.value["bin"];
+      // A string `bin` names one command, the package's name without its scope.
       return {
-        command:
-          (typeof bin === "string" && bin !== "") || (isRecord(bin) && Object.keys(bin).length > 0),
-        peers: isRecord(peers)
-          ? Object.keys(peers).filter((peer) => {
-              const about = meta[peer];
-              return !(isRecord(about) && about["optional"] === true);
-            })
-          : [],
+        commands:
+          typeof bin === "string"
+            ? bin === ""
+              ? []
+              : [name.slice(name.indexOf("/") + 1)]
+            : isRecord(bin)
+              ? Object.keys(bin)
+              : [],
       };
     }
     if (dirnamePath(dir) === dir) {
@@ -639,12 +683,37 @@ function declaredIn(
   return declared.sort((a, b) => a.at - b.at).map(({ dependency }) => dependency);
 }
 
+/** The key one declared dependency is known by: its manifest's path and its name. */
+export function declarationKey(dependency: DeclaredDependency): string {
+  return `${dependency.position.path}\u0000${dependency.name}`;
+}
+
+/** Every token of every value of one manifest's `scripts` member. */
+function scriptTokensOf(manifest: Record<string, unknown>): ReadonlySet<string> {
+  const scripts = manifest["scripts"];
+  const found = new Set<string>();
+  if (isRecord(scripts)) {
+    for (const command of Object.values(scripts)) {
+      if (typeof command === "string") {
+        scriptTokens(command).forEach((token) => found.add(token));
+      }
+    }
+  }
+  return found;
+}
+
+/** Whether a path below the target root lies in the directory `dir` below it, `""` being the root. */
+function isInside(path: string, dir: string): boolean {
+  return dir === "" || path.startsWith(`${dir}/`);
+}
+
 /**
  * The run's dependency evidence: the target's manifest and each workspace member's in
  * `members` below the target root, read with the position of every dependency each
- * declares, the installed copy of each found from its manifest's directory, what the
- * projects need, and the last uses each deletion candidate holds. A manifest the
- * program cannot read declares nothing.
+ * declares, what the projects and the commands its scripts and workflow steps run need,
+ * and the last uses each deletion candidate holds. A member in `unbuilt` holds source only
+ * in configurations the run could not build. A manifest the program cannot read declares
+ * nothing.
  */
 export function dependenciesOf(
   host: Host,
@@ -652,30 +721,43 @@ export function dependenciesOf(
   perProject: readonly ProjectNeeds[],
   candidates: readonly string[],
   members: readonly string[] = [],
+  unbuiltMembers: readonly string[] = [],
 ): Dependencies {
   const root = resolvePath(host.workingDirectory(), targetRoot);
   const scopeOf = packageScope(host, targetRoot);
   const manifests = new Map<string, string>([[root, MANIFEST]]);
-  for (const dir of members) {
+  const unbuilt = new Set<string>();
+  for (const dir of [...members, ...unbuiltMembers]) {
     const below = relativePath(root, dir);
     if (below !== undefined && !manifests.has(dir)) {
       manifests.set(dir, `${below}/${MANIFEST}`);
     }
   }
+  for (const dir of unbuiltMembers) {
+    const path = manifests.get(dir);
+    if (path !== undefined && dir !== root) {
+      unbuilt.add(path);
+    }
+  }
+  const workflow = new Set(workflowTokens(host, targetRoot));
   const declared: DeclaredDependency[] = [];
-  const installed = new Map<string, InstalledDependency>();
+  const ran = new Set<string>();
   for (const [dir, path] of manifests) {
     const read = readJSON(host, joinPath(dir, MANIFEST));
     if (read === undefined || !isRecord(read.value)) {
       continue;
     }
+    const tokens = scriptTokensOf(read.value);
     for (const dependency of declaredIn(read.text, read.value, path, scopeOf(path))) {
       declared.push(dependency);
-      if (!installed.has(dependency.name)) {
-        const found = installedOf(host, dir, dependency.name);
-        if (found !== undefined) {
-          installed.set(dependency.name, found);
-        }
+      const found = installedOf(host, dir, dependency.name);
+      if (found === undefined) {
+        continue;
+      }
+      const runs = (command: string): boolean =>
+        tokens.has(command) || (dir === root && workflow.has(command));
+      if (found.commands.some(runs)) {
+        ran.add(declarationKey(dependency));
       }
     }
   }
@@ -685,9 +767,15 @@ export function dependenciesOf(
   const needed = new Set<string>();
   const uses = new Map<string, Set<string>>();
   for (const project of perProject) {
-    // A specifier the checker left unanswered may resolve to any declared dependency,
-    // and what the configuration needs is never deleted, so it is needed there.
-    const unknown = project.unanswered ? declared.map((dependency) => dependency.name) : [];
+    // A specifier the checker left unanswered may resolve to any dependency a manifest at
+    // or above its file declares, and what the configuration needs is never deleted.
+    const unanswered = project.unanswered.flatMap((file) => relativePath(root, file) ?? []);
+    const unknown = declared
+      .filter((dependency) => {
+        const dir = dirnamePath(dependency.position.path);
+        return unanswered.some((file) => isInside(file, dir === "." ? "" : dir));
+      })
+      .map((dependency) => dependency.name);
     const held = unknown.length === 0 ? [] : [[PROJECT_OWNER, new Set(unknown)] as const];
     for (const [id, used] of [...project.uses, ...held]) {
       const merged = uses.get(id) ?? new Set<string>();
@@ -711,5 +799,5 @@ export function dependenciesOf(
       );
     }
   }
-  return { declared, installed, needed, lastUses };
+  return { declared, needed, ran, unbuilt, lastUses };
 }

@@ -69,6 +69,24 @@ export function runCommands(text: string): readonly string[] {
   return found;
 }
 
+/** Every token the `run:` steps of the workflow files in the target root's `.github/workflows` hold. */
+export function workflowTokens(host: Host, targetRoot: string): readonly string[] {
+  const dir = joinPath(resolvePath(host.workingDirectory(), targetRoot), WORKFLOWS);
+  const found: string[] = [];
+  for (const path of workflowFiles(host, dir)) {
+    let text: string;
+    try {
+      text = host.readFile(path);
+    } catch {
+      continue;
+    }
+    for (const command of runCommands(text)) {
+      found.push(...scriptTokens(command));
+    }
+  }
+  return found;
+}
+
 /**
  * The own files the `run:` steps of every workflow file in the target root's
  * `.github/workflows` name: a token equal to a file's path below the target root, with or
@@ -79,25 +97,14 @@ export function workflowEntries(
   targetRoot: string,
   files: SourceFiles,
 ): readonly WorkflowEntry[] {
-  const dir = joinPath(resolvePath(host.workingDirectory(), targetRoot), WORKFLOWS);
   const found: WorkflowEntry[] = [];
-  for (const path of workflowFiles(host, dir)) {
-    let text: string;
-    try {
-      text = host.readFile(path);
-    } catch {
+  for (const token of workflowTokens(host, targetRoot)) {
+    if (COMPUTED.test(token)) {
       continue;
     }
-    for (const command of runCommands(text)) {
-      for (const token of scriptTokens(command)) {
-        if (COMPUTED.test(token)) {
-          continue;
-        }
-        const file = files.byPath.get(token.startsWith("./") ? token.slice(2) : token);
-        if (file !== undefined) {
-          found.push({ file, source: token });
-        }
-      }
+    const file = files.byPath.get(token.startsWith("./") ? token.slice(2) : token);
+    if (file !== undefined) {
+      found.push({ file, source: token });
     }
   }
   return found;

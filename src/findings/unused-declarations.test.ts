@@ -571,7 +571,16 @@ describe("a file only a test reaches through a module specifier with a query", (
   });
 });
 
-describe("a test file no configuration of the run holds", () => {
+/**
+ * An application whose matrix the configuration declares, so a test file no
+ * configuration's file list names joins none and is read on its own.
+ */
+const DECLARED_MATRIX = JSON.stringify({
+  target: { kind: "application" },
+  analysis: { configurations: [{ id: "app", project: "tsconfig.json" }] },
+});
+
+describe("a test file no configuration of a declared matrix holds", () => {
   const roots: string[] = [];
   afterAll(() => {
     for (const root of roots) {
@@ -596,7 +605,7 @@ describe("a test file no configuration of the run holds", () => {
     });
     roots.push(root);
     expect(
-      findingsOf(emitterInputOf(root, configOf('{ "target": { "kind": "application" } }'))).map(
+      findingsOf(emitterInputOf(root, configOf(DECLARED_MATRIX))).map(
         (finding) => `${finding.code} ${finding.symbol.name}`,
       ),
     ).toEqual(["DS1001 unusedFake"]);
@@ -616,7 +625,7 @@ describe("a test file no configuration of the run holds", () => {
     });
     roots.push(root);
     expect(
-      findingsOf(emitterInputOf(root, configOf('{ "target": { "kind": "application" } }'))).map(
+      findingsOf(emitterInputOf(root, configOf(DECLARED_MATRIX))).map(
         (finding) => `${finding.code} ${finding.symbol.name}`,
       ),
     ).toEqual(["DS1001 page", "DS1502 src/page.ts"]);
@@ -636,13 +645,13 @@ describe("a test file no configuration of the run holds", () => {
     });
     roots.push(root);
     expect(
-      findingsOf(emitterInputOf(root, configOf('{ "target": { "kind": "application" } }'))).map(
+      findingsOf(emitterInputOf(root, configOf(DECLARED_MATRIX))).map(
         (finding) => `${finding.code} ${finding.symbol.name}`,
       ),
     ).toEqual([]);
   });
 
-  /** Every finding of an application whose one compiler configuration excludes `src/main.test.ts`. */
+  /** Every finding of an application whose one declared configuration excludes `src/main.test.ts`. */
   function findingsBeside(files: Readonly<Record<string, string>>): string[] {
     const root = writeProject({
       "package.json": '{ "name": "@example/app", "type": "module", "main": "./src/main.ts" }\n',
@@ -655,9 +664,9 @@ describe("a test file no configuration of the run holds", () => {
       ...files,
     });
     roots.push(root);
-    return findingsOf(
-      emitterInputOf(root, configOf('{ "target": { "kind": "application" } }')),
-    ).map((finding) => `${finding.code} ${finding.symbol.name}`);
+    return findingsOf(emitterInputOf(root, configOf(DECLARED_MATRIX))).map(
+      (finding) => `${finding.code} ${finding.symbol.name}`,
+    );
   }
 
   it("evaluates the file a bare or a namespace import names, and reads no export of it", () => {

@@ -84,7 +84,7 @@ import {
   type Matrix,
   type SweepResult,
 } from "./matrix.ts";
-import { joinPath, normalizePath, relativePath, resolvePath } from "./paths.ts";
+import { dirnamePath, joinPath, normalizePath, relativePath, resolvePath } from "./paths.ts";
 import type { UnansweredQuestion } from "./query.ts";
 import { byPosition, isComponentFile, type Position } from "./position.ts";
 import type { TypeErrorSkip, UnansweredCount } from "./report.ts";
@@ -102,6 +102,7 @@ import { roots, unmatchedEverywhere, type RootKind, type Roots } from "./roots.t
 import type { Scope } from "./scope.ts";
 import { serializationContract } from "./serialization-contract.ts";
 import { outsideTestReferences, testFilesAt, type OutsideTest } from "./outside-tests.ts";
+import { joinedTestFiles, withJoinedTests } from "./test-joins.ts";
 import { supportReferences, testSupportFiles } from "./test-support.ts";
 import { diagnosticsOf, ownedAs, runSession, type Engine, type ProjectView } from "./session.ts";
 import { accessorsOf, storesOf } from "./stores.ts";
@@ -308,6 +309,9 @@ function readProjects<Answer>(
     testFiles: config.ts.testFiles,
     parse: (fileName: string, text: string) => engine.parseSourceFile(fileName, text),
     publishedAPI: config.targetKind === "library",
+    publishedMembers: new Set(
+      (workspace?.entries ?? []).filter((entry) => entry.published).map((entry) => entry.dir),
+    ),
   };
   const notBuilt: NotBuilt[] = [...discovered.notBuilt];
   const dropped = (configFile: string, error: string): void => {
@@ -332,6 +336,10 @@ function readProjects<Answer>(
       unbuildable.push(...met);
     }
   };
+  const testPatterns = config.ts.testFiles.map(globExpression);
+  const joins = discovered.derived
+    ? joinedTestFiles(engine, host, absoluteRoot, discovered.configFiles, testPatterns)
+    : new Map<string, readonly string[]>();
   const session = runSession(
     engine,
     [...discovered.configFiles, ...consumerOf.keys()],
@@ -460,14 +468,15 @@ function readProjects<Answer>(
       return stage(project, { configuration, read });
     },
     discovered.derived ? "record" : "refuse",
-    workspace?.programs,
+    joins.size === 0
+      ? workspace?.programs
+      : withJoinedTests(engine, host, workspace?.programs ?? new Map(), joins),
     () => {
-      const patterns = config.ts.testFiles.map(globExpression);
       outsideTests = testFilesAt(
         host,
         targetRoot,
         sourcePaths(host, targetRoot).filter(
-          (path) => !heldFiles.has(path) && patterns.some((pattern) => pattern.test(path)),
+          (path) => !heldFiles.has(path) && testPatterns.some((pattern) => pattern.test(path)),
         ),
         options.parse,
       );
@@ -1082,27 +1091,44 @@ function readEmitterRun(
 }
 
 /**
- * The workspace members whose manifest the run reads whole enough to judge its
- * dependencies: a built project holds a file below the member's directory, and no derived
- * configuration at or below it was dropped. A file no built project holds may import any
- * dependency the member declares.
+ * The workspace members whose dependencies the run judges: `read` holds those a built
+ * project holds a file below, `unbuilt` the others whose own directory, the nearest
+ * manifest's above the configuration, holds a configuration the run could not build. A
+ * member no configuration holds a file of is in neither.
  */
-function membersWhollyRead(
+function judgedMembers(
   host: Host,
   targetRoot: string,
   read: ReadRun<EmitterExtra>,
-): readonly string[] {
+): { readonly read: readonly string[]; readonly unbuilt: readonly string[] } {
   const root = resolvePath(host.workingDirectory(), targetRoot);
   const held = new Set(read.matrix.union.symbols.map((symbol) => symbol.position.path));
-  const dropped = read.notBuilt.map((one) => relativePath(root, one.configFile) ?? "");
-  return read.memberDirs.filter((dir) => {
+  const owners = new Set(
+    read.notBuilt.map((one) => nearestManifestDir(host, root, one.configFile)),
+  );
+  const judged = { read: [] as string[], unbuilt: [] as string[] };
+  for (const dir of read.memberDirs) {
     const below = relativePath(root, dir);
     if (below === undefined) {
-      return false;
+      continue;
     }
-    const inside = (path: string): boolean => path.startsWith(`${below}/`);
-    return [...held].some(inside) && !dropped.some(inside);
-  });
+    if ([...held].some((path) => path.startsWith(`${below}/`))) {
+      judged.read.push(dir);
+    } else if (owners.has(dir)) {
+      judged.unbuilt.push(dir);
+    }
+  }
+  return judged;
+}
+
+/** The directory of the nearest `package.json` at or above a file, inside `root`, else `root`. */
+function nearestManifestDir(host: Host, root: string, file: string): string {
+  for (let dir = dirnamePath(file); relativePath(root, dir) !== undefined; dir = dirnamePath(dir)) {
+    if (host.kindOf(joinPath(dir, "package.json")) === "file") {
+      return dir;
+    }
+  }
+  return root;
 }
 
 /**
@@ -1120,6 +1146,7 @@ function emitterInputOver(
   const targetRoot = scope.target.path;
   const swept = sweptOf(read, input);
   const { projects } = read;
+  const members = judgedMembers(host, targetRoot, read);
   return {
     config,
     swept,
@@ -1137,7 +1164,8 @@ function emitterInputOver(
       targetRoot,
       [...projects.map((one) => one.extra.needs), configurationNeeds(read.conventionUses)],
       swept.sweep.candidates.map((candidate) => candidate.id),
-      membersWhollyRead(host, targetRoot, read),
+      members.read,
+      members.unbuilt,
     ),
     implementations: mergeImplementations(projects.map((one) => one.extra.implementations)),
     files: {

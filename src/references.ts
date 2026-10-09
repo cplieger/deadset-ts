@@ -51,6 +51,7 @@ import { byPosition, isComponentFile, renderPosition, type Position } from "./po
 import { DEFAULT_BATCH_CAP, propertyTables, UNANSWERED, type Answer } from "./query.ts";
 import type { ProjectView } from "./session.ts";
 import { typeQueryAliases } from "./type-query-alias.ts";
+import { computedKeyNames, keyNameOf, keyedUses, type KeyedAccess } from "./symbol-keys.ts";
 import { handedOn, valuesOf } from "./value-flow.ts";
 
 /**
@@ -80,12 +81,12 @@ import { handedOn, valuesOf } from "./value-flow.ts";
 export type Use = "read" | "write" | "evaluation" | "decorator";
 
 /**
- * Which path answered for one reference: `batch`, a file's batched lookup; `resolved-symbol`,
- * the per-node lookup for its residue; `shorthand`, the value `{ a }` reads; `alias`, a step
- * along an import or export chain; `syntax`, the tree alone (a decorator's target, a
- * component's markup); `destructured`, the property a pattern names; `contextual`, the member
- * a literal property writes or a value's position reads; `override`, the override a base
- * member's call dispatches to; `by-name`, every declaration so spelled, where the checker failed.
+ * Which path answered for one reference: `batch`, a file's batched lookup; `resolved-symbol`, the
+ * per-node lookup for its residue; `shorthand`, the value `{ a }` reads; `alias`, a step along an
+ * import or export chain; `syntax`, the tree alone (a decorator's target, a component's markup);
+ * `destructured`, the property a pattern names; `contextual`, the member a literal property writes
+ * or a value's position reads; `override`, the override a base call dispatches to; `keyed`, the
+ * member a symbol key selects; `by-name`, each declaration so spelled, where the checker failed.
  */
 export type Resolution =
   | "batch"
@@ -96,6 +97,7 @@ export type Resolution =
   | "destructured"
   | "contextual"
   | "override"
+  | "keyed"
   | "by-name";
 
 /** One use of one declaration by one declaration. */
@@ -297,12 +299,11 @@ function unparenthesized(node: Node): Node {
  * Records the name one store writes into.
  *
  * A property access writes the member it names. An element access writes the collection
- * it stores into, because a collection a module only ever stores into holds nothing
- * anything reads, and the key is no declaration of the target. A destructuring target
- * writes each name it binds, through the spreads and the nested patterns it binds them
- * in.
+ * it stores into, since a collection a module only stores into holds nothing anything
+ * reads, and joins `accesses` for the member a unique-symbol key selects. A destructuring
+ * target writes each name it binds, through its spreads and nested patterns.
  */
-function markWrite(target: Node, writes: Set<number>): void {
+function markWrite(target: Node, writes: Set<number>, accesses: Set<Node>): void {
   const held = unparenthesized(target);
   if (isName(held)) {
     writes.add(held.pos);
@@ -315,37 +316,38 @@ function markWrite(target: Node, writes: Set<number>): void {
     return;
   }
   if (isElementAccessExpression(held)) {
+    accesses.add(held);
     // A store through a member's value lands in storage every holder of the value
     // reads, so it reads the member; a variable only ever stored into stays written.
     if (!isPropertyAccessExpression(unparenthesized(held.expression))) {
-      markWrite(held.expression, writes);
+      markWrite(held.expression, writes, accesses);
     }
     return;
   }
   if (isArrayLiteralExpression(held)) {
     for (const element of held.elements) {
-      markWrite(element, writes);
+      markWrite(element, writes, accesses);
     }
     return;
   }
   if (isObjectLiteralExpression(held)) {
     for (const property of held.properties) {
       if (isPropertyAssignment(property)) {
-        markWrite(property.initializer, writes);
+        markWrite(property.initializer, writes, accesses);
         continue;
       }
       if (isShorthandPropertyAssignment(property)) {
-        markWrite(property.name, writes);
+        markWrite(property.name, writes, accesses);
         continue;
       }
       if (isSpreadAssignment(property)) {
-        markWrite(property.expression, writes);
+        markWrite(property.expression, writes, accesses);
       }
     }
     return;
   }
   if (isSpreadElement(held)) {
-    markWrite(held.expression, writes);
+    markWrite(held.expression, writes, accesses);
   }
 }
 
@@ -356,16 +358,21 @@ function markWrite(target: Node, writes: Set<number>): void {
  * holds. A store that reads its target as well records it in `reads`: a logical
  * assignment, and a compound assignment, an increment or a decrement whose value is used.
  */
-function markStores(node: Node, writes: Set<number>, reads: Set<number>): void {
+function markStores(
+  node: Node,
+  writes: Set<number>,
+  reads: Set<number>,
+  accesses: { readonly written: Set<Node>; readonly read: Set<Node> },
+): void {
   if (isBinaryExpression(node)) {
     const operator = node.operatorToken.kind;
     if (ASSIGNMENTS.has(operator)) {
-      markWrite(node.left, writes);
+      markWrite(node.left, writes, accesses.written);
       if (
         LOGICAL_ASSIGNMENTS.has(operator) ||
         (operator !== SyntaxKind.EqualsToken && !valueDiscarded(node))
       ) {
-        markWrite(node.left, reads);
+        markWrite(node.left, reads, accesses.read);
       }
     }
     return;
@@ -375,20 +382,20 @@ function markStores(node: Node, writes: Set<number>, reads: Set<number>): void {
       node.operator === SyntaxKind.PlusPlusToken ||
       node.operator === SyntaxKind.MinusMinusToken
     ) {
-      markWrite(node.operand, writes);
+      markWrite(node.operand, writes, accesses.written);
       if (!valueDiscarded(node)) {
-        markWrite(node.operand, reads);
+        markWrite(node.operand, reads, accesses.read);
       }
     }
     return;
   }
   if (isDeleteExpression(node)) {
-    markWrite(node.expression, writes);
+    markWrite(node.expression, writes, accesses.written);
     return;
   }
   if (isForInStatement(node) || isForOfStatement(node)) {
     if (node.initializer.kind !== SyntaxKind.VariableDeclarationList) {
-      markWrite(node.initializer, writes);
+      markWrite(node.initializer, writes, accesses.written);
     }
   }
 }
@@ -475,6 +482,7 @@ interface FileSites {
   readonly wholes: readonly WholeRead[];
   readonly urls: readonly ModuleURL[];
   readonly decorated: readonly Decorated[];
+  readonly keyed: readonly KeyedAccess[];
 }
 
 /** Whether one node is `import.meta.url`. */
@@ -667,6 +675,8 @@ function sitesOf(
   const flows: FlowAt[] = [];
   const writes = new Set<number>();
   const alsoRead = new Set<number>();
+  const accesses = { written: new Set<Node>(), read: new Set<Node>() };
+  const keyed: KeyedAccess[] = [];
   const declared = new Set<number>();
   const shorthands = new Map<number, Node>();
   let enclosing = fileId;
@@ -712,7 +722,17 @@ function sitesOf(
       return;
     }
     markNames(node);
-    markStores(node, writes, alsoRead);
+    markStores(node, writes, alsoRead, accesses);
+    const key = isElementAccessExpression(node) ? keyNameOf(node.argumentExpression) : undefined;
+    if (key !== undefined && isElementAccessExpression(node)) {
+      const written = accesses.written.has(node);
+      keyed.push({
+        access: node,
+        key,
+        from: enclosing,
+        use: written ? (accesses.read.has(node) ? "both" : "write") : "read",
+      });
+    }
     if (isObjectLiteralExpression(node) && !isAssignmentPattern(node)) {
       literals.push({ literal: node, from: enclosing });
     }
@@ -747,7 +767,18 @@ function sitesOf(
   };
 
   file.forEachChild(visit);
-  return { uses: found, literals, flows, reads, links, evaluations, wholes, urls, decorated };
+  return {
+    uses: found,
+    literals,
+    flows,
+    reads,
+    links,
+    evaluations,
+    wholes,
+    urls,
+    decorated,
+    keyed,
+  };
 }
 
 /** The declaration kinds of a property an object literal declares. */
@@ -1230,7 +1261,19 @@ export function references<Brand>(
     }
   }
 
-  for (const { file, fileId, uses, reads, links, evaluations, wholes, urls, decorated } of walked) {
+  const keyNames = computedKeyNames(held.symbols);
+  for (const {
+    file,
+    fileId,
+    uses,
+    reads,
+    links,
+    evaluations,
+    wholes,
+    urls,
+    decorated,
+    keyed,
+  } of walked) {
     const test = testFile.get(file) === true;
     // A component file's markup may use any binding its blocks declare at the top level.
     const markup = isComponentFile(file);
@@ -1448,6 +1491,22 @@ export function references<Brand>(
         });
       }
     });
+
+    const resolvedKeys = keyed.flatMap((access) => {
+      const symbol =
+        isIdentifier(access.key) && keyNames.has(access.key.text)
+          ? answered.get(access.key)
+          : undefined;
+      return typeof symbol === "object" ? [{ access, symbol }] : [];
+    });
+    for (const { access, ids } of keyedUses(project, chains, resolvedKeys, tables, cap)) {
+      const position = renderPosition(file, root, access.access.argumentExpression.getStart());
+      for (const id of ids) {
+        for (const use of access.use === "both" ? (["read", "write"] as const) : [access.use]) {
+          found.push({ from: access.from, to: id, position, use, resolution: "keyed", test });
+        }
+      }
+    }
 
     for (const site of uses) {
       const direct: Resolution =

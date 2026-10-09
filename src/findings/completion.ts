@@ -136,12 +136,11 @@ function findingComponents(
 
 /**
  * Every finding of the run completed, in the order given. A dead declaration carries its
- * candidate's relation, counts, configurations and component; a live one carries no
- * relation and holds where it is declared; a file or a manifest row is `certain` and
- * holds in every configuration. A subject in no dead component gets one of its own,
- * numbered past the computed ones in finding order, so no two families mint one; nothing
- * falls with it, so its deletion removes no line. `kinds` is the vocabulary each code's
- * row is read from, the shipped one unless a caller supplies its own.
+ * candidate's relation, counts, configurations and component; a live one carries no relation and
+ * holds where it is declared; a file or a manifest row carries the class its emitter states,
+ * `certain` by default, and holds in every configuration. A subject in no dead component gets one
+ * of its own, numbered past the computed ones in finding order so no two families mint one, whose
+ * deletion removes no line. `kinds` defaults to the shipped vocabulary.
  */
 export function completed(
   input: EmitterInput,
@@ -210,7 +209,8 @@ export function completed(
       candidate === undefined
         ? union.made[at]
         : { production: candidate.productionRefs, test: candidate.testRefs };
-    const reachabilityClass = judged === undefined ? "certain" : classOf(judged.id);
+    const reachabilityClass =
+      judged === undefined ? (finding.reachabilityClass ?? "certain") : classOf(judged.id);
     const generated = input.files.generated?.has(finding.position.path) === true;
     return {
       code: finding.code,

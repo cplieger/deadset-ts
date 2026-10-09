@@ -1,6 +1,7 @@
 /**
- * The files the module scripts of the target's HTML files load. An HTML file is read as
- * text and no markup is parsed, so a `<script>` inside a comment is read as well.
+ * The files the scripts of the target's HTML files load: a module script's, and a
+ * classic script's that names its file by `src`. An HTML file is read as text and no
+ * markup is parsed, so a `<script>` inside a comment is read as well.
  */
 
 import {
@@ -14,7 +15,7 @@ import type { Host } from "./host.ts";
 import { dirnamePath, joinPath, relativePath, resolvePath } from "./paths.ts";
 import type { SourceFiles } from "./source-files.ts";
 
-/** One file a module script loads, and the value or specifier that named it. */
+/** One file a script loads, and the value or specifier that named it. */
 export interface HTMLEntry {
   readonly file: SourceFile;
   readonly source: string;
@@ -34,6 +35,9 @@ const ATTRIBUTE = /([^\s"'=<>/]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)
 
 /** A value that names a resource on another origin, or by another scheme. */
 const ELSEWHERE = /^(?:\/\/|[A-Za-z][A-Za-z\d+.-]*:)/u;
+
+/** The `type` values a classic script carries, compared in lowercase. */
+const CLASSIC_TYPES: ReadonlySet<string> = new Set(["text/javascript", "application/javascript"]);
 
 /** The prefixes an inline script's specifier names a file of the target with. */
 const FILE_PREFIXES = ["/", "./", "../"] as const;
@@ -85,18 +89,22 @@ function specifiersOf(parse: ParseFile, fileName: string, content: string): read
 }
 
 /**
- * Every value a module script of one HTML file names a file by: a `src` attribute's
- * value, or each specifier an inline script imports or re-exports that starts with `/`,
- * `./` or `../`.
+ * Every value a script of one HTML file names a file by: the `src` attribute's value of a
+ * module script or of a classic one, or each specifier an inline module script imports or
+ * re-exports that starts with `/`, `./` or `../`.
  */
 function scriptValues(parse: ParseFile | undefined, path: string, text: string): readonly string[] {
   const values: string[] = [];
   for (const match of text.matchAll(SCRIPT_TAG)) {
     const held = attributes(match[1] ?? "");
-    if (held.get("type") !== "module") {
+    const type = held.get("type");
+    const src = held.get("src");
+    if (type !== "module") {
+      if (src !== undefined && (type === undefined || CLASSIC_TYPES.has(type.toLowerCase()))) {
+        values.push(src);
+      }
       continue;
     }
-    const src = held.get("src");
     if (src !== undefined) {
       values.push(src);
       continue;
@@ -131,11 +139,11 @@ function manifestDirectory(host: Host, root: string, dir: string): string {
 }
 
 /**
- * The own files the module scripts of every HTML file below the target root load. A value
+ * The own files the scripts of every HTML file below the target root load. A value
  * starting with a single `/` is read against the nearest manifest's directory, any other
- * against the HTML file's own, and either resolves as a configuration file's relative
- * specifier does. A value naming another origin or scheme, or no source file of the
- * program, loads nothing here.
+ * against the HTML file's own, as a configuration file's relative specifier. One naming no
+ * source file is read back through the project's emit mapping, and a `/` one also against
+ * an output directory that is the HTML file's own. Another origin or scheme loads nothing.
  */
 export function htmlEntries(
   host: Host,
@@ -157,12 +165,22 @@ export function htmlEntries(
       if (ELSEWHERE.test(value)) {
         continue;
       }
-      const reached = value.startsWith("/")
-        ? resolveRelativeSpecifier(host, manifestDirectory(host, root, dir), `.${value}`)
-        : resolveRelativeSpecifier(host, dir, value);
+      const base = value.startsWith("/") ? manifestDirectory(host, root, dir) : dir;
+      const relative = value.startsWith("/") ? `.${value}` : value;
+      const reached = resolveRelativeSpecifier(host, base, relative);
       const file = reached === undefined ? undefined : files.byName.get(reached);
       if (file !== undefined) {
         found.push({ file, source: value });
+        continue;
+      }
+      const served = value.startsWith("/")
+        ? files.outputDirs.filter((outDir) => outDir === dir)
+        : [];
+      const emitting = [base, ...served].flatMap((against) =>
+        files.named(resolvePath(against, relative)),
+      );
+      for (const one of new Set(emitting)) {
+        found.push({ file: one, source: value });
       }
     }
   }

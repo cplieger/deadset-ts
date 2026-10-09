@@ -1,4 +1,4 @@
-import type { Dependencies } from "../dependencies.ts";
+import { declarationKey, type Dependencies } from "../dependencies.ts";
 import type { Finding } from "../finding.ts";
 import { renderRef, type DependencySection } from "../ref.ts";
 import type { Emitter } from "./emitter.ts";
@@ -12,38 +12,16 @@ const MESSAGES: Readonly<Record<DependencySection, string>> = {
 };
 
 /**
- * The dependencies the target needs: every package the projects' uses name, every
- * declared dependency that ships a command, which a script, a workflow or a shell
- * runs outside anything the analysis reads, and every peer a needed package
- * requires, which the target satisfies by declaring it.
- */
-function neededBy(dependencies: Dependencies): ReadonlySet<string> {
-  const needed = new Set(dependencies.needed);
-  for (const [name, installed] of dependencies.installed) {
-    if (installed.command) {
-      needed.add(name);
-    }
-  }
-  const pending = [...needed];
-  for (let name = pending.pop(); name !== undefined; name = pending.pop()) {
-    for (const peer of dependencies.installed.get(name)?.peers ?? []) {
-      if (!needed.has(peer)) {
-        needed.add(peer);
-        pending.push(peer);
-      }
-    }
-  }
-  return needed;
-}
-
-/**
  * A dependency, development dependency or peer dependency of a manifest the run reads
  * that the target does not need, at the position of its key.
  */
 function unusedDependencies(dependencies: Dependencies): Finding[] {
-  const needed = neededBy(dependencies);
   return dependencies.declared
-    .filter((dependency) => !needed.has(dependency.name))
+    .filter(
+      (dependency) =>
+        !dependencies.needed.has(dependency.name) &&
+        !dependencies.ran.has(declarationKey(dependency)),
+    )
     .map((dependency) => ({
       code: UNUSED_DEPENDENCY,
       position: dependency.position,
@@ -59,6 +37,9 @@ function unusedDependencies(dependencies: Dependencies): Finding[] {
       },
       message: MESSAGES[dependency.section],
       details: { dependencyClass: dependency.section },
+      ...(dependencies.unbuilt.has(dependency.position.path)
+        ? { reachabilityClass: "possible" as const }
+        : {}),
     }));
 }
 

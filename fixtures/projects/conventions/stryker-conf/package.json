@@ -7,5 +7,8 @@
     "@stryker-mutator/core": "10.0.0",
     "@stryker-mutator/jest-runner": "10.0.0",
     "@stryker-mutator/vitest-runner": "10.0.0"
+  },
+  "scripts": {
+    "test:mutation": "stryker run"
   }
 }

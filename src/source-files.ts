@@ -38,6 +38,8 @@ export interface SourceFiles {
    * nothing.
    */
   named(path: string): readonly SourceFile[];
+  /** The directories the project writes its output below, absolute: its output and declaration directories. */
+  readonly outputDirs: readonly string[];
 }
 
 /**
@@ -76,6 +78,7 @@ export function sourceFilesOf<Brand>(project: ProjectView<Brand>, targetRoot: st
   return {
     byPath,
     byName,
+    outputDirs: [...new Set([outDir, declarationDir])].filter((dir) => dir !== undefined),
     named: (path) => {
       if (!path.includes(SUBPATH_WILDCARD)) {
         for (const candidate of candidates(path)) {
