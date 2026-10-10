@@ -17,6 +17,7 @@ import {
 } from "./findings-pass.ts";
 import { resolve } from "./resolve.ts";
 import { scopeForDir } from "./scope.ts";
+import { isRowCode, isRowSubject } from "./suppress.ts";
 import { openEngine } from "./session.ts";
 import { BASELINE_FILE, writeBaseline } from "./suppress-file.ts";
 import { EXIT_CLEAN, EXIT_FINDINGS } from "./verbs/verb.ts";
@@ -106,6 +107,61 @@ describe("the suppressions of a target", () => {
 
   it("fail the run on a stale suppression", () => {
     expect(exit).toBe(EXIT_FINDINGS);
+  });
+});
+
+describe("an ignore entry naming a row of a document", () => {
+  const root = copyOf(SUPPRESSIONS);
+  const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as object;
+  writeFileSync(
+    join(root, "package.json"),
+    JSON.stringify({ ...manifest, devDependencies: { "left-pad": "1.0.0" } }),
+  );
+  writeFileSync(
+    join(root, "deadset-ignore.json"),
+    JSON.stringify({
+      ignore: [
+        {
+          code: "DS1601",
+          symbol: "ts://@example/suppressions/package.json#left-pad:dev-dependency",
+          path: "package.json",
+          reason: "loaded by a tool configuration",
+        },
+        {
+          code: "DS1704",
+          symbol: "ts://@example/suppressions/src/lib.ts#entryNamed",
+          path: "src/lib.ts",
+          reason: "a root kept for later",
+        },
+      ],
+    }),
+  );
+  writeFileSync(
+    join(root, "src/lib.ts"),
+    `${readFileSync(join(root, "src/lib.ts"), "utf8")}\n// deadset:ignore DS1601,DS1704 -- kept for a tool\nfunction rowsNamed(): void {}\n\n// deadset:ignore DS1001,DS1601 -- kept for a tool\nfunction mixedNamed(): void {}\n`,
+  );
+  const { result } = passOver(root);
+
+  it("is stale, and its message names the severity only where the code's is not fixed", () => {
+    expect(stale(result).filter((one) => one.includes("ignore:"))).toEqual([
+      "deadset-ignore.json:1:12 ignore: ignore entry for DS1601 matches no current finding, because DS1601 reports a row of a document, which no suppression can name; fix what the finding names or set the severity of DS1601 instead",
+      "deadset-ignore.json:1:169 ignore: ignore entry for DS1704 matches no current finding, because DS1704 reports a row of a document, which no suppression can name; fix what the finding names instead; its declaration reports DS1002",
+    ]);
+  });
+
+  it("is stale, and its message names every row code and what its declaration reports", () => {
+    expect(stale(result).filter((one) => /^src\/lib\.ts:3[69]:/u.test(one))).toEqual([
+      "src/lib.ts:36:1 inline: inline directive for DS1601 and DS1704 matches no current finding, because DS1601 and DS1704 report rows of a document, which no suppression can name; fix what the finding names or set the severity of DS1601 instead; its declaration reports DS1002",
+      "src/lib.ts:39:1 inline: inline directive for DS1001 and DS1601 matches no current finding, because DS1601 reports a row of a document, which no suppression can name; fix what the finding names or set the severity of DS1601 instead; its declaration reports DS1002",
+    ]);
+  });
+
+  it("reports a row code exactly where its subject is a row of a document", () => {
+    const codes = result.findings.map(
+      (one) => `${one.code} ${String(isRowCode(one.code) === isRowSubject(one.symbol.kind))}`,
+    );
+    expect(codes).toContain("DS1601 true");
+    expect(codes.filter((one) => one.endsWith("false"))).toEqual([]);
   });
 });
 

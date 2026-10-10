@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { nodeHost } from "../../bin/node-host.ts";
-import { emitterInputOf } from "../../__test-helpers__/emitter-input.ts";
+import { emitterInputOf, findingsOf } from "../../__test-helpers__/emitter-input.ts";
 import { writeProject } from "../../__test-helpers__/projects.ts";
 import { contractDocument, fixture } from "../../__test-helpers__/fixtures.ts";
 import type { Finding } from "../finding.ts";
@@ -11,7 +11,7 @@ import { isRef } from "../ref.ts";
 import { resolve } from "../resolve.ts";
 import { run, type Writer } from "../run.ts";
 import type { EmitterInput } from "./emitter.ts";
-import { EMITTERS, findingsOf } from "./emitters.ts";
+import { EMITTERS } from "./emitters.ts";
 
 /**
  * The fixture with its dependency directory in place. A tree holding one cannot be
@@ -134,6 +134,15 @@ describe("the dependencies-and-module-machinery emitter", () => {
         ["src/main.ts:12:10", ["left-pad"]],
       ]),
     );
+  });
+
+  it("names on a deletable finding each dependency whose last use deleting its subject removes", () => {
+    const padded = findingsOf(FIXTURE.input).find(
+      (finding) => finding.position.path === "src/main.ts" && finding.position.line === 12,
+    );
+
+    expect(padded?.fixability).toBe("deletable");
+    expect(padded?.details.removesLastUseOf).toEqual(["left-pad"]);
   });
 
   it("withholds every finding when the severity map sets the kind or its family to allow", () => {

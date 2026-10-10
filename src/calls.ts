@@ -30,7 +30,7 @@ import { must } from "./query.ts";
 import type { ProjectView } from "./session.ts";
 
 /** One value written where a call passes it, and the node its declaration is resolved from. */
-export interface PassedValue {
+interface PassedValue {
   /** Where the value is written, which is where a record of it sits. */
   readonly site: Node;
   /** The name the value is resolved through, or the shorthand assignment that holds it. */
@@ -39,7 +39,7 @@ export interface PassedValue {
 }
 
 /** One class of the target a call passes or a decorator is attached to, and where. */
-export interface ClassUse {
+interface ClassUse {
   /** The inventory's identifier of the class. */
   readonly id: string;
   readonly site: Node;
@@ -182,7 +182,7 @@ export function classesPassed<Brand>(
 }
 
 /** One class declaration of the target and the decorators written on it. */
-export interface DecoratedClass {
+interface DecoratedClass {
   readonly id: string;
   readonly decorators: readonly Decorator[];
 }

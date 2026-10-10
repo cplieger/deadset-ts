@@ -203,3 +203,145 @@ describe("a configuration file no program holds", () => {
     }
   });
 });
+
+describe("a configuration file a script names by its configuration flag", () => {
+  const TSCONFIG =
+    '{ "compilerOptions": { "strict": true, "module": "NodeNext", "moduleResolution": "nodenext", "noEmit": true }, "include": ["src/**/*.ts"] }\n';
+
+  /** The dependencies the run over `target` below a project of `files` reports unused. */
+  const unusedIn = (files: Readonly<Record<string, string>>, target: string): string[] => {
+    const root = writeProject(files);
+    try {
+      const { config } = resolve({
+        repository: '{ "target": { "kind": "application" } }',
+        repositoryLabel: "deadset.json",
+      });
+      const emit = EMITTERS.get("dependencies-and-module-machinery");
+      return emit === undefined
+        ? []
+        : emit(emitterInputOf(join(root, target), config)).map((finding) => finding.symbol.name);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  };
+
+  it("is read for its strings against each manifest that reaches it, and so is a file in a parent directory it names", () => {
+    expect(
+      unusedIn(
+        {
+          "package.json":
+            '{ "name": "@example/root", "private": true, "workspaces": ["app"], "devDependencies": { "@example/root-tool": "1.0.0" } }\n',
+          ".lintrc.json": '{ "extends": ["@example/standard"] }\n',
+          "shared.config.mjs":
+            'export default { tools: ["@example/root-tool", "@example/shared"] };\n',
+          "app/package.json":
+            '{ "name": "@example/app", "type": "module", "main": "./src/main.ts", "scripts": { "lint": "lint --config lint-html.json", "check": "check -c check.js", "fmt": "fmt --config=fmt.json", "share": "share -c ../shared.config.mjs" }, "devDependencies": { "@example/standard": "1.0.0", "@example/html": "1.0.0", "@example/checker": "1.0.0", "@example/fmt": "1.0.0", "@example/shared": "1.0.0", "@example/unused": "1.0.0" } }\n',
+          "app/src/main.ts": "export const main = 1;\n",
+          "app/tsconfig.json": TSCONFIG,
+          "app/lint-html.json":
+            '{ "customSyntax": "@example/html", "extends": "../.lintrc.json" }\n',
+          "app/check.js": 'export default { plugin: "@example/checker" };\n',
+          "app/fmt.json": '{ "plugins": ["@example/fmt"] }\n',
+        },
+        ".",
+      ),
+    ).toEqual(["@example/unused"]);
+  });
+
+  it("is one shell word however it is quoted, and is a JSON file or a module below the target root", () => {
+    expect(
+      unusedIn(
+        {
+          ".lintrc.json": '{ "extends": ["@example/above"] }\n',
+          "app/package.json":
+            '{ "name": "@example/app", "type": "module", "main": "./src/main.ts", "scripts": { "quoted": "lint --config \\"lint html.json\\"", "escaped": "lint -c lint\\\\ css.json", "single": "lint --config=\'lint md.json\'", "yaml": "lint -c lint.yml", "computed": "lint --config $CONFIG lint-env.json" }, "devDependencies": { "@example/html": "1.0.0", "@example/css": "1.0.0", "@example/md": "1.0.0", "@example/yaml": "1.0.0", "@example/env": "1.0.0", "@example/above": "1.0.0" } }\n',
+          "app/src/main.ts": "export const main = 1;\n",
+          "app/tsconfig.json": TSCONFIG,
+          "app/lint html.json":
+            '{ "customSyntax": "@example/html", "extends": "../.lintrc.json" }\n',
+          "app/lint css.json": '{ "customSyntax": "@example/css" }\n',
+          "app/lint md.json": '{ "customSyntax": "@example/md" }\n',
+          "app/lint.yml": 'customSyntax: "@example/yaml"\n',
+          "app/lint-env.json": '{ "customSyntax": "@example/env" }\n',
+        },
+        "app",
+      ).sort(),
+    ).toEqual(["@example/above", "@example/env", "@example/yaml"]);
+  });
+
+  it("is never a file in node_modules, nor is a JSON file a configuration file's string names there", () => {
+    expect(
+      unusedIn(
+        {
+          "package.json":
+            '{ "name": "@example/app", "type": "module", "main": "./src/main.ts", "scripts": { "json": "lint -c node_modules/@example/preset/lint.json", "module": "lint --config node_modules/@example/preset/lint.config.mjs" }, "devDependencies": { "@example/preset": "1.0.0", "@example/schema": "1.0.0", "@example/json": "1.0.0", "@example/module": "1.0.0" } }\n',
+          "src/main.ts": "export const main = 1;\n",
+          "tsconfig.json": TSCONFIG,
+          ".oxlintrc.json":
+            '{ "$schema": "./node_modules/oxlint/configuration_schema.json", "plugins": ["@example/preset"] }\n',
+          "node_modules/oxlint/configuration_schema.json": '{ "examples": ["@example/schema"] }\n',
+          "node_modules/@example/preset/lint.json": '{ "customSyntax": "@example/json" }\n',
+          "node_modules/@example/preset/lint.config.mjs":
+            'export default { plugin: "@example/module" };\n',
+        },
+        ".",
+      ).sort(),
+    ).toEqual(["@example/json", "@example/module", "@example/schema"]);
+  });
+
+  it("is not read across a comment, an operator or an expansion, and a quoted or escaped # is literal", () => {
+    const scripts = {
+      commented: "lint . # --config commented.json",
+      afterComment: "lint . # a note\nlint -c after.json",
+      inWord: "lint --config lint#word.json",
+      quoted: "lint --config '#quoted.json'",
+      escaped: "lint --config \\#escaped.json",
+      boundary: "lint --config < boundary.json",
+      continued: "lint --config \\\ncontinued.json",
+      doubleQuoted: 'lint --config "dq\\"name.json"',
+      expanded: 'lint --config "\\\\$HOME.json"',
+      tilde: "lint -c ~/tilde.json",
+    };
+    const dependencies = [
+      "commented",
+      "after",
+      "word",
+      "quoted",
+      "escaped",
+      "boundary",
+      "continued",
+      "dq",
+      "home",
+      "tilde",
+    ];
+    const lint = (name: string): string => `{ "customSyntax": "@example/${name}" }\n`;
+    expect(
+      unusedIn(
+        {
+          "app/package.json": `${JSON.stringify({
+            name: "@example/app",
+            type: "module",
+            main: "./src/main.ts",
+            scripts,
+            devDependencies: Object.fromEntries(
+              dependencies.map((one) => [`@example/${one}`, "1.0.0"]),
+            ),
+          })}\n`,
+          "app/src/main.ts": "export const main = 1;\n",
+          "app/tsconfig.json": TSCONFIG,
+          "app/commented.json": lint("commented"),
+          "app/after.json": lint("after"),
+          "app/lint#word.json": lint("word"),
+          "app/#quoted.json": lint("quoted"),
+          "app/#escaped.json": lint("escaped"),
+          "app/boundary.json": lint("boundary"),
+          "app/continued.json": lint("continued"),
+          'app/dq"name.json': lint("dq"),
+          "app/\\$HOME.json": lint("home"),
+          "app/~/tilde.json": lint("tilde"),
+        },
+        "app",
+      ).sort(),
+    ).toEqual(["@example/boundary", "@example/commented", "@example/home", "@example/tilde"]);
+  });
+});

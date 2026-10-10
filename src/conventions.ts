@@ -55,6 +55,7 @@ import {
   type OptionsCall,
   type PackageKey,
   type ShortNameReading,
+  type TestFileReading,
 } from "./convention-rows.ts";
 import { documentStrings } from "./configuration-files.ts";
 import { globExpression } from "./glob.ts";
@@ -119,6 +120,8 @@ export interface Conventions {
   readonly uses: readonly string[];
   /** Per configuration file, absolute, the strings its applied rows' selection keys hold. */
   readonly selected: ReadonlyMap<string, Selected>;
+  /** The files, absolute, an applied row's test-file properties name. */
+  readonly testFiles: ReadonlySet<string>;
 }
 
 /** The strings one configuration file holds at selection keys, which root no file. */
@@ -608,6 +611,43 @@ function holdsValue(held: Node, value: true | string): boolean {
   );
 }
 
+/** The directory one file's test-file strings are read against, as {@link TestFileReading} states it. */
+function testFileRoot(file: SourceFile, dir: string, reading: TestFileReading): string | undefined {
+  for (const property of reading.roots) {
+    const values = valuesAt(file, property, reading.call);
+    if (values.length > 0) {
+      const texts = new Set(values.map(literalText));
+      const [text] = texts;
+      return texts.size === 1 && text !== undefined ? resolvePath(dir, text) : undefined;
+    }
+  }
+  return dir;
+}
+
+/** The files an applied row's test-file properties name. */
+function testFilesNamed(
+  host: Host,
+  parse: ParseSource,
+  dir: string,
+  readings: readonly TestFileReading[],
+  into: Set<string>,
+): void {
+  for (const reading of readings) {
+    for (const { file } of readingFiles(host, parse, dir, reading.files)) {
+      const at = testFileRoot(file, dir, reading);
+      if (at === undefined) {
+        continue;
+      }
+      for (const node of stringsAt(file, reading.property, reading.call)) {
+        const text = literalText(node);
+        if (text !== undefined && text !== "") {
+          into.add(resolvePath(at, text));
+        }
+      }
+    }
+  }
+}
+
 /** The strings an applied row's selection keys hold, added per configuration file to `into`. */
 function selectedStrings(
   host: Host,
@@ -953,6 +993,7 @@ export function readConventions(
   const failures: ConventionFailure[] = [];
   const uses = new Set<string>();
   const selected = new Map<string, { starts: Set<number>; texts: string[] }>();
+  const testFiles = new Set<string>();
   for (const manifest of manifests) {
     const declared = readJSON(host, joinPath(manifest.dir, "package.json"));
     const versions = new Map<string, string | undefined>();
@@ -1025,6 +1066,7 @@ export function readConventions(
         uses.add(name);
       }
       selectedStrings(host, parse, manifest.dir, row.selections ?? [], selected);
+      testFilesNamed(host, parse, manifest.dir, row.testFiles ?? [], testFiles);
       const excludes = [
         ...new Set((row.excludes ?? []).flatMap((one) => expand(one, resolved))),
       ].map(globExpression);
@@ -1055,6 +1097,7 @@ export function readConventions(
     failures,
     uses: [...uses].sort(compare),
     selected,
+    testFiles,
   };
 }
 

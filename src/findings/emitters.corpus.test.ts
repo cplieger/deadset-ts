@@ -1,11 +1,10 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { emitterInputOf } from "../../__test-helpers__/emitter-input.ts";
+import { emitterInputOf, findingsOf } from "../../__test-helpers__/emitter-input.ts";
 import { fixture } from "../../__test-helpers__/fixtures.ts";
 import type { CompletedFinding } from "../finding.ts";
 import { resolve } from "../resolve.ts";
-import { findingsOf } from "./emitters.ts";
 
 /** One row of a corpus fixture's expectation file. */
 interface ExpectRow {

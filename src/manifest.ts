@@ -15,7 +15,7 @@ const MANIFEST = "package.json";
 const LEGACY_MEMBERS = ["main", "module", "types"] as const;
 
 /** What reaches one entry point the manifest names. */
-export type EntryRole =
+type EntryRole =
   /** A consumer importing the package, which is a caller the analysis cannot see. */
   | "import"
   /** A shell running the package's command, which is a caller that exists. */

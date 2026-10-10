@@ -24,6 +24,7 @@
     "typecheck:tests": "tsc -p tsconfig.test.json",
     "test": "vitest --run",
     "test:starters": "vitest --run --config starters/vitest.config.ts",
+    "test:mutation": "stryker run",
     "lint": "eslint .",
     "lint:prettier": "prettier --check .",
     "lint:fix": "eslint . --fix && prettier --write ."

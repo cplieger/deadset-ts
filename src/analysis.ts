@@ -62,11 +62,7 @@ import { globExpression } from "./glob.ts";
 import type { Finding } from "./finding.ts";
 import { findingsPass, recordedFindings, rowKey, type PassResult } from "./findings-pass.ts";
 import type { EmitterInput } from "./findings/emitter.ts";
-import {
-  NO_SELF_CHECK,
-  unmatchedRootFindings,
-  type SelfCheckFacts,
-} from "./findings/self-check.ts";
+import { unmatchedRootFindings, type SelfCheckFacts } from "./findings/self-check.ts";
 import { frameworkLifecycle } from "./framework-lifecycle.ts";
 import type { Host } from "./host.ts";
 import { implementations, mergeImplementations } from "./implementations.ts";
@@ -194,6 +190,8 @@ interface ProjectRead {
   readonly skipped: readonly SkippedUnit[];
   /** The project's generated files, by path below the target root, each with the detail its retentions name. */
   readonly generated: ReadonlyMap<string, string>;
+  /** The files, absolute, an applied convention row names as test files. */
+  readonly testFileNames: ReadonlySet<string>;
 }
 
 /** One target project the run analyzes, as its stage is handed it. */
@@ -460,6 +458,7 @@ function readProjects<Answer>(
             .filter((file) => referenceOnly(file.fileName))
             .flatMap((file) => relativePath(absoluteRoot, file.fileName) ?? []),
           generated: generatedFilesOf(own, generatedFiles(conventions, own)),
+          testFileNames: conventions.testFiles,
         };
       };
       for (const file of project.ownSourceFiles()) {
@@ -649,7 +648,7 @@ export interface ComponentWarning {
 }
 
 /** The exemption classes this analyzer detects, each by its detector; any other retains nothing. */
-const DETECTORS: Detectors = new Map<TSExemptionClass, Detector>([
+export const DETECTORS: Detectors = new Map<TSExemptionClass, Detector>([
   ["interface-satisfaction", interfaceSatisfaction],
   ["enum-group", enumGroup],
   ["generated-file", generatedFile],
@@ -739,6 +738,7 @@ function readRun<Extra>(
     const projectRead = opened.read();
     const resolved = references(project, projectRead.held, targetRoot, {
       testFiles: config.ts.testFiles,
+      testFileNames: projectRead.testFileNames,
     });
     const evidence = evidenceRecords(
       {
@@ -799,7 +799,6 @@ function readRun<Extra>(
     const { projectRead } = one;
     const satisfied = settled[index];
     const detected = heldRecords(satisfied?.evidence ?? one.evidence, {
-      disabled,
       mode,
       testFiles: new Set([...one.testFiles, ...support]),
     });
@@ -1049,7 +1048,7 @@ interface EmitterExtra {
 }
 
 /** Reads a run's projects with every per-project fact an emitter reads. */
-function readEmitterRun(
+export function readEmitterRun(
   engine: Engine,
   host: Host,
   scope: Scope,
@@ -1135,7 +1134,7 @@ function nearestManifestDir(host: Host, root: string, file: string): string {
  * The input every emitter reads over one sweep of a read run: the facts beside the sweep
  * each kind family reads, every per-project one read in the same session as the sweep.
  */
-function emitterInputOver(
+export function emitterInputOver(
   host: Host,
   scope: Scope,
   config: Config,
@@ -1188,25 +1187,6 @@ function emitterInputOver(
       new Set([...swept.exempt.map((one) => one.id), ...swept.heldByUnanswered]),
     ),
   };
-}
-
-/**
- * What every emitter reads of the run the scope and the configuration describe, swept
- * under the caller's marks: the run's sweep, the facts beside it each kind family reads,
- * and the sides of the target's declared cross-language edges that name a symbol of this
- * language. The run reads no suppression document, so the self-check family has nothing
- * to report.
- */
-export function runEmitterInput(
-  engine: Engine,
-  host: Host,
-  scope: Scope,
-  config: Config,
-  input: Pick<SweepInput, "marked" | "mode">,
-  detectors: Detectors = DETECTORS,
-): EmitterInput {
-  const read = readEmitterRun(engine, host, scope, config, input.mode, detectors);
-  return emitterInputOver(host, scope, config, read, input, NO_SELF_CHECK);
 }
 
 /** One run read for its findings: the input swept with and without its suppressions' marks. */
@@ -1338,7 +1318,7 @@ export interface RunProject {
 }
 
 /** What a report states about the run beside its findings. */
-export interface RunFacts {
+interface RunFacts {
   /** The projects the run analyzed, in the run's order. */
   readonly projects: readonly RunProject[];
   /** The rules that classified files as test files, each counted over every project at once. */
@@ -1360,7 +1340,7 @@ export interface RunFacts {
 }
 
 /** One configuration whose component files a run cannot read. */
-export interface ComponentsUnread {
+interface ComponentsUnread {
   readonly configFile: string;
   readonly reason: string;
 }

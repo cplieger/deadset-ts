@@ -1,5 +1,4 @@
 ts://@example/named-members/src/page.ts#Page.title	template-field	templates/page.html:1:8	named by [[title]]	template-field	templates/partial/footer.html:1:12	named by [[title | upper]]
 ts://@example/named-members/src/page.ts#Page.body	template-field	templates/page.html:2:12	named by [[page.body]]
-ts://@example/named-members/src/page.ts#Server.reload	reflective-lookup	src/main.ts:12:21	looked up by Reflect.get
 ts://@example/named-members/src/page.ts#Server.refresh	reflective-lookup	src/main.ts:11:8	looked up by ["refresh"]
 ts://@example/named-members/src/page.ts#Server.hidden	reflective-lookup	src/main.ts:14:21	looked up by Reflect.has

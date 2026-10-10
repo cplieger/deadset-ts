@@ -81,8 +81,6 @@ export interface Root {
 
 /** One project's roots, and every configured string that named nothing in it. */
 export interface Roots {
-  /** The compiler configuration the project was opened from. */
-  readonly configFile: string;
   /**
    * Every root of this project, ordered by the site of the declaration it names,
    * then by kind, then by the string that named it. A declaration that is a root for
@@ -432,7 +430,6 @@ export function roots<Brand>(
   });
 
   return {
-    configFile: project.configFile,
     liveUnderReachability: ordered,
     unmatched,
     unanswered: answered ? api.guessed : held.symbols.map((symbol) => symbol.id),

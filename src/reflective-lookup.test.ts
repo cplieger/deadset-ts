@@ -35,7 +35,7 @@ class MemoryWriter implements Writer {
 describe("reflective lookup", () => {
   const swept = sweepFixture();
 
-  it("retains each member a literal key of an element access or a global Reflect call spells, at the key", () => {
+  it("retains each member a literal key of an element access or a global Reflect call spells, at the key, unless a typed key reads it", () => {
     expect(
       swept.retained
         .filter((held) => held.class === "reflective-lookup")
@@ -44,7 +44,6 @@ describe("reflective lookup", () => {
           return `${name ?? held.id} ${held.site.path}:${String(held.site.line)}:${String(held.site.column)} ${held.detail}`;
         }),
     ).toEqual([
-      "Server.reload src/main.ts:12:21 looked up by Reflect.get",
       'Server.refresh src/main.ts:11:8 looked up by ["refresh"]',
       "Server.hidden src/main.ts:14:21 looked up by Reflect.has",
     ]);

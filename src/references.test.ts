@@ -1,10 +1,9 @@
 import { readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { emitterInputOf } from "../__test-helpers__/emitter-input.ts";
+import { emitterInputOf, findingsOf } from "../__test-helpers__/emitter-input.ts";
 import { fixture, ROOT } from "../__test-helpers__/fixtures.ts";
 import { analyzeRoot, writeProject } from "../__test-helpers__/projects.ts";
-import { findingsOf } from "./findings/emitters.ts";
 import type { InventorySymbol } from "./inventory.ts";
 import { positionKey } from "./position.ts";
 import { DEFAULT_BATCH_CAP } from "./query.ts";
@@ -123,14 +122,15 @@ describe("the reference table of every reference form", () => {
       [RESOLVED?.cost.contextualBatches, RESOLVED?.cost.contextualLookups],
       "one batch of contextual types for the object literals, one of value types and one " +
         "of the positions a value that may carry a member reaches, and one lookup per " +
-        "distinct type's constituents, properties, element type or call signature",
-    ).toEqual([3, 16]);
+        "distinct type's constituents, properties, element type, call signature and, for a " +
+        "type with no call signature, construct signature",
+    ).toEqual([3, 18]);
     expect(
       EVERY_REFERENCE.referenceRequests,
       "the requests the client measured are the ones the pass accounts for: a declaration " +
         "outside the project's own files is never fetched to find out that the inventory " +
         "does not hold it",
-    ).toBe(4 + 0 + 4 + 11 + 2 + 2 + 3 + 16);
+    ).toBe(4 + 0 + 4 + 11 + 2 + 2 + 3 + 18);
   });
 
   it("records each decorator as a use of the declaration it is attached to, at the decorator", () => {

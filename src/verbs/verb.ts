@@ -1,5 +1,4 @@
 import type { Config, Inputs } from "../config.ts";
-import type { Emitters } from "../findings/emitter.ts";
 import type { Host } from "../host.ts";
 import type { Writer } from "../run.ts";
 import type { Scope } from "../scope.ts";
@@ -16,7 +15,7 @@ export const EXIT_FAILURE = 3;
  * options that follow its name, read only when the verb asks for what they name, so
  * a verb that asks for nothing refuses no option.
  */
-export interface Invocation {
+interface Invocation {
   readonly out: Writer;
   readonly err: Writer;
   readonly host: Host;
@@ -29,8 +28,6 @@ export interface Invocation {
    * closed if the verb throws.
    */
   readonly openClient: (config: Config) => Engine;
-  /** The emitter of every kind family, which a verb that reports findings runs. */
-  readonly emitters: Emitters;
   /** The arguments after the verb's name, as written. */
   readonly args: readonly string[];
   /** The last value one of the verb's own options was given, undefined where none was. */

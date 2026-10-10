@@ -71,6 +71,8 @@ Three mechanisms keep a finding out of a run. Each one needs a reason.
 
 A suppression that matches nothing is stale. It is reported as `DS1703` and fails the run with exit code 1, so a suppression is removed when the code it covered goes.
 
+A suppression names a declaration, so none can cover a finding about a file, a manifest dependency or a configuration entry: `DS1501`, `DS1502`, `DS1601`, `DS1605` and `DS1701` to `DS1706`. A suppression naming one of those codes is always stale. Fix what the finding names, or set the code's severity under `severity`. `DS1703`, `DS1704` and `DS1706` have a fixed severity, so for those the only fix is the one the finding names.
+
 ## The scope document
 
 A library's published API has callers outside the target. `--scope=FILE` names a JSON document that lists them, so their references keep target declarations live. `target.path` is required, and each entry of `consumers` names a `path`. Both paths are absolute or relative to the directory that holds the document.

@@ -38,7 +38,7 @@ export interface Reached {
 }
 
 /** What each type's values carry, each type asked of the checker once. */
-export interface ValueReach {
+interface ValueReach {
   reachedFrom(type: Type): Reached;
 }
 

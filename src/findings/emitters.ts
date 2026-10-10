@@ -67,7 +67,7 @@ function markupKeys(input: EmitterInput): ReadonlySet<string> {
 }
 
 /** What the suppressions of a run swept under their marks are decided against. */
-export interface Suppressed {
+interface Suppressed {
   /** The same run swept with no mark, which is where a kind about liveness reports a marked declaration. */
   readonly unmarked: EmitterInput;
   /** The run's suppression records, in reading order. */
@@ -75,13 +75,13 @@ export interface Suppressed {
 }
 
 /** What the emitter table answers about one run. */
-export interface DecidedFindings {
+interface DecidedFindings {
   /** Every finding the run reports, each family's in table order. */
   readonly findings: readonly CompletedFinding[];
   /** One evaluation per declared edge side of this language, ordered by edge, then by side. */
   readonly evaluations: readonly EdgeEvaluation<CompletedFinding>[];
   /** What every suppression record did, in reading order. */
-  readonly ledger: Ledger<CompletedFinding>;
+  readonly ledger: Ledger;
   /** Every finding a record could name: the run's with no mark, then the run's as swept. */
   readonly would: readonly CompletedFinding[];
   /** The findings the minimum confidence withheld, by confidence. */
@@ -197,9 +197,4 @@ function withheldOf(input: EmitterInput, candidates: readonly CompletedFinding[]
     }
   }
   return counts;
-}
-
-/** Every finding the run reports, each family's in table order. */
-export function findingsOf(input: EmitterInput): readonly CompletedFinding[] {
-  return decidedFindings(input).findings;
 }

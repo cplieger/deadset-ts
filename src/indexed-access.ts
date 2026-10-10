@@ -271,7 +271,10 @@ export function indexedAccessReferences<Brand>(
   const carried = new Map<Generic, Carried[]>();
   const names = new Set<string>();
   const sites: Site[] = [];
-  /** Calls passing a literal argument whose callee a package binding heads, which a dependency's generic may fix. */
+  /**
+   * Calls passing a literal argument whose callee a package binding heads, or that call a
+   * method, which a dependency's generic may fix.
+   */
   const literalCalls: Site[] = [];
 
   const carry = (generic: Generic, one: Carried): boolean => {
@@ -331,7 +334,12 @@ export function indexedAccessReferences<Brand>(
             (argument) => isStringLiteral(argument) || isNumericLiteral(argument),
           );
           const head = rootName(callee);
-          if (literal && isCallExpression(node) && head !== undefined && imported.has(head)) {
+          const method = isPropertyAccessExpression(callee);
+          if (
+            literal &&
+            isCallExpression(node) &&
+            (method || (head !== undefined && imported.has(head)))
+          ) {
             literalCalls.push(site);
           }
         }

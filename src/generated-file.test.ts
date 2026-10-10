@@ -1,8 +1,7 @@
 import { rmSync } from "node:fs";
 import { afterAll, describe, expect, it } from "vitest";
-import { emitterInputOf } from "../__test-helpers__/emitter-input.ts";
+import { emitterInputOf, findingsOf } from "../__test-helpers__/emitter-input.ts";
 import { writeProject } from "../__test-helpers__/projects.ts";
-import { findingsOf } from "./findings/emitters.ts";
 import { generatedByComment } from "./generated-file.ts";
 import { resolve } from "./resolve.ts";
 

@@ -65,9 +65,6 @@ export interface Suppressions {
   readonly refusals: readonly Refusal[];
 }
 
-/** A target that carries no suppression. */
-export const NO_SUPPRESSIONS: Suppressions = { records: [], refusals: [] };
-
 /**
  * A directive, an entry or a document the grammar refuses before any finding exists: an
  * instruction the analysis cannot carry out. It is a malformed input, so the command line
@@ -151,32 +148,36 @@ export interface Dials<F extends Finding = Finding> {
 }
 
 /** What every record did, and the findings the records withhold. */
-export interface Ledger<F extends Finding = Finding> {
+export interface Ledger {
   /** One verdict per record, in reading order. */
   readonly verdicts: readonly Verdict[];
-  /** Per record, the finding it claimed, where it claimed one. */
-  readonly claims: readonly (F | undefined)[];
   /** Whether a record withholds one finding of the run. */
   readonly withheld: (finding: Finding) => boolean;
 }
 
 /**
- * The subject kinds that are a row of a document rather than a declaration of the program.
- * A record binds to a declaration, so nothing withholds a finding about one.
+ * The subject kinds that are a row of a document rather than a declaration of the program,
+ * each with the codes that report one. A record binds to a declaration, so nothing
+ * withholds a finding about one.
  */
-const ROW_SUBJECTS: ReadonlySet<string> = new Set([
-  "file",
-  "dependency",
-  "module-directive",
-  "root",
-  "configured-declaration",
-  "suppression",
-  "edge",
+const ROW_SUBJECTS: ReadonlyMap<string, readonly string[]> = new Map([
+  ["file", ["DS1501", "DS1502"]],
+  ["dependency", ["DS1601"]],
+  ["module-directive", ["DS1605"]],
+  ["root", ["DS1704"]],
+  ["configured-declaration", ["DS1706"]],
+  ["suppression", ["DS1701", "DS1702", "DS1703"]],
+  ["edge", ["DS1705"]],
 ]);
 
 /** Whether a finding's subject is a row of a document, which no record can withhold. */
 export function isRowSubject(kind: string): boolean {
   return ROW_SUBJECTS.has(kind);
+}
+
+/** Whether a code reports a row of a document, so no record naming it can match. */
+export function isRowCode(code: string): boolean {
+  return [...ROW_SUBJECTS.values()].some((codes) => codes.includes(code));
 }
 
 /**
@@ -242,20 +243,17 @@ export function ledgerOf<F extends Finding>(
   records: readonly SuppressionRecord[],
   would: readonly F[],
   dials: Dials<F>,
-): Ledger<F> {
+): Ledger {
   const taken = new Set<string>();
   const verdicts: Verdict[] = [];
-  const claims: (F | undefined)[] = [];
   for (const record of records) {
     if (record.bound !== "" && dials.withholdsCode(record.code, record.bound)) {
       verdicts.push("dormant");
-      claims.push(undefined);
       continue;
     }
     const claimed = would.find(
       (finding) => !taken.has(claimKey(finding)) && pairs(record, finding),
     );
-    claims.push(claimed);
     if (claimed === undefined) {
       verdicts.push("stale");
       continue;
@@ -265,13 +263,12 @@ export function ledgerOf<F extends Finding>(
   }
   return {
     verdicts,
-    claims,
     withheld: (finding) => taken.has(claimKey(finding)) && !ROW_SUBJECTS.has(finding.symbol.kind),
   };
 }
 
 /** The two suppression counts a report's totals carry. */
-export interface SuppressionCounts {
+interface SuppressionCounts {
   /** The records in effect. */
   readonly inEffect: number;
   /** The directives, entries and rows that carry a reason, each once whatever its codes. */
@@ -279,9 +276,9 @@ export interface SuppressionCounts {
 }
 
 /** The suppression counts of one run's records and the ledger over them. */
-export function suppressionCounts<F extends Finding>(
+export function suppressionCounts(
   records: readonly SuppressionRecord[],
-  ledger: Ledger<F>,
+  ledger: Ledger,
 ): SuppressionCounts {
   const sites = new Set(
     records.map((record) => `${record.mechanism}\u0000${positionKey(record.site)}`),

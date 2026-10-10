@@ -1,16 +1,12 @@
 /**
- * The exemption classes of the Contract's vocabulary, in its order: each class's name,
- * the languages it runs on, the confidence it is recorded at and, for a class that runs
- * on TypeScript, which private members it may retain.
- *
- * The rows are written out rather than read from the Contract at run time, for the
- * reason the fixed severity codes are, and a test holds them equal to the Contract
- * release this analyzer implements. A class name is a type, so a detector table or a
- * record naming a class the vocabulary does not hold, or one that runs on another
- * language only, does not compile.
+ * The exemption classes of the Contract's vocabulary, in its order: each class's name, its
+ * languages and, for a TypeScript class, which private members it may retain. The rows are
+ * written out, as the fixed severity codes are, and a test holds them equal to the Contract.
+ * A class name is a type, so a table or a record naming a class outside the vocabulary, or
+ * one of another language only, does not compile.
  */
 
-import type { Confidence, Language } from "./config.ts";
+import type { Language } from "./config.ts";
 
 /**
  * Whether a class may retain a member declared with the `private` modifier, and one
@@ -27,7 +23,6 @@ export interface TypeScriptVisibility {
 interface ExemptionClassRow {
   readonly class: string;
   readonly languages: readonly Language[];
-  readonly confidence: Confidence;
   /** Present exactly on a class that runs on TypeScript. */
   readonly typescriptVisibility?: TypeScriptVisibility;
 }
@@ -37,59 +32,50 @@ export const EXEMPTION_CLASSES = [
   {
     class: "interface-satisfaction",
     languages: ["go", "ts"],
-    confidence: "certain",
     typescriptVisibility: { private: false, privateName: false },
   },
-  { class: "encoding-reflection", languages: ["go"], confidence: "certain" },
-  { class: "format-verb-contract", languages: ["go"], confidence: "certain" },
-  { class: "errors-duck-typing", languages: ["go"], confidence: "certain" },
+  { class: "encoding-reflection", languages: ["go"] },
+  { class: "format-verb-contract", languages: ["go"] },
+  { class: "errors-duck-typing", languages: ["go"] },
   {
     class: "enum-group",
     languages: ["go", "ts"],
-    confidence: "certain",
     typescriptVisibility: { private: false, privateName: false },
   },
   {
     class: "generated-file",
     languages: ["go", "ts"],
-    confidence: "certain",
     typescriptVisibility: { private: true, privateName: false },
   },
-  { class: "linkname-cgo-asm-plugin", languages: ["go"], confidence: "certain" },
+  { class: "linkname-cgo-asm-plugin", languages: ["go"] },
   {
     class: "template-field",
     languages: ["go", "ts"],
-    confidence: "possible",
     typescriptVisibility: { private: true, privateName: false },
   },
   {
     class: "reflective-lookup",
     languages: ["go", "ts"],
-    confidence: "possible",
     typescriptVisibility: { private: true, privateName: false },
   },
   {
     class: "decorator",
     languages: ["ts"],
-    confidence: "certain",
     typescriptVisibility: { private: true, privateName: false },
   },
   {
     class: "injection-container",
     languages: ["ts"],
-    confidence: "certain",
     typescriptVisibility: { private: true, privateName: false },
   },
   {
     class: "framework-lifecycle",
     languages: ["ts"],
-    confidence: "certain",
     typescriptVisibility: { private: true, privateName: false },
   },
   {
     class: "serialization-contract",
     languages: ["ts"],
-    confidence: "certain",
     typescriptVisibility: { private: true, privateName: false },
   },
 ] as const satisfies readonly ExemptionClassRow[];

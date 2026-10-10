@@ -4,8 +4,8 @@ import { dirnamePath, isAbsolutePath, joinPath, resolvePath } from "./paths.ts";
 import { checkDocument, type KeyNode } from "./schema.ts";
 
 /** The roles a scope document declares for a module. */
-export const ROLE_TARGET = "target";
-export const ROLE_CONSUMER = "consumer";
+const ROLE_TARGET = "target";
+const ROLE_CONSUMER = "consumer";
 
 /**
  * A scope document above this length is refused rather than decoded. It names one

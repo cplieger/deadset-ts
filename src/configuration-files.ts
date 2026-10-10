@@ -69,9 +69,17 @@ export const RESOLVED_EXTENSIONS = [
   ".cjs",
 ] as const;
 
+/** The directory a package manager installs packages into, whose files are no project's own. */
+const MODULES_DIR = "node_modules";
+
 /** The file's name, the last segment of its path. */
 function basename(path: string): string {
   return path.slice(path.lastIndexOf("/") + 1);
+}
+
+/** Whether one path is the project's own: below the target root and in no `node_modules`. */
+function isProjectPath(root: string, path: string): boolean {
+  return relativePath(root, path)?.split("/").includes(MODULES_DIR) === false;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -92,6 +100,8 @@ export function isConfigurationDocumentName(name: string): boolean {
 interface ConfigurationDocument {
   /** The file, absolute. */
   readonly path: string;
+  /** The directories of the manifests whose dependencies the strings are read against. */
+  readonly manifestDirs: readonly string[];
   /** Every string value at any depth, in document order; a member's name is no value. */
   readonly strings: readonly string[];
 }
@@ -100,11 +110,169 @@ interface ConfigurationDocument {
 export type ParseFile = (fileName: string, text: string) => SourceFile;
 
 /** One file no program holds that a configuration module outside the program leads to. */
-export interface OutsideModule {
+interface OutsideModule {
   /** The file, parsed alone. */
   readonly file: SourceFile;
-  /** The directory of the configuration module the file was reached from, which holds its manifest. */
-  readonly manifestDir: string;
+  /** The directories of the manifests of the configuration files the file was reached from. */
+  readonly manifestDirs: readonly string[];
+}
+
+/** The flags a tool's command line names its configuration file with. */
+const CONFIG_FLAGS: ReadonlySet<string> = new Set(["--config", "-c"]);
+
+/** The extensions of a module a configuration flag may name. */
+const MODULE_EXTENSIONS = [".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"] as const;
+
+/** The characters that end a word outside quotes and separate nothing: blanks. */
+const BLANK = /[ \t\r\f\v]/u;
+
+/** The characters that end a word outside quotes and begin an operator: newline included. */
+const OPERATOR = /[\n;&|()<>]/u;
+
+/** The characters a backslash escapes inside double quotes; before any other it stands for itself. */
+const DOUBLE_QUOTE_ESCAPES = new Set(["$", "`", '"', "\\"]);
+
+/**
+ * The words of one command line, as POSIX token recognition reads quotes, backslashes,
+ * line continuations, comments and operators. A word an expansion may change (an unquoted
+ * `$`, backquote, glob character or leading `~`, or a `$` or backquote in double quotes)
+ * is computed, and so is the rest of a line whose quote is never closed. A computed word
+ * and each operator are undefined, so a flag's file is never read across them.
+ */
+function shellWords(command: string): readonly (string | undefined)[] {
+  const words: (string | undefined)[] = [];
+  let word: string | undefined;
+  let computed = false;
+  const end = (): void => {
+    if (word !== undefined) {
+      words.push(computed ? undefined : word);
+    }
+    word = undefined;
+    computed = false;
+  };
+  for (let at = 0; at < command.length; at += 1) {
+    const char = command.charAt(at);
+    if (char === "\\" && command.charAt(at + 1) === "\n") {
+      at += 1;
+    } else if (BLANK.test(char)) {
+      end();
+    } else if (OPERATOR.test(char)) {
+      end();
+      words.push(undefined);
+    } else if (char === "#" && word === undefined) {
+      const newline = command.indexOf("\n", at);
+      at = newline < 0 ? command.length : newline - 1;
+    } else if (char === "\\") {
+      at += 1;
+      word = (word ?? "") + command.charAt(at);
+    } else if (char === "'" || char === '"') {
+      const close = closingQuote(command, at);
+      if (close < 0) {
+        word ??= "";
+        computed = true;
+        break;
+      }
+      const quoted =
+        char === "'"
+          ? { text: command.slice(at + 1, close), computed: false }
+          : doubleQuoted(command.slice(at + 1, close));
+      word = (word ?? "") + quoted.text;
+      computed ||= quoted.computed;
+      at = close;
+    } else {
+      computed ||= /[$`*?[]/u.test(char) || (char === "~" && word === undefined);
+      word = (word ?? "") + char;
+    }
+  }
+  end();
+  return words;
+}
+
+/** The text between one pair of double quotes, unescaped, and whether an expansion may change it. */
+function doubleQuoted(inner: string): { readonly text: string; readonly computed: boolean } {
+  let text = "";
+  let computed = false;
+  for (let at = 0; at < inner.length; at += 1) {
+    const char = inner.charAt(at);
+    const next = inner.charAt(at + 1);
+    if (char === "\\" && next === "\n") {
+      at += 1;
+    } else if (char === "\\" && DOUBLE_QUOTE_ESCAPES.has(next)) {
+      text += next;
+      at += 1;
+    } else {
+      computed ||= char === "$" || char === "`";
+      text += char;
+    }
+  }
+  return { text, computed };
+}
+
+/** The index of the quote that closes the one at `open`, or -1 where none does. */
+function closingQuote(command: string, open: number): number {
+  const quote = command.charAt(open);
+  for (let at = open + 1; at < command.length; at += 1) {
+    const char = command.charAt(at);
+    if (char === quote) {
+      return at;
+    }
+    if (quote === '"' && char === "\\") {
+      at += 1;
+    }
+  }
+  return -1;
+}
+
+/**
+ * The files the scripts of the manifest in one directory name after a configuration flag,
+ * `--config <file>`, `-c <file>` or `--config=<file>`, each a JSON file or a module below
+ * the target root and in no `node_modules`.
+ */
+function scriptConfigurations(host: Host, root: string, dir: string): readonly string[] {
+  let scripts: unknown;
+  try {
+    const manifest: unknown = JSON.parse(host.readFile(joinPath(dir, MANIFEST)));
+    scripts = isRecord(manifest) ? manifest["scripts"] : undefined;
+  } catch {
+    return [];
+  }
+  if (!isRecord(scripts)) {
+    return [];
+  }
+  const found: string[] = [];
+  for (const command of Object.values(scripts)) {
+    if (typeof command !== "string") {
+      continue;
+    }
+    const words = shellWords(command);
+    words.forEach((word, at) => {
+      const named =
+        word !== undefined && CONFIG_FLAGS.has(word)
+          ? words[at + 1]
+          : word === undefined
+            ? undefined
+            : /^--config=(.+)$/su.exec(word)?.[1];
+      const path = named === undefined ? undefined : resolvePath(dir, named);
+      if (
+        path !== undefined &&
+        [".json", ...MODULE_EXTENSIONS].some((extension) => path.endsWith(extension)) &&
+        isProjectPath(root, path) &&
+        host.kindOf(path) === "file"
+      ) {
+        found.push(path);
+      }
+    });
+  }
+  return found;
+}
+
+/** The decoded value of one JSON file, or undefined where it cannot be read or parsed. */
+function readDocument(host: Host, path: string): unknown {
+  try {
+    return JSON.parse(host.readFile(path)) as unknown;
+  } catch {
+    return undefined;
+  }
 }
 
 /** The configuration files one project holds and sits beside. */
@@ -117,7 +285,12 @@ interface ConfigurationFiles {
    * the program does not hold either, read where a parser is given.
    */
   readonly outside: readonly OutsideModule[];
-  /** Every JSON configuration file in a directory of the project's files or above one. */
+  /**
+   * Every JSON configuration file in a directory of the project's files or above one, every
+   * JSON file a script's configuration flag names, and every JSON file below the target
+   * root and in no `node_modules` a relative string of either names, read against each
+   * manifest whose chain reaches it.
+   */
   readonly documents: readonly ConfigurationDocument[];
 }
 
@@ -187,7 +360,8 @@ export function configurationFiles(
     }
   }
 
-  const documents: ConfigurationDocument[] = [];
+  const pending: { path: string; manifestDir: string }[] = [];
+  const named: { path: string; manifestDir: string }[] = [];
   for (const dir of [...dirs].sort()) {
     if (!holdsManifest(dir)) {
       continue;
@@ -200,24 +374,59 @@ export function configurationFiles(
         .map((entry) => entry.name)
         .sort();
     } catch {
+      names = [];
+    }
+    pending.push(...names.map((name) => ({ path: joinPath(dir, name), manifestDir: dir })));
+    for (const path of scriptConfigurations(host, root, dir)) {
+      const held = files.byName.get(path);
+      if (path.endsWith(".json")) {
+        pending.push({ path, manifestDir: dir });
+      } else if (held !== undefined) {
+        modules.push({ file: held, form: "a script's configuration flag" });
+      } else {
+        named.push({ path, manifestDir: dir });
+      }
+    }
+  }
+
+  // A document reached from two manifests is read against each, so a chain is keyed by both.
+  const documents = new Map<string, { path: string; manifestDirs: string[]; strings: string[] }>();
+  const unreadable = new Set<string>();
+  for (let next = pending.shift(); next !== undefined; next = pending.shift()) {
+    let document = documents.get(next.path);
+    if (unreadable.has(next.path) || document?.manifestDirs.includes(next.manifestDir) === true) {
       continue;
     }
-    for (const name of names) {
-      const path = joinPath(dir, name);
-      let value: unknown;
-      try {
-        value = JSON.parse(host.readFile(path));
-      } catch {
+    if (document === undefined) {
+      const value = readDocument(host, next.path);
+      if (value === undefined) {
+        unreadable.add(next.path);
         continue;
       }
-      documents.push({ path, strings: documentStrings(value) });
+      document = { path: next.path, manifestDirs: [], strings: documentStrings(value) };
+      documents.set(next.path, document);
+    }
+    document.manifestDirs.push(next.manifestDir);
+    for (const text of document.strings) {
+      const path = RELATIVE_PREFIXES.some((prefix) => text.startsWith(prefix))
+        ? resolvePath(dirnamePath(next.path), text)
+        : undefined;
+      if (
+        path?.endsWith(".json") === true &&
+        isProjectPath(root, path) &&
+        host.kindOf(path) === "file"
+      ) {
+        pending.push({ path, manifestDir: next.manifestDir });
+      }
     }
   }
   return {
     modules,
-    documents,
+    documents: [...documents.values()],
     outside:
-      parse === undefined ? [] : outsideModules(host, [...dirs], files, holdsManifest, parse),
+      parse === undefined
+        ? []
+        : outsideModules(host, [...dirs], files, holdsManifest, parse, named),
   };
 }
 
@@ -280,8 +489,9 @@ function outsideModules(
   files: SourceFiles,
   holdsManifest: (dir: string) => boolean,
   parse: ParseFile,
+  named: readonly { readonly path: string; readonly manifestDir: string }[],
 ): readonly OutsideModule[] {
-  const pending: { path: string; manifestDir: string }[] = [];
+  const pending: { path: string; manifestDir: string }[] = [...named];
   for (const dir of [...dirs].sort()) {
     if (!holdsManifest(dir)) {
       continue;
@@ -298,29 +508,37 @@ function outsideModules(
     }
     pending.push(...names.map((name) => ({ path: joinPath(dir, name), manifestDir: dir })));
   }
-  const found: OutsideModule[] = [];
-  const seen = new Set<string>();
+  const found = new Map<string, { file: SourceFile; manifestDirs: string[] }>();
+  const unreadable = new Set<string>();
   for (let next = pending.shift(); next !== undefined; next = pending.shift()) {
-    if (seen.has(next.path) || files.byName.has(next.path)) {
+    let outside = found.get(next.path);
+    if (
+      unreadable.has(next.path) ||
+      files.byName.has(next.path) ||
+      outside?.manifestDirs.includes(next.manifestDir) === true
+    ) {
       continue;
     }
-    seen.add(next.path);
-    let text: string;
-    try {
-      text = host.readFile(next.path);
-    } catch {
-      continue;
+    if (outside === undefined) {
+      let text: string;
+      try {
+        text = host.readFile(next.path);
+      } catch {
+        unreadable.add(next.path);
+        continue;
+      }
+      outside = { file: parse(next.path, text), manifestDirs: [] };
+      found.set(next.path, outside);
     }
-    const file = parse(next.path, text);
-    found.push({ file, manifestDir: next.manifestDir });
-    for (const specifier of relativeSpecifiers(file)) {
+    outside.manifestDirs.push(next.manifestDir);
+    for (const specifier of relativeSpecifiers(outside.file)) {
       const reached = resolveRelativeSpecifier(host, dirnamePath(next.path), specifier);
       if (reached !== undefined) {
         pending.push({ path: reached, manifestDir: next.manifestDir });
       }
     }
   }
-  return found;
+  return [...found.values()];
 }
 
 /** Every dependency the manifest in one directory declares, or none where it holds none to read. */
