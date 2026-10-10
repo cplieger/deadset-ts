@@ -1,8 +1,7 @@
 import { rmSync } from "node:fs";
 import { afterAll, describe, expect, it } from "vitest";
-import { emitterInputOf } from "../__test-helpers__/emitter-input.ts";
+import { emitterInputOf, findingsOf } from "../__test-helpers__/emitter-input.ts";
 import { writeProject } from "../__test-helpers__/projects.ts";
-import { findingsOf } from "./findings/emitters.ts";
 import { resolve } from "./resolve.ts";
 
 /**
@@ -98,5 +97,66 @@ describe("a test-support interface test code references", () => {
           `${code} ${reachabilityClass} root=${String(component.root)} symbols=${String(component.symbolCount)}`,
       ),
     ).toEqual(["DS1201 possible root=true symbols=3"]);
+  });
+});
+
+describe("a file the test runner's configuration names as a setup file", () => {
+  /** The findings in `registry.ts` of an application whose setup file at `setup` clears it. */
+  const registryFindings = (configuration: string, setup: string): string[] => {
+    const root = writeProject({
+      "package.json":
+        '{ "name": "@example/app", "type": "module", "main": "./main.ts", "devDependencies": { "vitest": "5.0.0" } }\n',
+      "node_modules/vitest/package.json": '{ "name": "vitest", "version": "5.0.0" }\n',
+      "main.ts": "console.log(1);\n",
+      "vitest.config.ts": configuration,
+      [setup]: `import { clear } from "${setup.includes("/") ? ".." : "."}/registry.js";\n\nclear();\n`,
+      "registry.ts":
+        "const held: number[] = [];\n\nexport function record(one: number): void {\n  held.push(one);\n}\n\nexport function clear(): void {\n  held.length = 0;\n}\n",
+      "app.test.ts": 'import { record } from "./registry.js";\n\nrecord(1);\n',
+    });
+    roots.push(root);
+    const repository = JSON.stringify({
+      target: { kind: "application" },
+      analysis: { min_confidence: "possible" },
+    });
+    const { config } = resolve({ repository, repositoryLabel: "deadset.json" });
+    return findingsOf(emitterInputOf(root, config))
+      .filter((finding) => finding.position.path === "registry.ts")
+      .map((finding) => `${finding.code} ${finding.symbol.name} ${finding.reachabilityClass}`)
+      .sort();
+  };
+  const TEST_ONLY = ["DS1004 clear possible", "DS1004 held possible", "DS1004 record possible"];
+
+  it("is a test file, so what only it and test code reference is test code", () => {
+    expect(
+      registryFindings(
+        'export default { test: { setupFiles: ["./registry-setup.ts"] } };\n',
+        "registry-setup.ts",
+      ),
+    ).toEqual(TEST_ONLY);
+  });
+
+  it("is read against the project root the configuration moves, test.root before root", () => {
+    expect(
+      registryFindings(
+        'export default { root: "./test", test: { setupFiles: "./registry-setup.ts" } };\n',
+        "test/registry-setup.ts",
+      ),
+    ).toEqual(TEST_ONLY);
+    expect(
+      registryFindings(
+        'export default { root: "./elsewhere", test: { root: "test", setupFiles: ["./registry-setup.ts"] } };\n',
+        "test/registry-setup.ts",
+      ),
+    ).toEqual(TEST_ONLY);
+  });
+
+  it("is not read where the project root is not a string literal", () => {
+    expect(
+      registryFindings(
+        'export default { root: process.cwd(), test: { setupFiles: "./test/registry-setup.ts" } };\n',
+        "test/registry-setup.ts",
+      ),
+    ).toEqual(["DS1004 record certain"]);
   });
 });

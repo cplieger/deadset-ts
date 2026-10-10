@@ -37,7 +37,7 @@ const NO_REASON = new RegExp(DIRECTIVE_EXPRESSIONS.noReason);
 const DIRECTIVE_FORM = "// deadset:ignore DS0000[,DS0000...] -- <reason>";
 
 /** What the grammar's decision procedure makes of one comment. */
-export type Directive =
+type Directive =
   | { readonly is: "none" }
   | { readonly is: "directive"; readonly codes: readonly string[]; readonly reason: string }
   | { readonly is: "no-reason"; readonly codes: readonly string[] }
@@ -64,7 +64,7 @@ export function classifyComment(text: string): Directive {
 }
 
 /** One `//` line comment: the offset of its first solidus, and its text to the end of its line. */
-export interface LineComment {
+interface LineComment {
   readonly offset: number;
   readonly text: string;
 }
@@ -123,7 +123,7 @@ export function tokenStart(text: string, from: number): number {
  * syntax tree holds are skipped, so a `//` inside a string, a template or a regular
  * expression starts nothing.
  */
-export function lineComments(file: SourceFile): readonly LineComment[] {
+function lineComments(file: SourceFile): readonly LineComment[] {
   const text = file.text;
   const spans: { readonly start: number; readonly end: number }[] = [];
   const visit = (node: Node): void => {

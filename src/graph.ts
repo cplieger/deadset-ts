@@ -87,13 +87,13 @@ export interface Edge {
 }
 
 /** How many references one declaration carries, split by the classification of the file that made each. */
-export interface Counts {
+interface Counts {
   readonly production: number;
   readonly test: number;
 }
 
 /** One root the inventory holds, at the position of the declaration it names. */
-export interface Rooted {
+interface Rooted {
   readonly at: number;
   readonly kind: RootKind;
 }

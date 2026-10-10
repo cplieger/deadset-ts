@@ -20,7 +20,7 @@ import {
 import { workspaceResolver } from "./workspace-resolution.ts";
 
 /** One run's workspace. */
-export interface WorkspaceRun {
+interface WorkspaceRun {
   /** Per configuration that imports a member, how the snapshot reads it. */
   readonly programs: ReadonlyMap<string, WorkspaceProgram>;
   /**

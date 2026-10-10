@@ -1,10 +1,9 @@
 import { rmSync } from "node:fs";
 import { afterAll, describe, expect, it } from "vitest";
-import { emitterInputOf } from "../../__test-helpers__/emitter-input.ts";
+import { emitterInputOf, findingsOf } from "../../__test-helpers__/emitter-input.ts";
 import { writeProject } from "../../__test-helpers__/projects.ts";
 import type { CompletedFinding } from "../finding.ts";
 import { resolve } from "../resolve.ts";
-import { findingsOf } from "./emitters.ts";
 
 /** The bound on one case, each of which loads a whole target. */
 const LOAD_TIMEOUT = 60_000;

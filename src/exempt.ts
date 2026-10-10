@@ -64,9 +64,7 @@ export type Detector = <Brand>(input: DetectorInput<Brand>) => readonly Evidence
 export type Detectors = ReadonlyMap<TSExemptionClass, Detector>;
 
 /** What decides which records of one project stand. */
-export interface Holding {
-  /** The classes the configuration switches off, whose detectors do not run. */
-  readonly disabled: ReadonlySet<ExemptionClass>;
+interface Holding {
   readonly mode: Mode;
   /** The paths the reference pass classified as test files. */
   readonly testFiles: ReadonlySet<string>;
@@ -154,23 +152,8 @@ function detected<Brand>(
   }
 }
 
-/**
- * The records one project's detectors found, each class in the vocabulary's order and
- * none of a switched-off class. Evidence on a private member the class's row says it
- * cannot retain is dropped first, whatever the detector found. Under a production mode
- * a record whose evidence is written in a test file holds nothing, as a reference a
- * test file makes is none there.
- */
-export function computeExemptions<Brand>(
-  input: DetectorInput<Brand>,
-  detectors: Detectors,
-  holding: Holding,
-): readonly Exemption[] {
-  return detectExemptions(input, detectors, holding).records;
-}
-
 /** One project's records, and the evidence a production mode found in a test file. */
-export interface Detected {
+interface Detected {
   readonly records: readonly Exemption[];
   /**
    * Under a production mode, each record whose evidence is written in a test file. It
@@ -180,18 +163,11 @@ export interface Detected {
   readonly inTestFiles: readonly Exemption[];
 }
 
-/** The records of {@link computeExemptions}, beside the test-file evidence it set aside. */
-export function detectExemptions<Brand>(
-  input: DetectorInput<Brand>,
-  detectors: Detectors,
-  holding: Holding,
-): Detected {
-  return heldRecords(evidenceRecords(input, detectors, holding.disabled), holding);
-}
-
 /**
  * Every record one project's detectors found, one per piece of evidence, before the
- * mode decides which of them hold: what {@link heldRecords} reads.
+ * mode decides which of them hold: what {@link heldRecords} reads. Classes run in the
+ * vocabulary's order and a switched-off class runs not at all; evidence on a private
+ * member the class's row says it cannot retain is dropped, whatever the detector found.
  */
 export function evidenceRecords<Brand>(
   input: DetectorInput<Brand>,

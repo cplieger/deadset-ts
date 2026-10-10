@@ -2,7 +2,7 @@ import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { nodeHost } from "../../bin/node-host.ts";
-import { emitterInputOf } from "../../__test-helpers__/emitter-input.ts";
+import { emitterInputOf, findingsOf as reportedOf } from "../../__test-helpers__/emitter-input.ts";
 import { fixture } from "../../__test-helpers__/fixtures.ts";
 import { writeProject } from "../../__test-helpers__/projects.ts";
 import type { Config } from "../config.ts";
@@ -11,7 +11,6 @@ import { resolve } from "../resolve.ts";
 import { run, type Writer } from "../run.ts";
 import type { Mode } from "../sweep.ts";
 import type { EmitterInput } from "./emitter.ts";
-import { findingsOf as reportedOf } from "./emitters.ts";
 
 const TARGET = fixture("projects", "reads-and-writes");
 const PRODUCTION: Mode = { production: true };

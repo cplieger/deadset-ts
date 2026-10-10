@@ -1,10 +1,9 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { emitterInputOf } from "../__test-helpers__/emitter-input.ts";
+import { emitterInputOf, findingsOf } from "../__test-helpers__/emitter-input.ts";
 import { fixture } from "../__test-helpers__/fixtures.ts";
 import { analyzeProject, analyzeRoot } from "../__test-helpers__/projects.ts";
-import { findingsOf } from "./findings/emitters.ts";
 import { positionKey } from "./position.ts";
 import { resolve } from "./resolve.ts";
 import type { ReferenceCost } from "./references.ts";

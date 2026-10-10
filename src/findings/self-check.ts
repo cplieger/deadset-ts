@@ -1,8 +1,10 @@
 import { REPOSITORY_DOCUMENT } from "../config.ts";
 import type { Finding, FindingDetails, SuppressionEntry } from "../finding.ts";
 import type { InventorySymbol } from "../inventory.ts";
+import { FIXED_SEVERITY_CODES } from "../kinds.ts";
 import type { Position } from "../position.ts";
 import {
+  isRowCode,
   STALE_SUPPRESSION,
   SUPPRESSION_WITHOUT_REASON,
   type Mechanism,
@@ -57,14 +59,6 @@ interface UnmatchedDeclaration {
   /** The document below the target root that declared the key, empty where none did. */
   readonly document: string;
 }
-
-/** A run with nothing for the self-check family to report. */
-export const NO_SELF_CHECK: SelfCheckFacts = {
-  refusals: [],
-  unmatchedRoots: [],
-  rootsDocument: "",
-  unmatchedDeclarations: [],
-};
 
 /** The words a message names a mechanism by. */
 const WRITTEN: Readonly<Record<Mechanism, string>> = {
@@ -122,7 +116,7 @@ function writtenEntry(refused: Refusal): SuppressionEntry {
 }
 
 /** Each file of the run by its path, as the reference of the file it is. */
-export type FileRefs = (path: string) => string | undefined;
+type FileRefs = (path: string) => string | undefined;
 
 /**
  * The reference a finding about a suppression names: the symbol it names or bound, else
@@ -133,10 +127,7 @@ function suppressionRef(symbol: string, path: string, files: FileRefs): string {
 }
 
 /** One finding per refused suppression: the grammar's reason refusal and its scope refusal. */
-export function refusedSuppressions(
-  refusals: readonly Refusal[],
-  files: FileRefs,
-): readonly Finding[] {
+function refusedSuppressions(refusals: readonly Refusal[], files: FileRefs): readonly Finding[] {
   return refusals.map((refused) =>
     aboutSuppression(
       refused.reported,
@@ -190,7 +181,19 @@ export function staleSuppressions(
     const reports = [...new Set(records.flatMap((one) => one.reports))]
       .filter((code) => !codes.includes(code))
       .sort();
-    const instead = reports.length === 0 ? "" : `, and its declaration reports ${spelled(reports)}`;
+    const rows = codes.filter(isRowCode);
+    const settable = rows.filter((code) => !FIXED_SEVERITY_CODES.includes(code));
+    const remedy =
+      settable.length === 0
+        ? "fix what the finding names instead"
+        : `fix what the finding names or set the severity of ${spelled(settable)} instead`;
+    const declared = reports.length === 0 ? "" : `its declaration reports ${spelled(reports)}`;
+    const instead =
+      rows.length > 0
+        ? `, because ${spelled(rows)} ${rows.length === 1 ? "reports a row" : "report rows"} of a document, which no suppression can name; ${remedy}${declared === "" ? "" : `; ${declared}`}`
+        : declared === ""
+          ? ""
+          : `, and ${declared}`;
     return {
       code: STALE_SUPPRESSION,
       mechanism: first.mechanism,

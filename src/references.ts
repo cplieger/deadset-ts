@@ -78,7 +78,7 @@ import { handedOn, valuesOf } from "./value-flow.ts";
  * `decorator` names the declaration a decorator expression is attached to, which the
  * decorator receives when the class is defined.
  */
-export type Use = "read" | "write" | "evaluation" | "decorator";
+type Use = "read" | "write" | "evaluation" | "decorator";
 
 /**
  * Which path answered for one reference: `batch`, a file's batched lookup; `resolved-symbol`, the
@@ -88,7 +88,7 @@ export type Use = "read" | "write" | "evaluation" | "decorator";
  * or a value's position reads; `override`, the override a base call dispatches to; `keyed`, the
  * member a symbol key selects; `by-name`, each declaration so spelled, where the checker failed.
  */
-export type Resolution =
+type Resolution =
   | "batch"
   | "resolved-symbol"
   | "shorthand"
@@ -189,8 +189,6 @@ export interface ReferenceCost {
 
 /** One project's references, in position order, and what reading them cost. */
 export interface References {
-  /** The compiler configuration the project was opened from. */
-  readonly configFile: string;
   readonly references: readonly Reference[];
   /**
    * Every file the rules classified as a test file, by its path below the target root,
@@ -214,6 +212,8 @@ export interface ReferenceOptions {
    * Each pattern is a rule of its own, which {@link testFileRulesOf} counts.
    */
   readonly testFiles: readonly string[];
+  /** The files, absolute, that are test files beside those the patterns name. */
+  readonly testFileNames?: ReadonlySet<string>;
   /**
    * The consumer whose files the pass walks instead of the target's. Its files are the
    * program's own files below its root and not below the target root, each position is
@@ -1225,7 +1225,9 @@ export function references<Brand>(
   const testFile = new Map<SourceFile, boolean>();
   for (const { file } of walked) {
     const path = renderPosition(file, root, 0).path;
-    const test = patterns.some((pattern) => pattern.test(path));
+    const test =
+      patterns.some((pattern) => pattern.test(path)) ||
+      options.testFileNames?.has(file.fileName) === true;
     testFile.set(file, test);
     if (test) {
       tests.push(path);
@@ -1569,7 +1571,6 @@ export function references<Brand>(
   );
 
   return {
-    configFile: project.configFile,
     references:
       consumer === undefined
         ? found

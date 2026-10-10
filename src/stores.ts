@@ -37,7 +37,7 @@ export interface Stores {
 }
 
 /** What one configuration contributes to the run's stores. */
-export interface ConfigurationStores {
+interface ConfigurationStores {
   readonly references: readonly Reference[];
   readonly accessors: readonly string[];
 }

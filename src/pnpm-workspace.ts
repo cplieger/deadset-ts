@@ -6,7 +6,7 @@
  */
 
 /** What the document says about `packages`. */
-export type PnpmPackages =
+type PnpmPackages =
   | { readonly kind: "listed"; readonly patterns: readonly string[] }
   /** The document declares no `packages` key. */
   | { readonly kind: "absent" }

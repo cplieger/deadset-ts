@@ -1,11 +1,21 @@
 import { nodeHost } from "../bin/node-host.ts";
-import { runEmitterInput, type RunSweep } from "../src/analysis.ts";
+import { DETECTORS, emitterInputOver, readEmitterRun, type RunSweep } from "../src/analysis.ts";
 import type { Config } from "../src/config.ts";
+import type { CompletedFinding } from "../src/finding.ts";
 import type { EmitterInput } from "../src/findings/emitter.ts";
-import { NO_SELF_CHECK } from "../src/findings/self-check.ts";
+import { decidedFindings } from "../src/findings/emitters.ts";
+import type { SelfCheckFacts } from "../src/findings/self-check.ts";
 import { scopeForDir } from "../src/scope.ts";
 import { openEngine, type Engine } from "../src/session.ts";
 import type { Mode } from "../src/sweep.ts";
+
+/** A run with nothing for the self-check family to report. */
+const NO_SELF_CHECK: SelfCheckFacts = {
+  refusals: [],
+  unmatchedRoots: [],
+  rootsDocument: "",
+  unmatchedDeclarations: [],
+};
 
 /**
  * How one target is swept: by which client, in which mode, production by default, under
@@ -18,19 +28,32 @@ export interface SweptBy {
   readonly consumers?: readonly string[];
 }
 
-/** What every emitter reads of one target, swept under one configuration. */
+/**
+ * What every emitter reads of one target, swept under one configuration. The run reads
+ * no suppression document, so the self-check family has nothing to report.
+ */
 export function emitterInputOf(target: string, config: Config, by: SweptBy = {}): EmitterInput {
   const host = nodeHost();
-  return runEmitterInput(
-    by.engine ?? openEngine({ collectTiming: false }),
+  const scope = {
+    ...scopeForDir(host, target),
+    consumers: (by.consumers ?? []).map((path) => ({ id: "", path })),
+  };
+  const mode = by.mode ?? { production: true };
+  const engine = by.engine ?? openEngine({ collectTiming: false });
+  const read = readEmitterRun(engine, host, scope, config, mode, DETECTORS);
+  return emitterInputOver(
     host,
-    {
-      ...scopeForDir(host, target),
-      consumers: (by.consumers ?? []).map((path) => ({ id: "", path })),
-    },
+    scope,
     config,
-    { marked: by.marked ?? [], mode: by.mode ?? { production: true } },
+    read,
+    { marked: by.marked ?? [], mode },
+    NO_SELF_CHECK,
   );
+}
+
+/** Every finding the run reports, each family's in table order. */
+export function findingsOf(input: EmitterInput): readonly CompletedFinding[] {
+  return decidedFindings(input).findings;
 }
 
 /**

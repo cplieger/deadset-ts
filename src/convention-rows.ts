@@ -53,6 +53,16 @@ export interface PackageKey {
   readonly files: readonly string[];
 }
 
+/** One configuration property whose strings name files the test runner loads beside the tests. */
+export interface TestFileReading extends MoveReading {
+  /**
+   * The properties that move the directory the strings are read against, the first one the
+   * file writes deciding, read against the manifest's directory, which stands where none is
+   * written. A value that is not one string literal leaves the file's strings unread.
+   */
+  readonly roots: readonly string[];
+}
+
 /** One directory a row's globs name that a configuration property moves. */
 export interface DirectoryMove {
   /** The placeholder the row's globs and later moves write as `<id>`. */
@@ -91,6 +101,8 @@ export interface ConventionRow {
    * string there names no file the tool runs or loads.
    */
   readonly selections?: readonly MoveReading[];
+  /** The properties whose strings name a file the test runner loads beside the tests, a test file. */
+  readonly testFiles?: readonly TestFileReading[];
   /**
    * The members whose strings name a package the tool loads: the package itself, a
    * subpath of it, or the package followed by `:` and a name.
@@ -143,6 +155,12 @@ const BABEL_CONFIG = [
 const STRYKER_CONFIG = "{stryker,.stryker}.{conf,config}.{json,js,mjs,cjs}";
 const STRYKER_MODULE = "{stryker,.stryker}.{conf,config}.{js,mjs,cjs}";
 const VITEST_CONFIG = `{vitest,vite}.config.${ANY_MODULE}`;
+
+/**
+ * The properties Vitest takes its project root from, `test.root` before Vite's `root`; it
+ * resolves `setupFiles` against that root (https://vitest.dev/config/setupfiles).
+ */
+const VITEST_ROOTS = ["test.root", "root"] as const;
 
 /** The entry files of an Angular CLI project, at the workspace root or below `projects`. */
 const ANGULAR_ENTRIES = [
@@ -642,5 +660,6 @@ export const CONVENTION_ROWS: readonly ConventionRow[] = [
       { property: "test.coverage.include", files: [VITEST_CONFIG] },
       { property: "test.coverage.exclude", files: [VITEST_CONFIG] },
     ],
+    testFiles: [{ property: "test.setupFiles", files: [VITEST_CONFIG], roots: VITEST_ROOTS }],
   },
 ];

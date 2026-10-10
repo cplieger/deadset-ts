@@ -20,7 +20,7 @@ import type { Provenance, Recorded } from "./suppress-file.ts";
 import { EXIT_CLEAN, EXIT_FINDINGS } from "./verbs/verb.ts";
 
 /** The counts a report's totals carry beside its findings. */
-export interface PassTotals {
+interface PassTotals {
   readonly suppressionsInEffect: number;
   readonly reasonsRecorded: number;
   readonly staleSuppressions: number;
@@ -40,7 +40,7 @@ export interface PassResult {
   readonly edgeEvaluations: readonly EdgeEvaluation<CompletedFinding>[];
   readonly totals: PassTotals;
   /** What every suppression record did, in reading order. */
-  readonly ledger: Ledger<CompletedFinding>;
+  readonly ledger: Ledger;
 }
 
 /** The exit code of a report holding at least one pending finding. */

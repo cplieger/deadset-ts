@@ -16,7 +16,7 @@ import { dirnamePath, joinPath, relativePath, resolvePath } from "./paths.ts";
 import type { SourceFiles } from "./source-files.ts";
 
 /** One file a script loads, and the value or specifier that named it. */
-export interface HTMLEntry {
+interface HTMLEntry {
   readonly file: SourceFile;
   readonly source: string;
 }

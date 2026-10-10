@@ -42,7 +42,7 @@ export interface Component {
 }
 
 /** What a report carries for one dead component under one cascade mode. */
-export interface Listing {
+interface Listing {
   readonly roots: readonly string[];
   /** Every member under the full mode, and nothing under the default one. */
   readonly members: readonly string[];

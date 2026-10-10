@@ -59,7 +59,7 @@ const SECTIONS: readonly (readonly [string, DependencySection])[] = [
 const PROJECT_OWNER = "";
 
 /** One dependency a manifest the run reads declares. */
-export interface DeclaredDependency {
+interface DeclaredDependency {
   readonly name: string;
   readonly section: DependencySection;
   /** Where the manifest writes the dependency's key, below the target root. */
@@ -78,7 +78,7 @@ export function configurationNeeds(packages: readonly string[]): ProjectNeeds {
 }
 
 /** What the installed copy of one declared dependency states about itself. */
-export interface InstalledDependency {
+interface InstalledDependency {
   /** The commands its manifest's `bin` declares, by name. */
   readonly commands: readonly string[];
 }
@@ -366,16 +366,20 @@ export function projectNeeds<Brand>(
       use(ownersOf(file, held, node), dependenciesNamed(text, names));
     }
   }
-  for (const document of configuration.documents) {
-    const names = declaredAt(document.path);
-    for (const text of document.strings) {
-      use([PROJECT_OWNER], dependenciesNamed(text, names));
+  for (const { strings, manifestDirs } of configuration.documents) {
+    for (const manifestDir of manifestDirs) {
+      const names = declaredAt(joinPath(manifestDir, "package.json"));
+      for (const text of strings) {
+        use([PROJECT_OWNER], dependenciesNamed(text, names));
+      }
     }
   }
-  for (const { file, manifestDir } of configuration.outside) {
-    const names = declaredAt(joinPath(manifestDir, "package.json"));
-    for (const { text } of moduleStrings(file)) {
-      use([PROJECT_OWNER], dependenciesNamed(text, names));
+  for (const { file, manifestDirs } of configuration.outside) {
+    for (const manifestDir of manifestDirs) {
+      const names = declaredAt(joinPath(manifestDir, "package.json"));
+      for (const { text } of moduleStrings(file)) {
+        use([PROJECT_OWNER], dependenciesNamed(text, names));
+      }
     }
   }
   return { packages, uses, unanswered };

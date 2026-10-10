@@ -34,7 +34,7 @@ export class DiscoveryError extends Error {
 const ERROR_CATEGORY: number = DiagnosticCategory.Error;
 
 /** Whether one diagnostic is an error, which is what fails a run closed. */
-export function isError(diagnostic: Diagnostic): boolean {
+function isError(diagnostic: Diagnostic): boolean {
   return diagnostic.category === ERROR_CATEGORY;
 }
 
@@ -113,7 +113,7 @@ export function projectErrors(sets: ProjectDiagnostics): ProjectErrors {
 }
 
 /** One project a run analyzes. */
-export interface DiscoveredProject {
+interface DiscoveredProject {
   /**
    * The name a run gives the project: the identifier the build matrix declares for
    * it, or, for a project discovery derived, its configuration file's path below the
@@ -162,7 +162,7 @@ export function isGuess(discovery: Discovery, configFile: string): boolean {
 }
 
 /** Every project discovery found, and where each came from. */
-export interface Discovery {
+interface Discovery {
   /** The projects, in discovery order, each once. */
   readonly projects: readonly DiscoveredProject[];
   /**

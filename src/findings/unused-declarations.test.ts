@@ -1,14 +1,14 @@
 import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { emitterInputOf } from "../../__test-helpers__/emitter-input.ts";
+import { emitterInputOf, findingsOf } from "../../__test-helpers__/emitter-input.ts";
 import { fixture } from "../../__test-helpers__/fixtures.ts";
 import { writeProject } from "../../__test-helpers__/projects.ts";
 import type { Config } from "../config.ts";
 import type { CompletedFinding } from "../finding.ts";
 import { resolve } from "../resolve.ts";
 import type { EmitterInput } from "./emitter.ts";
-import { EMITTERS, findingsOf } from "./emitters.ts";
+import { EMITTERS } from "./emitters.ts";
 
 /** The codes of this family. */
 const FAMILY = /^DS10[0-9]{2}$/u;

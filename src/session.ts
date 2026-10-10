@@ -417,7 +417,6 @@ export function ownedAs<Brand>(
 
 /** Every diagnostic set a project is refused for carrying an error in. */
 export interface ProjectDiagnostics {
-  readonly configFile: string;
   readonly syntactic: readonly Diagnostic[];
   readonly semantic: readonly Diagnostic[];
   readonly configParsing: readonly Diagnostic[];
@@ -431,7 +430,6 @@ export interface ProjectDiagnostics {
 /** The three diagnostic sets one project carries, read before any analysis. */
 export function diagnosticsOf<Brand>(project: ProjectView<Brand>): ProjectDiagnostics {
   return {
-    configFile: project.configFile,
     syntactic: project.program.getSyntacticDiagnostics(),
     semantic: project.program.getSemanticDiagnostics(),
     configParsing: project.program.getConfigFileParsingDiagnostics(),

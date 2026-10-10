@@ -22,7 +22,7 @@ const DECLARATION_FILE = /\.d\.(?:[^./]+\.)?[mc]?ts$/u;
 const LINE_BREAK = /\r\n|[\n\r\u2028\u2029]/gu;
 
 /** One source file below the target root. */
-export interface TreeFile {
+interface TreeFile {
   /** The path below the target root, with the solidus as separator. */
   readonly path: string;
   /** The stable reference of the file's module. */

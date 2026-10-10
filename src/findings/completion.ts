@@ -85,6 +85,35 @@ function reachabilityClasses(input: EmitterInput): (id: string) => Confidence {
 }
 
 /**
+ * The confidence ceiling of a test of dead code: the lowest reachability class among the
+ * target symbols it references, because its deadness is theirs, whether or not they share
+ * its component. Every other declaration has none below `certain`.
+ */
+function testCeilings(
+  input: EmitterInput,
+  classOf: (id: string) => Confidence,
+): (id: string) => Confidence {
+  const union = input.swept.matrix.union;
+  const tests = new Set(
+    input.swept.sweep.candidates.filter((one) => one.testOfDeadCode).map((one) => one.id),
+  );
+  return (id) => {
+    let lowest: Confidence = "certain";
+    if (!tests.has(id)) {
+      return lowest;
+    }
+    for (const edge of union.out[union.at(id)] ?? []) {
+      const target = union.symbols[edge.to];
+      const testCode = union.test[edge.to] === true || union.support[edge.to] === true;
+      if (target !== undefined && !testCode && union.subject[edge.to] === true) {
+        lowest = capped(lowest, classOf(target.id));
+      }
+    }
+    return lowest;
+  };
+}
+
+/**
  * The component each dead declaration of the run falls in, and none for a live one, with
  * its members listed in the canonical order where the run lists a component in full.
  */
@@ -154,6 +183,7 @@ export function completed(
   );
   const candidates = new Map(swept.sweep.candidates.map((candidate) => [candidate.id, candidate]));
   const classOf = reachabilityClasses(input);
+  const ceilingOf = testCeilings(input, classOf);
   const componentOf = findingComponents(swept, input.config.reporters.cascade);
   let minted = swept.sweep.components.length;
   const dead = new Set(swept.sweep.components.map((component) => component.id));
@@ -212,6 +242,11 @@ export function completed(
     const reachabilityClass =
       judged === undefined ? (finding.reachabilityClass ?? "certain") : classOf(judged.id);
     const generated = input.files.generated?.has(finding.position.path) === true;
+    const fixability = generated ? "none" : row.fixability;
+    const lastUses =
+      fixability === "deletable" && candidate !== undefined
+        ? input.dependencies.lastUses.get(candidate.id)
+        : undefined;
     return {
       code: finding.code,
       kind: row.name,
@@ -219,7 +254,10 @@ export function completed(
       position: finding.position,
       symbol: finding.symbol,
       reachabilityClass,
-      confidence: capped(reachabilityClass, row.maxClass),
+      confidence: capped(
+        capped(reachabilityClass, row.maxClass),
+        judged === undefined ? "certain" : ceilingOf(judged.id),
+      ),
       ...(candidate === undefined ? {} : { livenessRelation: candidate.relation }),
       testOnly: judged !== undefined && counts?.production === 0 && counts.test > 0,
       generated,
@@ -231,10 +269,13 @@ export function completed(
           ? swept.matrix.configurations
           : (swept.matrix.heldIn[at] ?? swept.matrix.configurations)),
       consumersLoaded: input.boundary.consumers.loaded,
-      fixability: generated ? "none" : row.fixability,
+      fixability,
       severity: severityOf(input, finding.code, row.defaultSeverity),
       message: finding.message,
-      details: finding.details ?? {},
+      details:
+        lastUses === undefined
+          ? (finding.details ?? {})
+          : { ...finding.details, removesLastUseOf: lastUses },
     };
   });
   return componentCapped(done, dead);
@@ -287,6 +328,7 @@ export function dialsOf(
 ): Dials<CompletedFinding> {
   const minConfidence = input.config.analysis.minConfidence;
   const classOf = reachabilityClasses(input);
+  const ceilingOf = testCeilings(input, classOf);
   const components = new Set(
     findings
       .filter((finding) => finding.component.root && dialed(finding, minConfidence))
@@ -300,7 +342,7 @@ export function dialsOf(
         dialed(
           {
             severity: severityOf(input, code, row.defaultSeverity),
-            confidence: capped(classOf(id), row.maxClass),
+            confidence: capped(capped(classOf(id), row.maxClass), ceilingOf(id)),
           },
           minConfidence,
         )

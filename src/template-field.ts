@@ -22,7 +22,7 @@ import { isAbsolutePath, joinPath, normalizePath, relativePath } from "./paths.t
 import { isComponentFile, type Position } from "./position.ts";
 
 /** One template, by its path below the target root. */
-export interface TemplateFile {
+interface TemplateFile {
   readonly path: string;
   readonly text: string;
 }

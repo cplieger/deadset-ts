@@ -2,13 +2,12 @@ import { cpSync, mkdtempSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { emitterInputOf } from "../../__test-helpers__/emitter-input.ts";
+import { emitterInputOf, findingsOf } from "../../__test-helpers__/emitter-input.ts";
 import { fixture } from "../../__test-helpers__/fixtures.ts";
 import { writeProject } from "../../__test-helpers__/projects.ts";
 import type { Config } from "../config.ts";
 import type { CompletedFinding } from "../finding.ts";
 import { resolve } from "../resolve.ts";
-import { findingsOf } from "./emitters.ts";
 
 /** The configuration one target's own document resolves to. */
 function configOf(target: string): Config {
@@ -339,5 +338,38 @@ describe("the confidence of a dead component", () => {
       "DS1005 probe possible",
       "DS1004 testedOnly possible",
     ]);
+  });
+});
+
+describe("a test of dead code in a library", () => {
+  it("is as uncertain as the published members it references", () => {
+    const root = writeProject({
+      "package.json":
+        '{ "name": "@example/lib", "type": "module", "exports": { ".": "./src/index.ts" } }\n',
+      "tsconfig.json":
+        '{ "compilerOptions": { "strict": true, "module": "NodeNext", "moduleResolution": "nodenext", "noEmit": true, "allowImportingTsExtensions": true }, "include": ["src/**/*.ts"] }\n',
+      "src/index.ts":
+        "export interface Handle {\n  destroy(): void;\n}\n\nexport function make(): Handle {\n  return { destroy() {} };\n}\n",
+      "src/index.test.ts":
+        'import type { Handle } from "./index.ts";\n\nconst held: Handle[] = [];\n\nexport function clean(): void {\n  for (const one of held) {\n    one.destroy();\n  }\n}\n',
+    });
+    try {
+      const { config } = resolve({
+        repository:
+          '{ "target": { "kind": "library" }, "analysis": { "min_confidence": "possible" } }',
+        repositoryLabel: "deadset.json",
+      });
+      const tests = findingsOf(emitterInputOf(root, config)).filter(
+        (finding) => finding.code === "DS1005",
+      );
+
+      expect(
+        tests.map(
+          (finding) => `${finding.symbol.name} ${finding.reachabilityClass} ${finding.confidence}`,
+        ),
+      ).toEqual(["clean certain possible"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

@@ -64,7 +64,7 @@ export type EntryRule =
   | "workflow-step";
 
 /** One file a rule enters. */
-export interface EntryPoint {
+interface EntryPoint {
   readonly file: SourceFile;
   readonly rule: EntryRule;
   /**

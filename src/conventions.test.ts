@@ -195,6 +195,7 @@ describe("readConventions", () => {
       failures: [],
       uses: [],
       selected: new Map(),
+      testFiles: new Set(),
     });
   });
 
@@ -227,6 +228,7 @@ describe("readConventions", () => {
       failures: [],
       uses: [],
       selected: new Map(),
+      testFiles: new Set(),
     });
   });
 
@@ -281,6 +283,7 @@ describe("readConventions", () => {
       failures: [],
       uses: [],
       selected: new Map(),
+      testFiles: new Set(),
     });
   });
 

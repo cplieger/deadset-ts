@@ -15,7 +15,7 @@ import { ConfigError } from "./config.ts";
  * - `object` is one setting written as an object: its member names are declared
  *   and a source supplies the object whole.
  */
-export type KeyKind = "leaf" | "section" | "map" | "list" | "object";
+type KeyKind = "leaf" | "section" | "map" | "list" | "object";
 
 /**
  * One node of the closed key list. `members` holds a section's declared members,
@@ -259,7 +259,7 @@ export function malformed(label: string, path: string, detail: string): ConfigEr
  * A refusal of a key the closed key list does not declare, naming the nearest key
  * it does.
  */
-export function unimplementedKey(label: string, path: string): ConfigError {
+function unimplementedKey(label: string, path: string): ConfigError {
   const nearest = nearestKey(path);
   let hint = "";
   if (nearest === path) {
