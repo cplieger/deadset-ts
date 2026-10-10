@@ -4,7 +4,7 @@
   "type": "module",
   "description": "The pinned generators of the official starter projects the convention rows are checked against, and the pinned version of each row's enabling package. Nothing installs this manifest: the starter test runs each generator at the version here and sets the enabling package to the version here.",
   "devDependencies": {
-    "@builder.io/qwik-city": "1.20.1",
+    "@builder.io/qwik-city": "1.20.2",
     "@react-router/dev": "8.4.0",
     "@remix-run/dev": "2.17.5",
     "@solidjs/start": "2.0.5",
