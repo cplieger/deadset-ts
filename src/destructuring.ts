@@ -23,8 +23,8 @@ import {
   SyntaxKind,
   type BinaryExpression,
   type Node,
-} from "@typescript/native/unstable/ast";
-import { TypeFlags, type Symbol as TSSymbol, type Type } from "@typescript/native/unstable/sync";
+} from "@typescript/native/ast";
+import { TypeFlags, type Symbol as TSSymbol, type Type } from "@typescript/native/sync";
 import {
   isAnswered,
   propertyTables,

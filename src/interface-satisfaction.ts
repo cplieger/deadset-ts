@@ -25,8 +25,8 @@ import {
   type Expression,
   type Node,
   type SourceFile,
-} from "@typescript/native/unstable/ast";
-import { SymbolFlags, type Type } from "@typescript/native/unstable/sync";
+} from "@typescript/native/ast";
+import { SymbolFlags, type Type } from "@typescript/native/sync";
 import { aliasChains } from "./alias-chain.ts";
 import { emptyImplementation } from "./implementations.ts";
 import type { DetectorInput, Evidence } from "./exempt.ts";

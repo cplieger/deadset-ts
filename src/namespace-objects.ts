@@ -31,7 +31,7 @@ import {
   type Identifier,
   type Node,
   type SourceFile,
-} from "@typescript/native/unstable/ast";
+} from "@typescript/native/ast";
 
 /** What one use of a namespace object reads beyond the names the checker resolves. */
 type NamespaceUse =

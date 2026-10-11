@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import type { Symbol as TSSymbol } from "@typescript/native/unstable/sync";
+import type { Symbol as TSSymbol } from "@typescript/native/sync";
 import { nodeHost } from "../bin/node-host.ts";
 import { discoverProjects } from "../src/discover.ts";
 import { inventory, type Inventory } from "../src/inventory.ts";

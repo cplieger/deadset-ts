@@ -13,8 +13,8 @@ import {
   SyntaxKind,
   type CallExpression,
   type Node,
-} from "@typescript/native/unstable/ast";
-import type { Type } from "@typescript/native/unstable/sync";
+} from "@typescript/native/ast";
+import type { Type } from "@typescript/native/sync";
 import { aliasChains, type AliasChains } from "./alias-chain.ts";
 import { calleeName, callsOf, classesPassed, decoratedClasses, decoratorCallee } from "./calls.ts";
 import { classMembers, memberComponent, typesAt, type ClassSide } from "./class-members.ts";

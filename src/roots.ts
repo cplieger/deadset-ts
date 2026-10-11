@@ -20,7 +20,7 @@ import {
   isVariableStatement,
   type Node,
   type SourceFile,
-} from "@typescript/native/unstable/ast";
+} from "@typescript/native/ast";
 import { aliasChains } from "./alias-chain.ts";
 import type { ParseFile } from "./configuration-files.ts";
 import { conventionEntries, type Conventions } from "./conventions.ts";
@@ -33,7 +33,7 @@ import { relativePath, resolvePath } from "./paths.ts";
 import { byPosition } from "./position.ts";
 import { UNANSWERED } from "./query.ts";
 import type { ProjectView } from "./session.ts";
-import type { Symbol as TSSymbol, Type } from "@typescript/native/unstable/sync";
+import type { Symbol as TSSymbol, Type } from "@typescript/native/sync";
 import { sourceFilesOf } from "./source-files.ts";
 import { typeQueryAliases } from "./type-query-alias.ts";
 

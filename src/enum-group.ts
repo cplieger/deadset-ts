@@ -27,8 +27,8 @@ import {
   SyntaxKind,
   type Node,
   type SourceFile,
-} from "@typescript/native/unstable/ast";
-import { TypeFlags, type Type } from "@typescript/native/unstable/sync";
+} from "@typescript/native/ast";
+import { TypeFlags, type Type } from "@typescript/native/sync";
 import { aliasChains } from "./alias-chain.ts";
 import type { DetectorInput, Evidence } from "./exempt.ts";
 import { nodeKey } from "./inventory.ts";

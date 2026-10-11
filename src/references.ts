@@ -33,8 +33,8 @@ import {
   SyntaxKind,
   type Node,
   type SourceFile,
-} from "@typescript/native/unstable/ast";
-import type { Symbol as TSSymbol } from "@typescript/native/unstable/sync";
+} from "@typescript/native/ast";
+import type { Symbol as TSSymbol } from "@typescript/native/sync";
 import { aliasChains, type ChainTarget } from "./alias-chain.ts";
 import { contextualUses, type FlowAt, type LiteralAt } from "./contextual-uses.ts";
 import { destructuring, propertyReadsOf, type PropertyRead } from "./destructuring.ts";

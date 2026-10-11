@@ -4,7 +4,7 @@
  * compiler emits from it.
  */
 
-import type { SourceFile } from "@typescript/native/unstable/ast";
+import type { SourceFile } from "@typescript/native/ast";
 import { commonDirectory, emittedFrom } from "./emit-map.ts";
 import { dirnamePath, relativePath, resolvePath } from "./paths.ts";
 import type { ProjectView } from "./session.ts";

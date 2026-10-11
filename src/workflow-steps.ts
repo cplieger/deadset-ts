@@ -3,7 +3,7 @@
  * A workflow file is read as text, line by line, with no YAML parsed.
  */
 
-import type { SourceFile } from "@typescript/native/unstable/ast";
+import type { SourceFile } from "@typescript/native/ast";
 import type { Host } from "./host.ts";
 import { scriptTokens } from "./manifest.ts";
 import { joinPath, resolvePath } from "./paths.ts";

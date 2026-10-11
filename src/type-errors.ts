@@ -14,8 +14,8 @@ import {
   type Node,
   type PropertyAccessExpression,
   type SourceFile,
-} from "@typescript/native/unstable/ast";
-import type { Symbol as TSSymbol, Type } from "@typescript/native/unstable/sync";
+} from "@typescript/native/ast";
+import type { Symbol as TSSymbol, Type } from "@typescript/native/sync";
 import { packageOfSpecifier } from "./dependencies.ts";
 import type { LocatedDiagnostic } from "./discover.ts";
 import type { Host } from "./host.ts";

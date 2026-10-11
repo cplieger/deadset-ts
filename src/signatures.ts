@@ -17,7 +17,7 @@ import {
   type FunctionExpression,
   type MethodDeclaration,
   type Node,
-} from "@typescript/native/unstable/ast";
+} from "@typescript/native/ast";
 
 /** A function-like node that carries a body of its own. */
 export type SignatureNode =

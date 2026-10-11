@@ -1,4 +1,4 @@
-import { API, SymbolFlags } from "@typescript/native/unstable/sync";
+import { API, SymbolFlags } from "@typescript/native/sync";
 import type {
   APIRequestGenerator,
   CreateSnapshotProgramParams,
@@ -12,8 +12,8 @@ import type {
   Snapshot,
   Symbol as TSSymbol,
   TimingInfo,
-} from "@typescript/native/unstable/sync";
-import type { Node, SourceFile } from "@typescript/native/unstable/ast";
+} from "@typescript/native/sync";
+import type { Node, SourceFile } from "@typescript/native/ast";
 import { componentLayer, mapperManifest } from "./component-layer.ts";
 import { DiscoveryError } from "./discover.ts";
 import type { Host, TemporaryDirectory } from "./host.ts";
@@ -153,6 +153,8 @@ export function openEngine(options: EngineOptions): Engine {
             }),
       }),
     readsComponents: mapper !== undefined,
+    // Entries, not a resolveModuleName callback: this fallback resolves with the importing
+    // file's project-reference options, which the compiler never passes to a callback.
     createModuleResolver: (options, entries) =>
       api.createModuleResolver(options, {
         moduleResolutions: { fallback: "resolve", entries: [...entries] },

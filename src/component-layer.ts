@@ -6,7 +6,7 @@
  * `node_modules` beside each configuration, to a directory holding only its manifest.
  */
 
-import type { CreateSnapshotParams } from "@typescript/native/unstable/sync";
+import type { CreateSnapshotParams } from "@typescript/native/sync";
 import type { Host } from "./host.ts";
 import { dirnamePath, joinPath } from "./paths.ts";
 

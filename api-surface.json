@@ -1,11 +1,11 @@
 {
-  "description": "Every export path of the compiler package this analyzer consumes, and every name it imports from each, so that a rename of an unstable path is an enumerated migration rather than a search. package is the name the manifest declares the compiler under and the name every import specifier is written against; specifier is the exact dependency value the manifest carries; version is the compiler version that specifier resolves to. consumed lists one entry per import specifier with the names imported from it, ascending. not_consumed lists the paths the package offers that this analyzer imports from nowhere, which is part of the record: this analyzer reads, so it needs no factory and no visitor that rewrites. A test compares both halves against the import statements of every source file, so an import of an unrecorded path and a recorded name nothing imports each fail rather than drift.",
+  "description": "Every export path of the compiler package this analyzer consumes, and every name it imports from each, so that a rename of an export path is an enumerated migration rather than a search. package is the name the manifest declares the compiler under and the name every import specifier is written against; specifier is the exact dependency value the manifest carries; version is the compiler version that specifier resolves to. consumed lists one entry per import specifier with the names imported from it, ascending. not_consumed lists the paths the package offers that this analyzer imports from nowhere, which is part of the record: this analyzer reads, so it needs no factory and no visitor that rewrites. A test compares both halves against the import statements of every source file, so an import of an unrecorded path and a recorded name nothing imports each fail rather than drift.",
   "package": "@typescript/native",
-  "specifier": "npm:typescript@7.1.0-dev.20261007.1",
-  "version": "7.1.0-dev.20261007.1",
+  "specifier": "npm:typescript@7.1.0-dev.20261010.1",
+  "version": "7.1.0-dev.20261010.1",
   "consumed": [
     {
-      "path": "@typescript/native/unstable/ast",
+      "path": "@typescript/native/ast",
       "names": [
         "ArrowFunction",
         "AsExpression",
@@ -141,7 +141,7 @@
       ]
     },
     {
-      "path": "@typescript/native/unstable/sync",
+      "path": "@typescript/native/sync",
       "names": [
         "API",
         "APIRequestGenerator",
@@ -176,19 +176,19 @@
   ],
   "not_consumed": [
     "@typescript/native",
+    "@typescript/native/ast/clone",
+    "@typescript/native/ast/factory",
+    "@typescript/native/ast/is",
+    "@typescript/native/ast/scanner",
+    "@typescript/native/ast/utils",
+    "@typescript/native/ast/visitor",
+    "@typescript/native/async",
+    "@typescript/native/fs",
     "@typescript/native/package.json",
+    "@typescript/native/path",
+    "@typescript/native/proto",
     "@typescript/native/schemas/jsconfig.schema.json",
     "@typescript/native/schemas/tsconfig.schema.json",
-    "@typescript/native/unstable/ast/clone",
-    "@typescript/native/unstable/ast/factory",
-    "@typescript/native/unstable/ast/is",
-    "@typescript/native/unstable/ast/scanner",
-    "@typescript/native/unstable/ast/utils",
-    "@typescript/native/unstable/ast/visitor",
-    "@typescript/native/unstable/async",
-    "@typescript/native/unstable/fs",
-    "@typescript/native/unstable/path",
-    "@typescript/native/unstable/proto",
-    "@typescript/native/unstable/vscode"
+    "@typescript/native/vscode"
   ]
 }

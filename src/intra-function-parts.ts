@@ -66,7 +66,7 @@ import {
   type Node,
   type SourceFile,
   type Statement,
-} from "@typescript/native/unstable/ast";
+} from "@typescript/native/ast";
 import type { FindingPosition } from "./finding.ts";
 import { nodeKey, type Inventory } from "./inventory.ts";
 import { positionKey, renderPosition } from "./position.ts";

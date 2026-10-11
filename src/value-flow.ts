@@ -26,7 +26,7 @@ import {
   SyntaxKind,
   type Expression,
   type Node,
-} from "@typescript/native/unstable/ast";
+} from "@typescript/native/ast";
 
 /** The operators of an assignment whose right side is stored into the left side's type. */
 const STORES: ReadonlySet<SyntaxKind> = new Set([

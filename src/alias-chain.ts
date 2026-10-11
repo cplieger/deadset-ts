@@ -12,8 +12,8 @@ import {
   isImportSpecifier,
   isNamespaceExport,
   isNamespaceImport,
-} from "@typescript/native/unstable/ast";
-import { SymbolFlags, type Symbol as TSSymbol } from "@typescript/native/unstable/sync";
+} from "@typescript/native/ast";
+import { SymbolFlags, type Symbol as TSSymbol } from "@typescript/native/sync";
 import { declarationsByName, nodeKey, type Inventory } from "./inventory.ts";
 import { UNANSWERED, type Answer } from "./query.ts";
 import type { ProjectView } from "./session.ts";

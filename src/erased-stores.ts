@@ -27,8 +27,8 @@ import {
   SyntaxKind,
   type Expression,
   type Node,
-} from "@typescript/native/unstable/ast";
-import { SymbolFlags, TypeFlags, type Type } from "@typescript/native/unstable/sync";
+} from "@typescript/native/ast";
+import { SymbolFlags, TypeFlags, type Type } from "@typescript/native/sync";
 import { must } from "./query.ts";
 import type { ProjectView } from "./session.ts";
 
