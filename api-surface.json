@@ -129,6 +129,7 @@
         "isSwitchStatement",
         "isThrowStatement",
         "isTypeAliasDeclaration",
+        "isTypeAssertion",
         "isTypeLiteralNode",
         "isTypeOperatorNode",
         "isTypeQueryNode",
