@@ -101,7 +101,8 @@ describe("batching", () => {
             (cost?.patternBatches ?? 0) +
             (cost?.patternLookups ?? 0) +
             (cost?.contextualBatches ?? 0) +
-            (cost?.contextualLookups ?? 0),
+            (cost?.contextualLookups ?? 0) +
+            (cost?.typedLookups ?? 0),
         );
       }),
       { numRuns: 20 },

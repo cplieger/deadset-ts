@@ -39,7 +39,7 @@ const REFERENCE_WANT =
   "a stable symbol reference naming one symbol exactly, <language>://<scope>#<fragment>";
 
 /** An edges document the Contract refuses: a malformed input, answered with the usage code. */
-export class EdgesError extends ConfigError {
+class EdgesError extends ConfigError {
   constructor(at: string, text: string, want: string) {
     super("malformed", EDGES_FILE, `${at}: ${text}: want ${want}`);
     this.name = "EdgesError";
@@ -174,7 +174,7 @@ export function readEdgeSides(host: Host, targetRoot: string): readonly EdgeSide
 }
 
 /** One side's verdict, as an evaluation names it. */
-export type EdgeState = "live" | "dead" | "absent";
+type EdgeState = "live" | "dead" | "absent";
 
 /** One edge evaluation: one side of this language, its state, and the finding it holds. */
 export interface EdgeEvaluation<F extends Finding = Finding> extends EdgeSide {
@@ -184,7 +184,7 @@ export interface EdgeEvaluation<F extends Finding = Finding> extends EdgeSide {
 }
 
 /** The findings a report publishes, and one evaluation per declared side of this language. */
-export interface Evaluated<F extends Finding> {
+interface Evaluated<F extends Finding> {
   readonly findings: readonly F[];
   /** Ordered by edge, then by side, each compared bytewise. */
   readonly evaluations: readonly EdgeEvaluation<F>[];

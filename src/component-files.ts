@@ -7,10 +7,10 @@
  */
 
 /** The language one block is written in, as the module's virtual extension spells it. */
-export type BlockLanguage = "ts" | "tsx" | "js" | "jsx";
+type BlockLanguage = "ts" | "tsx" | "js" | "jsx";
 
 /** One block the module holds, the frontmatter included. */
-export interface Block {
+interface Block {
   /** The offset the block's markup starts at: the `<` of its start tag, or 0 for frontmatter. */
   readonly tagStart: number;
   readonly contentStart: number;
@@ -20,7 +20,7 @@ export interface Block {
 }
 
 /** One file a `<script src>` element names, which the module imports whole. */
-export interface SourceImport {
+interface SourceImport {
   /** The specifier the module imports, relative to the component file. */
   readonly specifier: string;
   /** The offsets of the `src` attribute, name and value. */
@@ -29,14 +29,14 @@ export interface SourceImport {
 }
 
 /** A `<script` start tag beginning a line that the module holds no block for. */
-export interface ComponentWarning {
+interface ComponentWarning {
   /** The offset of the tag's `<`. */
   readonly offset: number;
   readonly reason: string;
 }
 
 /** One run of markup an expression or an attribute value is written in. */
-export interface MarkupAction {
+interface MarkupAction {
   /** The offset of the run's first code unit. */
   readonly start: number;
   readonly text: string;
@@ -45,7 +45,7 @@ export interface MarkupAction {
 }
 
 /** What one component file's text is read as. */
-export interface ComponentFile {
+interface ComponentFile {
   readonly blocks: readonly Block[];
   readonly imports: readonly SourceImport[];
   readonly warnings: readonly ComponentWarning[];
@@ -54,7 +54,7 @@ export interface ComponentFile {
 }
 
 /** The module the compiler reads in place of one component file. */
-export interface ComponentModule {
+interface ComponentModule {
   /** The module's text: the file's length, then what the module appends. */
   readonly text: string;
   /** The virtual extension: the strongest language any block names, `.ts` for none. */

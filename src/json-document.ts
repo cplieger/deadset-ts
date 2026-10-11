@@ -100,7 +100,7 @@ class Walk {
 }
 
 /** What a walk of one document found. */
-export interface DocumentWalk {
+interface DocumentWalk {
   /** The offset of the brace opening each object of the document's array member, in order. */
   readonly opened: readonly number[];
   /** The first member one object writes twice, at any depth, as the offset of its name. */

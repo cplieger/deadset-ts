@@ -5,7 +5,7 @@ import { ROOT } from "../__test-helpers__/fixtures.ts";
 
 /**
  * The record of which compiler export paths this analyzer consumes, so a rename of
- * an unstable path is an enumerated migration rather than a search.
+ * an export path is an enumerated migration rather than a search.
  */
 interface ApiSurface {
   readonly package: string;

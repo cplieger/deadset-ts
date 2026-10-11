@@ -70,7 +70,7 @@ function answer(message: Message): object | undefined {
 }
 
 /** One mapper connection: bytes in, and every framed answer handed to `write`. */
-export interface MapperConnection {
+interface MapperConnection {
   /** Reads one chunk of the input stream, answering every message it completes. */
   receive(chunk: Uint8Array): void;
 }

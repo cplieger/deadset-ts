@@ -1,4 +1,4 @@
-src/ambient.d.ts:1:16: namespace '*.css': unexported namespace has no reference in the target [certain] (DS1002)
+src/ambient.d.ts:1:16: namespace '*.css': unexported namespace is referenced only from declarations that are themselves dead [certain] (DS1002)
 src/dead-importer.ts:1:1: file src/dead-importer.ts: no import reaches this file and no root names it or a declaration in it [certain] (DS1502)
 src/dead-importer.ts:3:17: function deadImporter: exported function has no reference in the target and none from any loaded consumer [certain] (DS1001)
 src/globals.ts:3:9: namespace global: unexported namespace has no reference in the target [certain] (DS1002)

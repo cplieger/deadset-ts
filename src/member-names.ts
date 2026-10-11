@@ -12,7 +12,7 @@ import {
   isStringLiteral,
   type Node,
   type SourceFile,
-} from "@typescript/native/unstable/ast";
+} from "@typescript/native/ast";
 import { nodeKey, type Inventory, type InventorySymbol, type SymbolKind } from "./inventory.ts";
 
 /** The kinds of declaration a member name can name. */

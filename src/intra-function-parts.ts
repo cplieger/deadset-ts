@@ -6,6 +6,7 @@
  */
 
 import {
+  isArrayBindingPattern,
   isArrowFunction,
   isAwaitExpression,
   isBigIntLiteral,
@@ -55,15 +56,17 @@ import {
   isVoidExpression,
   NodeFlags,
   SyntaxKind,
+  type ArrowFunction,
   type BindingName,
   type Block,
   type CallExpression,
   type CatchClause,
+  type FunctionExpression,
   type Identifier,
   type Node,
   type SourceFile,
   type Statement,
-} from "@typescript/native/unstable/ast";
+} from "@typescript/native/ast";
 import type { FindingPosition } from "./finding.ts";
 import { nodeKey, type Inventory } from "./inventory.ts";
 import { positionKey, renderPosition } from "./position.ts";
@@ -90,7 +93,16 @@ export interface PartFact {
   readonly used: boolean;
   /** Where the part is a parameter's name, what a function used as a value decides it by. */
   readonly parameter?: ParameterPlace;
+  /** Where the part is a result, whether its type has a `then` member, as a promise does. */
+  readonly thenable?: boolean;
 }
+
+/**
+ * What a call does with its value: uses it, discards it as a statement of its own or the
+ * operand of `void`, or awaits it as a statement, which sequences on a thenable value and
+ * discards any other.
+ */
+type CallUse = "used" | "discarded" | "awaited";
 
 /** What decides a parameter of a function used as a value: a caller may pass it more arguments. */
 interface ParameterPlace {
@@ -113,8 +125,8 @@ interface SignatureFact {
 export interface ProjectParts {
   readonly parts: readonly PartFact[];
   readonly signatures: readonly SignatureFact[];
-  /** Each name written as the callee of a call, by position, and whether the call's value is discarded. */
-  readonly calls: ReadonlyMap<string, boolean>;
+  /** Each name written as the callee of a call, by position, and what the call does with its value. */
+  readonly calls: ReadonlyMap<string, CallUse>;
   /** Each name an import or an export specifier writes, by position, which uses no value. */
   readonly specifiers: ReadonlySet<string>;
 }
@@ -162,16 +174,15 @@ function calleeName(call: CallExpression): Identifier | undefined {
   return isPropertyAccessExpression(callee) && isIdentifier(callee.name) ? callee.name : undefined;
 }
 
-/**
- * Whether a call's value is discarded: the call is a statement of its own, awaited as a
- * statement, or the operand of `void`.
- */
-function discarded(call: CallExpression): boolean {
+/** What a call does with its value. */
+function callUse(call: CallExpression): CallUse {
   const parent = outerParent(call);
   if (isExpressionStatement(parent) || isVoidExpression(parent)) {
-    return true;
+    return "discarded";
   }
-  return isAwaitExpression(parent) && isExpressionStatement(outerParent(parent));
+  return isAwaitExpression(parent) && isExpressionStatement(outerParent(parent))
+    ? "awaited"
+    : "used";
 }
 
 /** Whether one statement leaves its statement list on every path: the rest of the list never runs. */
@@ -470,9 +481,10 @@ export function projectParts<Brand>(
   const kinds = new Map(held.symbols.map((symbol) => [symbol.id, symbol.kind]));
   const parts: PartFact[] = [];
   const signatures: SignatureFact[] = [];
-  const calls = new Map<string, boolean>();
+  const calls = new Map<string, CallUse>();
   const specifiers = new Set<string>();
   const sites: { readonly file: SourceFile; readonly declared: Declared }[] = [];
+  const contextual: ContextualParameter[] = [];
 
   for (const file of files) {
     const declarationAt = (node: Node): string | undefined => {
@@ -546,7 +558,7 @@ export function projectParts<Brand>(
       if (isCallExpression(node)) {
         const name = calleeName(node);
         if (name !== undefined) {
-          calls.set(position(name), discarded(node));
+          calls.set(position(name), callUse(node));
         }
       }
       if (isImportSpecifier(node) || isExportSpecifier(node)) {
@@ -624,15 +636,25 @@ export function projectParts<Brand>(
       });
       const reader = readers.get(one.signature);
       if (reader !== undefined) {
-        parts.push(...parameterParts(file, targetRoot, one.id, one.signature, reader, ids, false));
+        const found = parameterParts(file, targetRoot, one.id, one.signature, reader, ids, false);
+        parts.push(...found.parts);
+        contextual.push(...found.contextual);
       }
     }
     for (const one of walk.values) {
       const reader = readers.get(one.signature);
       if (reader !== undefined) {
-        parts.push(
-          ...parameterParts(file, targetRoot, one.holder, one.signature, reader, ids, true),
+        const found = parameterParts(
+          file,
+          targetRoot,
+          one.holder,
+          one.signature,
+          reader,
+          ids,
+          true,
         );
+        parts.push(...found.parts);
+        contextual.push(...found.contextual);
       }
     }
     walk.catches.forEach(({ name, holder }, at) => {
@@ -677,7 +699,7 @@ export function projectParts<Brand>(
   }
 
   parts.push(...resultParts(project, targetRoot, sites, references, calls));
-  return { parts, signatures, calls, specifiers };
+  return { parts: withContextualRead(project, parts, contextual), signatures, calls, specifiers };
 }
 
 /**
@@ -743,9 +765,38 @@ function parameterNames(signature: SignatureNode): ParameterName[] {
   return found;
 }
 
+/** An unread name of a parameter that a contextual type of its function expression keeps. */
+interface ContextualParameter {
+  readonly part: PartFact;
+  readonly signature: ArrowFunction | FunctionExpression;
+}
+
 /**
- * Each name one function's parameters bind and whether the function reads it. A binding
- * pattern counts as read where its function reads any name it binds.
+ * The parts with each name of `contextual` read where the compiler gives its function a
+ * contextual type: the inference of the call holding the function may read a parameter's
+ * annotation, and the code handing the argument may act on what an object pattern reads.
+ * A question the checker leaves unanswered keeps the name read.
+ */
+function withContextualRead<Brand>(
+  project: ProjectView<Brand>,
+  parts: readonly PartFact[],
+  contextual: readonly ContextualParameter[],
+): readonly PartFact[] {
+  if (contextual.length === 0) {
+    return parts;
+  }
+  const signatures = [...new Set(contextual.map((one) => one.signature))];
+  const answers = project.queries.contextualTypes(signatures);
+  const typed = new Set(signatures.filter((_signature, at) => answers[at] !== undefined));
+  const read = new Set(contextual.filter((one) => typed.has(one.signature)).map((one) => one.part));
+  return parts.map((part) => (read.has(part) ? { ...part, used: true } : part));
+}
+
+/**
+ * Each name one function's parameters bind and whether the function reads it, and the
+ * unread names a contextual type of a function expression may keep: those of a parameter
+ * that carries a type annotation or is an object binding pattern. A binding pattern counts
+ * as read where its function reads any name it binds.
  */
 function parameterParts(
   file: SourceFile,
@@ -755,7 +806,7 @@ function parameterParts(
   reader: { readonly names: readonly ParameterName[]; readonly uses: readonly Identifier[] },
   ids: ReadonlyMap<Node, Answer<number>>,
   inValue: boolean,
-): PartFact[] {
+): { readonly parts: PartFact[]; readonly contextual: ContextualParameter[] } {
   // A function that reads `arguments` reads every parameter by position.
   const readsArguments =
     !isArrowFunction(signature) && identifiersNaming(signature, new Set(["arguments"])).length > 0;
@@ -766,11 +817,14 @@ function parameterParts(
   );
   const lastRead = Math.max(-1, ...reader.names.filter((_, at) => read[at]).map((one) => one.at));
   const found: PartFact[] = [];
+  const contextual: ContextualParameter[] = [];
+  const expression =
+    isArrowFunction(signature) || isFunctionExpression(signature) ? signature : undefined;
   reader.names.forEach(({ name, at, pattern, exempt }, index) => {
     if (exempt) {
       return;
     }
-    found.push({
+    const part: PartFact = {
       code: UNUSED_PARAMETER,
       declaration,
       kind: "parameter",
@@ -779,9 +833,19 @@ function parameterParts(
       message: `parameter ${name.text} is never read in the body`,
       used: read[index] === true,
       parameter: { beforeARead: !pattern && at < lastRead, inValue },
-    });
+    };
+    found.push(part);
+    const parameter = signature.parameters[at];
+    if (
+      expression !== undefined &&
+      !part.used &&
+      parameter !== undefined &&
+      (parameter.type !== undefined || isObjectBindingPattern(parameter.name))
+    ) {
+      contextual.push({ part, signature: expression });
+    }
   });
-  return found;
+  return { parts: found, contextual };
 }
 
 /** One local a block declares by name, and every identifier of the block that spells it. */
@@ -790,6 +854,22 @@ interface Local {
   readonly statement: number;
   readonly initialized: boolean;
   readonly uses: readonly Identifier[];
+}
+
+/**
+ * The names one declaration binds that a write of its initializer stores each on its own:
+ * the declared name, or each element name of an array binding pattern at any depth.
+ */
+function arrayPatternNames(name: BindingName): readonly Identifier[] {
+  if (isIdentifier(name)) {
+    return [name];
+  }
+  if (!isArrayBindingPattern(name)) {
+    return [];
+  }
+  return name.elements.flatMap((element) =>
+    isBindingElement(element) && element.name !== undefined ? arrayPatternNames(element.name) : [],
+  );
 }
 
 /** The locals one block declares with `let` or `const`, each with the names that spell it. */
@@ -807,9 +887,9 @@ function localsOf(block: Block): readonly Local[] {
       return;
     }
     for (const declaration of list.declarations) {
-      if (isIdentifier(declaration.name)) {
+      for (const name of arrayPatternNames(declaration.name)) {
         declared.push({
-          name: declaration.name,
+          name,
           statement: at,
           initialized: declaration.initializer !== undefined,
         });
@@ -932,10 +1012,12 @@ function resultParts<Brand>(
   root: string,
   sites: readonly { readonly file: SourceFile; readonly declared: Declared }[],
   references: readonly Reference[],
-  calls: ReadonlyMap<string, boolean>,
+  calls: ReadonlyMap<string, CallUse>,
 ): PartFact[] {
   const discardedAt = new Set(
-    references.filter((one) => calls.get(positionKey(one.position)) === true).map((one) => one.to),
+    references
+      .filter((one) => (calls.get(positionKey(one.position)) ?? "used") !== "used")
+      .map((one) => one.to),
   );
   const found: PartFact[] = [];
   for (const { file, declared } of sites) {
@@ -958,6 +1040,8 @@ function resultParts<Brand>(
       continue;
     }
     const at = signature.type ?? (node as { readonly name?: Node }).name ?? node;
+    const valued = project.queries.nonNullable(result);
+    const members = isAnswered(valued) ? project.queries.propertiesOf(valued) : UNANSWERED;
     found.push({
       code: UNUSED_RESULT,
       declaration: id,
@@ -966,6 +1050,7 @@ function resultParts<Brand>(
       position: spanOf(file, root, at),
       message: "result is discarded at every call site",
       used: false,
+      thenable: !isAnswered(members) || members.some((member) => member.name === "then"),
     });
   }
   return found;
@@ -1005,7 +1090,7 @@ export function intraFunctionFacts(
     const known = parts.get(key);
     parts.set(key, known === undefined ? part : { ...known, used: known.used || part.used });
   }
-  const calls = new Map<string, boolean>();
+  const calls = new Map<string, CallUse>();
   const specifiers = new Set<string>();
   for (const one of projects) {
     for (const [at, value] of one.calls) {
@@ -1017,6 +1102,7 @@ export function intraFunctionFacts(
   }
   const valued = new Set<string>();
   const called = new Map<string, boolean>();
+  const awaited = new Set<string>();
   for (const reference of references) {
     if (reference.use === "decorator" || reference.use === "evaluation") {
       continue;
@@ -1024,7 +1110,10 @@ export function intraFunctionFacts(
     const at = positionKey(reference.position);
     const call = reference.consumer === undefined ? calls.get(at) : undefined;
     if (call !== undefined) {
-      called.set(reference.to, (called.get(reference.to) ?? true) && call);
+      called.set(reference.to, (called.get(reference.to) ?? true) && call !== "used");
+      if (call === "awaited") {
+        awaited.add(reference.to);
+      }
     } else if (reference.consumer !== undefined || !specifiers.has(at)) {
       valued.add(reference.to);
     }
@@ -1043,8 +1132,16 @@ export function intraFunctionFacts(
       .map((one) => one.declaration)
       .filter((id) => !fixed.has(id) && !exempted.has(id) && valued.has(id)),
   );
+  // Awaiting a thenable result sequences on it, so a call that awaits one uses it.
+  const sequenced = new Set(
+    [...parts.values()]
+      .filter((part) => part.thenable === true && awaited.has(part.declaration))
+      .map((part) => part.declaration),
+  );
   const discardedEverywhere = new Set(
-    [...called].filter(([id, all]) => all && !valued.has(id)).map(([id]) => id),
+    [...called]
+      .filter(([id, all]) => all && !valued.has(id) && !sequenced.has(id))
+      .map(([id]) => id),
   );
   return { parts: [...parts.values()], free, freeButValued, discardedEverywhere };
 }

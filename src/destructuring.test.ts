@@ -1,10 +1,9 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { emitterInputOf } from "../__test-helpers__/emitter-input.ts";
+import { emitterInputOf, findingsOf } from "../__test-helpers__/emitter-input.ts";
 import { fixture } from "../__test-helpers__/fixtures.ts";
 import { analyzeProject, analyzeRoot } from "../__test-helpers__/projects.ts";
-import { findingsOf } from "./findings/emitters.ts";
 import { positionKey } from "./position.ts";
 import { resolve } from "./resolve.ts";
 import type { ReferenceCost } from "./references.ts";
@@ -43,7 +42,8 @@ function accounted(cost: ReferenceCost | undefined): number {
     (cost?.patternBatches ?? 0) +
     (cost?.patternLookups ?? 0) +
     (cost?.contextualBatches ?? 0) +
-    (cost?.contextualLookups ?? 0)
+    (cost?.contextualLookups ?? 0) +
+    (cost?.typedLookups ?? 0)
   );
 }
 
@@ -132,6 +132,7 @@ describe("the members a destructuring reads", () => {
 
   it("accounts for every request it makes", () => {
     expect(RESOLVED?.cost.patternBatches, "one batch for the one module holding patterns").toBe(1);
+    expect(RESOLVED?.cost.typedLookups, "and the typed reads' batches of argument types").toBe(10);
     expect(ANALYZED.referenceRequests, "and the client measured no other").toBe(
       accounted(RESOLVED?.cost),
     );

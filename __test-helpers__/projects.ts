@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import type { Symbol as TSSymbol } from "@typescript/native/unstable/sync";
+import type { Symbol as TSSymbol } from "@typescript/native/sync";
 import { nodeHost } from "../bin/node-host.ts";
 import { discoverProjects } from "../src/discover.ts";
 import { inventory, type Inventory } from "../src/inventory.ts";
@@ -163,7 +163,8 @@ export function analyzeRoot(root: string, options: AnalyzeOptions = {}): Analyze
     const held = inventory(recordingView(project, tally), host, root);
     if (wanted !== undefined) {
       const before = engine.getTimingInfo().totals.requestCount;
-      resolved.push(references(project, held, root, wanted));
+      const requestCount = (): number => engine.getTimingInfo().totals.requestCount;
+      resolved.push(references(project, held, root, { ...wanted, requestCount }));
       requests += engine.getTimingInfo().totals.requestCount - before;
     }
     if (options.roots !== undefined) {

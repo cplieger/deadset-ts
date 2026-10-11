@@ -37,12 +37,31 @@ export interface Component {
    * cycle with a live container is one, so a component has at least one.
    */
   readonly roots: readonly string[];
-  /** The source lines one deletion of the component removes: the distinct lines its members span. */
+  /**
+   * The source lines one deletion of the component removes: the distinct lines its
+   * members span, and none for a component of held declarations.
+   */
   readonly deletableLines: number;
+  /**
+   * Whether its members are held declarations, which no mechanical edit deletes: a dead
+   * declaration whose deletion changes a live declaration's value, and every dead
+   * declaration such a one references or whose deletion would change its value.
+   */
+  readonly held: boolean;
+}
+
+/**
+ * What the held-declaration rule reads of a graph, by place: the places of the later
+ * declarations whose value each one's deletion changes, and whether reachability holds
+ * each one live in some configuration.
+ */
+export interface Positional {
+  readonly dependents: readonly (readonly number[])[];
+  readonly live: readonly boolean[];
 }
 
 /** What a report carries for one dead component under one cascade mode. */
-export interface Listing {
+interface Listing {
   readonly roots: readonly string[];
   /** Every member under the full mode, and nothing under the default one. */
   readonly members: readonly string[];
@@ -63,39 +82,95 @@ export function listing(component: Component, cascade: Cascade): Listing {
 /**
  * Groups the declarations `dead` marks into components, ordered by their first member's
  * site; `dead`, `testOfDeadCode` and `unreferencedTest` hold one flag per declaration of
- * the graph. Root members sit on the cycles no other cycle references. A cycle two roots
- * both reach is dead only through both, so a component is a weakly connected part of the
- * dead subgraph: no dead declaration of one references a declaration of another.
+ * the graph. Root members sit on the cycles no other cycle references. A component is a
+ * weakly connected part of the dead subgraph, because a cycle two roots reach is dead only
+ * through both. The held declarations `positional` decides form components of their own,
+ * and a dead declaration that is not held shares one with each of its dead dependents.
  */
 export function componentsOf(
   graph: Graph,
   dead: readonly boolean[],
   testOfDeadCode: readonly boolean[],
   unreferencedTest: readonly boolean[] = [],
+  positional: Positional = { dependents: [], live: [] },
 ): readonly Component[] {
-  const { at, adjacent } = deadSubgraph(graph, dead, testOfDeadCode, unreferencedTest);
+  const { at, position, adjacent, references } = deadSubgraph(
+    graph,
+    dead,
+    testOfDeadCode,
+    unreferencedTest,
+  );
   if (at.length === 0) {
     return [];
   }
-  const { componentOf, members } = connected(adjacent);
-  const referenced = referencedCycles(adjacent, componentOf, members.length);
-  const groups = joined(adjacent);
-  const idOf = (position: number): string => graph.symbols[at[position] ?? 0]?.id ?? "";
+  const dependents = at.map((index) =>
+    (positional.dependents[index] ?? []).map((to) => ({
+      to: position[to] ?? UNVISITED,
+      live: positional.live[to] === true,
+    })),
+  );
+  const held = heldSet(dependents, references);
+  const kept = adjacent.map((targets, from) => targets.filter((to) => held[to] === held[from]));
+  const { componentOf, members } = connected(kept);
+  const referenced = referencedCycles(kept, componentOf, members.length);
+  const groups = joined(
+    kept.map((targets, from) => [
+      ...targets,
+      ...(held[from] === true
+        ? []
+        : (dependents[from] ?? []).flatMap(({ to }) =>
+            to === UNVISITED || held[to] === true ? [] : [to],
+          )),
+    ]),
+  );
+  const idOf = (place: number): string => graph.symbols[at[place] ?? 0]?.id ?? "";
 
   return groups.map((group, place) => {
-    const roots = group.filter((position) => {
+    const roots = group.filter((one) => {
       // A dead member's dead container is on the member's own cycle, and the container
       // is where the deletion starts.
-      const container = graph.parent[at[position] ?? 0] ?? OUTSIDE;
-      return referenced[componentOf[position] ?? 0] !== true && dead[container] !== true;
+      const container = graph.parent[at[one] ?? 0] ?? OUTSIDE;
+      return referenced[componentOf[one] ?? 0] !== true && dead[container] !== true;
     });
+    const isHeld = group.every((one) => held[one] === true);
     return {
       id: componentId(place + 1),
       members: group.map(idOf),
       roots: roots.map(idOf),
-      deletableLines: linesSpanned(group.map((position) => graph.symbols[at[position] ?? 0])),
+      deletableLines: isHeld ? 0 : linesSpanned(group.map((one) => graph.symbols[at[one] ?? 0])),
+      held: isHeld,
     };
   });
+}
+
+/**
+ * Per place of the dead subgraph, whether the declaration is held: one with a live
+ * dependent, and each dead declaration a held one references or has as a dependent,
+ * until no further one joins.
+ */
+function heldSet(
+  dependents: readonly (readonly { readonly to: number; readonly live: boolean }[])[],
+  references: readonly (readonly number[])[],
+): readonly boolean[] {
+  const held = dependents.map((after) => after.some((one) => one.live));
+  const before: number[][] = dependents.map(() => []);
+  dependents.forEach((after, from) => {
+    for (const { to } of after) {
+      if (to !== UNVISITED) {
+        before[to]?.push(from);
+      }
+    }
+  });
+  const pending = held.flatMap((one, place) => (one ? [place] : []));
+  for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+    for (const reached of [...(references[next] ?? []), ...(before[next] ?? [])]) {
+      if (held[reached] !== true) {
+        held[reached] = true;
+        pending.push(reached);
+      }
+    }
+  }
+  return held;
 }
 
 /**
@@ -133,19 +208,24 @@ function linesSpanned(symbols: readonly (InventorySymbol | undefined)[]): number
 }
 
 /**
- * The dead declarations by their place in the subgraph, a test file's declaration only
- * where it is a test of dead code or nothing the tests reach, and the edges between them:
- * each reference one makes to another, except an unreferenced test-file declaration's
- * reference to production code, which decides nothing of its target, an edge each way
- * between a dead member and its dead container, and an edge back from each production
- * target of an admitted test, which puts the test in its subject's component.
+ * The dead declarations by subgraph place (`at`, and `position` per graph declaration),
+ * a test file's only where it tests dead code or nothing the tests reach. `adjacent` holds
+ * each reference one makes to another, except an unreferenced test-file declaration's to
+ * production code, which decides nothing of its target; an edge each way between a dead
+ * member and its dead container; and one back from each production target of an admitted
+ * test, which puts the test in its subject's component. `references` holds the first alone.
  */
 function deadSubgraph(
   graph: Graph,
   dead: readonly boolean[],
   testOfDeadCode: readonly boolean[],
   unreferencedTest: readonly boolean[],
-): { readonly at: readonly number[]; readonly adjacent: readonly (readonly number[])[] } {
+): {
+  readonly at: readonly number[];
+  readonly position: readonly number[];
+  readonly adjacent: readonly (readonly number[])[];
+  readonly references: readonly (readonly number[])[];
+} {
   const at: number[] = [];
   const position = graph.symbols.map((_symbol, index) => {
     const judged = testOfDeadCode[index] === true || unreferencedTest[index] === true;
@@ -156,6 +236,7 @@ function deadSubgraph(
     return at.length - 1;
   });
   const adjacent: number[][] = at.map(() => []);
+  const references: number[][] = at.map(() => []);
   at.forEach((index, from) => {
     for (const edge of graph.out[index] ?? []) {
       const to = position[edge.to] ?? UNVISITED;
@@ -163,6 +244,7 @@ function deadSubgraph(
         continue;
       }
       adjacent[from]?.push(to);
+      references[from]?.push(to);
       if (
         testOfDeadCode[index] === true &&
         graph.test[edge.to] !== true &&
@@ -177,7 +259,7 @@ function deadSubgraph(
       adjacent[container]?.push(from);
     }
   });
-  return { at, adjacent };
+  return { at, position, adjacent, references };
 }
 
 /** One frame of the component walk: a declaration, and the next of its edges to follow. */

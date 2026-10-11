@@ -31,10 +31,10 @@ import {
   type Identifier,
   type Node,
   type SourceFile,
-} from "@typescript/native/unstable/ast";
+} from "@typescript/native/ast";
 
 /** What one use of a namespace object reads beyond the names the checker resolves. */
-export type NamespaceUse =
+type NamespaceUse =
   /** Every export of the module `specifier` names. */
   | { readonly kind: "whole"; readonly specifier: Node }
   /** The export a literal index names, the literal being the node to resolve. */

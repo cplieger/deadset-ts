@@ -5,5 +5,8 @@
   "type": "module",
   "devDependencies": {
     "@react-router/dev": "8.4.0"
+  },
+  "scripts": {
+    "build": "dev build"
   }
 }

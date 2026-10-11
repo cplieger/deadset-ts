@@ -41,25 +41,6 @@
     "code": "DS1601",
     "position": {
       "path": "package.json",
-      "line": 24,
-      "column": 5,
-      "endLine": 24
-    },
-    "symbol": {
-      "ref": "ts://@example/dependencies/package.json#optional-peer:dev-dependency",
-      "kind": "dependency",
-      "name": "optional-peer",
-      "sizeLines": 1
-    },
-    "message": "no import in the target needs the declared development dependency",
-    "details": {
-      "dependencyClass": "dev-dependency"
-    }
-  },
-  {
-    "code": "DS1601",
-    "position": {
-      "path": "package.json",
       "line": 27,
       "column": 5,
       "endLine": 27

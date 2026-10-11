@@ -1,10 +1,9 @@
 import { rmSync } from "node:fs";
 import { afterAll, describe, expect, it } from "vitest";
-import { emitterInputOf } from "../../__test-helpers__/emitter-input.ts";
+import { emitterInputOf, findingsOf } from "../../__test-helpers__/emitter-input.ts";
 import { writeProject } from "../../__test-helpers__/projects.ts";
 import type { CompletedFinding } from "../finding.ts";
 import { resolve } from "../resolve.ts";
-import { findingsOf } from "./emitters.ts";
 
 /** The bound on one case, each of which loads a whole target. */
 const LOAD_TIMEOUT = 60_000;
@@ -358,6 +357,47 @@ describe("the intra-function family", () => {
     "withholds the whole family under the range prefix",
     () => {
       expect(partsOf(APPLICATION, { ...ENTRY, severity: { DS18: "allow" } })).toEqual([]);
+    },
+    LOAD_TIMEOUT,
+  );
+});
+
+describe("a result every call site awaits as a statement", () => {
+  it(
+    "is used where it is a promise, which the caller sequences on, and discarded where it is not",
+    () => {
+      expect(
+        partsOf(
+          {
+            "package.json": '{ "name": "@example/parts", "private": true, "type": "module" }\n',
+            "src/main.ts": [
+              "function work(): Promise<number> {",
+              "  return Promise.resolve(1);",
+              "}",
+              "",
+              "function step(): Promise<number> {",
+              "  return work();",
+              "}",
+              "",
+              "function count(): number {",
+              "  return 2;",
+              "}",
+              "",
+              "function fire(): Promise<number> {",
+              "  return work();",
+              "}",
+              "",
+              "export async function run(): Promise<void> {",
+              "  await step();",
+              "  await count();",
+              "  fire();",
+              "}",
+              "",
+            ].join("\n"),
+          },
+          ENTRY,
+        ).map(({ code, line }) => `${code} ${String(line)}`),
+      ).toEqual(["DS1803 9", "DS1803 13"]);
     },
     LOAD_TIMEOUT,
   );

@@ -158,18 +158,13 @@ describe("the symbol table of every declaration form", () => {
     ).toBe(members.length + exports.length);
   });
 
-  it("records the module a bare star re-export names, and enumerates none of its names", () => {
-    expect(INVENTORY?.starReExports).toEqual(["./more.ts"]);
+  it("enumerates none of the names a bare star re-export carries", () => {
     expect(
       SYMBOLS.filter(
         (symbol) => symbol.position.path === "src/index.ts" && symbol.name === "alsoExported",
       ),
       "a name a star re-export carries forward is the other module's declaration",
     ).toEqual([]);
-  });
-
-  it("leaves no declaration out because its file is another program's", () => {
-    expect(INVENTORY?.outsideOwnFiles).toBe(0);
   });
 });
 

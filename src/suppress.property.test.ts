@@ -101,7 +101,7 @@ const declarations = fc
   )
   .map(declarationsOf);
 
-const OPEN: Dials = { withholdsCode: () => false, withholds: () => false };
+const OPEN: Dials = { allows: () => false, withholds: () => false };
 
 /** The findings the ignore file given withholds over the drawn run. */
 function withheldBy(

@@ -4,8 +4,8 @@
  * that extends it and a member a subclass overrides is the subclass's own.
  */
 
-import { isClassDeclaration, isClassExpression, type Node } from "@typescript/native/unstable/ast";
-import type { Symbol as TSSymbol, SymbolFlags, Type } from "@typescript/native/unstable/sync";
+import { isClassDeclaration, isClassExpression, type Node } from "@typescript/native/ast";
+import type { Symbol as TSSymbol, SymbolFlags, Type } from "@typescript/native/sync";
 import { nodeKey, type Inventory, type InventorySymbol } from "./inventory.ts";
 import { must } from "./query.ts";
 import type { ProjectView } from "./session.ts";

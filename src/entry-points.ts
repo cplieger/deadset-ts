@@ -28,8 +28,8 @@ import {
   isStringLiteral,
   type Node,
   type SourceFile,
-} from "@typescript/native/unstable/ast";
-import { SymbolFlags } from "@typescript/native/unstable/sync";
+} from "@typescript/native/ast";
+import { SymbolFlags } from "@typescript/native/sync";
 import {
   configurationFiles,
   filesNamedBy,
@@ -64,7 +64,7 @@ export type EntryRule =
   | "workflow-step";
 
 /** One file a rule enters. */
-export interface EntryPoint {
+interface EntryPoint {
   readonly file: SourceFile;
   readonly rule: EntryRule;
   /**

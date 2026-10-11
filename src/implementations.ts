@@ -13,8 +13,8 @@ import {
   isMethodDeclaration,
   SyntaxKind,
   type Node,
-} from "@typescript/native/unstable/ast";
-import { SymbolFlags, type Symbol as TSSymbol, type Type } from "@typescript/native/unstable/sync";
+} from "@typescript/native/ast";
+import { SymbolFlags, type Symbol as TSSymbol, type Type } from "@typescript/native/sync";
 import { aliasChains } from "./alias-chain.ts";
 import { nodeKey, type Inventory } from "./inventory.ts";
 import { must, Unanswerable } from "./query.ts";

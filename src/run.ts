@@ -1,6 +1,5 @@
 import { ConfigError, REPOSITORY_DOCUMENT, type Inputs } from "./config.ts";
 import { DiscoveryError, renderDiagnostic } from "./discover.ts";
-import { EMITTERS } from "./findings/emitters.ts";
 import type { Host } from "./host.ts";
 import { joinPath, resolvePath } from "./paths.ts";
 import { readScope, ScopeError, scopeForDir, type Scope } from "./scope.ts";
@@ -264,7 +263,6 @@ function invoke(
         });
         return opened;
       },
-      emitters: EMITTERS,
     });
   } catch (error: unknown) {
     opened?.close();

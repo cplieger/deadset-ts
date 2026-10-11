@@ -6,15 +6,15 @@
  * `node_modules` beside each configuration, to a directory holding only its manifest.
  */
 
-import type { CreateSnapshotParams } from "@typescript/native/unstable/sync";
+import type { CreateSnapshotParams } from "@typescript/native/sync";
 import type { Host } from "./host.ts";
 import { dirnamePath, joinPath } from "./paths.ts";
 
 /** The name the mapper's manifest declares and every configuration's entry names. */
-export const MAPPER_PACKAGE = "deadset-ts-component-files";
+const MAPPER_PACKAGE = "deadset-ts-component-files";
 
 /** The file system one snapshot is created with. */
-export type SnapshotFileSystem = NonNullable<CreateSnapshotParams["fileSystem"]>;
+type SnapshotFileSystem = NonNullable<CreateSnapshotParams["fileSystem"]>;
 
 /** The manifest of the mapper's package, which runs `command`. */
 export function mapperManifest(command: readonly string[]): string {

@@ -19,7 +19,7 @@ import type { StaleSuppression } from "./findings/self-check.ts";
 import type { TestFileRule } from "./references.ts";
 
 /** The version of the report schema this analyzer writes a report to. */
-const SCHEMA_VERSION = "8.0.0";
+const SCHEMA_VERSION = "8.1.0";
 
 /** Every report schema version this analyzer reads: the one the Contract it implements admits. */
 export const SCHEMA_VERSIONS_ACCEPTED: readonly string[] = [SCHEMA_VERSION];
@@ -30,14 +30,14 @@ export const ANALYZER_NAME = "deadset-ts";
 /** The language this analyzer claims. */
 export const LANGUAGE = "ts";
 
-export interface WirePosition {
+interface WirePosition {
   readonly path: string;
   readonly line: number;
   readonly column: number;
   readonly end_line: number;
 }
 
-export interface WireDetails {
+interface WireDetails {
   readonly narrower_visibility?: string;
   readonly implementations?: readonly {
     readonly ref: string;
@@ -45,6 +45,8 @@ export interface WireDetails {
     readonly position: WirePosition;
   }[];
   readonly write_positions?: readonly WirePosition[];
+  /** Set under the name-literal rule, which no finding of this analyzer meets; SARIF still maps it. */
+  readonly name_literal?: WirePosition;
   readonly dependency_class?: string;
   readonly mechanism?: string;
   readonly entry?: {
@@ -54,6 +56,7 @@ export interface WireDetails {
     readonly reason?: string;
   };
   readonly overlap?: readonly string[];
+  readonly removes_last_use_of?: readonly string[];
 }
 
 /** One finding as the finding schema spells it. */
@@ -93,7 +96,7 @@ export interface WireFinding {
   readonly details: WireDetails;
 }
 
-export interface WireEdgeEvaluation {
+interface WireEdgeEvaluation {
   readonly edge: string;
   readonly side: string;
   readonly symbol: string;
@@ -178,7 +181,7 @@ interface ReportConsumer {
 }
 
 /** One consumer the scope declared and the run did not load, with why. */
-export interface UnavailableConsumer {
+interface UnavailableConsumer {
   readonly id: string;
   readonly reason: string;
 }
@@ -297,6 +300,9 @@ function wireDetails(details: FindingDetails): WireDetails {
           },
         }),
     ...(details.overlap === undefined ? {} : { overlap: details.overlap }),
+    ...(details.removesLastUseOf === undefined
+      ? {}
+      : { removes_last_use_of: details.removesLastUseOf }),
   };
 }
 

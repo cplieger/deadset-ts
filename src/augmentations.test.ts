@@ -2,10 +2,9 @@ import { cpSync, mkdtempSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { emitterInputOf } from "../__test-helpers__/emitter-input.ts";
+import { emitterInputOf, findingsOf } from "../__test-helpers__/emitter-input.ts";
 import { fixture } from "../__test-helpers__/fixtures.ts";
 import { writeProject } from "../__test-helpers__/projects.ts";
-import { findingsOf } from "./findings/emitters.ts";
 import { resolve } from "./resolve.ts";
 
 /**
@@ -98,6 +97,174 @@ describe("a module augmentation of a library's interface", () => {
         repositoryLabel: document,
       });
       expect(findingsOf(emitterInputOf(root, config)).map((finding) => finding.code)).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("is used through the member a literal key passed to the library's generic selects", () => {
+    const root = writeProject({
+      "deadset.json": '{ "target": { "kind": "application" } }\n',
+      "package.json": '{ "name": "app", "private": true, "type": "module", "main": "./main.ts" }\n',
+      "node_modules/lib/package.json": '{ "name": "lib", "types": "./index.d.ts" }\n',
+      "node_modules/lib/index.d.ts": [
+        "export interface ProvidedContext {}",
+        "export declare function inject<K extends keyof ProvidedContext>(key: K): ProvidedContext[K];",
+        "",
+      ].join("\n"),
+      "main.ts": [
+        'import { inject } from "lib";',
+        "",
+        'declare module "lib" {',
+        "  interface ProvidedContext {",
+        "    token: string;",
+        "    unusedKey: number;",
+        "  }",
+        "}",
+        "",
+        'console.log(inject("token"));',
+        "",
+      ].join("\n"),
+    });
+    try {
+      const document = join(root, "deadset.json");
+      const { config } = resolve({
+        repository: readFileSync(document, "utf8"),
+        repositoryLabel: document,
+      });
+      expect(
+        findingsOf(emitterInputOf(root, config)).map(
+          (finding) => `${finding.code} ${finding.symbol.name}`,
+        ),
+      ).toEqual(["DS1003 lib.ProvidedContext.unusedKey"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("an augmentation of a dependency's interface whose member a string key names", () => {
+  it("is read where a method of a dependency's type takes the key through keyof", () => {
+    const root = writeProject({
+      "package.json":
+        '{ "name": "@example/app", "type": "module", "main": "./src/main.ts", "devDependencies": { "@example/runner": "1.0.0" } }\n',
+      "node_modules/@example/runner/package.json":
+        '{ "name": "@example/runner", "version": "1.0.0", "types": "./index.d.ts" }\n',
+      "node_modules/@example/runner/index.d.ts":
+        "export interface ProvidedContext {}\nexport interface Project {\n  provide<K extends keyof ProvidedContext>(key: K, value: ProvidedContext[K]): void;\n}\n",
+      "src/main.ts":
+        'import type { Project } from "@example/runner";\n\ndeclare module "@example/runner" {\n  export interface ProvidedContext {\n    fixtureUrl: string;\n  }\n}\n\nexport function setup(project: Project): void {\n  project.provide("fixtureUrl", "x");\n}\n',
+    });
+    try {
+      const { config } = resolve({
+        repository: '{ "target": { "kind": "application" } }',
+        repositoryLabel: "deadset.json",
+      });
+      expect(findingsOf(emitterInputOf(root, config)).map((finding) => finding.code)).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+/** Each finding of an application at `main.ts` over `files`, as its code and subject. */
+function findingsIn(files: Readonly<Record<string, string>>): string[] {
+  const root = writeProject({
+    "deadset.json": '{ "target": { "kind": "application" } }\n',
+    "package.json": '{ "name": "app", "private": true, "type": "module", "main": "./main.ts" }\n',
+    ...files,
+  });
+  try {
+    const document = join(root, "deadset.json");
+    const { config } = resolve({
+      repository: readFileSync(document, "utf8"),
+      repositoryLabel: document,
+    });
+    return findingsOf(emitterInputOf(root, config)).map(
+      (finding) => `${finding.code} ${finding.symbol.name}`,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+describe("an interface a file that is no module declares", () => {
+  it("merges into the global scope, so it is used through the member a use reads", () => {
+    expect(
+      findingsIn({
+        "env.d.ts":
+          "interface ImportMeta {\n  glob(pattern: string): Record<string, unknown>;\n  spare(): void;\n}\n",
+        "main.ts": 'export const files = import.meta.glob("./x/*");\n',
+      }),
+    ).toEqual(["DS1203 ImportMeta.spare"]);
+  });
+});
+
+describe("a module augmentation no import of the target names", () => {
+  it("is used through the member a use reads, as a declare global block is", () => {
+    expect(
+      findingsIn({
+        "package.json":
+          '{ "name": "app", "private": true, "type": "module", "main": "./main.ts", "dependencies": { "lib": "1.0.0" } }\n',
+        "node_modules/lib/package.json": '{ "name": "lib", "types": "./index.d.ts" }\n',
+        "node_modules/lib/index.d.ts": 'export { commands } from "./internal.js";\n',
+        "node_modules/lib/internal.d.ts":
+          "export interface Commands {}\nexport declare const commands: Commands;\n",
+        "main.ts": [
+          'import { commands } from "lib";',
+          "",
+          'declare module "lib/internal.js" {',
+          "  interface Commands {",
+          "    emulate(): void;",
+          "  }",
+          "}",
+          "",
+          "commands.emulate();",
+          "",
+        ].join("\n"),
+      }),
+    ).toEqual([]);
+  });
+});
+
+describe("a module augmentation in test-support code", () => {
+  it("is test-support code test code reaches, with every declaration it holds", () => {
+    const root = writeProject({
+      "deadset.json":
+        '{ "target": { "kind": "application" }, "analysis": { "min_confidence": "possible" } }\n',
+      "package.json":
+        '{ "name": "app", "private": true, "type": "module", "main": "./main.ts", "dependencies": { "lib": "1.0.0" } }\n',
+      "node_modules/lib/package.json": '{ "name": "lib", "types": "./index.d.ts" }\n',
+      "node_modules/lib/index.d.ts":
+        "export interface Commands {}\nexport declare const commands: Commands;\n",
+      "main.ts": "export const ready = true;\n",
+      "support.ts": [
+        'import { commands } from "lib";',
+        "",
+        'declare module "lib" {',
+        "  interface Commands {",
+        "    emulate(): void;",
+        "  }",
+        "}",
+        "",
+        "export function emulate(): void {",
+        "  commands.emulate();",
+        "}",
+        "",
+      ].join("\n"),
+      "main.test.ts": 'import { emulate } from "./support.js";\n\nemulate();\n',
+    });
+    try {
+      const document = join(root, "deadset.json");
+      const { config } = resolve({
+        repository: readFileSync(document, "utf8"),
+        repositoryLabel: document,
+      });
+      expect(
+        findingsOf(emitterInputOf(root, config)).map(
+          (finding) => `${finding.code} ${finding.symbol.name} ${finding.confidence}`,
+        ),
+      ).toEqual(["DS1004 lib possible", "DS1004 emulate possible", "DS1201 lib.Commands possible"]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

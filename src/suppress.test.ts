@@ -77,7 +77,7 @@ function recordOf(
   };
 }
 
-const OPEN: Dials = { withholdsCode: () => false, withholds: () => false };
+const OPEN: Dials = { allows: () => false, withholds: () => false };
 
 describe("the ledger over a run's records", () => {
   const helper = finding("DS1002", "helper", 4);
@@ -100,16 +100,28 @@ describe("the ledger over a run's records", () => {
     expect(ledger.withheld(helper)).toBe(false);
   });
 
-  it("finds a record whose code the configuration silences dormant, whatever it would match", () => {
-    const silenced: Dials = { withholdsCode: (code) => code === "DS1002", withholds: () => false };
+  it("finds a bound record that matches nothing dormant only where its own code is at allow", () => {
+    const silenced: Dials = { allows: (code) => code === "DS1002", withholds: () => false };
 
     expect(ledgerOf([recordOf(helper, "baseline")], [], silenced).verdicts).toEqual(["dormant"]);
+    expect(ledgerOf([recordOf(helper, "baseline")], [], OPEN).verdicts).toEqual(["stale"]);
+    expect(
+      ledgerOf([{ ...recordOf(helper, "baseline"), bound: "" }], [], silenced).verdicts,
+    ).toEqual(["stale"]);
   });
 
   it("finds a record whose finding a dial withholds dormant", () => {
-    const dialed: Dials = { withholdsCode: () => false, withholds: (one) => one === helper };
+    const dialed: Dials = { allows: () => false, withholds: (one) => one === helper };
 
     expect(ledgerOf([recordOf(helper, "ignore")], [helper], dialed).verdicts).toEqual(["dormant"]);
+  });
+
+  it("decides a record that matches a finding by the finding, whatever its code's severity", () => {
+    const silenced: Dials = { allows: (code) => code === "DS1002", withholds: () => false };
+
+    expect(ledgerOf([recordOf(helper, "ignore")], [helper], silenced).verdicts).toEqual([
+      "in-effect",
+    ]);
   });
 
   it("reaches a finding about a part of a declaration through the reference and the file", () => {
@@ -120,6 +132,65 @@ describe("the ledger over a run's records", () => {
     const ledger = ledgerOf([{ ...recordOf(part, "ignore"), bound: "" }], [part], OPEN);
 
     expect(ledger.verdicts).toEqual(["in-effect"]);
+  });
+
+  it("withholds every finding of a part kind about one declaration through one record", () => {
+    const at = (column: number): Finding => ({
+      ...finding("DS1801", "helper", 4, "parameter"),
+      position: { path: "src/lib.ts", line: 4, column, endLine: 4 },
+    });
+    const [first, second] = [at(17), at(24)];
+    const ledger = ledgerOf(
+      [recordOf(first, "inline", 3), recordOf(first, "ignore")],
+      [first, second],
+      OPEN,
+    );
+
+    expect(ledger.verdicts).toEqual(["in-effect", "stale"]);
+    expect([ledger.withheld(first), ledger.withheld(second)]).toEqual([true, true]);
+  });
+
+  it("is dormant for a part kind only when the dials withhold every part finding it claims", () => {
+    const at = (column: number): Finding => ({
+      ...finding("DS1801", "helper", 4, "parameter"),
+      position: { path: "src/lib.ts", line: 4, column, endLine: 4 },
+    });
+    const [first, second] = [at(17), at(24)];
+    const one: Dials = { allows: () => false, withholds: (found) => found === first };
+    const both: Dials = { allows: () => false, withholds: () => true };
+
+    expect(ledgerOf([recordOf(first, "inline", 3)], [first, second], one).verdicts).toEqual([
+      "in-effect",
+    ]);
+    expect(ledgerOf([recordOf(first, "inline", 3)], [first, second], both).verdicts).toEqual([
+      "dormant",
+    ]);
+  });
+
+  it("withholds a dependency row through an entry or a row naming it, never a directive", () => {
+    const row: Finding = {
+      code: "DS1601",
+      position: { path: "package.json", line: 7, column: 5, endLine: 7 },
+      symbol: {
+        ref: "ts://@example/app/package.json#left-pad:dependency",
+        kind: "dependency",
+        name: "left-pad",
+        sizeLines: 1,
+      },
+      message: "is declared and never needed",
+    };
+    const entry = { ...recordOf(row, "ignore"), bound: "" };
+
+    expect(ledgerOf([entry], [row], OPEN).verdicts).toEqual(["in-effect"]);
+    expect(ledgerOf([{ ...entry, mechanism: "baseline" }], [row], OPEN).verdicts).toEqual([
+      "in-effect",
+    ]);
+    expect(ledgerOf([{ ...entry, path: "web/package.json" }], [row], OPEN).verdicts).toEqual([
+      "stale",
+    ]);
+    const directive = ledgerOf([{ ...entry, mechanism: "inline" }], [row], OPEN);
+    expect(directive.verdicts).toEqual(["stale"]);
+    expect(directive.withheld(row)).toBe(false);
   });
 
   it("withholds no finding about a row of a document, which no record binds", () => {

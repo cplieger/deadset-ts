@@ -6,28 +6,26 @@
  * member import keeps the project the compiler opens for it.
  */
 
-import { ModuleKind, ModuleResolutionKind } from "@typescript/native/unstable/sync";
+import { ModuleKind, ModuleResolutionKind } from "@typescript/native/sync";
 import type {
   CreateSnapshotProgramParams,
   ModuleResolutionEntry,
   ModuleResolver,
   Program,
   ResolutionMode,
-} from "@typescript/native/unstable/sync";
-import { isStringLiteralLikeNode } from "@typescript/native/unstable/ast";
-import type { StringLiteralLikeNode } from "@typescript/native/unstable/ast";
+} from "@typescript/native/sync";
+import { isStringLiteralLikeNode } from "@typescript/native/ast";
+import type { StringLiteralLikeNode } from "@typescript/native/ast";
 import type { Host } from "./host.ts";
 import { dirnamePath, resolvePath } from "./paths.ts";
 import type { Engine } from "./session.ts";
 import type { WorkspaceResolver } from "./workspace-resolution.ts";
 
 /** One member import no member source answers for. */
-export interface UnresolvedImport {
+interface UnresolvedImport {
   /** The importing file, absolute. */
   readonly file: string;
   readonly specifier: string;
-  readonly member: string;
-  readonly subpath: string;
   readonly reason: string;
 }
 
@@ -36,8 +34,6 @@ export interface MemberReading {
   readonly configFile: string;
   /** The files the configuration itself compiles, absolute. */
   readonly fileNames: readonly string[];
-  /** The static resolutions its program is built with; none for a configuration opened as a project. */
-  readonly entries: readonly ModuleResolutionEntry[];
   readonly unresolved: readonly UnresolvedImport[];
   /**
    * Why the configuration's component files are not read, where the snapshots read
@@ -53,7 +49,7 @@ export type WorkspaceProgram =
   | { readonly kind: "configuration"; readonly file: string; readonly text: string };
 
 /** The programs one run builds instead of opening projects, with what reading them did. */
-export interface WorkspacePrograms {
+interface WorkspacePrograms {
   /** Per configuration that imports a member, how the snapshot reads it. */
   readonly programs: ReadonlyMap<string, WorkspaceProgram>;
   readonly readings: readonly MemberReading[];
@@ -126,7 +122,7 @@ function unstatable(reading: Reading): string | undefined {
 }
 
 /** The path beside `configFile` its written configuration takes, which no file has. */
-function writtenPath(host: Host, configFile: string): string {
+export function writtenPath(host: Host, configFile: string): string {
   const stem = configFile.replace(/\.json$/u, "");
   for (let counter = 0; ; counter += 1) {
     const path = `${stem}.deadset-ts${counter === 0 ? "" : `-${String(counter)}`}.json`;
@@ -320,8 +316,6 @@ function scan(
       reading.unresolved.push({
         file: usage.file,
         specifier,
-        member: answer.member,
-        subpath: answer.subpath,
         reason: answer.reason,
       });
     }
@@ -449,7 +443,6 @@ export function workspacePrograms(
     readings: readings.map((reading) => ({
       configFile: reading.configFile,
       fileNames: reading.parsed.fileNames,
-      entries: reading.entries,
       unresolved: reading.unresolved,
       componentsUnread: unread.get(reading.configFile),
     })),

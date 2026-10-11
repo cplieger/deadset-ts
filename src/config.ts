@@ -50,7 +50,7 @@ export type Cascade = "roots" | "full";
  * tags in effect. It is the shape a language built under build constraints reads,
  * and this analyzer leaves it to that analysis.
  */
-export interface PlatformConfiguration {
+interface PlatformConfiguration {
   readonly shape: "platform";
   readonly id: string;
   readonly os: string;
@@ -97,7 +97,7 @@ export interface Analysis {
 }
 
 /** How findings are rendered. */
-export interface Reporters {
+interface Reporters {
   readonly formats: readonly Format[];
   readonly sort: Sort;
   readonly cascade: Cascade;
@@ -154,7 +154,7 @@ export type Provider =
     };
 
 /** The analyzers the orchestrator runs. */
-export interface Providers {
+interface Providers {
   readonly analyzers: readonly Provider[];
 }
 
@@ -293,7 +293,7 @@ export interface Inputs {
 }
 
 /** Which refusal a {@link ConfigError} carries. */
-export type ErrorKind =
+type ErrorKind =
   /**
    * A document that is not one JSON instance of the closed key list: a syntax
    * error, a value of the wrong type, a value outside the closed set a key

@@ -139,6 +139,11 @@ const RENDERED: readonly { module: Module; fragment: Fragment; input: string }[]
     input: "ts://@example/app/src/shims.d.ts#'*.vue'.default:alias",
   },
   {
+    module: { package: "@example/app", path: "src/shims.d.ts" },
+    fragment: { of: "alias", name: "default", block: "lodash" },
+    input: "ts://@example/app/src/shims.d.ts#'lodash'.default:alias",
+  },
+  {
     module: TABS,
     fragment: declaration([name("TabStrip"), name("cachedLayout")]),
     input: "ts://@example/app/src/features/tabs/index.ts#TabStrip.cachedLayout",

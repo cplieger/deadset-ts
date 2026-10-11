@@ -10,13 +10,12 @@ import {
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { emitterInputOf } from "../../__test-helpers__/emitter-input.ts";
+import { emitterInputOf, findingsOf } from "../../__test-helpers__/emitter-input.ts";
 import { contractDocument, fixture, ROOT } from "../../__test-helpers__/fixtures.ts";
 import { schemaValidator } from "../../__test-helpers__/json-schema.ts";
 import type { CompletedFinding } from "../finding.ts";
 import { wireFinding } from "../report.ts";
 import { resolve } from "../resolve.ts";
-import { findingsOf } from "./emitters.ts";
 
 const validate = schemaValidator(
   { "finding.schema.json": contractDocument("finding.schema.json") },

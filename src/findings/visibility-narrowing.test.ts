@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { emitterInputOf, sweepOnly } from "../../__test-helpers__/emitter-input.ts";
+import { emitterInputOf, sweepOnly, findingsOf } from "../../__test-helpers__/emitter-input.ts";
 import { fixture } from "../../__test-helpers__/fixtures.ts";
 import type { Finding } from "../finding.ts";
 import type { InventorySymbol } from "../inventory.ts";
@@ -11,7 +11,7 @@ import { resolve } from "../resolve.ts";
 import { evaluateEdges, type EdgeEvaluation } from "../edges.ts";
 import type { Boundary, EdgeSide } from "./boundary.ts";
 import type { EmitterInput } from "./emitter.ts";
-import { EMITTERS, findingsOf } from "./emitters.ts";
+import { EMITTERS } from "./emitters.ts";
 import { narrowings } from "./visibility-narrowing.ts";
 
 const NARROWING = fixture("projects", "visibility-narrowing");

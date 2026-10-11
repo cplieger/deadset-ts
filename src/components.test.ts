@@ -251,3 +251,87 @@ describe("a chain of dead declarations far longer than any call stack", () => {
     expect(result.components[0]?.members.length, "and the whole chain falls with it").toBe(LINKS);
   });
 });
+
+describe("the held declarations of an enum", () => {
+  const path = "src/tier.ts";
+  const symbol = (
+    line: number,
+    name: string,
+    kind: InventorySymbol["kind"],
+    parent: string,
+  ): InventorySymbol => ({
+    id: `${path}:${String(line)}:1`,
+    ref: `ts://@example/memory/${path}#${name}`,
+    name,
+    kind,
+    position: { path, line, column: 1 },
+    endLine: line,
+    parent,
+    exported: false,
+    visibility: "public",
+    static: false,
+  });
+  const main = symbol(1, "main", "function", "");
+  const tier = symbol(2, "Tier", "enum", "");
+  const [base, next, alias, top, paused, closed] = (
+    ["Base", "Next", "Alias", "Top", "Paused", "Closed"] as const
+  ).map((name, index) => symbol(index + 3, `Tier.${name}`, "enum-member", tier.id));
+  const read = (from: InventorySymbol, to: InventorySymbol | undefined): Reference => ({
+    from: from.id,
+    to: to?.id ?? "",
+    position: from.position,
+    use: "read",
+    resolution: "batch",
+    test: false,
+  });
+
+  /** Each component as its member names, whether it is held, and the lines it deletes. */
+  function components(withDependents: boolean): string[] {
+    const symbols = [main, tier, base, next, alias, top, paused, closed].filter(
+      (one): one is InventorySymbol => one !== undefined,
+    );
+    const result = sweepMatrix(
+      matrixOf([
+        {
+          configuration: "memory",
+          symbols,
+          references: [read(main, tier), read(main, top), read(alias ?? main, next)],
+          roots: [{ id: main.id, kind: "entry-file", source: "" }],
+          testFiles: [],
+          ...(withDependents
+            ? {
+                dependents: new Map([
+                  [base?.id ?? "", [next?.id ?? ""]],
+                  [alias?.id ?? "", [top?.id ?? ""]],
+                  [paused?.id ?? "", [closed?.id ?? ""]],
+                ]),
+              }
+            : {}),
+        },
+      ]),
+      { marked: [], mode: { production: true } },
+    );
+    const names = new Map(symbols.map((one) => [one.id, one.name]));
+    return result.components.map(
+      (one) =>
+        `${one.members.map((id) => names.get(id) ?? id).join(",")} held=${String(one.held)} lines=${String(one.deletableLines)} roots=${one.roots.map((id) => names.get(id) ?? id).join(",")}`,
+    );
+  }
+
+  it("holds a member a live member depends on, what it names and what precedes it, and joins a dead member to its dead dependents", () => {
+    expect(components(true)).toEqual([
+      "Tier.Base held=true lines=0 roots=Tier.Base",
+      "Tier.Next,Tier.Alias held=true lines=0 roots=Tier.Alias",
+      "Tier.Paused,Tier.Closed held=false lines=2 roots=Tier.Paused,Tier.Closed",
+    ]);
+  });
+
+  it("holds nothing and joins nothing where no member has a dependent", () => {
+    expect(components(false)).toEqual([
+      "Tier.Base held=false lines=1 roots=Tier.Base",
+      "Tier.Next,Tier.Alias held=false lines=2 roots=Tier.Alias",
+      "Tier.Paused held=false lines=1 roots=Tier.Paused",
+      "Tier.Closed held=false lines=1 roots=Tier.Closed",
+    ]);
+  });
+});

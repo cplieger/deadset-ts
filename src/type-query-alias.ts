@@ -17,7 +17,7 @@ import {
   SyntaxKind,
   type Node,
   type SourceFile,
-} from "@typescript/native/unstable/ast";
+} from "@typescript/native/ast";
 
 /** One global that aliases a module's export. */
 interface TypeQueryAlias {

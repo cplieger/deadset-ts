@@ -1,4 +1,4 @@
-import type { SourceFile } from "@typescript/native/unstable/ast";
+import type { SourceFile } from "@typescript/native/ast";
 import { describe, expect, it } from "vitest";
 import type { Host } from "./host.ts";
 import type { SourceFiles } from "./source-files.ts";
@@ -86,6 +86,7 @@ function filesAt(paths: readonly string[]): SourceFiles {
     byPath,
     byName: new Map([...byPath.values()].map((file) => [file.fileName, file])),
     named: () => [],
+    outputDirs: [],
   };
 }
 

@@ -1,12 +1,10 @@
 /**
- * The serialization-contract class: the data members and `toJSON` of every class,
- * interface and object type a value's static type names, and of every such type its
- * data members' types reach, where the value reaches `JSON.stringify` or a call
- * `ts.serializers` names, and those and `toString` where it is passed to an `unknown`
- * or `any` parameter of a function outside the analysis. A function of the project
- * handing such a parameter of its own to a destination is one, holding back what that
- * destination does, to a fixpoint. A function invoked through `Function.prototype.call`,
- * `apply` or `bind` is the callee, given the arguments those methods pass it.
+ * The serialization-contract class: the data members and `toJSON` of every type a value's
+ * static type reaches, where the value reaches `JSON.stringify` or a call `ts.serializers`
+ * names, and `toString` too where it reaches an `unknown` or `any` parameter of a function
+ * outside the analysis or an erased property of a type the program does not declare. A
+ * function of the project handing such a parameter to a destination is one, to a fixpoint,
+ * and a function invoked through `call`, `apply` or `bind` is the callee.
  */
 
 import {
@@ -36,14 +34,14 @@ import {
   type Expression,
   type Node,
   type ParameterDeclaration,
-} from "@typescript/native/unstable/ast";
+} from "@typescript/native/ast";
 import {
   SignatureKind,
   SymbolFlags,
   TypeFlags,
   type Symbol as TSSymbol,
   type Type,
-} from "@typescript/native/unstable/sync";
+} from "@typescript/native/sync";
 import { aliasChains, type AliasChains } from "./alias-chain.ts";
 import { calleeName, resolvedTargets, valuesPassed } from "./calls.ts";
 import { classMembers, memberComponent, typesAt } from "./class-members.ts";
@@ -59,6 +57,7 @@ import { nodeKey, type Inventory } from "./inventory.ts";
 import { renderPosition } from "./position.ts";
 import { must } from "./query.ts";
 import type { ProjectView } from "./session.ts";
+import { erasedStores, type ErasedStores } from "./erased-stores.ts";
 import { valueReach, type Reached } from "./value-reach.ts";
 
 /** The serializer every run reads, whatever the configuration names. */
@@ -527,13 +526,20 @@ function destinations<Brand>(
   return { invocation, at, mayReceive };
 }
 
-/** One argument whose value carries classes and object types of the target into a destination. */
+/** One value that carries classes and object types of the target into a destination. */
 interface Flow {
   readonly site: Node;
   readonly classes: ReadonlySet<string>;
   /** The members of the interfaces and object types the value carries. */
   readonly members: readonly TSSymbol[];
   readonly to: Destination;
+  /** What a retention names the destination by. */
+  readonly detail: string;
+}
+
+/** What two reaches carry together. */
+function joined(a: Reached, b: Reached): Reached {
+  return { classes: new Set([...a.classes, ...b.classes]), members: [...a.members, ...b.members] };
 }
 
 /** Each argument of a call that can receive one whose value carries a class of the target. */
@@ -542,8 +548,9 @@ function flowsOf<Brand>(
   held: Inventory,
   sites: readonly Site[],
   to: Destinations,
+  stores: ErasedStores,
 ): readonly Flow[] {
-  const reach = valueReach(project, held);
+  const reach = valueReach(project, held, stores.inside);
   const arguments_ = sites.flatMap((site) =>
     to.mayReceive(site.call)
       ? to.invocation(site.call).arguments.flatMap((argument, index) => {
@@ -560,7 +567,7 @@ function flowsOf<Brand>(
   const typeOf = new Map<Expression, Type | undefined>(
     asked.map((one, index) => [one.value, types[index]]),
   );
-  return arguments_.flatMap((one) => {
+  const passed = arguments_.flatMap((one) => {
     const type = typeOf.get(one.value);
     let reached: Reached = { classes: new Set<string>(), members: [] };
     if (one.value.kind === SyntaxKind.ThisKeyword) {
@@ -571,12 +578,38 @@ function flowsOf<Brand>(
     } else if (type !== undefined) {
       reached = reach.reachedFrom(type);
     }
+    for (const stored of stores.ofVariable(one.value) ?? []) {
+      reached = joined(reached, reach.reachedFrom(stored));
+    }
     const carries = reached.classes.size > 0 || reached.members.length > 0;
     const destination = carries ? to.at(one.site.call, one.argument) : undefined;
     return destination === undefined
       ? []
-      : [{ site: one.value, classes: reached.classes, members: reached.members, to: destination }];
+      : [
+          {
+            site: one.value,
+            classes: reached.classes,
+            members: reached.members,
+            to: destination,
+            detail: `passed to ${destination.callee}`,
+          },
+        ];
   });
+  const left = stores.outside.flatMap((store) => {
+    const reached = reach.reachedFrom(store.type);
+    return reached.classes.size === 0 && reached.members.length === 0
+      ? []
+      : [
+          {
+            site: store.value,
+            classes: reached.classes,
+            members: reached.members,
+            to: { reach: "conversions" as const, callee: store.property },
+            detail: `stored in the property ${store.property} of a type the program does not declare`,
+          },
+        ];
+  });
+  return [...passed, ...left];
 }
 
 /**
@@ -589,7 +622,13 @@ export function serializationContract<Brand>(input: DetectorInput<Brand>): reado
   const { project, held, targetRoot } = input;
   const walked = walkProject(project, held);
   const chains = aliasChains(project, held);
-  const flows = flowsOf(project, held, walked.sites, destinations(input, chains, walked));
+  const flows = flowsOf(
+    project,
+    held,
+    walked.sites,
+    destinations(input, chains, walked),
+    erasedStores(project),
+  );
   if (flows.length === 0) {
     return [];
   }
@@ -609,7 +648,7 @@ export function serializationContract<Brand>(input: DetectorInput<Brand>): reado
   const found: Evidence[] = [];
   for (const flow of flows) {
     const site = renderPosition(flow.site.getSourceFile(), targetRoot, flow.site.getStart());
-    const detail = `passed to ${flow.to.callee}`;
+    const { detail } = flow;
     for (const member of [...flow.classes].flatMap((id) => members.get(id) ?? [])) {
       const symbol = byId.get(member.id);
       const name = symbol === undefined ? "" : (memberComponent(symbol, byId) ?? "");

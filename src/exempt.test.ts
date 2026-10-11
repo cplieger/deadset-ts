@@ -13,9 +13,10 @@ import {
   type TSExemptionClass,
 } from "./exempt-classes.ts";
 import {
-  computeExemptions,
   disabledClasses,
+  evidenceRecords,
   exemptionsOf,
+  heldRecords,
   retainedIn,
   retainedLines,
   type Detector,
@@ -39,6 +40,14 @@ import { sweep, type Exemption, type Liveness, type Mode } from "./sweep.ts";
 const PRODUCTION: Mode = { production: true };
 const PLAIN: Mode = { production: false };
 
+/** The records one project's detectors found, with no class switched off and no test file. */
+function recordsOf<Brand>(input: DetectorInput<Brand>, detectors: Detectors): readonly Exemption[] {
+  return heldRecords(evidenceRecords(input, detectors, new Set()), {
+    mode: PLAIN,
+    testFiles: new Set(),
+  }).records;
+}
+
 describe("the class registry", () => {
   const contract = contractDocument("exemptions.json")["exemptions"] as {
     class: string;
@@ -52,7 +61,6 @@ describe("the class registry", () => {
       contract.map((row) => ({
         class: row.class,
         languages: row.languages,
-        confidence: row.confidence,
         ...(row.typescript_visibility === undefined
           ? {}
           : {
@@ -163,11 +171,7 @@ describe("a detector the checker leaves without an answer", () => {
     // declarations are read.
     const input = { held: { symbols } } as unknown as DetectorInput<never>;
 
-    const held = computeExemptions(input, new Map([["interface-satisfaction", stopped]]), {
-      disabled: new Set(),
-      mode: PLAIN,
-      testFiles: new Set(),
-    });
+    const held = recordsOf(input, new Map([["interface-satisfaction", stopped]]));
 
     expect(held.map((one) => `${one.id} ${one.class} ${one.detail}`)).toEqual([
       "src/a.ts:3:1 interface-satisfaction kept live by a question the checker did not answer",
@@ -186,11 +190,7 @@ describe("a detector the checker leaves without an answer", () => {
     };
     const input = { held: { symbols } } as unknown as DetectorInput<never>;
 
-    const held = computeExemptions(input, new Map([["decorator", stopped]]), {
-      disabled: new Set(),
-      mode: PLAIN,
-      testFiles: new Set(),
-    });
+    const held = recordsOf(input, new Map([["decorator", stopped]]));
 
     expect(held.map((one) => one.id)).toEqual(["src/a.ts:2:1", "src/a.ts:3:1"]);
   });
@@ -201,13 +201,7 @@ describe("a detector the checker leaves without an answer", () => {
     };
     const input = { held: { symbols: [] } } as unknown as DetectorInput<never>;
 
-    expect(() =>
-      computeExemptions(input, new Map([["enum-group", broken]]), {
-        disabled: new Set(),
-        mode: PLAIN,
-        testFiles: new Set(),
-      }),
-    ).toThrow("closed its channel");
+    expect(() => recordsOf(input, new Map([["enum-group", broken]]))).toThrow("closed its channel");
   });
 });
 
@@ -565,8 +559,8 @@ describe("the framework over the projects of a run", () => {
     const appOnly: Detectors = new Map<TSExemptionClass, Detector>([
       [
         "decorator",
-        ({ held }) =>
-          held.configFile.endsWith("/tsconfig.json")
+        ({ project, held }) =>
+          project.configFile.endsWith("/tsconfig.json")
             ? [evidence(held, shared, "deadCaller", "named by @register")]
             : [],
       ],

@@ -15,12 +15,18 @@ import {
   type StaleRecord,
   type StaleSuppression,
 } from "./findings/self-check.ts";
-import { isRowSubject, pairs, suppressionCounts, type Ledger } from "./suppress.ts";
+import {
+  isDependencySubject,
+  isRowSubject,
+  pairs,
+  suppressionCounts,
+  type Ledger,
+} from "./suppress.ts";
 import type { Provenance, Recorded } from "./suppress-file.ts";
 import { EXIT_CLEAN, EXIT_FINDINGS } from "./verbs/verb.ts";
 
 /** The counts a report's totals carry beside its findings. */
-export interface PassTotals {
+interface PassTotals {
   readonly suppressionsInEffect: number;
   readonly reasonsRecorded: number;
   readonly staleSuppressions: number;
@@ -40,7 +46,7 @@ export interface PassResult {
   readonly edgeEvaluations: readonly EdgeEvaluation<CompletedFinding>[];
   readonly totals: PassTotals;
   /** What every suppression record did, in reading order. */
-  readonly ledger: Ledger<CompletedFinding>;
+  readonly ledger: Ledger;
 }
 
 /** The exit code of a report holding at least one pending finding. */
@@ -134,14 +140,15 @@ export interface RecordableFinding {
 
 /**
  * The rows one round of a baseline write records from its findings, in their order. A
- * finding about a row of a document is not recorded: no record withholds one, so a row
- * recording it would be stale on the first read back. Two findings that would record the
- * same row, two parts of one declaration under one code, record it once.
+ * finding about a row of a document other than a dependency row is not recorded: no record
+ * withholds one, so a row recording it would be stale on the first read back. Two findings
+ * that would record the same row, two parts of one declaration under one code, record it
+ * once.
  */
 export function recordedFindings(findings: readonly RecordableFinding[]): readonly Recorded[] {
   const rows = new Map<string, Recorded>();
   for (const finding of findings) {
-    if (isRowSubject(finding.symbol.kind)) {
+    if (isRowSubject(finding.symbol.kind) && !isDependencySubject(finding.symbol.kind)) {
       continue;
     }
     const row = { code: finding.code, symbol: finding.symbol.ref, path: finding.position.path };

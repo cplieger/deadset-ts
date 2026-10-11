@@ -44,7 +44,7 @@ import {
   type ParenthesizedExpression,
   type SatisfiesExpression,
   type SourceFile,
-} from "@typescript/native/unstable/ast";
+} from "@typescript/native/ast";
 import { lineOf } from "./component-files.ts";
 import {
   CONVENTION_ROWS,
@@ -53,7 +53,9 @@ import {
   type HelperReading,
   type MoveReading,
   type OptionsCall,
+  type PackageKey,
   type ShortNameReading,
+  type TestFileReading,
 } from "./convention-rows.ts";
 import { documentStrings } from "./configuration-files.ts";
 import { globExpression } from "./glob.ts";
@@ -69,6 +71,11 @@ export interface ConventionManifest {
   readonly dir: string;
   /** The manifest's path below the target root, `/`-separated. */
   readonly path: string;
+  /**
+   * Whether the manifest is a nested package's, whose install no run requires: an
+   * enabling package it declares and nothing installs applies no row and fails nothing.
+   */
+  readonly nested?: boolean;
 }
 
 /** One row a run applied, as the report lists it. */
@@ -118,6 +125,8 @@ export interface Conventions {
   readonly uses: readonly string[];
   /** Per configuration file, absolute, the strings its applied rows' selection keys hold. */
   readonly selected: ReadonlyMap<string, Selected>;
+  /** The files, absolute, an applied row's test-file properties name. */
+  readonly testFiles: ReadonlySet<string>;
 }
 
 /** The strings one configuration file holds at selection keys, which root no file. */
@@ -607,6 +616,43 @@ function holdsValue(held: Node, value: true | string): boolean {
   );
 }
 
+/** The directory one file's test-file strings are read against, as {@link TestFileReading} states it. */
+function testFileRoot(file: SourceFile, dir: string, reading: TestFileReading): string | undefined {
+  for (const property of reading.roots) {
+    const values = valuesAt(file, property, reading.call);
+    if (values.length > 0) {
+      const texts = new Set(values.map(literalText));
+      const [text] = texts;
+      return texts.size === 1 && text !== undefined ? resolvePath(dir, text) : undefined;
+    }
+  }
+  return dir;
+}
+
+/** The files an applied row's test-file properties name. */
+function testFilesNamed(
+  host: Host,
+  parse: ParseSource,
+  dir: string,
+  readings: readonly TestFileReading[],
+  into: Set<string>,
+): void {
+  for (const reading of readings) {
+    for (const { file } of readingFiles(host, parse, dir, reading.files)) {
+      const at = testFileRoot(file, dir, reading);
+      if (at === undefined) {
+        continue;
+      }
+      for (const node of stringsAt(file, reading.property, reading.call)) {
+        const text = literalText(node);
+        if (text !== undefined && text !== "") {
+          into.add(resolvePath(at, text));
+        }
+      }
+    }
+  }
+}
+
 /** The strings an applied row's selection keys hold, added per configuration file to `into`. */
 function selectedStrings(
   host: Host,
@@ -873,6 +919,60 @@ function helperUses(
     .map((reading) => reading.package);
 }
 
+/**
+ * The dependencies one manifest declares that an applied row's package keys use: each
+ * whose name a string under a member of a key's name equals, or begins followed by `/` or
+ * by `:` and a name. A member's own name is no such string.
+ */
+function packageKeyUses(
+  host: Host,
+  parse: ParseSource,
+  dir: string,
+  manifest: unknown,
+  keys: readonly PackageKey[],
+): readonly string[] {
+  const declared = DEPENDENCY_SECTIONS.flatMap((section) => {
+    const held = isRecord(manifest) ? manifest[section] : undefined;
+    return isRecord(held) ? Object.keys(held) : [];
+  });
+  const strings: string[] = [];
+  const collect = (node: Node): void => {
+    const text = literalText(node);
+    if (text !== undefined) {
+      strings.push(text);
+    } else if (isPropertyAssignment(node)) {
+      collect(node.initializer);
+    } else {
+      node.forEachChild(collect);
+    }
+  };
+  for (const { key, files } of keys) {
+    const visit = (node: Node): void => {
+      if (isPropertyAssignment(node) && keyOf(node) === key) {
+        collect(node.initializer);
+      }
+      node.forEachChild(visit);
+    };
+    for (const { file } of readingFiles(host, parse, dir, files)) {
+      const values = declaredValues(file);
+      for (const one of defaultExports(file)) {
+        const object = objectOf(one, values, true);
+        if (object !== undefined) {
+          visit(object);
+        }
+      }
+    }
+  }
+  return declared.filter((name) =>
+    strings.some(
+      (text) =>
+        text === name ||
+        text.startsWith(`${name}/`) ||
+        (text.startsWith(`${name}:`) && text.length > name.length + 1),
+    ),
+  );
+}
+
 /** Two strings ordered bytewise. */
 function compare(a: string, b: string): number {
   if (a === b) {
@@ -898,6 +998,7 @@ export function readConventions(
   const failures: ConventionFailure[] = [];
   const uses = new Set<string>();
   const selected = new Map<string, { starts: Set<number>; texts: string[] }>();
+  const testFiles = new Set<string>();
   for (const manifest of manifests) {
     const declared = readJSON(host, joinPath(manifest.dir, "package.json"));
     const versions = new Map<string, string | undefined>();
@@ -911,7 +1012,11 @@ export function readConventions(
       }
       const version = versions.get(row.package);
       if (version === undefined) {
-        if (missing.has(row.package) || !declares(declared, row.package, REQUIRED_SECTIONS)) {
+        if (
+          missing.has(row.package) ||
+          manifest.nested === true ||
+          !declares(declared, row.package, REQUIRED_SECTIONS)
+        ) {
           continue;
         }
         missing.add(row.package);
@@ -959,6 +1064,10 @@ export function readConventions(
       for (const name of shortNameUses(host, parse, manifest.dir, declared, row.shortNames ?? [])) {
         uses.add(name);
       }
+      const keys = row.packageKeys ?? [];
+      for (const name of packageKeyUses(host, parse, manifest.dir, declared, keys)) {
+        uses.add(name);
+      }
       for (const name of manifestKeyUses(declared, row.manifestKeys ?? [])) {
         uses.add(name);
       }
@@ -966,6 +1075,7 @@ export function readConventions(
         uses.add(name);
       }
       selectedStrings(host, parse, manifest.dir, row.selections ?? [], selected);
+      testFilesNamed(host, parse, manifest.dir, row.testFiles ?? [], testFiles);
       const excludes = [
         ...new Set((row.excludes ?? []).flatMap((one) => expand(one, resolved))),
       ].map(globExpression);
@@ -996,6 +1106,7 @@ export function readConventions(
     failures,
     uses: [...uses].sort(compare),
     selected,
+    testFiles,
   };
 }
 

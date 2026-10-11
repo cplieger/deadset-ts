@@ -3,27 +3,31 @@
  * An object-literal property writes the member of its name on each constituent of the
  * literal's contextual type that declares one. A value reaching a position typed by another
  * object type reads each of its members that type declares, through array elements and
- * function parameters and results too; a class instance there is the
- * interface-satisfaction class's evidence instead.
+ * the parameters and results of functions and constructors too; a class instance there is
+ * the interface-satisfaction class's evidence instead.
  */
 
 import {
+  isClassDeclaration,
+  isClassExpression,
   isComputedPropertyName,
   isGetAccessorDeclaration,
   isIdentifier,
   isMethodDeclaration,
+  isMethodSignatureDeclaration,
   isNoSubstitutionTemplateLiteral,
   isNumericLiteral,
   isObjectLiteralExpression,
   isPropertyAssignment,
   isSetAccessorDeclaration,
   isShorthandPropertyAssignment,
+  isSpreadAssignment,
   isStringLiteral,
   type Expression,
   type Node,
   type ObjectLiteralExpression,
-} from "@typescript/native/unstable/ast";
-import { SignatureKind, type Type } from "@typescript/native/unstable/sync";
+} from "@typescript/native/ast";
+import { SignatureKind, type NodeHandle, type Type } from "@typescript/native/sync";
 import type { AliasChains } from "./alias-chain.ts";
 import type { Inventory, SymbolKind } from "./inventory.ts";
 import { isAnswered, type PropertyTables } from "./query.ts";
@@ -45,14 +49,14 @@ export interface FlowAt {
 }
 
 /** One use the contextual types make: the node it is written at and the members it names. */
-export interface ContextualUse {
+interface ContextualUse {
   readonly at: Node;
   readonly from: string;
   readonly ids: readonly string[];
 }
 
 /** What the contextual types of one project's literals and values use, and what asking cost. */
-export interface ContextualUses {
+interface ContextualUses {
   /** Each literal property that writes a member, by the property's node. */
   readonly writes: readonly ContextualUse[];
   /** Each value whose members a position typed by another object type reads. */
@@ -63,8 +67,13 @@ export interface ContextualUses {
   readonly lookups: number;
 }
 
-/** The name one literal property is written under, where the name is literal text. */
-function propertyName(property: Node): { node: Node; text: string } | undefined {
+/**
+ * The name one literal property is written under: its literal text, or the computed name
+ * node whose key the checker names, a unique symbol among them.
+ */
+function propertyName(
+  property: Node,
+): { node: Node; text: string } | { node: Node; text: undefined } | undefined {
   if (
     !isPropertyAssignment(property) &&
     !isShorthandPropertyAssignment(property) &&
@@ -83,12 +92,14 @@ function propertyName(property: Node): { node: Node; text: string } | undefined 
     if (isStringLiteral(key) || isNumericLiteral(key) || isNoSubstitutionTemplateLiteral(key)) {
       return { node: name, text: key.text };
     }
+    return { node: name, text: undefined };
   }
   return undefined;
 }
 
-/** The parameter and result types of one call signature, each where the checker answered. */
+/** The parameter and result types of one call or construct signature, each where the checker answered. */
 interface Called {
+  readonly kind: SignatureKind;
   readonly parameters: readonly (Type | undefined)[];
   readonly result: Type | undefined;
 }
@@ -107,9 +118,30 @@ interface Checked {
 /** One member of an object type, by the inventory's declarations and the checker's declaration handles. */
 interface Member {
   readonly ids: readonly string[];
+  /** The inventory's interface methods it is, which a position reads but no literal writes. */
+  readonly methods: readonly string[];
   readonly handles: ReadonlySet<string>;
   /** Whether a declaration of it is in one of the target's own files. */
   readonly own: boolean;
+  /** The checker's declarations of it in the target's own files. */
+  readonly declarations: readonly NodeHandle[];
+}
+
+/**
+ * Whether an object spread copies a member a declaration declares: a method, a method
+ * signature and a class's accessor are no own data property of the value, while an
+ * accessor of an interface or a type literal describes one. It is decided on the
+ * declaration, because a mapped type over a class keeps the class's declarations on
+ * plain property symbols.
+ */
+function copiedBySpread(node: Node): boolean {
+  if (isMethodDeclaration(node) || isMethodSignatureDeclaration(node)) {
+    return false;
+  }
+  return !(
+    (isGetAccessorDeclaration(node) || isSetAccessorDeclaration(node)) &&
+    (isClassDeclaration(node.parent) || isClassExpression(node.parent))
+  );
 }
 
 /**
@@ -129,6 +161,11 @@ export function contextualUses<Brand>(
   const queries = project.queries;
   const ownPaths = project.ownPaths();
   const kinds = new Map(held.symbols.map((symbol) => [symbol.id, symbol.kind]));
+  const privateNames = new Set(
+    held.symbols
+      .filter((symbol) => symbol.visibility === "private-name")
+      .map((symbol) => symbol.id),
+  );
   let batches = 0;
   let lookups = 0;
   const batchesOf = (count: number): number => Math.ceil(count / cap);
@@ -167,10 +204,14 @@ export function contextualUses<Brand>(
         ids: chains
           .declarationsOf(property)
           .filter((id) => MEMBER_KINDS.has(kinds.get(id) ?? "file")),
+        methods: chains
+          .declarationsOf(property)
+          .filter((id) => kinds.get(id) === "interface-method"),
         handles: new Set(
           property.declarations.map((handle) => `${handle.path}#${String(handle.index)}`),
         ),
         own: property.declarations.some((handle) => ownPaths.has(handle.path)),
+        declarations: property.declarations.filter((handle) => ownPaths.has(handle.path)),
       });
     }
     tables.set(type.id, table);
@@ -183,6 +224,31 @@ export function contextualUses<Brand>(
     literals.map((one) => one.literal),
     cap,
   );
+  // A computed name that is not literal text names the property the literal declares
+  // under the checker's own key, which is how a type declares a member a unique symbol
+  // keys: asked once, for the literals that have a contextual type.
+  const computed = literals.flatMap(({ literal }, index) =>
+    contexts[index] === undefined || !isAnswered(contexts[index])
+      ? []
+      : literal.properties.flatMap((property) => {
+          const name = propertyName(property);
+          return name !== undefined && name.text === undefined ? [name.node] : [];
+        }),
+  );
+  batches += batchesOf(computed.length);
+  const keys = new Map<Node, string>();
+  (computed.length === 0
+    ? []
+    : project.symbolsAt(
+        computed.map((node) => project.handle(node)),
+        cap,
+      )
+  ).forEach((symbol, index) => {
+    const node = computed[index];
+    if (node !== undefined && symbol !== undefined && isAnswered(symbol)) {
+      keys.set(node, symbol.name);
+    }
+  });
   literals.forEach(({ literal, from }, index) => {
     const context = contexts[index];
     if (context === undefined || !isAnswered(context)) {
@@ -191,10 +257,11 @@ export function contextualUses<Brand>(
     const tablesOf = partsOf(context).map(membersOf);
     for (const property of literal.properties) {
       const name = propertyName(property);
-      if (name === undefined) {
+      const text = name?.text ?? (name === undefined ? undefined : keys.get(name.node));
+      if (name === undefined || text === undefined) {
         continue;
       }
-      const ids = [...new Set(tablesOf.flatMap((table) => table.get(name.text)?.ids ?? []))];
+      const ids = [...new Set(tablesOf.flatMap((table) => table.get(text)?.ids ?? []))];
       if (ids.length > 0) {
         writes.push({ at: name.node, from, ids });
       }
@@ -208,8 +275,10 @@ export function contextualUses<Brand>(
     cap,
   );
   /** The members a position may read structurally: those of object types, not of classes. */
-  const readable = (member: Member): readonly string[] =>
-    member.ids.filter((id) => kinds.get(id) === "type-member");
+  const readable = (member: Member): readonly string[] => [
+    ...member.ids.filter((id) => kinds.get(id) === "type-member"),
+    ...member.methods,
+  ];
   const carries = (part: Type): boolean =>
     [...membersOf(part).values()].some((member) => readable(member).length > 0);
   /** Whether an object type has members and declares none of them in the target. */
@@ -236,14 +305,37 @@ export function contextualUses<Brand>(
     return element;
   };
 
+  const argumentsOf = new Map<number, readonly Type[]>();
+  /** The type arguments of an instantiation of a generic type, read once per type. */
+  const typeArgumentsOf = (type: Type): readonly Type[] => {
+    const known = argumentsOf.get(type.id);
+    if (known !== undefined) {
+      return known;
+    }
+    lookups += type.isTypeReference() ? 1 : 0;
+    const held = queries.typeArguments(type);
+    const found = isAnswered(held) ? held : [];
+    argumentsOf.set(type.id, found);
+    return found;
+  };
+
   const calls = new Map<number, Called | undefined>();
-  /** The parameter and return types of a type's one call signature, read once per type. */
+  /**
+   * The parameter and return types of a type's one call signature, or of its one construct
+   * signature where it has no call signature, read once per type.
+   */
   const callOf = (type: Type): Called | undefined => {
     if (calls.has(type.id)) {
       return calls.get(type.id);
     }
     lookups += 1;
-    const signatures = queries.signaturesOf(type, SignatureKind.Call);
+    let kind = SignatureKind.Call;
+    let signatures = queries.signaturesOf(type, kind);
+    if (isAnswered(signatures) && signatures.length === 0) {
+      lookups += 1;
+      kind = SignatureKind.Construct;
+      signatures = queries.signaturesOf(type, kind);
+    }
     let called: Called | undefined;
     const [signature, ...more] = isAnswered(signatures) ? signatures : [];
     if (signature !== undefined && more.length === 0) {
@@ -253,6 +345,7 @@ export function contextualUses<Brand>(
       const result = queries.returnTypeOf(signature);
       lookups += parameters.length + 1;
       called = {
+        kind,
         parameters: parameters.map((one) => (isAnswered(one) ? one : undefined)),
         result: isAnswered(result) ? result : undefined,
       };
@@ -263,10 +356,11 @@ export function contextualUses<Brand>(
 
   /**
    * Each object type a value of `source` is checked as against the object types of
-   * `target`: the value's own, and through array elements and through a function's
-   * parameters, checked the other way, and its result. A source that is one of the
-   * target's own object types matches it as it stands. Each pair is compared once, which
-   * ends the walk over a recursive type.
+   * `target`: the value's own, and through array elements, a function's parameters,
+   * checked the other way, and result, and the type arguments two instantiations share
+   * by place, an array among them, as an array reaches `Iterable<T>`.
+   * A source that is one of the target's own object types matches it as it stands. Each
+   * pair is compared once, which ends the walk over a recursive type.
    */
   const compared = (
     source: Type | undefined,
@@ -292,13 +386,24 @@ export function contextualUses<Brand>(
       }
       const element = elementOf(one);
       const called = element === undefined ? callOf(one) : undefined;
+      const sourceArguments = typeArgumentsOf(one);
       for (const part of targets) {
+        const partElement = elementOf(part);
+        if (element !== undefined && partElement !== undefined) {
+          compared(element, partElement, into, seen);
+          continue;
+        }
+        const targetArguments = typeArgumentsOf(part);
+        // A defaulted trailing parameter, as `Iterable<T, TReturn, TNext>` has, leaves
+        // the places two instantiations share comparable.
+        sourceArguments.slice(0, targetArguments.length).forEach((argument, index) => {
+          compared(argument, targetArguments[index], into, seen);
+        });
         if (element !== undefined) {
-          compared(element, elementOf(part), into, seen);
           continue;
         }
         const other = called === undefined ? undefined : callOf(part);
-        if (called === undefined || other === undefined) {
+        if (called === undefined || other?.kind !== called.kind) {
           continue;
         }
         other.parameters.forEach((parameter, index) => {
@@ -326,7 +431,7 @@ export function contextualUses<Brand>(
       if (element !== undefined) {
         return mayCarry(element, seen);
       }
-      return callOf(part) !== undefined;
+      return callOf(part) !== undefined || typeArgumentsOf(part).some((one) => mayCarry(one, seen));
     });
   };
 
@@ -379,6 +484,51 @@ export function contextualUses<Brand>(
     }
     if (ids.size > 0) {
       reads.push({ at: flow.value, from: flow.from, ids: [...ids] });
+    }
+  });
+  const copies = new Map<Member, boolean>();
+  /** Whether a spread copies the member: where any declaration of it declares data. */
+  const copied = (member: Member): boolean => {
+    let known = copies.get(member);
+    if (known === undefined) {
+      known = member.declarations.some((handle) => {
+        const node = project.declarationAt(handle)?.node;
+        return node === undefined || copiedBySpread(node);
+      });
+      copies.set(member, known);
+    }
+    return known;
+  };
+  const spreads = literals.flatMap(({ literal, from }) =>
+    literal.properties.flatMap((property) =>
+      isSpreadAssignment(property) ? [{ value: property.expression, from }] : [],
+    ),
+  );
+  batches += batchesOf(spreads.length);
+  const spreadTypes = queries.typesAt(
+    spreads.map((one) => one.value),
+    cap,
+  );
+  spreads.forEach(({ value, from }, index) => {
+    const type = spreadTypes[index];
+    if (type === undefined || !isAnswered(type)) {
+      return;
+    }
+    // A spread gets every own enumerable property, an overwritten key's getter included,
+    // and no private name, which is no property
+    // (https://tc39.es/ecma262/#sec-copydataproperties).
+    const own = (member: Member, id: string): boolean => !privateNames.has(id) && copied(member);
+    const ids = [
+      ...new Set(
+        partsOf(type).flatMap((part) =>
+          [...membersOf(part).values()].flatMap((member) =>
+            member.ids.filter((id) => own(member, id)),
+          ),
+        ),
+      ),
+    ];
+    if (ids.length > 0) {
+      reads.push({ at: value, from, ids });
     }
   });
   return { writes, reads, batches, lookups };

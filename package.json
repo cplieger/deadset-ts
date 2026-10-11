@@ -24,12 +24,13 @@
     "typecheck:tests": "tsc -p tsconfig.test.json",
     "test": "vitest --run",
     "test:starters": "vitest --run --config starters/vitest.config.ts",
+    "test:mutation": "stryker run",
     "lint": "eslint .",
     "lint:prettier": "prettier --check .",
     "lint:fix": "eslint . --fix && prettier --write ."
   },
   "dependencies": {
-    "@typescript/native": "npm:typescript@7.1.0-dev.20261007.1"
+    "@typescript/native": "npm:typescript@7.1.0-dev.20261010.1"
   },
   "overrides": {
     "qs": "^6.15.2"
@@ -44,7 +45,7 @@
     "fast-check": "4.10.2",
     "prettier": "3.9.9",
     "typescript": "npm:@typescript/typescript6@6.0.2",
-    "typescript-eslint": "8.71.0",
+    "typescript-eslint": "8.71.1",
     "vitest": "5.0.3"
   },
   "publishConfig": {

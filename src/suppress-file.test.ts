@@ -4,10 +4,12 @@ import { ConfigError } from "./config.ts";
 import type { Host } from "./host.ts";
 import type { InventorySymbol } from "./inventory.ts";
 import { joinPath } from "./paths.ts";
+import { isSymbolRef } from "./suppress.ts";
 import {
   BASELINE_FILE,
   IGNORE_FILE,
   readBaseline,
+  otherSchemeRows,
   readIgnoreFile,
   writeBaseline,
 } from "./suppress-file.ts";
@@ -101,19 +103,49 @@ function outcome(one: CorpusCase): string {
     if (held.refusals.length > 0) {
       return held.refusals.map((refused) => refused.reported).join(" ");
     }
+    if (held.records.length === 0) {
+      return "nothing";
+    }
     return held.records.length === 1 && held.records[0]?.bound !== "" ? "accepted" : "unbound";
   } catch (error: unknown) {
     return error instanceof ConfigError ? "exit 2" : String(error);
   }
 }
 
+/** Whether a case names a well-formed reference of the other language's scheme. */
+function otherScheme(one: CorpusCase): boolean {
+  const { symbol } = one.input;
+  return typeof symbol === "string" && isSymbolRef(symbol) && !symbol.startsWith("ts://");
+}
+
+/** The case with its other-scheme reference spelled as this language's, fragment kept. */
+function ownTwin(one: CorpusCase): CorpusCase {
+  const symbol = String(one.input["symbol"]);
+  return {
+    ...one,
+    input: {
+      ...one.input,
+      symbol: `ts://@example/app/src/lib.ts${symbol.slice(symbol.indexOf("#"))}`,
+    },
+  };
+}
+
 describe("every entry and row case of the published token corpus", () => {
   const cases = CORPUS.filter((one) => one.kind !== "inline");
 
   it.each(cases.map((one) => [one.kind, JSON.stringify(one.input), one] as const))(
-    "%s %s has the outcome the grammar declares",
+    "%s %s has the outcome the grammar declares, in the analyzer of its reference's language",
     (_kind, _input, one) => {
-      expect(outcome(one)).toBe(declared(one));
+      expect(outcome(otherScheme(one) ? ownTwin(one) : one)).toBe(declared(one));
+    },
+  );
+
+  it.each(
+    cases.filter(otherScheme).map((one) => [one.kind, JSON.stringify(one.input), one] as const),
+  )(
+    "%s %s is form-checked here and otherwise left to the other language's analyzer",
+    (_kind, _input, one) => {
+      expect(outcome(one)).toBe(declared(one) === "exit 2" ? "exit 2" : "nothing");
     },
   );
 
@@ -223,5 +255,92 @@ describe("a written baseline", () => {
         version: "1.2.3",
       }),
     ).toThrow(/would carry no reason/u);
+  });
+
+  it("keeps the other language's rows as the document held them, before its own", () => {
+    const provenance = { analyzer: "deadset-ts", version: "1.2.3" };
+    const goRow = {
+      code: "DS1001",
+      symbol: "go://example.com/app#Catalog.ResolveAlias",
+      path: "catalog.go",
+      reason: "recorded by deadset-go 1.0.0",
+    };
+    const held = JSON.stringify({
+      baseline: [
+        { ...ENTRY, reason: "recorded by deadset-ts 1.0.0" },
+        goRow,
+        { ...goRow, symbol: "go://example.com/app#other" },
+      ],
+    });
+    const written = JSON.parse(
+      whole(writeBaseline(recorded, provenance, otherSchemeRows(held))),
+    ) as { baseline: unknown[] };
+
+    expect(written.baseline).toEqual([
+      goRow,
+      { ...goRow, symbol: "go://example.com/app#other" },
+      { ...recorded[0], reason: "recorded by deadset-ts 1.2.3" },
+    ]);
+  });
+
+  it("keeps a row of the other language missing its reason or its path with exactly the members it held", () => {
+    const provenance = { analyzer: "deadset-ts", version: "1.2.3" };
+    const unreasoned = { code: "DS1002", symbol: "go://example.com/app#gone", path: "main.go" };
+    const unscoped = { code: "DS1002", symbol: "go://example.com/app#left", reason: "" };
+    const written = whole(
+      writeBaseline(
+        [],
+        provenance,
+        otherSchemeRows(JSON.stringify({ baseline: [unreasoned, unscoped] })),
+      ),
+    );
+
+    expect((JSON.parse(written) as { baseline: unknown[] }).baseline).toEqual([
+      unreasoned,
+      unscoped,
+    ]);
+    expect(written).toContain(JSON.stringify(unreasoned, undefined, 2).replaceAll("\n", "\n    "));
+  });
+
+  it("refuses to rewrite a document holding a row no record takes, of either language", () => {
+    expect(() =>
+      otherSchemeRows(`{"baseline": [{"code": "DS1", "symbol": "ts://@example/app/a.ts#A"}]}`),
+    ).toThrow(/cannot be rewritten/u);
+  });
+
+  it("refuses to rewrite a document it cannot keep the other language's rows of", () => {
+    expect(() => otherSchemeRows("{")).toThrow(/cannot be rewritten/u);
+    expect(() => otherSchemeRows(`{"ignore": []}`)).toThrow(/cannot be rewritten/u);
+    expect(() => otherSchemeRows(`{"baseline": [{"symbol": "go://example.com/app#x"}]}`)).toThrow(
+      /cannot be rewritten/u,
+    );
+  });
+});
+
+describe("a record of the other language's scheme", () => {
+  it("binds nothing, refuses nothing and is reported under no code in this analyzer", () => {
+    const goEntry = { code: "DS1001", symbol: "go://example.com/app#Catalog", path: "catalog.go" };
+    for (const [file, array, read] of [
+      [IGNORE_FILE, "ignore", readIgnoreFile],
+      [BASELINE_FILE, "baseline", readBaseline],
+    ] as const) {
+      const held = read(
+        hostWith({
+          [file]: JSON.stringify({ [array]: [goEntry, { ...goEntry, reason: "kept" }] }),
+        }),
+        ROOT,
+        [declaration(goEntry.symbol, goEntry.path)],
+      );
+
+      expect(held).toEqual({ records: [], refusals: [] });
+    }
+  });
+
+  it("still ends the run where a value is malformed", () => {
+    const text = JSON.stringify({
+      ignore: [{ code: "DS1001", symbol: "go://example.com/app#Catalog", path: "./catalog.go" }],
+    });
+
+    expect(() => readIgnoreFile(hostWith({ [IGNORE_FILE]: text }), ROOT, [])).toThrow(ConfigError);
   });
 });

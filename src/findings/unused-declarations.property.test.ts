@@ -1,11 +1,10 @@
 import { rmSync } from "node:fs";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { emitterInputOf } from "../../__test-helpers__/emitter-input.ts";
+import { emitterInputOf, findingsOf } from "../../__test-helpers__/emitter-input.ts";
 import { writeProject } from "../../__test-helpers__/projects.ts";
 import { resolve } from "../resolve.ts";
 import { openEngine, type Engine } from "../session.ts";
-import { findingsOf } from "./emitters.ts";
 
 /**
  * One iteration writes a project and sweeps it in a fresh snapshot of one shared client,

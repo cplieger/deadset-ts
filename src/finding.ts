@@ -25,7 +25,7 @@ export interface FindingPosition {
 }
 
 /** What a finding is about. */
-export interface FindingSubject {
+interface FindingSubject {
   /** The stable symbol reference, or for a configured root the root as written. */
   readonly ref: string;
   /** The subject kind, from the closed vocabulary of the finding schema. */
@@ -65,6 +65,8 @@ export interface FindingDetails {
   readonly entry?: SuppressionEntry;
   /** On the intra-function kinds: the external rules that report the same kind, as the vocabulary lists them. */
   readonly overlap?: readonly string[];
+  /** On a deletable finding: the dependencies whose last use deleting the subject removes. */
+  readonly removesLastUseOf?: readonly string[];
 }
 
 /** One suppression in the four-member form the ignore file and the baseline share. */
@@ -83,6 +85,8 @@ export interface Finding {
   readonly message: string;
   /** Absent where the code carries nothing. */
   readonly details?: FindingDetails;
+  /** The reachability class of a subject that is no declaration, where it is not `certain`. */
+  readonly reachabilityClass?: Confidence;
 }
 
 /** The dead component a finding names, as the finding schema spells its members. */

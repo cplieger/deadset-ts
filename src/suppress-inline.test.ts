@@ -48,7 +48,7 @@ function outcome(one: CorpusCase): string {
     case "no-reason":
       return directive.codes.map(() => "DS1701").join(" ");
     case "directive":
-      return one.input.line_offset === -1 ? "accepted" : "DS1703";
+      return one.input.line_offset === -1 || one.input.line_offset === 0 ? "accepted" : "DS1703";
   }
 }
 

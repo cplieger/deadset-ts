@@ -4,7 +4,7 @@
  * program holds by inclusion rather than by an import.
  */
 
-import type { SourceFile } from "@typescript/native/unstable/ast";
+import type { SourceFile } from "@typescript/native/ast";
 import { IGNORED_DIRECTORIES } from "./discover.ts";
 import type { Host } from "./host.ts";
 import { packageScope } from "./inventory.ts";
@@ -22,7 +22,7 @@ const DECLARATION_FILE = /\.d\.(?:[^./]+\.)?[mc]?ts$/u;
 const LINE_BREAK = /\r\n|[\n\r\u2028\u2029]/gu;
 
 /** One source file below the target root. */
-export interface TreeFile {
+interface TreeFile {
   /** The path below the target root, with the solidus as separator. */
   readonly path: string;
   /** The stable reference of the file's module. */
@@ -49,6 +49,8 @@ export interface FileFacts {
   readonly heldByInclusion: ReadonlySet<string>;
   /** The paths below the target root of the generated files. */
   readonly generated?: ReadonlySet<string>;
+  /** The property names an `in` expression of a production file tests by a literal. */
+  readonly inOperands?: ReadonlySet<string>;
 }
 
 /** The line of the last character of one text, counted from one; an empty text is one line. */

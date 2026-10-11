@@ -24,7 +24,9 @@ A declaration is reported only when it is dead in every project that holds it.
 
 ## How it finds references
 
-The analysis takes an inventory of every declaration a project's own files hold, down to class and type members. It then resolves every reference over that inventory in one pass, through the compiler's type information rather than a text search. The pass resolves each file's identifiers in batches, and [Batch-cap calibration](batch-cap-calibration.md) is the measurement behind the batch size. A test file that no compiler configuration includes is still read for the modules it imports, without type information. A helper only such a test imports is then not reported as unused.
+The analysis takes an inventory of every declaration a project's own files hold, down to class and type members. It then resolves every reference over that inventory in one pass, through the compiler's type information rather than a text search. The pass resolves each file's identifiers in batches, and [Batch-cap calibration](batch-cap-calibration.md) is the measurement behind the batch size.
+
+A test file that no discovered compiler configuration includes joins the nearest one at or above it, `tsconfig.json` first, and is analyzed with its options. It joins none when a `package.json` sits below that configuration's directory, in the test file's directory or one between them. Such a file belongs to another package. A test file with no such configuration, or outside every project `analysis.configurations` names, is still read for the modules it imports, without type information. A helper only such a test imports is then not reported as unused.
 
 The same tree always gives the same report, and the analysis keeps no cache between runs.
 
@@ -33,19 +35,23 @@ The same tree always gives the same report, and the analysis keeps no cache betw
 A root is a declaration the analysis keeps live without a reference. `print-roots` lists each one with the rule that made it a root. The roots are:
 
 - What a file exports when the target's manifest, or another workspace package's manifest, names it through `main`, `module`, `types`, `bin` or `exports`, or when `ts.entry_files` matches it. A `package.json` in a directory between the target and one of its compiler configurations counts here too. A build output it names, such as `dist/cli/main.js`, is read back to the rooted source file of the same name.
-- A library target's published API, which includes an exported declaration whose documentation comment holds `@public`, `@beta` or `@alpha`
+- A library target's published API, which includes an exported declaration whose documentation comment holds `@public`, `@beta` or `@alpha`. In an application, a workspace package whose `package.json` is not private has a published API too, reported at the confidence a library's carries.
 - What a file exports when an applied convention row names it, such as a Next.js page, a SvelteKit route or a Storybook story
 - A configuration file beside a `package.json` whose name is `<stem>.config.<ext>`, `<stem>.<qualifier>.config.<ext>` or `.<stem>rc.<ext>`
 - A file that a string names, read against the directory of such a configuration file or of its JSON form, like `<stem>.config.json` or `.<stem>rc`. A string that starts with `/` or holds a glob character names no file. Nor does a string at a key that only selects files, such as Stryker's `mutate` or Vitest's `test.coverage.include`.
 - A file that a token of a `package.json` script names, such as `node ./scripts/seed.ts`
 - A file that a `run:` step of a workflow in `.github/workflows` names by its path from the target root, such as `node scripts/check.ts`
-- The test files, Vitest's workspace configuration and the setup files it names, and the test files in Playwright's test directory
+- The test files, Vitest's workspace configuration and the setup and global setup files it names, and the test files in Playwright's test directory
 - A global that a declaration file declares as `typeof import("<module>")["<name>"]`, which stands for that export, so using the global uses the export
 - A worker or service worker that a call addresses by a string literal. A module URL, `new URL("./x.ts", import.meta.url)` or `import.meta.resolve("./x.ts")`, imports its file for its effects.
-- A file that a module script of an HTML file below the target loads, through its `src` attribute or an import in its inline content
+- A file that a script of an HTML file below the target loads, through the `src` attribute of a module or a classic script or an import in an inline module script. A `src` that names compiled output, such as `./app.js`, is read back to the source file that emits it.
 - Every declaration a `roots.patterns` entry names
 
-A string in such a configuration file that spells a dependency its `package.json` declares, alone or followed by a subpath, keeps that dependency from `DS1601`. So does a string in a module such a configuration file imports by a relative specifier. A data file it imports, such as `./package.json`, is not read for strings. Both kinds of module are read whether or not a compiler configuration includes the file. `DS1601` also checks each workspace member's `package.json` once a built project holds a file below the member and no derived configuration there was dropped.
+A string in such a configuration file that spells a dependency its `package.json` declares, alone or followed by a subpath, keeps that dependency from `DS1601`. So does a string in a module such a configuration file imports by a relative specifier. A data file it imports, such as `./package.json`, is not read for strings. Both kinds of module are read whether or not a compiler configuration includes the file.
+
+A dependency is used where a script of the `package.json` that declares it runs its command, and so is one that a workflow `run:` step of the target runs. So is a package that `import.meta.resolve` or `require.resolve` names by a literal specifier. A declared dependency that the installed `package.json` of a needed dependency names in its `peerDependencies`, optional or not, is used too, and so on through the peers of that peer, because the declaration is what keeps the package the needed dependency expects beside it present.
+
+`DS1601` also checks each workspace member's `package.json` once a built project holds a file below the member. It also checks each nested package's `package.json`, in a directory below the target at or above a source file or a compiler configuration. Each `package.json` is read against its own directory: an import keeps the dependency of that name in each `package.json` at or above the importing file, so a dependency a nested package declares and only a file outside it imports is reported there. A nested package's dependency that nothing installs is not checked. A dependency of a member whose source sits only in dropped configurations is reported at confidence `possible`.
 
 A `roots.patterns` entry that names nothing is reported as `DS1704` and fails the run. Other entry-point conventions are not read, and the `DECLINED_CONVENTIONS` export lists each one with the reason.
 
@@ -55,8 +61,12 @@ Some rows read a directory that the framework's configuration file moves, such a
 
 Any other value is the setup failure `convention-not-literal`. So is an object on the way to the property that is not written out, that spreads another object in, or that computes a key from anything but a literal. Write the value as a literal, or name the row in `ts.disabled_conventions` and its files in `ts.entry_files`.
 
+The `angular` and `angular-devkit` rows also read `angular.json`. A package that a `builder`, `polyfills`, `styles` or `scripts` string there names counts as used.
+
 | Row | Package | Versions | What it roots |
 | --- | --- | --- | --- |
+| `angular` | `@angular/build` | `>=17.0.0 <22.0.0` | `main`, `main.server`, `server`, `polyfills` and `test` below `src`, `server` at the root, the same below each `projects/*` directory, and each project's `src/public-api` |
+| `angular-devkit` | `@angular-devkit/build-angular` | `>=12.0.0 <22.0.0` | The same files as `angular` |
 | `astro` | `astro` | `>=5.0.0 <8.0.0` | Pages other than `_`-prefixed files and directories, middleware, actions and the content configuration below `src`, which `srcDir` moves |
 | `babel` | `@babel/core` | `>=7.0.0 <9.0.0` | Nothing. `@babel/runtime` counts as used where a Babel configuration file lists `@babel/plugin-transform-runtime` in `plugins` |
 | `eslint` | `eslint` | `>=10.0.0 <11.0.0` | Every `eslint.config.*` file |
@@ -74,6 +84,7 @@ Any other value is the setup failure `convention-not-literal`. So is an object o
 | `sveltekit` | `@sveltejs/kit` | `>=2.0.0 <4.0.0` | Route files, hooks, params, the service worker and `instrumentation.server` below `src`, which the `files` options move |
 | `swc` | `@swc/core` | `>=1.0.0 <2.0.0` | Nothing. `@swc/helpers` counts as used where `.swcrc` sets `jsc.externalHelpers` to `true` |
 | `vite` | `vite` | `>=8.0.0 <9.0.0` | Nothing. `@oxc-project/runtime` counts as used where `vite.config.*` sets `oxc.helpers.mode` to `Runtime` |
+| `vitepress` | `vitepress` | `>=1.0.0 <2.0.0-0 \|\| >=2.0.0-alpha.0 <3.0.0` | The `.vitepress` configuration and theme entry, every `*.data.*` loader and every `.vue` component, which Markdown pages load |
 | `vitest` | `vitest` | `>=3.2.0 <6.0.0` | Every `vitest.config.*` and `vite.config.*` file, with or without a qualifier |
 
 ## What an exemption holds back
@@ -98,11 +109,13 @@ An exemption holds a declaration back from the report when something the compile
 
 A library's published API has callers outside the target. A scope document passed with `--scope` names the consumers loaded beside it, each a directory whose compiler configurations open in the same session. A reference from a consumer keeps a target declaration live, and the report names every consumer it loaded. A consumer that is absent or does not load ends the run with exit code 3.
 
-The published API is reported at confidence `certain` once every declared consumer loads, and `possible` when the scope declares none. In that second case the default `analysis.min_confidence`, `probable`, withholds those findings, and the visibility-narrowing kinds report only in files no manifest export reaches. Every other declaration is `certain`, unless it is dead in a group with a published member, as the next section says, or only tests reach it. A declaration only tests reach, such as a test helper, is `possible` while a test references it, and `certain` when nothing does. The default withholds those `possible` findings too.
+The published API is reported at confidence `certain` once every declared consumer loads, and `possible` when the scope declares none. In that second case the default `analysis.min_confidence`, `probable`, withholds those findings, and the visibility-narrowing kinds report only in files no manifest export reaches. Every other declaration is `certain`, unless it is dead in a group with a published member, as the next section says, or only tests reach it. A declaration only tests reach, such as a test helper, is `possible` while a test references it, and `certain` when nothing does. So is a member whose name a production file tests with `in`, as in `"uploaded" in value`, because the value is read back by that name where no type links the read to the member. The default withholds those `possible` findings too.
 
 ## Groups that keep each other alive
 
 Declarations that reference only each other, with no path from a root, are dead together. The report counts each group as one component with its deletable lines. `reporters.cascade` decides whether a rendering lists only the group's root members or every member. Every finding of a group carries the lowest confidence among the group's root members, so `analysis.min_confidence` reports or withholds a group whole.
+
+Deleting an enum member moves the value of each later member with no initializer. A dead member that a live one follows that way carries fixability `manual` and deletes no line: give the next member an initializer holding its value instead. A dead member such a member names, or one before it, is held the same way. Dead members whose deletion moves only other dead members fall in one group.
 
 ## Explaining one declaration
 

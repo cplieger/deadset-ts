@@ -28,8 +28,8 @@ import {
   ModifierFlags,
   type Node,
   type SourceFile,
-} from "@typescript/native/unstable/ast";
-import type { Symbol as TSSymbol } from "@typescript/native/unstable/sync";
+} from "@typescript/native/ast";
+import type { Symbol as TSSymbol } from "@typescript/native/sync";
 import type { Host } from "./host.ts";
 import { dirnamePath, joinPath, relativePath } from "./paths.ts";
 import {
@@ -139,8 +139,6 @@ export interface InventoryCost {
 
 /** One project's declarations, in position order, and what reading them cost. */
 export interface Inventory {
-  /** The compiler configuration the project was opened from. */
-  readonly configFile: string;
   readonly symbols: readonly InventorySymbol[];
   /**
    * Each declaring node's {@link nodeKey} mapped to the identifier of the declaration
@@ -155,20 +153,6 @@ export interface Inventory {
   readonly declarations: ReadonlyMap<string, string>;
   readonly cost: InventoryCost;
   /**
-   * The module specifiers of the bare star re-exports the project's files carry, in
-   * the order they were read. A bare star re-export declares nothing here: the names
-   * it carries forward are the declarations of the module it names, so it is a
-   * reference to that module and not a declaration of this one.
-   */
-  readonly starReExports: readonly string[];
-  /**
-   * The number of member declarations that were left out because the file declaring
-   * them is not one of the target's own files. Such a declaration belongs to another
-   * program, so the target's inventory does not name it, and the count is reported so
-   * that the omission is a number rather than a silence.
-   */
-  readonly outsideOwnFiles: number;
-  /**
    * The declarations whose module, namespace or container table the checker did not
    * answer, in position order: whether each is exported, and which members a table
    * would have added, are unknown.
@@ -181,6 +165,12 @@ export interface Inventory {
   readonly byName: ReadonlyMap<string, readonly string[]>;
   /** Each `declare module` declaration whose name is a string literal, by id, to that name. */
   readonly modules: ReadonlyMap<string, string>;
+  /**
+   * Each enum member's dependents, by id: the later members of its declaration with no
+   * initializer, up to the first one with an initializer, whose values its deletion moves.
+   * A member with none has no entry.
+   */
+  readonly dependents: ReadonlyMap<string, readonly string[]>;
 }
 
 /** A declaration under construction, before its reference is rendered. */
@@ -534,9 +524,7 @@ export function inventory<Brand>(
   const byNode = new Map<string, Building>();
   const exportScopes: ExportScope[] = [];
   const containers: Container[] = [];
-  const starReExports: string[] = [];
   const modules: (readonly [Building, string])[] = [];
-  let outsideOwnFiles = 0;
 
   const keep = (record: Building): Building => {
     building.push(record);
@@ -782,14 +770,10 @@ export function inventory<Brand>(
     }
   }
 
-  function walkExportDeclaration(
-    node: { readonly exportClause?: Node; readonly moduleSpecifier?: Node },
-    owner: Building,
-  ): void {
+  function walkExportDeclaration(node: { readonly exportClause?: Node }, owner: Building): void {
     const clause = node.exportClause;
+    // A bare star re-export declares nothing: the names it carries are the named module's.
     if (clause === undefined) {
-      const specifier = node.moduleSpecifier;
-      starReExports.push(specifier === undefined ? "" : literalTextOf(specifier));
       return;
     }
     if (isNamespaceExport(clause)) {
@@ -876,7 +860,7 @@ export function inventory<Brand>(
         memberTables += 1;
         const table = project.queries.membersOf(symbol);
         if (isAnswered(table)) {
-          outsideOwnFiles += readTable(container, table, seen, false);
+          readTable(container, table, seen, false);
         } else {
           unansweredOwners.add(container.owner);
         }
@@ -885,7 +869,7 @@ export function inventory<Brand>(
         memberTables += 1;
         const table = project.queries.exportsOf(symbol);
         if (isAnswered(table)) {
-          outsideOwnFiles += readTable(container, table, seen, container.isClass);
+          readTable(container, table, seen, container.isClass);
         } else {
           unansweredOwners.add(container.owner);
         }
@@ -905,8 +889,7 @@ export function inventory<Brand>(
     table: ReadonlyMap<string, TSSymbol>,
     seen: Map<string, Building>,
     areStatic: boolean,
-  ): number {
-    let outside = 0;
+  ): void {
     for (const [, member] of table) {
       const declarations = member.declarations
         .map((handle) => project.declarationAt(handle))
@@ -916,7 +899,6 @@ export function inventory<Brand>(
       }
       const own = declarations.filter((held) => ownFiles.has(held.node.getSourceFile().fileName));
       if (own.length === 0) {
-        outside += declarations.length;
         continue;
       }
       // A merged symbol's table holds the members every one of its declarations writes,
@@ -925,7 +907,6 @@ export function inventory<Brand>(
         keepMember(container, held.node, seen, areStatic);
       }
     }
-    return outside;
   }
 
   /**
@@ -1011,25 +992,48 @@ export function inventory<Brand>(
     return undefined;
   }
 
+  const dependents = new Map<string, readonly string[]>();
+  for (const container of containers.filter((one) => one.memberKind === "enum-member")) {
+    const ids = container.members.map((member) => {
+      const record = byNode.get(nodeKey(member.getSourceFile(), member));
+      return record === undefined ? undefined : positionKey(record.position);
+    });
+    container.members.forEach((_member, index) => {
+      const after: string[] = [];
+      for (let next = index + 1; next < container.members.length; next += 1) {
+        const member = container.members[next];
+        if (member === undefined || !isEnumMember(member) || member.initializer !== undefined) {
+          break;
+        }
+        const id = ids[next];
+        if (id !== undefined) {
+          after.push(id);
+        }
+      }
+      const id = ids[index];
+      if (id !== undefined && after.length > 0) {
+        dependents.set(id, after);
+      }
+    });
+  }
+
   const byId = new Map(building.map((record) => [positionKey(record.position), record]));
   const symbols = building
     .map(render)
     .sort((a, b) => byPosition(a.position, b.position) || (a.ref < b.ref ? -1 : 1));
 
   return {
-    configFile: project.configFile,
     symbols,
     declarations: new Map(
       [...byNode].map(([key, record]) => [key, positionKey(record.position)] as const),
     ),
     cost: { batches: 1, exportTables, memberTables },
-    starReExports,
-    outsideOwnFiles,
     unanswered: symbols
       .filter((symbol) => underUnanswered(byId.get(symbol.id), unansweredOwners))
       .map((symbol) => symbol.id),
     byName: namesOf(building),
     modules: new Map(modules.map(([record, name]) => [positionKey(record.position), name])),
+    dependents,
   };
 }
 

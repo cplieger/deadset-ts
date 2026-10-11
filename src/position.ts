@@ -1,4 +1,4 @@
-import type { SourceFile } from "@typescript/native/unstable/ast";
+import type { SourceFile } from "@typescript/native/ast";
 import { relativePath } from "./paths.ts";
 
 /**

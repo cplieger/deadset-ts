@@ -24,8 +24,7 @@ export interface ParsedLayout {
 }
 
 /** One compiler configuration in a member's directory. */
-export interface MemberConfiguration {
-  readonly configFile: string;
+interface MemberConfiguration {
   /** The files it compiles, absolute. */
   readonly fileNames: ReadonlySet<string>;
   /** Where it writes its output, where it writes any. */
@@ -46,10 +45,6 @@ export interface WorkspaceMember {
 
 /** The workspace one target sits in. */
 export interface Workspace {
-  /** The directory that declares it. */
-  readonly root: string;
-  /** The file that declares it. */
-  readonly declaredIn: string;
   /** Every member, the root first, then by directory. */
   readonly members: readonly WorkspaceMember[];
   /** The members one package name names; two members may share a name. */
@@ -336,7 +331,6 @@ function configurationsOf(
       ? []
       : [
           {
-            configFile,
             fileNames: new Set(parsed.fileNames),
             layout: layoutOf(configFile, parsed),
           },
@@ -439,8 +433,6 @@ export function findWorkspace(
     return found;
   };
   return {
-    root: declared.root,
-    declaredIn: declared.file,
     members,
     named,
     memberOf: (path) => {

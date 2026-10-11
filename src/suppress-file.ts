@@ -59,6 +59,13 @@ const BASELINE_SHAPE: Shape = {
   recordWant: "a row naming code, symbol, path and reason, each a string",
 };
 
+/**
+ * The reference scheme of this analyzer's language. A record of the other scheme is
+ * form-checked and then left to the analyzer of its language: it binds nothing here, counts
+ * in neither total and is reported under no code.
+ */
+const OWN_SCHEME = "ts://";
+
 /** The closed key list of one entry or row. */
 const RECORD_KEYS: ReadonlySet<string> = new Set(["code", "symbol", "path", "reason"]);
 
@@ -125,6 +132,9 @@ function readRecord(value: unknown, site: Position, byReference: ByReference, sh
   }
   if (path !== undefined && path !== "" && !isEntryPath(path)) {
     return refuse(JSON.stringify(path), PATH_WANT);
+  }
+  if (!symbol.startsWith(OWN_SCHEME)) {
+    return { records: [], refusals: [] };
   }
 
   const written = {
@@ -284,15 +294,68 @@ export function rowReason(provenance: Provenance): string {
   return `recorded by ${provenance.analyzer} ${provenance.version}`;
 }
 
+/** A row of the other language's scheme a write keeps: the members the document held, and no other. */
+interface KeptRow {
+  readonly code: string;
+  readonly symbol: string;
+  readonly path?: string;
+  readonly reason?: string;
+}
+
 /**
- * A baseline holding one row per finding, in the order given, which is the report's. Every
- * row carries the provenance as its reason. A finding missing a value a row needs, and an
- * identity missing its name or version, are refused rather than written, because the
- * grammar requires a reason on every row.
+ * The rows of the other language's scheme that the baseline document `text` holds, in
+ * document order and as written, which a write keeps. A document that is not a baseline,
+ * or a row in a shape no record takes, is refused rather than dropped.
+ */
+export function otherSchemeRows(text: string): readonly KeptRow[] {
+  const refuse = (detail: string): never => {
+    throw new Error(
+      `${BASELINE_FILE} cannot be rewritten keeping the other language's rows: ${detail}`,
+    );
+  };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch (error: unknown) {
+    return refuse(error instanceof Error ? error.message : String(error));
+  }
+  const held = isObject(parsed) ? parsed[BASELINE_SHAPE.array] : undefined;
+  if (!Array.isArray(held)) {
+    return refuse(BASELINE_SHAPE.documentWant);
+  }
+  return (held as readonly unknown[]).flatMap((value): KeptRow[] => {
+    try {
+      readRecord(value, documentSite(BASELINE_SHAPE), new Map(), BASELINE_SHAPE);
+    } catch (error: unknown) {
+      return refuse(error instanceof Error ? error.message : String(error));
+    }
+    // readRecord has checked every member is a string and the code and symbol are present.
+    const { code, symbol, path, reason } = value as Readonly<Record<string, string>>;
+    if (code === undefined || symbol === undefined || symbol.startsWith(OWN_SCHEME)) {
+      return [];
+    }
+    return [
+      {
+        code,
+        symbol,
+        ...(path === undefined ? {} : { path }),
+        ...(reason === undefined ? {} : { reason }),
+      },
+    ];
+  });
+}
+
+/**
+ * A baseline holding one row per finding, in the order given, which is the report's, after
+ * the other language's rows `kept`, so two analyzers writing one document in either order
+ * write the same bytes. Every recorded row carries the provenance as its reason. A finding
+ * missing a value a row needs, and an identity missing its name or version, are refused
+ * rather than written, because the grammar requires a reason on every row.
  */
 export function writeBaseline(
   findings: readonly Recorded[],
   provenance: Provenance,
+  kept: readonly KeptRow[] = [],
 ): Iterable<string> {
   if (provenance.analyzer === "" || provenance.version === "") {
     throw new Error(
@@ -308,5 +371,5 @@ export function writeBaseline(
     }
     return { code: found.code, symbol: found.symbol, path: found.path, reason };
   });
-  return jsonChunks({ description: BASELINE_DESCRIPTION, baseline }, 2);
+  return jsonChunks({ description: BASELINE_DESCRIPTION, baseline: [...kept, ...baseline] }, 2);
 }

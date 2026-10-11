@@ -45,6 +45,24 @@ export interface HelperReading extends MoveReading {
   readonly package: string;
 }
 
+/** One member of a configuration file whose strings name the packages its tool loads. */
+export interface PackageKey {
+  /** The member's name, matched at any depth of the objects the row reads. */
+  readonly key: string;
+  /** Globs naming the configuration files, matched in the manifest's directory alone. */
+  readonly files: readonly string[];
+}
+
+/** One configuration property whose strings name files the test runner loads beside the tests. */
+export interface TestFileReading extends MoveReading {
+  /**
+   * The properties that move the directory the strings are read against, the first one the
+   * file writes deciding, read against the manifest's directory, which stands where none is
+   * written. A value that is not one string literal leaves the file's strings unread.
+   */
+  readonly roots: readonly string[];
+}
+
 /** One directory a row's globs name that a configuration property moves. */
 export interface DirectoryMove {
   /** The placeholder the row's globs and later moves write as `<id>`. */
@@ -83,6 +101,13 @@ export interface ConventionRow {
    * string there names no file the tool runs or loads.
    */
   readonly selections?: readonly MoveReading[];
+  /** The properties whose strings name a file the test runner loads beside the tests, a test file. */
+  readonly testFiles?: readonly TestFileReading[];
+  /**
+   * The members whose strings name a package the tool loads: the package itself, a
+   * subpath of it, or the package followed by `:` and a name.
+   */
+  readonly packageKeys?: readonly PackageKey[];
   /** The members of a `package.json` the tool reads its configuration from. */
   readonly manifestKeys?: readonly string[];
   /** The settings that make the tool's output import a runtime helper package. */
@@ -131,8 +156,47 @@ const STRYKER_CONFIG = "{stryker,.stryker}.{conf,config}.{json,js,mjs,cjs}";
 const STRYKER_MODULE = "{stryker,.stryker}.{conf,config}.{js,mjs,cjs}";
 const VITEST_CONFIG = `{vitest,vite}.config.${ANY_MODULE}`;
 
+/**
+ * The properties Vitest takes its project root from, `test.root` before Vite's `root`; it
+ * resolves `setupFiles` and `globalSetup` against that root
+ * (https://vitest.dev/config/setupfiles, https://vitest.dev/config/globalsetup).
+ */
+const VITEST_ROOTS = ["test.root", "root"] as const;
+
+/** The entry files of an Angular CLI project, at the workspace root or below `projects`. */
+const ANGULAR_ENTRIES = [
+  "src/{main,main.server,server,polyfills,test}.ts",
+  "server.ts",
+  "projects/*/src/{main,main.server,server,polyfills,test,public-api}.ts",
+  "projects/*/server.ts",
+];
+
+/** The `angular.json` members whose strings name the packages a build loads. */
+const ANGULAR_PACKAGE_KEYS: readonly PackageKey[] = [
+  "builder",
+  "polyfills",
+  "styles",
+  "scripts",
+].map((key) => ({ key, files: ["angular.json"] }));
+
 /** Every row, ordered by name and then by range. */
 export const CONVENTION_ROWS: readonly ConventionRow[] = [
+  {
+    name: "angular",
+    package: "@angular/build",
+    range: ">=17.0.0 <22.0.0",
+    entries: ANGULAR_ENTRIES,
+    moves: [],
+    packageKeys: ANGULAR_PACKAGE_KEYS,
+  },
+  {
+    name: "angular-devkit",
+    package: "@angular-devkit/build-angular",
+    range: ">=12.0.0 <22.0.0",
+    entries: ANGULAR_ENTRIES,
+    moves: [],
+    packageKeys: ANGULAR_PACKAGE_KEYS,
+  },
   {
     name: "astro",
     package: "astro",
@@ -565,6 +629,18 @@ export const CONVENTION_ROWS: readonly ConventionRow[] = [
     ],
   },
   {
+    name: "vitepress",
+    package: "vitepress",
+    range: ">=1.0.0 <2.0.0-0 || >=2.0.0-alpha.0 <3.0.0",
+    entries: [
+      `.vitepress/config.${ANY_MODULE}`,
+      `.vitepress/theme/index.${ANY_MODULE}`,
+      `**/*.data.${ANY_MODULE}`,
+      "**/*.vue",
+    ],
+    moves: [],
+  },
+  {
     name: "vitest",
     package: "vitest",
     range: ">=3.2.0 <6.0.0",
@@ -584,6 +660,10 @@ export const CONVENTION_ROWS: readonly ConventionRow[] = [
     selections: [
       { property: "test.coverage.include", files: [VITEST_CONFIG] },
       { property: "test.coverage.exclude", files: [VITEST_CONFIG] },
+    ],
+    testFiles: [
+      { property: "test.setupFiles", files: [VITEST_CONFIG], roots: VITEST_ROOTS },
+      { property: "test.globalSetup", files: [VITEST_CONFIG], roots: VITEST_ROOTS },
     ],
   },
 ];

@@ -8,7 +8,7 @@ import {
   isGetAccessorDeclaration,
   isSetAccessorDeclaration,
   type Node,
-} from "@typescript/native/unstable/ast";
+} from "@typescript/native/ast";
 import { nodeKey, type Inventory } from "./inventory.ts";
 import type { Reference } from "./references.ts";
 import type { ProjectView } from "./session.ts";
@@ -37,7 +37,7 @@ export interface Stores {
 }
 
 /** What one configuration contributes to the run's stores. */
-export interface ConfigurationStores {
+interface ConfigurationStores {
   readonly references: readonly Reference[];
   readonly accessors: readonly string[];
 }

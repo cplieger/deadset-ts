@@ -7,7 +7,7 @@
  * form where it has one and otherwise as one batch, one round trip per capped run.
  */
 
-import { isIdentifier, type Expression, type Node } from "@typescript/native/unstable/ast";
+import { isIdentifier, type Expression, type Node } from "@typescript/native/ast";
 import type {
   APIRequestGenerator,
   Checker,
@@ -18,7 +18,7 @@ import type {
   SymbolFlags,
   Symbol as TSSymbol,
   Type,
-} from "@typescript/native/unstable/sync";
+} from "@typescript/native/sync";
 
 /**
  * The greatest number of locations one batched request asks about. A batch is
@@ -205,6 +205,8 @@ export interface Queries {
   targetOf(type: Type): Answer<Type>;
   /** The constraint of a type parameter, where it declares one; none for another type. */
   constraintOf(type: Type): Answer<Type | undefined>;
+  /** The object and the index of an indexed-access type; none for another type. */
+  indexedAccessOf(type: Type): Answer<{ readonly object: Type; readonly index: Type } | undefined>;
   /** The symbol a type is declared by. */
   symbolOfType(type: Type): Answer<TSSymbol | undefined>;
   signaturesOf(type: Type, kind: SignatureKind): Answer<readonly Signature[]>;
@@ -514,6 +516,14 @@ export function queriesOf(
             "getConstraint",
             () => typeLocation(type),
             () => type.getConstraint(),
+          )
+        : undefined,
+    indexedAccessOf: (type) =>
+      type.isIndexedAccessType()
+        ? one(
+            "getObjectType",
+            () => typeLocation(type),
+            () => ({ object: type.getObjectType(), index: type.getIndexType() }),
           )
         : undefined,
     symbolOfType: (type) =>

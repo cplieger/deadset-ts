@@ -79,7 +79,7 @@ function result(
       pending: 0,
       withheld: { certain: 0, probable: 2, possible: 5 },
     },
-    ledger: { verdicts: [], claims: [], withheld: () => false },
+    ledger: { verdicts: [], withheld: () => false },
   };
 }
 

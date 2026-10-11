@@ -30,7 +30,6 @@ export type MemberResolution =
   | {
       readonly kind: "unresolved";
       readonly member: string;
-      readonly subpath: string;
       readonly reason: string;
     };
 
@@ -343,7 +342,6 @@ export function workspaceResolver(host: Host, workspace: Workspace): WorkspaceRe
         return {
           kind: "unresolved",
           member: name,
-          subpath,
           reason: `${String(linked.dirs.length)} workspace packages are named ${name} (${linked.dirs.join(", ")}) and nothing links the importer to one of them; install the workspace, or declare the dependency with a range only one of them satisfies`,
         };
       }
@@ -381,7 +379,6 @@ export function workspaceResolver(host: Host, workspace: Workspace): WorkspaceRe
       return {
         kind: "unresolved",
         member: name,
-        subpath,
         reason: built
           ? `its manifest names ${named}, output no tsconfig*.json of the package maps back to source, and nothing installed links the importer to it; install the workspace, or point an exports condition the importing configuration's customConditions lists at its source`
           : member.configurations.length === 0

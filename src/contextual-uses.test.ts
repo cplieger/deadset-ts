@@ -1,8 +1,7 @@
 import { rmSync } from "node:fs";
 import { afterAll, describe, expect, it } from "vitest";
-import { emitterInputOf } from "../__test-helpers__/emitter-input.ts";
+import { emitterInputOf, findingsOf } from "../__test-helpers__/emitter-input.ts";
 import { writeProject } from "../__test-helpers__/projects.ts";
-import { findingsOf } from "./findings/emitters.ts";
 import { resolve } from "./resolve.ts";
 
 const roots: string[] = [];
@@ -140,5 +139,105 @@ describe("the uses a contextual type makes", () => {
     ).toEqual([
       "DS1301 Row.note 5: type member Row.note is written once and never read, and deleting it with its writes deletes import seed too",
     ]);
+  });
+});
+
+describe("a constructor reaching a constructor type", () => {
+  it("reaches through its construct signature, so an outside class reads the members of the target's instance type", () => {
+    expect(
+      findings({
+        "node_modules/@example/platform/package.json":
+          '{ "name": "@example/platform", "version": "1.0.0", "types": "./index.d.ts" }\n',
+        "node_modules/@example/platform/index.d.ts":
+          "export declare class Toast {\n  constructor(title: string);\n  onclick: (() => void) | null;\n  close(): void;\n}\n",
+        "src/main.ts":
+          'import { Toast } from "@example/platform";\n\ninterface ToastLike {\n  onclick: (() => void) | null;\n  close: () => void;\n}\n\nconst ctor: new (title: string) => ToastLike = Toast;\nconst shown = new ctor("hello");\nshown.onclick = (): void => {};\nshown.close();\n',
+      }),
+    ).toEqual([]);
+  });
+});
+
+describe("a value reaching a position of another type", () => {
+  it("reads each method of an interface the position's interface declares", () => {
+    expect(
+      findings({
+        "src/main.ts":
+          "interface Holder {\n  tick(): void;\n}\ninterface View {\n  tick(): void;\n  idle(): void;\n}\nfunction hold(holder: Holder): void {\n  holder.tick();\n}\nexport function mount(view: View): void {\n  hold(view);\n}\n",
+      }),
+    ).toEqual([
+      "DS1203 View.idle 6: no call site invokes or selects the method through the interface",
+    ]);
+  });
+
+  it("reaches through the type arguments of two instantiations, and from an array to an iterable", () => {
+    expect(
+      findings({
+        "src/main.ts":
+          "interface Result {\n  code?: string;\n  extra?: string;\n}\ninterface Reply {\n  code?: string;\n}\ninterface Holder {\n  tick(): void;\n}\ninterface View {\n  tick(): void;\n  idle(): void;\n}\nexport async function send(result: Result, views: readonly View[]): Promise<void> {\n  const answer: () => Promise<Reply | null> = () => Promise.resolve(result);\n  console.log((await answer())?.code);\n  for (const holder of new Set<Holder>(views)) {\n    holder.tick();\n  }\n}\n",
+      }),
+    ).toEqual([
+      "DS1003 Result.extra 3: type member has no reference in the target",
+      "DS1203 View.idle 13: no call site invokes or selects the method through the interface",
+    ]);
+  });
+});
+
+describe("an object spread", () => {
+  it("reads a member a later property overwrites, since the copy gets it first", () => {
+    expect(
+      findings({
+        "src/main.ts":
+          'interface Row {\n  readonly value: string;\n}\nconst row: Row = {\n  get value(): string {\n    return "x";\n  },\n};\nconst copy = { ...row, value: "y" };\nconsole.log(copy.value);\n',
+      }),
+    ).toEqual([]);
+  });
+
+  it("reads a member it copies into the same declaration of the literal's contextual type", () => {
+    expect(
+      findings({
+        "src/main.ts":
+          'interface Row {\n  readonly value: string;\n}\nconst row: Row = {\n  get value(): string {\n    return "x";\n  },\n};\nconst copy: Row = { ...row };\nconsole.log(copy === row);\n',
+      }),
+    ).toEqual([]);
+  });
+
+  it("reads a class instance's fields, and neither its methods, its accessors nor its private names", () => {
+    expect(
+      findings({
+        "src/main.ts":
+          'class Counter {\n  count = 1;\n  #hidden = 2;\n  get stale(): number {\n    return 3;\n  }\n  reset(): number {\n    return 0;\n  }\n}\nconst copied = { kind: "ok", ...new Counter() };\nconsole.log(copied.kind);\n',
+      }),
+    ).toEqual([
+      "DS1003 Counter.#hidden 3: private class member has no reference in the target",
+      "DS1003 Counter.stale 4: class member has no reference in the target",
+      "DS1003 Counter.reset 7: method has no reference in the target",
+    ]);
+  });
+
+  it("reads every member of an interface value it spreads", () => {
+    expect(
+      findings({
+        "src/main.ts":
+          'interface Position {\n  readonly epoch: string;\n  readonly head: string;\n}\nfunction position(): Position {\n  return { epoch: "1", head: "2" };\n}\nconst copied = { kind: "ok", ...position() };\nconsole.log(copied.kind);\n',
+      }),
+    ).toEqual([]);
+  });
+
+  it("reads no accessor of a class it spreads through a mapped type over the class", () => {
+    expect(
+      findings({
+        "src/main.ts":
+          'class Counter {\n  count = 1;\n  get stale(): number {\n    return 3;\n  }\n}\nconst frozen: Readonly<Counter> = new Counter();\nconst copied = { kind: "ok", ...frozen };\nconsole.log(copied.kind);\n',
+      }),
+    ).toEqual(["DS1003 Counter.stale 3: class member has no reference in the target"]);
+  });
+
+  it("reads an accessor an interface declares, and no method signature a type literal declares", () => {
+    expect(
+      findings({
+        "src/main.ts":
+          'interface Sized {\n  get size(): number;\n}\ntype Shaped = {\n  area(): number;\n};\nfunction make(): Sized & Shaped {\n  return { size: 1, area: () => 2 };\n}\nconst copied = { kind: "ok", ...make() };\nconsole.log(copied.kind);\n',
+      }),
+    ).toEqual(["DS1301 Shaped.area 5: type member Shaped.area is written once and never read"]);
   });
 });

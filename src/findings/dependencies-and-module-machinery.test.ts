@@ -3,14 +3,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { nodeHost } from "../../bin/node-host.ts";
-import { emitterInputOf } from "../../__test-helpers__/emitter-input.ts";
+import { emitterInputOf, findingsOf } from "../../__test-helpers__/emitter-input.ts";
+import { writeProject } from "../../__test-helpers__/projects.ts";
 import { contractDocument, fixture } from "../../__test-helpers__/fixtures.ts";
 import type { Finding } from "../finding.ts";
 import { isRef } from "../ref.ts";
 import { resolve } from "../resolve.ts";
 import { run, type Writer } from "../run.ts";
 import type { EmitterInput } from "./emitter.ts";
-import { EMITTERS, findingsOf } from "./emitters.ts";
+import { EMITTERS } from "./emitters.ts";
 
 /**
  * The fixture with its dependency directory in place. A tree holding one cannot be
@@ -72,7 +73,6 @@ describe("the dependencies-and-module-machinery emitter", () => {
     ).toEqual([
       "unused-runtime dependency",
       "@types/bundled dev-dependency",
-      "optional-peer dev-dependency",
       "unused-dev dev-dependency",
       "peer-unused peer-dependency",
     ]);
@@ -87,10 +87,10 @@ describe("the dependencies-and-module-machinery emitter", () => {
     expect(names(FIXTURE.findings)).toContain("@types/bundled");
   });
 
-  it("holds a dependency shipping a command, and a required peer of a needed one, needed", () => {
+  it("holds a dependency whose command a script runs needed, and each peer a needed one names, optional or not", () => {
     expect(names(FIXTURE.findings)).not.toContain("dev-tool");
     expect(names(FIXTURE.findings)).not.toContain("host-peer");
-    expect(names(FIXTURE.findings)).toContain("optional-peer");
+    expect(names(FIXTURE.findings)).not.toContain("optional-peer");
   });
 
   it("never reports the manifest's bin entry, whose target no import reaches, and counts what that target imports", () => {
@@ -132,6 +132,15 @@ describe("the dependencies-and-module-machinery emitter", () => {
         ["src/main.ts:12:10", ["left-pad"]],
       ]),
     );
+  });
+
+  it("names on a deletable finding each dependency whose last use deleting its subject removes", () => {
+    const padded = findingsOf(FIXTURE.input).find(
+      (finding) => finding.position.path === "src/main.ts" && finding.position.line === 12,
+    );
+
+    expect(padded?.fixability).toBe("deletable");
+    expect(padded?.details.removesLastUseOf).toEqual(["left-pad"]);
   });
 
   it("withholds every finding when the severity map sets the kind or its family to allow", () => {
@@ -180,6 +189,7 @@ describe("a workspace whose members declare dependencies", () => {
     ).toEqual([
       "ts://@example/root/package.json#root-unused:dev-dependency package.json:8",
       "ts://@example/app/package.json#member-unused:dev-dependency packages/app/package.json:7",
+      "ts://@example/web/package.json#member-web:dev-dependency packages/web/package.json:7",
     ]);
   });
 
@@ -192,12 +202,88 @@ describe("a workspace whose members declare dependencies", () => {
     ).toEqual([]);
   });
 
-  it("judges no member below which a derived configuration was dropped", () => {
+  it("judges a member a built configuration holds source of, though a configuration below it was dropped", () => {
     expect(
       sweepFixture(target)
-        .findings.map((finding) => finding.symbol.ref)
-        .filter((ref) => ref.startsWith("ts://@example/web/")),
-      "packages/web/tsconfig.json matches no input, so files it would hold go unread",
-    ).toEqual([]);
+        .findings.filter((finding) => finding.symbol.ref.startsWith("ts://@example/web/"))
+        .map((finding) => `${finding.symbol.name} ${finding.reachabilityClass ?? "certain"}`),
+      "packages/web/tsconfig.json matches no input, and the root configuration holds packages/web/src",
+    ).toEqual(["member-web certain"]);
+  });
+});
+
+describe("a package a file asks the runtime to resolve", () => {
+  it("is needed where import.meta.resolve or require.resolve names it by a literal", () => {
+    const root = writeProject({
+      "package.json": JSON.stringify({
+        name: "@example/app",
+        type: "module",
+        main: "./src/main.ts",
+        dependencies: { located: "1.0.0", required: "1.0.0", unused: "1.0.0" },
+      }),
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: { strict: true, module: "NodeNext", types: [], noEmit: true },
+        include: ["src"],
+      }),
+      "node_modules/located/package.json": '{ "name": "located", "version": "1.0.0" }',
+      "node_modules/required/package.json": '{ "name": "required", "version": "1.0.0" }',
+      "node_modules/unused/package.json": '{ "name": "unused", "version": "1.0.0" }',
+      "src/main.ts": [
+        "declare const require: { resolve(id: string): string };",
+        'console.log(import.meta.resolve("located"), require.resolve("required/cli.js"));',
+        "",
+      ].join("\n"),
+    });
+    const { config } = resolve({
+      repository: JSON.stringify({ target: { kind: "application" } }),
+      repositoryLabel: "deadset.json",
+    });
+    const emit = EMITTERS.get("dependencies-and-module-machinery");
+    try {
+      expect(names(emit === undefined ? [] : [...emit(emitterInputOf(root, config))])).toEqual([
+        "unused",
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("a command a workspace member's script runs", () => {
+  it("uses the member's own declaration and leaves the root's of the same name unneeded", () => {
+    const root = writeProject({
+      "package.json": JSON.stringify({
+        name: "@example/root",
+        private: true,
+        workspaces: ["packages/*"],
+        devDependencies: { runner: "1.0.0" },
+      }),
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: { strict: true, module: "NodeNext", types: [], noEmit: true },
+        include: ["packages/*/src"],
+      }),
+      "node_modules/runner/package.json": '{ "name": "runner", "bin": { "runner": "./cli.js" } }',
+      "packages/app/package.json": JSON.stringify({
+        name: "@example/app",
+        private: true,
+        scripts: { test: "runner --all" },
+        devDependencies: { runner: "1.0.0" },
+      }),
+      "packages/app/src/main.ts": "console.log(1);\n",
+    });
+    const { config } = resolve({
+      repository: JSON.stringify({ target: { kind: "application" } }),
+      repositoryLabel: "deadset.json",
+    });
+    const emit = EMITTERS.get("dependencies-and-module-machinery");
+    try {
+      expect(
+        (emit === undefined ? [] : [...emit(emitterInputOf(root, config))]).map(
+          (finding) => finding.symbol.ref,
+        ),
+      ).toEqual(["ts://@example/root/package.json#runner:dev-dependency"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

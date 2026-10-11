@@ -1,9 +1,10 @@
 /**
- * The references a use of an augmentation's declaration makes to what holds it. No name
- * spells a `declare global` block, so a use of a declaration it holds is a use of the
- * block. An interface or namespace an augmentation block holds merges with the one of its
- * name, which the language or a library may type a value by where the target never names
- * it, as it types `import.meta` or `process.env`, so a use of its member is a use of it.
+ * The references a use of an augmentation's declaration makes to what holds it. A use of
+ * a declaration a `declare global` block or a module declaration holds is a use of the
+ * block, which no name spells or no import may name. An interface or namespace such a
+ * block, or the top level of a file that is no module, holds merges with the one of its
+ * name, which the language or a library types values by where the target never names it,
+ * as `import.meta` or `process.env`, so a use of its member is a use of it.
  */
 
 import type { Inventory, InventorySymbol } from "./inventory.ts";
@@ -24,19 +25,21 @@ function isGlobalBlock(
 }
 
 /**
- * For each reference to a declaration an augmentation block holds, a read at the same place
- * of every interface and namespace between it and the block, and of a `declare global` block
- * itself.
+ * For each reference to a declaration an augmentation block, or the global scope of a
+ * file in `scripts`, holds, a read at the same place of every interface and namespace
+ * between it and the block or the file, and of the block itself. `scripts` holds the
+ * files that are no module, by identifier.
  */
 export function augmentationReferences(
   held: Inventory,
   found: readonly Reference[],
+  scripts: ReadonlySet<string> = new Set(),
 ): readonly Reference[] {
   const files = new Set(held.symbols.filter((one) => one.kind === "file").map((one) => one.id));
   const globals = new Set(
     held.symbols.filter((one) => isGlobalBlock(one, held, files)).map((one) => one.id),
   );
-  if (globals.size === 0 && held.modules.size === 0) {
+  if (globals.size === 0 && held.modules.size === 0 && scripts.size === 0) {
     return [];
   }
   const byId = new Map(held.symbols.map((one) => [one.id, one]));
@@ -47,10 +50,10 @@ export function augmentationReferences(
       at !== undefined;
       at = byId.get(at.parent)
     ) {
-      if (globals.has(at.id)) {
+      if (globals.has(at.id) || held.modules.has(at.id)) {
         return [...ids, at.id];
       }
-      if (held.modules.has(at.id)) {
+      if (scripts.has(at.id)) {
         return ids;
       }
       if (at.kind === "interface" || at.kind === "namespace") {

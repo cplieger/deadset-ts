@@ -358,6 +358,7 @@ describe("the published SARIF vectors", () => {
       "line-fingerprints",
       "line-past-the-end",
       "message-with-line-separators",
+      "name-literal-related-location",
       "path-segments-encoded",
       "related-locations-capped",
       "withheld-line",

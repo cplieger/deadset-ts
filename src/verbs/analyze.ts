@@ -26,7 +26,7 @@ import { json } from "../reporters/json.ts";
 import { RENDERINGS } from "../reporters/reporters.ts";
 import { parseTemplate, TemplateError, type Template } from "../reporters/template.ts";
 import { resolve } from "../resolve.ts";
-import { rowReason, writeBaseline, type Recorded } from "../suppress-file.ts";
+import { otherSchemeRows, rowReason, writeBaseline, type Recorded } from "../suppress-file.ts";
 import { CONTRACT_VERSION } from "../version.ts";
 import { EXIT_CLEAN, EXIT_FAILURE, type Verb, type VerbOptions } from "./verb.ts";
 
@@ -174,13 +174,12 @@ interface Documents {
 }
 
 /**
- * Analyzes the scope under the configuration and writes the JSON report to the path
- * `--report` names, each rendering `--format` names beside it at the report's path with the
- * format's suffix appended, and where `--baseline-write` names a path the baseline a fixpoint
- * over the analysis records, the report then being its first round, which reads no
- * baseline. The template format renders the template `--template` names. Nothing is written to
- * the output stream; diagnostics go to the error stream and the verdict is the exit code, or 0
- * under `--exit-code=off`, and a rendering that cannot be written ends the run with 3.
+ * Analyzes the scope and writes the JSON report to the path `--report` names, each
+ * `--format` rendering beside it with the format's suffix appended, and under
+ * `--baseline-write` the baseline a fixpoint over the analysis records, the report being its
+ * first round. Diagnostics go to the error stream and nothing to the output stream; the
+ * verdict is the exit code, or 0 under `--exit-code=off`, and a rendering that cannot be
+ * written ends the run with 3.
  */
 export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option, repeated }) => {
   const reportPath = option("report");
@@ -304,7 +303,14 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
       }
     }
     if (documents.baseline !== undefined) {
-      host.writeDocument(documents.baseline, writeBaseline(recorded, analyzerProvenance(version)));
+      const kept =
+        host.kindOf(documents.baseline) === "file"
+          ? otherSchemeRows(host.readFile(documents.baseline))
+          : [];
+      host.writeDocument(
+        documents.baseline,
+        writeBaseline(recorded, analyzerProvenance(version), kept),
+      );
     }
   } catch (error: unknown) {
     err.write(`deadset-ts: ${error instanceof Error ? error.message : String(error)}\n`);

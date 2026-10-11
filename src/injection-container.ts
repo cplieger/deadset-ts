@@ -15,7 +15,7 @@ import {
   isSetAccessorDeclaration,
   type CallExpression,
   type Node,
-} from "@typescript/native/unstable/ast";
+} from "@typescript/native/ast";
 import { aliasChains } from "./alias-chain.ts";
 import { calleeName, callsOf, classesPassed, decoratorsOf, spelledDecorator } from "./calls.ts";
 import { classMembers, type ClassMember } from "./class-members.ts";

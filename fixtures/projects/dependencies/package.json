@@ -29,5 +29,8 @@
   "peerDependencies": {
     "peer-unused": "1.0.0",
     "peer-used": "1.0.0"
+  },
+  "scripts": {
+    "lint": "dev-tool --check && echo done"
   }
 }
