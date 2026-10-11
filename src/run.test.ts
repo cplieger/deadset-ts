@@ -246,6 +246,51 @@ describe("print-projects", () => {
     expect(got.out).toBe("tsconfig.json\n");
   });
 
+  it("ends a run whose target holds no compiler configuration with the failure code", () => {
+    const root = mkdtempSync(join(tmpdir(), "deadset-ts-no-program-"));
+    onTestFinished(() => {
+      rmSync(root, { recursive: true, force: true });
+    });
+    writeFileSync(
+      join(root, "package.json"),
+      JSON.stringify({ name: "@example/none", devDependencies: { "left-pad": "1.0.0" } }),
+    );
+    writeFileSync(join(root, "a.ts"), "export const a = 1;\n");
+    writeFileSync(join(root, "deadset.json"), JSON.stringify({ target: { kind: "application" } }));
+    const got = invoke(["analyze", "--target=.", `--report=${join(root, "report.json")}`], {
+      ...nodeHost(),
+      workingDirectory: () => root,
+    });
+
+    expect(got.code, got.err).toBe(3);
+    expect(got.err).toMatch(/holds no compiler configuration, so the run holds no program/u);
+  });
+
+  it("analyzes a nested package whose enabling package nothing installs, applying no row", () => {
+    const root = mkdtempSync(join(tmpdir(), "deadset-ts-nested-uninstalled-"));
+    onTestFinished(() => {
+      rmSync(root, { recursive: true, force: true });
+    });
+    mkdirSync(join(root, "tools"));
+    writeFileSync(
+      join(root, "tsconfig.json"),
+      JSON.stringify({ compilerOptions: { strict: true, noEmit: true }, include: ["**/*.ts"] }),
+    );
+    writeFileSync(join(root, "main.ts"), "export const a = 1;\n");
+    writeFileSync(
+      join(root, "tools", "package.json"),
+      JSON.stringify({ name: "@example/tools", devDependencies: { vitest: "5.0.0" } }),
+    );
+    writeFileSync(join(root, "tools", "pinned.ts"), "export const b = 2;\n");
+    const got = invoke(["print-projects", "--target=."], {
+      ...nodeHost(),
+      workingDirectory: () => root,
+    });
+
+    expect(got.err).toBe("");
+    expect(got.code).toBe(0);
+  });
+
   it("analyzes exactly the projects a declared matrix names, by their identifiers", () => {
     const got = invoke([
       "print-projects",

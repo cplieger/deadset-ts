@@ -1,7 +1,7 @@
 /**
  * The inline directive: `deadset:ignore`, the first token of a `//` line comment, naming
  * one or more codes and a reason, and binding to every declaration that begins on the line
- * below it.
+ * below it, or on its own line where it trails a token there.
  */
 
 import { SyntaxKind, type Node, type SourceFile } from "@typescript/native/unstable/ast";
@@ -211,6 +211,15 @@ function declarationLines(
   return below;
 }
 
+/**
+ * Whether the comment at `offset` follows a token on its own line, so it binds the
+ * declarations that begin on that line rather than on the next.
+ */
+function trails(file: SourceFile, offset: number): boolean {
+  const { line } = file.getLineAndCharacterOfPosition(offset);
+  return tokenStart(file.text, file.getPositionOfLineAndCharacter(line, 0)) < offset;
+}
+
 /** One comment in the namespace, what the grammar made of it, and what it bound. */
 export interface InlineDirective {
   readonly site: Position;
@@ -242,11 +251,12 @@ export function inlineDirectives<Brand>(
     const below = declarationLines(file, held, symbols);
     for (const comment of comments) {
       const site = renderPosition(file, targetRoot, comment.offset);
+      const target = trails(file, comment.offset) ? site.line : site.line + 1;
       found.push({
         site,
         text: comment.text,
         directive: classifyComment(comment.text),
-        bound: [...(below.get(site.line + 1) ?? [])],
+        bound: [...(below.get(target) ?? [])],
       });
     }
   }
@@ -254,8 +264,8 @@ export function inlineDirectives<Brand>(
 }
 
 /**
- * The inline directives of a run's projects, each bound to the declarations that begin on
- * the line below it, one directive binding the union of what each project holding its file
+ * The inline directives of a run's projects, each bound to the declarations the placement
+ * rule gives it, one directive binding the union of what each project holding its file
  * declares there. A directive that lacks only its reason is one {@link Refusal} per code;
  * any other malformed comment in the namespace ends the read with a
  * {@link SuppressionError} naming the first one written.

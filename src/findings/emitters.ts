@@ -116,7 +116,7 @@ function dialsOver(
   const before = dialsOf(suppressed.unmarked, unmarked);
   const fromUnmarked = new Set(unmarked);
   return {
-    withholdsCode: marked.withholdsCode,
+    allows: marked.allows,
     withholds: (finding) =>
       fromUnmarked.has(finding) ? before.withholds(finding) : marked.withholds(finding),
   };

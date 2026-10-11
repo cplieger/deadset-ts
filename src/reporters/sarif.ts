@@ -160,6 +160,10 @@ function relatedOf(found: WireFinding): readonly Related[] {
   for (const at of found.details.write_positions ?? []) {
     related.push({ label: "write", at, endLine: at.end_line });
   }
+  if (found.details.name_literal !== undefined) {
+    const at = found.details.name_literal;
+    related.push({ label: "name", at, endLine: at.end_line });
+  }
   for (const one of found.component.members ?? []) {
     if (
       declarationKey(one.ref, one.position.path) !==

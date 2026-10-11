@@ -4,7 +4,8 @@ import type { InventorySymbol } from "../inventory.ts";
 import { FIXED_SEVERITY_CODES } from "../kinds.ts";
 import type { Position } from "../position.ts";
 import {
-  isRowCode,
+  isDependencyCode,
+  isUnsuppressibleCode,
   STALE_SUPPRESSION,
   SUPPRESSION_WITHOUT_REASON,
   type Mechanism,
@@ -181,16 +182,29 @@ export function staleSuppressions(
     const reports = [...new Set(records.flatMap((one) => one.reports))]
       .filter((code) => !codes.includes(code))
       .sort();
-    const rows = codes.filter(isRowCode);
+    const rows = codes.filter(isUnsuppressibleCode);
+    const dependencies = first.mechanism === "inline" ? codes.filter(isDependencyCode) : [];
     const settable = rows.filter((code) => !FIXED_SEVERITY_CODES.includes(code));
     const remedy =
       settable.length === 0
         ? "fix what the finding names instead"
         : `fix what the finding names or set the severity of ${spelled(settable)} instead`;
     const declared = reports.length === 0 ? "" : `its declaration reports ${spelled(reports)}`;
+    const because = [
+      ...(rows.length > 0
+        ? [
+            `${spelled(rows)} ${rows.length === 1 ? "reports a row" : "report rows"} of a document, which no suppression can name; ${remedy}`,
+          ]
+        : []),
+      ...(dependencies.length > 0
+        ? [
+            `${spelled(dependencies)} ${dependencies.length === 1 ? "reports a dependency row" : "report dependency rows"}, which only an ignore entry or a baseline row can name`,
+          ]
+        : []),
+    ];
     const instead =
-      rows.length > 0
-        ? `, because ${spelled(rows)} ${rows.length === 1 ? "reports a row" : "report rows"} of a document, which no suppression can name; ${remedy}${declared === "" ? "" : `; ${declared}`}`
+      because.length > 0
+        ? `, because ${because.join("; ")}${declared === "" ? "" : `; ${declared}`}`
         : declared === ""
           ? ""
           : `, and ${declared}`;

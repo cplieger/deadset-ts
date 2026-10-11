@@ -7,40 +7,48 @@
 
 import {
   isArrowFunction,
+  isBindingElement,
   isCallExpression,
   isClassDeclaration,
   isClassExpression,
   isFunctionDeclaration,
   isFunctionExpression,
+  isFunctionTypeNode,
   isIdentifier,
-  isNonNullExpression,
-  isParenthesizedExpression,
-  isNamedImports,
-  isNamespaceImport,
-  isImportDeclaration,
   isIndexedAccessTypeNode,
   isInterfaceDeclaration,
   isLiteralTypeNode,
+  isMappedTypeNode,
   isMethodDeclaration,
   isMethodSignatureDeclaration,
   isNewExpression,
   isNoSubstitutionTemplateLiteral,
   isNumericLiteral,
+  isObjectBindingPattern,
   isParenthesizedTypeNode,
   isPropertyAccessExpression,
+  isPropertySignatureDeclaration,
   isStringLiteral,
   isTypeAliasDeclaration,
+  isTypeOperatorNode,
   isTypeReferenceNode,
   isUnionTypeNode,
   isVariableDeclaration,
+  SyntaxKind,
   type CallExpression,
+  type Expression,
   type NewExpression,
   type Node,
   type SourceFile,
   type TypeNode,
   type TypeReferenceNode,
 } from "@typescript/native/unstable/ast";
-import { SymbolFlags, type Symbol as TSSymbol, type Type } from "@typescript/native/unstable/sync";
+import {
+  SignatureKind,
+  SymbolFlags,
+  type Symbol as TSSymbol,
+  type Type,
+} from "@typescript/native/unstable/sync";
 import type { AliasChains } from "./alias-chain.ts";
 import { nodeKey, type Inventory } from "./inventory.ts";
 import { renderPosition } from "./position.ts";
@@ -62,6 +70,7 @@ function isGeneric(node: Node): node is Generic {
       isMethodSignatureDeclaration(node) ||
       isArrowFunction(node) ||
       isFunctionExpression(node) ||
+      isFunctionTypeNode(node) ||
       isTypeAliasDeclaration(node) ||
       isInterfaceDeclaration(node) ||
       isClassDeclaration(node) ||
@@ -73,6 +82,35 @@ function isGeneric(node: Node): node is Generic {
 /** Whether one generic is a receiver's: a class or an interface whose methods it parameterizes. */
 function isReceiver(node: Node): boolean {
   return isInterfaceDeclaration(node) || isClassDeclaration(node) || isClassExpression(node);
+}
+
+/**
+ * The class or the interface one member function belongs to: a method's parent, or for a
+ * function type a property declares, the declaration that holds the property.
+ */
+function receiverOf(member: Node): Node | undefined {
+  const parent = member.parent as Node | undefined;
+  if (
+    isFunctionTypeNode(member) &&
+    parent !== undefined &&
+    isPropertySignatureDeclaration(parent)
+  ) {
+    return parent.parent;
+  }
+  return parent;
+}
+
+/** Whether a member function of a generic receiver declares no type parameter of its own. */
+function isReceiverMember(node: Node): node is Generic {
+  if (!(
+    isMethodDeclaration(node) ||
+    isMethodSignatureDeclaration(node) ||
+    isFunctionTypeNode(node)
+  )) {
+    return false;
+  }
+  const receiver = receiverOf(node);
+  return receiver !== undefined && isReceiver(receiver) && isGeneric(receiver);
 }
 
 function unwrappedType(node: TypeNode): TypeNode {
@@ -122,7 +160,8 @@ function literalTypeNames(
 type Side =
   | { readonly kind: "parameter"; readonly index: number }
   | { readonly kind: "written"; readonly node: TypeNode }
-  | { readonly kind: "receiver"; readonly index: number };
+  | { readonly kind: "receiver"; readonly index: number }
+  | { readonly kind: "argument"; readonly index: number };
 
 /** An indexed access inside one generic whose index names a type parameter. */
 interface Carried {
@@ -190,6 +229,35 @@ function namedParameter(
   return undefined;
 }
 
+/**
+ * The constraint of the mapped type whose type parameter one type node names whole: a
+ * mapped type instantiates what it holds once per constituent of that constraint.
+ */
+function mappedConstraint(node: TypeNode): TypeNode | undefined {
+  const type = unwrappedType(node);
+  if (
+    !isTypeReferenceNode(type) ||
+    !isIdentifier(type.typeName) ||
+    type.typeArguments !== undefined
+  ) {
+    return undefined;
+  }
+  const spelled = type.typeName.text;
+  for (
+    let at = type.parent as Node | undefined;
+    at !== undefined;
+    at = at.parent as Node | undefined
+  ) {
+    if (isMappedTypeNode(at)) {
+      const { name, constraint } = at.typeParameter;
+      if (isIdentifier(name) && name.text === spelled) {
+        return constraint;
+      }
+    }
+  }
+  return undefined;
+}
+
 /** The name a site writes to reach one generic: its own, or its variable's. */
 function calledName(generic: Generic): string | undefined {
   const own = (generic as { readonly name?: Node }).name;
@@ -197,15 +265,23 @@ function calledName(generic: Generic): string | undefined {
     return own.text;
   }
   const parent = generic.parent as Node | undefined;
-  return parent !== undefined && isVariableDeclaration(parent) && isIdentifier(parent.name)
+  return parent !== undefined &&
+    (isVariableDeclaration(parent) || isPropertySignatureDeclaration(parent)) &&
+    isIdentifier(parent.name)
     ? parent.name.text
     : undefined;
 }
 
 /** The generic a declaration a symbol names is: the function a variable is initialized with included. */
 function genericOf(node: Node): Generic | undefined {
-  if (isGeneric(node)) {
+  if (isGeneric(node) || isReceiverMember(node)) {
     return node;
+  }
+  if (isPropertySignatureDeclaration(node)) {
+    // The typings mark the annotation present; a signature written without one has none.
+    const declared = (node as { readonly type?: TypeNode }).type;
+    const type = declared === undefined ? undefined : unwrappedType(declared);
+    return type !== undefined && isFunctionTypeNode(type) ? genericOf(type) : undefined;
   }
   if (
     isVariableDeclaration(node) &&
@@ -217,32 +293,63 @@ function genericOf(node: Node): Generic | undefined {
   return undefined;
 }
 
+/** The operand of each `keyof` one type node holds, through every type node it is built of. */
+function keyofOperands(node: TypeNode): readonly TypeNode[] {
+  const found: TypeNode[] = [];
+  const visit = (at: Node): void => {
+    if (isTypeOperatorNode(at) && at.operator === SyntaxKind.KeyOfKeyword) {
+      found.push(at.type);
+      return;
+    }
+    at.forEachChild(visit);
+  };
+  visit(node);
+  return found;
+}
+
 /**
  * Each indexed access inside one generic whose index names a type parameter of it, read
  * from its own text: the object side is a type parameter of the same generic, one of the
- * receiver it is a method of, or a type it writes.
+ * receiver it is a member of, or a type it writes. A type parameter whose constraint holds
+ * `keyof X` is an index into `X` as `X[K]` is, and so is a parameter whose declared type
+ * holds `keyof X`, indexed by the argument a call passes it.
  */
 function carriedIn(generic: Generic): readonly Carried[] {
   const found: Carried[] = [];
-  const receiver = generic.parent as Node | undefined;
+  const receiver = receiverOf(generic);
   const outer =
     receiver !== undefined && isReceiver(receiver) && isGeneric(receiver) ? receiver : undefined;
+  const sideOf = (object: TypeNode): Side => {
+    const own = namedParameter(object, [generic]);
+    const fromReceiver =
+      own === undefined && outer !== undefined ? namedParameter(object, [outer]) : undefined;
+    return own !== undefined
+      ? { kind: "parameter", index: own.index }
+      : fromReceiver !== undefined
+        ? { kind: "receiver", index: fromReceiver.index }
+        : { kind: "written", node: object };
+  };
+  (generic.typeParameters ?? []).forEach((parameter, index) => {
+    const constraint = (parameter as { readonly constraint?: TypeNode }).constraint;
+    for (const object of constraint === undefined ? [] : keyofOperands(constraint)) {
+      found.push({ object: sideOf(object), index: { kind: "parameter", index } });
+    }
+  });
+  (generic.parameters ?? []).forEach((parameter, index) => {
+    for (const object of parameter.type === undefined ? [] : keyofOperands(parameter.type)) {
+      if (namedParameter(object, [generic]) === undefined) {
+        found.push({ object: sideOf(object), index: { kind: "argument", index } });
+      }
+    }
+  });
   const visit = (node: Node): void => {
     if (isIndexedAccessTypeNode(node)) {
       const index = namedParameter(node.indexType, [generic]);
       if (index !== undefined) {
-        const own = namedParameter(node.objectType, [generic]);
-        const fromReceiver =
-          own === undefined && outer !== undefined
-            ? namedParameter(node.objectType, [outer])
-            : undefined;
-        const object: Side =
-          own !== undefined
-            ? { kind: "parameter", index: own.index }
-            : fromReceiver !== undefined
-              ? { kind: "receiver", index: fromReceiver.index }
-              : { kind: "written", node: node.objectType };
-        found.push({ object, index: { kind: "parameter", index: index.index } });
+        found.push({
+          object: sideOf(node.objectType),
+          index: { kind: "parameter", index: index.index },
+        });
       }
     }
     if (node !== generic && isGeneric(node)) {
@@ -271,11 +378,8 @@ export function indexedAccessReferences<Brand>(
   const carried = new Map<Generic, Carried[]>();
   const names = new Set<string>();
   const sites: Site[] = [];
-  /**
-   * Calls passing a literal argument whose callee a package binding heads, or that call a
-   * method, which a dependency's generic may fix.
-   */
-  const literalCalls: Site[] = [];
+  /** Calls passing an argument, which a generic declared outside the own files may fix. */
+  const argumentCalls: Site[] = [];
 
   const carry = (generic: Generic, one: Carried): boolean => {
     const known = carried.get(generic) ?? [];
@@ -299,7 +403,6 @@ export function indexedAccessReferences<Brand>(
       continue;
     }
     const aliasTypes = new Set(typeQueryAliases(file).map((alias) => alias.type));
-    const imported = packageBindings(file);
     const visit = (node: Node, from: string, enclosing: readonly Generic[]): void => {
       const own = held.declarations.get(nodeKey(file, node));
       const holder = own ?? from;
@@ -330,17 +433,8 @@ export function indexedAccessReferences<Brand>(
         if (name !== undefined) {
           const site = { file, from: holder, node, name, enclosing: inside };
           sites.push(site);
-          const literal = (node.arguments ?? []).some(
-            (argument) => isStringLiteral(argument) || isNumericLiteral(argument),
-          );
-          const head = rootName(callee);
-          const method = isPropertyAccessExpression(callee);
-          if (
-            literal &&
-            isCallExpression(node) &&
-            (method || (head !== undefined && imported.has(head)))
-          ) {
-            literalCalls.push(site);
+          if (isCallExpression(node) && node.arguments.length > 0) {
+            argumentCalls.push(site);
           }
         }
       }
@@ -371,6 +465,50 @@ export function indexedAccessReferences<Brand>(
     });
   };
 
+  /**
+   * The type a call's callee is read off: the receiver of a property access, the value an
+   * object binding pattern destructures the callee from, or the value whose member a
+   * variable holding the callee is initialized with.
+   */
+  const receiverTypeOf = (callee: Expression): Type | undefined => {
+    if (isPropertyAccessExpression(callee)) {
+      const type = queries.typeAt(callee.expression);
+      const args = type === UNANSWERED || type === undefined ? [] : queries.typeArguments(type);
+      if (type !== UNANSWERED && type !== undefined && args !== UNANSWERED && args.length > 0) {
+        return type;
+      }
+    }
+    const name = isPropertyAccessExpression(callee) ? callee.name : callee;
+    const [named] = queries.symbolsAt([name]);
+    const symbol =
+      named === UNANSWERED || named === undefined || (named.flags & SymbolFlags.Alias) === 0
+        ? named
+        : queries.aliased(named);
+    if (symbol === UNANSWERED || symbol === undefined) {
+      return undefined;
+    }
+    for (const handle of symbol.declarations) {
+      const node = project.declarationAt(handle)?.node;
+      const holder =
+        node !== undefined &&
+        isBindingElement(node) &&
+        isObjectBindingPattern(node.parent) &&
+        isVariableDeclaration(node.parent.parent)
+          ? node.parent.parent.initializer
+          : node !== undefined &&
+              isVariableDeclaration(node) &&
+              node.initializer !== undefined &&
+              isPropertyAccessExpression(node.initializer)
+            ? node.initializer.expression
+            : undefined;
+      const type = holder === undefined ? undefined : queries.typeAt(holder);
+      if (type !== UNANSWERED && type !== undefined) {
+        return type;
+      }
+    }
+    return undefined;
+  };
+
   /** What one site fixes for one side of a carried access. */
   const fixedAt = (site: Site, side: Side, generic: Generic): Fixed | undefined => {
     if (side.kind === "written") {
@@ -379,23 +517,26 @@ export function indexedAccessReferences<Brand>(
     const { node } = site;
     if (side.kind === "receiver") {
       const callee = isCallExpression(node) ? node.expression : undefined;
-      if (callee === undefined || !isPropertyAccessExpression(callee)) {
-        return undefined;
-      }
-      const receiver = queries.typeAt(callee.expression);
-      if (receiver === UNANSWERED || receiver === undefined) {
+      const receiver = callee === undefined ? undefined : receiverTypeOf(callee);
+      if (receiver === undefined) {
         return undefined;
       }
       const args = queries.typeArguments(receiver);
       const type = args === UNANSWERED ? undefined : args[side.index];
       return type === undefined ? undefined : { kind: "type", type };
     }
+    if (side.kind === "argument") {
+      const argument = isTypeReferenceNode(node) ? undefined : node.arguments?.[side.index];
+      const type = argument === undefined ? undefined : queries.typeAt(argument);
+      return type === UNANSWERED || type === undefined ? undefined : { kind: "type", type };
+    }
     const written = node.typeArguments?.[side.index];
     if (written !== undefined) {
       const passed = namedParameter(written, site.enclosing);
-      return passed === undefined
-        ? { kind: "node", node: written }
-        : { kind: "passed", generic: passed.generic, index: passed.index };
+      const mapped = passed === undefined ? mappedConstraint(written) : undefined;
+      return passed !== undefined
+        ? { kind: "passed", generic: passed.generic, index: passed.index }
+        : { kind: "node", node: mapped ?? written };
     }
     if (isTypeReferenceNode(node)) {
       return undefined;
@@ -500,46 +641,129 @@ export function indexedAccessReferences<Brand>(
     });
   }
 
-  // A generic function or method declared outside the project's own files carries what
-  // its own text indexes by its type parameters and its receiver's.
-  const outside = literalCalls.filter((site) => !resolvedGenerics.has(site));
-  const methods =
-    outside.length === 0
-      ? []
-      : queries.symbolsAt(
-          outside.map((site) => {
-            const callee = (site.node as CallExpression).expression;
-            return isPropertyAccessExpression(callee) ? callee.name : callee;
-          }),
-        );
-  const own = project.ownPaths();
-  outside.forEach((site, at) => {
-    const named = methods[at];
-    const symbol =
-      named === UNANSWERED || named === undefined || (named.flags & SymbolFlags.Alias) === 0
-        ? named
-        : queries.aliased(named);
+  // A generic declared outside the project's own files carries what its own text indexes
+  // by its type parameters and its receiver's. Only a call passing an argument the compiler
+  // types as a literal can fix an index, so only such a call's signature is resolved.
+  const outside = argumentCalls.filter((site) => !resolvedGenerics.has(site));
+  const argumentNodes = argumentCalls.flatMap((site) => [
+    ...(site.node as CallExpression).arguments,
+  ]);
+  const argumentTypes = queries.typesAt(argumentNodes);
+  const literalArgument = new Set<Node>();
+  argumentTypes.forEach((type, at) => {
+    const node = argumentNodes[at];
     if (
-      symbol === UNANSWERED ||
-      symbol === undefined ||
-      (symbol.flags & (SymbolFlags.Function | SymbolFlags.Method)) === 0
+      node !== undefined &&
+      type !== UNANSWERED &&
+      type !== undefined &&
+      (literalTypeNames(type, partsOf)?.length ?? 0) > 0
     ) {
-      return;
-    }
-    for (const handle of symbol.declarations) {
-      if (own.has(handle.path)) {
-        continue;
-      }
-      const node = project.declarationAt(handle)?.node;
-      const generic = node === undefined ? undefined : genericOf(node);
-      if (generic === undefined) {
-        continue;
-      }
-      for (const one of carriedIn(generic)) {
-        readAt(site, generic, one);
-      }
+      literalArgument.add(node);
     }
   });
+  const own = project.ownPaths();
+  for (const site of outside) {
+    if (!(site.node as CallExpression).arguments.some((one) => literalArgument.has(one))) {
+      continue;
+    }
+    const resolved = queries.resolvedSignature(site.node);
+    const handle =
+      resolved === UNANSWERED || resolved === undefined ? undefined : resolved.declaration;
+    if (handle === undefined || own.has(handle.path)) {
+      continue;
+    }
+    const node = project.declarationAt(handle)?.node;
+    const generic = node === undefined ? undefined : genericOf(node);
+    if (generic === undefined) {
+      continue;
+    }
+    for (const one of carriedIn(generic)) {
+      readAt(site, generic, one);
+    }
+  }
+  for (const site of argumentCalls) {
+    if ((site.node as CallExpression).arguments.some((one) => literalArgument.has(one))) {
+      accesses.push(...instantiatedAccesses(site));
+    }
+  }
+
+  /**
+   * The indexed accesses the generic signature a call instantiates holds, read through the
+   * checker: the signature its receiver's instantiation gives, so an object type its
+   * receiver fixes is concrete whatever declaration spells the receiver's type, a type
+   * literal a generic function returns among them. An index naming a type parameter is the
+   * literal type the call passes at each parameter of that type.
+   */
+  function instantiatedAccesses(site: Site): readonly Access[] {
+    const resolved = queries.resolvedSignature(site.node);
+    const generic =
+      resolved === UNANSWERED || resolved === undefined ? undefined : queries.genericOf(resolved);
+    if (
+      resolved === UNANSWERED ||
+      resolved === undefined ||
+      generic === UNANSWERED ||
+      generic === undefined
+    ) {
+      return [];
+    }
+    const count = (site.node as CallExpression).arguments.length;
+    const parameters: Type[] = [];
+    for (let at = 0; at < count; at += 1) {
+      const type = queries.parameterType(generic, at);
+      if (type !== UNANSWERED && type !== undefined) {
+        parameters[at] = type;
+      }
+    }
+    const result = queries.returnTypeOf(generic);
+    const held: Type[] = [
+      ...parameters,
+      ...(result === UNANSWERED || result === undefined ? [] : [result]),
+    ];
+    // A parameter of a callback and a type argument, a rest tuple's among them, hold the
+    // accesses one level down: `fn: (payload: M[K]) => void` and `...[M[K]]`.
+    const nested = held.flatMap((type) => [
+      ...partsOf(type),
+      ...partsOf(type).flatMap((part) => {
+        const args = queries.typeArguments(part);
+        const calls = queries.signaturesOf(part, SignatureKind.Call);
+        return [
+          ...(args === UNANSWERED ? [] : args),
+          ...(calls === UNANSWERED ? [] : calls).flatMap((signature) =>
+            signature.parameters.flatMap((_parameter, index) => {
+              const one = queries.parameterType(signature, index);
+              return one === UNANSWERED || one === undefined ? [] : [one];
+            }),
+          ),
+        ];
+      }),
+    ]);
+    const found: Access[] = [];
+    for (const type of nested) {
+      const access = queries.indexedAccessOf(type);
+      if (access === UNANSWERED || access === undefined || access.object.isTypeParameter()) {
+        continue;
+      }
+      const names = access.index.isTypeParameter()
+        ? parameters.flatMap((parameter, at) => {
+            if (parameter.id !== access.index.id) {
+              return [];
+            }
+            const passed = queries.typeAtPosition(resolved, at);
+            return passed === UNANSWERED ? [] : (literalTypeNames(passed, partsOf) ?? []);
+          })
+        : (literalTypeNames(access.index, partsOf) ?? []);
+      if (names.length > 0) {
+        found.push({
+          file: site.file,
+          from: site.from,
+          at: site.node,
+          object: access.object,
+          index: names,
+        });
+      }
+    }
+    return found;
+  }
 
   const typeNodes = accesses.flatMap((one) => [
     ...("kind" in one.object ? [one.object] : []),
@@ -593,72 +817,6 @@ export function indexedAccessReferences<Brand>(
     }
   }
   return found;
-}
-
-/**
- * The local names one file binds to a package: each name an import declaration with a
- * bare specifier binds, and each variable initialized by a call or a construction whose
- * callee such a name heads, read in source order.
- */
-function packageBindings(file: SourceFile): ReadonlySet<string> {
-  const names = new Set<string>();
-  for (const statement of file.statements) {
-    if (
-      !isImportDeclaration(statement) ||
-      !isStringLiteral(statement.moduleSpecifier) ||
-      /^[./]/u.test(statement.moduleSpecifier.text)
-    ) {
-      continue;
-    }
-    const clause = statement.importClause;
-    if (clause?.name !== undefined) {
-      names.add(clause.name.text);
-    }
-    const bindings = clause?.namedBindings;
-    if (bindings !== undefined && isNamespaceImport(bindings)) {
-      names.add(bindings.name.text);
-    } else if (bindings !== undefined && isNamedImports(bindings)) {
-      bindings.elements.forEach((element) => names.add(element.name.text));
-    }
-  }
-  if (names.size === 0) {
-    return names;
-  }
-  const visit = (node: Node): void => {
-    if (
-      isVariableDeclaration(node) &&
-      isIdentifier(node.name) &&
-      node.initializer !== undefined &&
-      (isCallExpression(node.initializer) || isNewExpression(node.initializer))
-    ) {
-      const head = rootName(node.initializer.expression);
-      if (head !== undefined && names.has(head)) {
-        names.add(node.name.text);
-      }
-    }
-    node.forEachChild(visit);
-  };
-  visit(file);
-  return names;
-}
-
-/** The identifier an expression is headed by, through property accesses and calls. */
-function rootName(expression: Node): string | undefined {
-  let at: Node = expression;
-  for (;;) {
-    if (isIdentifier(at)) {
-      return at.text;
-    }
-    if (isPropertyAccessExpression(at) || isCallExpression(at) || isNewExpression(at)) {
-      at = at.expression;
-      continue;
-    }
-    if (isParenthesizedExpression(at) || isNonNullExpression(at)) {
-      at = at.expression;
-      continue;
-    }
-    return undefined;
-  }
 }
 
 /** What makes two carried accesses one: the kind and position of each side, or its written node. */

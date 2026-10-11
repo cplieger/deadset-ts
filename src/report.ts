@@ -19,7 +19,7 @@ import type { StaleSuppression } from "./findings/self-check.ts";
 import type { TestFileRule } from "./references.ts";
 
 /** The version of the report schema this analyzer writes a report to. */
-const SCHEMA_VERSION = "8.0.0";
+const SCHEMA_VERSION = "8.1.0";
 
 /** Every report schema version this analyzer reads: the one the Contract it implements admits. */
 export const SCHEMA_VERSIONS_ACCEPTED: readonly string[] = [SCHEMA_VERSION];
@@ -45,6 +45,8 @@ interface WireDetails {
     readonly position: WirePosition;
   }[];
   readonly write_positions?: readonly WirePosition[];
+  /** Set under the name-literal rule, which no finding of this analyzer meets; SARIF still maps it. */
+  readonly name_literal?: WirePosition;
   readonly dependency_class?: string;
   readonly mechanism?: string;
   readonly entry?: {

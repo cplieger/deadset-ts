@@ -1,11 +1,9 @@
 /**
- * One run's passes, composed: the projects discovery names, opened in one snapshot
- * of one client, each read through the stages in the order they depend on each
- * other, and the per-project answers merged into the answer for the run.
- *
- * The stages take a project's view, which only this composition makes: a view
- * carries a project's identity in its type so a handle cannot cross to another
- * project's checker, and that holds only for views the session itself hands out.
+ * One run's passes, composed: the projects discovery names, opened in one snapshot of one
+ * client, each read through the stages in dependency order, and the per-project answers
+ * merged into the run's. The stages take a project's view, which only this composition
+ * makes: a view carries a project's identity in its type so a handle cannot cross to
+ * another project's checker, which holds only for views the session hands out.
  */
 
 import { lineOf, readComponent } from "./component-files.ts";
@@ -40,10 +38,12 @@ import {
   readConventions,
   type AppliedConvention,
   type ConventionManifest,
+  type Conventions,
 } from "./conventions.ts";
 import { readEdgeSides } from "./edges.ts";
 import { enumGroup } from "./enum-group.ts";
 import { generatedFile, generatedFilesOf } from "./generated-file.ts";
+import { inOperandNames } from "./in-operands.ts";
 import { sourceFilesOf } from "./source-files.ts";
 import {
   evidenceRecords,
@@ -94,13 +94,26 @@ import {
 } from "./type-errors.ts";
 import { reflectiveLookup } from "./reflective-lookup.ts";
 import { references, testFileRulesOf, type Reference, type TestFileRule } from "./references.ts";
-import { roots, unmatchedEverywhere, type RootKind, type Roots } from "./roots.ts";
+import {
+  roots,
+  unmatchedEverywhere,
+  type RootKind,
+  type RootOptions,
+  type Roots,
+} from "./roots.ts";
 import type { Scope } from "./scope.ts";
 import { serializationContract } from "./serialization-contract.ts";
 import { outsideTestReferences, testFilesAt, type OutsideTest } from "./outside-tests.ts";
 import { joinedTestFiles, withJoinedTests } from "./test-joins.ts";
 import { supportReferences, testSupportFiles } from "./test-support.ts";
-import { diagnosticsOf, ownedAs, runSession, type Engine, type ProjectView } from "./session.ts";
+import {
+  diagnosticsOf,
+  ownedAs,
+  runSession,
+  type Engine,
+  type OpenedFiles,
+  type ProjectView,
+} from "./session.ts";
 import { accessorsOf, storesOf } from "./stores.ts";
 import { isPartKind, type SuppressionRecord, type Suppressions, type Verdict } from "./suppress.ts";
 import { bindRows, readBaseline, readIgnoreFile, type Recorded } from "./suppress-file.ts";
@@ -225,30 +238,71 @@ interface ReadProjects<Answer> {
   readonly conventionUses: readonly string[];
   /** The directory of every workspace member, absolute. */
   readonly memberDirs: readonly string[];
+  /** The directory of every nested package, absolute. */
+  readonly nestedDirs: readonly string[];
   /** The test files below the target root no project the run reads holds, parsed. */
   readonly outsideTests: readonly OutsideTest[];
 }
 
 /**
  * The manifests the analysis reads, each once: the target's own, then every workspace
- * member's below the target root.
+ * member's and every nested package's below the target root.
  */
 function conventionManifests(
   host: Host,
   targetRoot: string,
   memberDirs: readonly string[],
+  nestedDirs: readonly string[],
 ): readonly ConventionManifest[] {
   const found = new Map<string, ConventionManifest>();
   if (host.kindOf(joinPath(targetRoot, "package.json")) === "file") {
     found.set(targetRoot, { dir: targetRoot, path: "package.json" });
   }
-  for (const dir of memberDirs) {
-    const below = relativePath(targetRoot, dir);
-    if (below !== undefined && !found.has(dir)) {
-      found.set(dir, { dir, path: `${below}/package.json` });
+  for (const [dirs, nested] of [
+    [memberDirs, false],
+    [nestedDirs, true],
+  ] as const) {
+    for (const dir of dirs) {
+      const below = relativePath(targetRoot, dir);
+      if (below !== undefined && !found.has(dir)) {
+        found.set(dir, { dir, path: `${below}/package.json`, nested });
+      }
     }
   }
   return [...found.values()];
+}
+
+/**
+ * The nested packages of a run: each directory below the target root, in no `node_modules`
+ * directory and none of `known`, that holds a `package.json` and lies at or above one of
+ * `files`, the program's source files and the compiler configuration files, in path order.
+ */
+function nestedPackageDirs(
+  host: Host,
+  targetRoot: string,
+  files: Iterable<string>,
+  known: ReadonlySet<string>,
+): readonly string[] {
+  const seen = new Set<string>();
+  const found: string[] = [];
+  for (const file of files) {
+    for (
+      let dir = dirnamePath(file);
+      dir !== targetRoot && !seen.has(dir) && relativePath(targetRoot, dir) !== undefined;
+      dir = dirnamePath(dir)
+    ) {
+      seen.add(dir);
+      const below = relativePath(targetRoot, dir) ?? "";
+      if (
+        !below.split("/").includes("node_modules") &&
+        !known.has(dir) &&
+        host.kindOf(joinPath(dir, "package.json")) === "file"
+      ) {
+        found.push(dir);
+      }
+    }
+  }
+  return found.sort(compare);
 }
 
 /**
@@ -268,6 +322,12 @@ function readProjects<Answer>(
 ): ReadProjects<Answer> {
   const targetRoot = scope.target.path;
   const discovered = discoverProjects(engine, host, scope, config.analysis.configurations);
+  if (discovered.configFiles.length === 0 && discovered.notBuilt.length === 0) {
+    throw new DiscoveryError(
+      `${targetRoot} holds no compiler configuration, so the run holds no program`,
+      [],
+    );
+  }
   const ids = new Map(discovered.projects.map((project) => [project.configFile, project.id]));
   const loads = consumerLoads(engine, host, scope, discovered.configFiles);
   const consumerOf = new Map(
@@ -283,33 +343,45 @@ function readProjects<Answer>(
     discovered.configFiles,
     readManifest(host, targetRoot),
   );
-  const conventions = readConventions(
-    host,
-    (fileName, text) => engine.parseSourceFile(fileName, text),
-    conventionManifests(host, absoluteRoot, workspace?.memberDirs ?? []),
-    config.ts.disabledConventions,
-  );
-  const options = {
-    host,
-    manifest: workspace?.manifest ?? readManifest(host, targetRoot),
-    otherPackages: [
-      ...(workspace?.entries ?? []),
-      ...packageEntries(
-        host,
-        normalizePath(absoluteRoot),
-        discovered.configFiles,
-        new Set(workspace?.memberDirs ?? []),
+  const parse = (fileName: string, text: string) => engine.parseSourceFile(fileName, text);
+  const memberDirs = workspace?.memberDirs ?? [];
+  // The nested packages are known only once every program is open, and every visit reads
+  // the conventions and options they decide, so both are set in the session's first step.
+  let nestedDirs: readonly string[] = [];
+  let conventions = readConventions(host, parse, [], config.ts.disabledConventions);
+  let options: RootOptions & { readonly parse: typeof parse; readonly conventions: Conventions };
+  const readManifests = (opened: readonly OpenedFiles[]): void => {
+    nestedDirs = nestedPackageDirs(
+      host,
+      normalizePath(absoluteRoot),
+      opened
+        .filter((one) => !consumerOf.has(one.configFile))
+        .flatMap((one) => [one.configFile, ...one.fileNames()]),
+      new Set(memberDirs),
+    );
+    conventions = readConventions(
+      host,
+      parse,
+      conventionManifests(host, absoluteRoot, memberDirs, nestedDirs),
+      config.ts.disabledConventions,
+    );
+    options = {
+      host,
+      manifest: workspace?.manifest ?? readManifest(host, targetRoot),
+      otherPackages: [
+        ...(workspace?.entries ?? []),
+        ...packageEntries(host, normalizePath(absoluteRoot), nestedDirs),
+      ],
+      patterns: config.rootPatterns,
+      entryFiles: config.ts.entryFiles,
+      conventions,
+      testFiles: config.ts.testFiles,
+      parse,
+      publishedAPI: config.targetKind === "library",
+      publishedMembers: new Set(
+        (workspace?.entries ?? []).filter((entry) => entry.published).map((entry) => entry.dir),
       ),
-    ],
-    patterns: config.rootPatterns,
-    entryFiles: config.ts.entryFiles,
-    conventions,
-    testFiles: config.ts.testFiles,
-    parse: (fileName: string, text: string) => engine.parseSourceFile(fileName, text),
-    publishedAPI: config.targetKind === "library",
-    publishedMembers: new Set(
-      (workspace?.entries ?? []).filter((entry) => entry.published).map((entry) => entry.dir),
-    ),
+    };
   };
   const notBuilt: NotBuilt[] = [...discovered.notBuilt];
   const dropped = (configFile: string, error: string): void => {
@@ -477,9 +549,10 @@ function readProjects<Answer>(
         sourcePaths(host, targetRoot).filter(
           (path) => !heldFiles.has(path) && testPatterns.some((pattern) => pattern.test(path)),
         ),
-        options.parse,
+        parse,
       );
     },
+    readManifests,
   );
   for (const configFile of session.unopened) {
     if (consumerOf.has(configFile) || !isGuess(discovered, configFile)) {
@@ -518,7 +591,8 @@ function readProjects<Answer>(
     componentsUnread: workspace?.componentsUnread ?? [],
     conventionsApplied: conventions.applied,
     conventionUses: conventions.uses,
-    memberDirs: workspace?.memberDirs ?? [],
+    memberDirs,
+    nestedDirs,
     outsideTests,
   };
 }
@@ -707,6 +781,8 @@ interface ReadRun<Extra> {
   readonly conventionUses: readonly string[];
   /** The directory of every workspace member, absolute. */
   readonly memberDirs: readonly string[];
+  /** The directory of every nested package, absolute. */
+  readonly nestedDirs: readonly string[];
 }
 
 /**
@@ -726,6 +802,7 @@ function readRun<Extra>(
     project: ProjectView<Brand>,
     read: ProjectRead,
     references: readonly Reference[],
+    testFiles: readonly string[],
   ) => Extra,
 ): ReadRun<Extra> {
   const targetRoot = scope.target.path;
@@ -771,7 +848,7 @@ function readRun<Extra>(
           reason: warning.reason,
         })),
       ),
-      extra: extra(project, projectRead, resolved.references),
+      extra: extra(project, projectRead, resolved.references, resolved.testFilePaths),
     };
   });
   const outsidePaths = read.outsideTests.map((one) => one.path);
@@ -816,6 +893,9 @@ function readRun<Extra>(
       ...(projectRead.referenceOnly.length === 0
         ? {}
         : { referenceOnly: projectRead.referenceOnly }),
+      ...(projectRead.held.dependents.size === 0
+        ? {}
+        : { dependents: projectRead.held.dependents }),
     };
     return {
       configFile: projectRead.configFile,
@@ -865,6 +945,7 @@ function readRun<Extra>(
     conventionsApplied: read.conventionsApplied,
     conventionUses: read.conventionUses,
     memberDirs: read.memberDirs,
+    nestedDirs: read.nestedDirs,
   };
 }
 
@@ -1010,14 +1091,12 @@ function sweptOf<Extra>(
 }
 
 /**
- * Sweeps the run the scope and the configuration describe. Each project's references
- * and exemptions are read against its own inventory while its view is open; the
- * projects then merge into one matrix in the run's order, which is swept under the
- * caller's marks and mode with the exemptions every project found. A record found in
- * one configuration holds in every configuration that holds its declaration, because
- * an exemption is evidence of a use the analysis cannot see and a use in one
- * configuration is a use. A project that carries an error ends the run before any
- * project is swept.
+ * Sweeps the run the scope and the configuration describe. Each project's references and
+ * exemptions are read against its own inventory while its view is open; the projects then
+ * merge into one matrix in run order, swept under the caller's marks and mode with every
+ * project's exemptions. A record found in one configuration holds in every configuration
+ * that holds its declaration, because an exemption evidences a use the analysis cannot see.
+ * A project that carries an error ends the run before any project is swept.
  */
 export function runSweep(
   engine: Engine,
@@ -1041,6 +1120,7 @@ interface EmitterExtra {
   readonly implementations: ReturnType<typeof implementations>;
   readonly heldByInclusion: readonly string[];
   readonly generated: readonly string[];
+  readonly inOperands: readonly string[];
   readonly rooted: Roots;
   readonly directives: readonly InlineDirective[];
   readonly declarationsNamed: readonly boolean[];
@@ -1064,7 +1144,7 @@ export function readEmitterRun(
     config,
     mode,
     detectors,
-    (project, read, references) => ({
+    (project, read, references, testFiles) => ({
       deprecation: deprecatedDeclarations(project, read.held),
       accessors: accessorsOf(project, read.held),
       needs: projectNeeds(project, read.held, host, targetRoot, (fileName, text) =>
@@ -1073,6 +1153,7 @@ export function readEmitterRun(
       implementations: implementations(project, read.held),
       heldByInclusion: heldByInclusion(project, targetRoot),
       generated: [...read.generated.keys()],
+      inOperands: inOperandNames(project, targetRoot, testFiles),
       rooted: read.rooted,
       directives: inlineDirectives(project, read.held, targetRoot).filter(
         (directive) => !read.referenceOnly.includes(directive.site.path),
@@ -1165,12 +1246,14 @@ export function emitterInputOver(
       swept.sweep.candidates.map((candidate) => candidate.id),
       members.read,
       members.unbuilt,
+      read.nestedDirs,
     ),
     implementations: mergeImplementations(projects.map((one) => one.extra.implementations)),
     files: {
       tree: sourceTree(host, targetRoot),
       heldByInclusion: new Set(projects.flatMap((one) => one.extra.heldByInclusion)),
       generated: new Set(projects.flatMap((one) => one.extra.generated)),
+      inOperands: new Set(projects.flatMap((one) => one.extra.inOperands)),
     },
     boundary: {
       consumers: {

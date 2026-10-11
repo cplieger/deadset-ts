@@ -49,6 +49,8 @@ export interface FileFacts {
   readonly heldByInclusion: ReadonlySet<string>;
   /** The paths below the target root of the generated files. */
   readonly generated?: ReadonlySet<string>;
+  /** The property names an `in` expression of a production file tests by a literal. */
+  readonly inOperands?: ReadonlySet<string>;
 }
 
 /** The line of the last character of one text, counted from one; an empty text is one line. */

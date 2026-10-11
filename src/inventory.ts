@@ -165,6 +165,12 @@ export interface Inventory {
   readonly byName: ReadonlyMap<string, readonly string[]>;
   /** Each `declare module` declaration whose name is a string literal, by id, to that name. */
   readonly modules: ReadonlyMap<string, string>;
+  /**
+   * Each enum member's dependents, by id: the later members of its declaration with no
+   * initializer, up to the first one with an initializer, whose values its deletion moves.
+   * A member with none has no entry.
+   */
+  readonly dependents: ReadonlyMap<string, readonly string[]>;
 }
 
 /** A declaration under construction, before its reference is rendered. */
@@ -986,6 +992,31 @@ export function inventory<Brand>(
     return undefined;
   }
 
+  const dependents = new Map<string, readonly string[]>();
+  for (const container of containers.filter((one) => one.memberKind === "enum-member")) {
+    const ids = container.members.map((member) => {
+      const record = byNode.get(nodeKey(member.getSourceFile(), member));
+      return record === undefined ? undefined : positionKey(record.position);
+    });
+    container.members.forEach((_member, index) => {
+      const after: string[] = [];
+      for (let next = index + 1; next < container.members.length; next += 1) {
+        const member = container.members[next];
+        if (member === undefined || !isEnumMember(member) || member.initializer !== undefined) {
+          break;
+        }
+        const id = ids[next];
+        if (id !== undefined) {
+          after.push(id);
+        }
+      }
+      const id = ids[index];
+      if (id !== undefined && after.length > 0) {
+        dependents.set(id, after);
+      }
+    });
+  }
+
   const byId = new Map(building.map((record) => [positionKey(record.position), record]));
   const symbols = building
     .map(render)
@@ -1002,6 +1033,7 @@ export function inventory<Brand>(
       .map((symbol) => symbol.id),
     byName: namesOf(building),
     modules: new Map(modules.map(([record, name]) => [positionKey(record.position), name])),
+    dependents,
   };
 }
 

@@ -163,7 +163,8 @@ export function analyzeRoot(root: string, options: AnalyzeOptions = {}): Analyze
     const held = inventory(recordingView(project, tally), host, root);
     if (wanted !== undefined) {
       const before = engine.getTimingInfo().totals.requestCount;
-      resolved.push(references(project, held, root, wanted));
+      const requestCount = (): number => engine.getTimingInfo().totals.requestCount;
+      resolved.push(references(project, held, root, { ...wanted, requestCount }));
       requests += engine.getTimingInfo().totals.requestCount - before;
     }
     if (options.roots !== undefined) {

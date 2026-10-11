@@ -41,8 +41,11 @@ const GAPS_FILE = "conformance.json";
 /** The directory of a rendering holding the target; every other one is a consumer. */
 const TARGET = "target";
 
-/** The directory of a rendering holding its installed packages, and the name the run gives it. */
-const INSTALLED = "installed";
+/**
+ * The directories of a rendering holding its installed packages, at the rendering root
+ * and inside the target, and the name the run gives each.
+ */
+const INSTALLED = ["installed", join(TARGET, "installed")] as const;
 const NODE_MODULES = "node_modules";
 
 /** The ignore file's name and location, which the suppression grammar fixes. */
@@ -90,6 +93,7 @@ interface Row {
   readonly retained_by?: readonly string[];
   readonly details?: Readonly<Record<string, unknown>>;
   readonly component?: Component;
+  readonly fixability?: string;
 }
 
 /** One entry of a key that names a declaration, in one of its three shapes. */
@@ -137,6 +141,8 @@ interface ExpectationFile {
   readonly target_kind: string;
   readonly min_confidence?: string;
   readonly consumer_tests?: string;
+  readonly severity?: Readonly<Record<string, string>>;
+  readonly suppressions_in_effect?: number;
   readonly type_error_skips?: readonly string[];
   readonly notes?: readonly NoteExpectation[];
   readonly conventions_applied?: readonly ConventionExpectation[];
@@ -153,6 +159,8 @@ interface ExpectationFile {
 
 interface Manifest {
   readonly symbols: Readonly<Record<string, { readonly file?: string; readonly line?: number }>>;
+  /** The derived configurations a run of the rendering drops, where the manifest names them. */
+  readonly configurations_not_built?: readonly string[];
 }
 
 /** What the analyzer reported at one expectation, in the expectation file's vocabulary. */
@@ -166,6 +174,7 @@ interface Actual {
   readonly retained_by?: readonly string[];
   readonly details?: Readonly<Record<string, unknown>>;
   readonly component?: Component;
+  readonly fixability?: string;
 }
 
 interface Suppression {
@@ -413,6 +422,7 @@ function configOf(file: ExpectationFile): string {
     target: { kind: file.target_kind },
     ...(Object.keys(analysis).length > 0 ? { analysis } : {}),
     ...(world.includes("consumers") ? { consumers: { complete: true } } : {}),
+    ...(file.severity === undefined ? {} : { severity: file.severity }),
     ...(patterns.length > 0 ? { roots: { patterns } } : {}),
     ...(Object.keys(ts).length > 0 ? { ts } : {}),
   })}\n`;
@@ -571,6 +581,7 @@ function answerFrom(row: Row, found: WireFinding): Actual {
     ...(row.configurations === undefined ? {} : { configurations: found.configurations }),
     ...(details === undefined || Object.keys(details).length === 0 ? {} : { details }),
     ...(component === undefined || Object.keys(component).length === 0 ? {} : { component }),
+    ...(row.fixability === undefined ? {} : { fixability: found.fixability }),
   };
 }
 
@@ -595,6 +606,7 @@ function differences(row: Row, actual: Actual): string {
     ["symbol_kind", row.symbol_kind, actual.symbol_kind],
     ["reachability_class", row.reachability_class, actual.reachability_class],
     ["liveness_relation", row.liveness_relation, actual.liveness_relation],
+    ["fixability", row.fixability, actual.fixability],
   ];
   for (const [member, want, got] of scalars) {
     if (want !== undefined && want !== got) {
@@ -779,7 +791,12 @@ function suppressionPhase(
     description: "The adjudications the conformance run writes for its suppression phase.",
     ignore: [],
   };
-  const body = `${JSON.stringify({ ...own, ignore: [...own.ignore, ...covered.values()] }, null, 2)}\n`;
+  // Two parts of one declaration under one code are one entry, which a second copy of would
+  // make stale, as the suppression grammar's ordering rule states.
+  const distinct = new Map(
+    [...covered.values()].map((entry) => [`${entry.code} ${entry.symbol} ${entry.path}`, entry]),
+  );
+  const body = `${JSON.stringify({ ...own, ignore: [...own.ignore, ...distinct.values()] }, null, 2)}\n`;
   writeFileSync(path, body);
 
   const second = analyzeRendering(at, "second");
@@ -876,6 +893,24 @@ export function edgeDifferences(
     }
   }
   return held.join("; ");
+}
+
+/**
+ * How the identifiers of the report's dropped configurations differ from the list the
+ * manifest names, or empty, which it is wherever the manifest names none.
+ */
+export function notBuiltDifference(
+  manifest: Pick<Manifest, "configurations_not_built">,
+  report: Pick<Report, "configurations_not_built">,
+): string {
+  const want = manifest.configurations_not_built;
+  if (want === undefined) {
+    return "";
+  }
+  const got = report.configurations_not_built.map((one) => one.id);
+  return JSON.stringify(got) === JSON.stringify(want)
+    ? ""
+    : `configurations_not_built want ${JSON.stringify(want)} got ${JSON.stringify(got)}`;
 }
 
 /**
@@ -1105,8 +1140,10 @@ function answerFixture(
     const sites = sitesOf(file, manifest);
     const rendering = join(dir, "rendering");
     cpSync(fixture("corpus", name, "ts"), rendering, { recursive: true });
-    if (existsSync(join(rendering, INSTALLED))) {
-      renameSync(join(rendering, INSTALLED), join(rendering, NODE_MODULES));
+    for (const installed of INSTALLED) {
+      if (existsSync(join(rendering, installed))) {
+        renameSync(join(rendering, installed), join(rendering, installed, "..", NODE_MODULES));
+      }
     }
     const before = filesUnder(rendering);
     const at: CorpusRun = {
@@ -1166,9 +1203,11 @@ function answerFixture(
     ].some((row) => gapCovers(gaps, name, row));
     const edges = [
       edgeDifferences(file, manifest, first.report),
+      notBuiltDifference(manifest, first.report),
       skips,
       noteDifferences(file, first.report),
       rowsDeclined ? "" : conventionDifferences(file, first.report),
+      inEffectDifference(file, first.report),
     ]
       .filter((one) => one !== "")
       .join("; ");
@@ -1194,6 +1233,18 @@ function answerFixture(
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+}
+
+/** Where the fixture pins its first phase's suppressions in effect and the report differs, why. */
+export function inEffectDifference(
+  file: Pick<ExpectationFile, "suppressions_in_effect">,
+  report: Pick<Report, "totals">,
+): string {
+  const want = file.suppressions_in_effect;
+  const got = report.totals.suppressions_in_effect;
+  return want === undefined || want === got
+    ? ""
+    : `suppressions_in_effect want ${String(want)} got ${String(got)}`;
 }
 
 /** The run over every fixture, recorded as the results document the Contract's schema shapes. */

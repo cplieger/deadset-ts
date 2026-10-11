@@ -73,8 +73,6 @@ describe("the dependencies-and-module-machinery emitter", () => {
     ).toEqual([
       "unused-runtime dependency",
       "@types/bundled dev-dependency",
-      "host-peer dev-dependency",
-      "optional-peer dev-dependency",
       "unused-dev dev-dependency",
       "peer-unused peer-dependency",
     ]);
@@ -89,10 +87,10 @@ describe("the dependencies-and-module-machinery emitter", () => {
     expect(names(FIXTURE.findings)).toContain("@types/bundled");
   });
 
-  it("holds a dependency whose command a script runs needed, and a peer a needed one requires only as any other", () => {
+  it("holds a dependency whose command a script runs needed, and each peer a needed one names, optional or not", () => {
     expect(names(FIXTURE.findings)).not.toContain("dev-tool");
-    expect(names(FIXTURE.findings)).toContain("host-peer");
-    expect(names(FIXTURE.findings)).toContain("optional-peer");
+    expect(names(FIXTURE.findings)).not.toContain("host-peer");
+    expect(names(FIXTURE.findings)).not.toContain("optional-peer");
   });
 
   it("never reports the manifest's bin entry, whose target no import reaches, and counts what that target imports", () => {
