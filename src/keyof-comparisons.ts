@@ -19,8 +19,8 @@ import {
   type Node,
   type SourceFile,
   type TypeNode,
-} from "@typescript/native/unstable/ast";
-import { SymbolFlags, type Type } from "@typescript/native/unstable/sync";
+} from "@typescript/native/ast";
+import { SymbolFlags, type Type } from "@typescript/native/sync";
 import type { AliasChains } from "./alias-chain.ts";
 import { nodeKey, type Inventory } from "./inventory.ts";
 import { renderPosition } from "./position.ts";

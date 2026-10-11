@@ -1,5 +1,5 @@
-import { DiagnosticCategory } from "@typescript/native/unstable/sync";
-import type { Diagnostic } from "@typescript/native/unstable/sync";
+import { DiagnosticCategory } from "@typescript/native/sync";
+import type { Diagnostic } from "@typescript/native/sync";
 import type { BuildConfiguration, ProjectConfiguration } from "./config.ts";
 import type { Host } from "./host.ts";
 import { dirnamePath, isAbsolutePath, joinPath, relativePath, resolvePath } from "./paths.ts";

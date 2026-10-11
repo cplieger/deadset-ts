@@ -4,7 +4,7 @@
  * below it, or on its own line where it trails a token there.
  */
 
-import { SyntaxKind, type Node, type SourceFile } from "@typescript/native/unstable/ast";
+import { SyntaxKind, type Node, type SourceFile } from "@typescript/native/ast";
 import { nodeKey, type Inventory } from "./inventory.ts";
 import { byPosition, positionKey, renderPosition, type Position } from "./position.ts";
 import type { ProjectView } from "./session.ts";

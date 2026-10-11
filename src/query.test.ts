@@ -1,13 +1,13 @@
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import type { Expression, Node } from "@typescript/native/unstable/ast";
+import type { Expression, Node } from "@typescript/native/ast";
 import type {
   APIRequestGenerator,
   Checker,
   Symbol as TSSymbol,
   Type,
-} from "@typescript/native/unstable/sync";
+} from "@typescript/native/sync";
 import { nodeHost } from "../bin/node-host.ts";
 import { writeProject } from "../__test-helpers__/projects.ts";
 import { discoverProjects } from "./discover.ts";

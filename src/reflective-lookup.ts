@@ -22,8 +22,8 @@ import {
   isStringLiteral,
   type Node,
   type SourceFile,
-} from "@typescript/native/unstable/ast";
-import { TypeFlags, type Type } from "@typescript/native/unstable/sync";
+} from "@typescript/native/ast";
+import { TypeFlags, type Type } from "@typescript/native/sync";
 import type { DetectorInput, Evidence } from "./exempt.ts";
 import { memberNames } from "./member-names.ts";
 import { renderPosition } from "./position.ts";

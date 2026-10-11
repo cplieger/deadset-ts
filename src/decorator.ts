@@ -11,7 +11,7 @@
  * the inventory holds for the class, static members included.
  */
 
-import type { Node } from "@typescript/native/unstable/ast";
+import type { Node } from "@typescript/native/ast";
 import { decoratorsOf, spelledDecorator } from "./calls.ts";
 import type { DetectorInput, Evidence } from "./exempt.ts";
 import { nodeKey, type InventorySymbol, type SymbolKind } from "./inventory.ts";

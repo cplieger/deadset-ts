@@ -9,7 +9,7 @@ import {
   isImportDeclaration,
   isStringLiteral,
   type SourceFile,
-} from "@typescript/native/unstable/ast";
+} from "@typescript/native/ast";
 import { resolveRelativeSpecifier, type ParseFile } from "./configuration-files.ts";
 import type { Host } from "./host.ts";
 import { dirnamePath, joinPath, relativePath, resolvePath } from "./paths.ts";

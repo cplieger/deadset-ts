@@ -10,7 +10,7 @@ import {
   isStringLiteral,
   SyntaxKind,
   type Node,
-} from "@typescript/native/unstable/ast";
+} from "@typescript/native/ast";
 import type { ProjectView } from "./session.ts";
 import { sourceFilesOf } from "./source-files.ts";
 

@@ -18,7 +18,7 @@ import {
   SyntaxKind,
   type Node,
   type SourceFile,
-} from "@typescript/native/unstable/ast";
+} from "@typescript/native/ast";
 import { RESOLVED_EXTENSIONS, type ParseFile } from "./configuration-files.ts";
 import { emittedFrom } from "./emit-map.ts";
 import type { Host } from "./host.ts";

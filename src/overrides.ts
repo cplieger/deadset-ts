@@ -16,11 +16,11 @@ import {
   SyntaxKind,
   type HeritageClauseElement,
   type Node,
-} from "@typescript/native/unstable/ast";
+} from "@typescript/native/ast";
 import type { AliasChains } from "./alias-chain.ts";
 import { memberComponent } from "./class-members.ts";
 import { nodeKey, type Inventory, type InventorySymbol } from "./inventory.ts";
-import { SymbolFlags, type Symbol as TSSymbol, type Type } from "@typescript/native/unstable/sync";
+import { SymbolFlags, type Symbol as TSSymbol, type Type } from "@typescript/native/sync";
 import { UNANSWERED } from "./query.ts";
 import { nameComponent } from "./ref.ts";
 import type { Reference } from "./references.ts";

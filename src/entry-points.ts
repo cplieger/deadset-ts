@@ -28,8 +28,8 @@ import {
   isStringLiteral,
   type Node,
   type SourceFile,
-} from "@typescript/native/unstable/ast";
-import { SymbolFlags } from "@typescript/native/unstable/sync";
+} from "@typescript/native/ast";
+import { SymbolFlags } from "@typescript/native/sync";
 import {
   configurationFiles,
   filesNamedBy,

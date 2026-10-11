@@ -24,7 +24,7 @@ import {
   type Identifier,
   type Node,
   type SourceFile,
-} from "@typescript/native/unstable/ast";
+} from "@typescript/native/ast";
 import {
   configurationFiles,
   declaredIn as declaredBeside,

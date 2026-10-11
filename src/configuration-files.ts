@@ -14,7 +14,7 @@ import {
   isStringLiteral,
   type Node,
   type SourceFile,
-} from "@typescript/native/unstable/ast";
+} from "@typescript/native/ast";
 import type { Host } from "./host.ts";
 import { dirnamePath, joinPath, relativePath, resolvePath } from "./paths.ts";
 import type { SourceFiles } from "./source-files.ts";

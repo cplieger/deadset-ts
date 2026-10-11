@@ -15,12 +15,8 @@ import {
   isStringLiteral,
   SyntaxKind,
   type Node,
-} from "@typescript/native/unstable/ast";
-import {
-  SymbolFlags,
-  type NodeHandle,
-  type Symbol as TSSymbol,
-} from "@typescript/native/unstable/sync";
+} from "@typescript/native/ast";
+import { SymbolFlags, type NodeHandle, type Symbol as TSSymbol } from "@typescript/native/sync";
 import type { AliasChains } from "./alias-chain.ts";
 import { resolvedTargets } from "./calls.ts";
 import type { Config, DeclarationEntry } from "./config.ts";

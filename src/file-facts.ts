@@ -4,7 +4,7 @@
  * program holds by inclusion rather than by an import.
  */
 
-import type { SourceFile } from "@typescript/native/unstable/ast";
+import type { SourceFile } from "@typescript/native/ast";
 import { IGNORED_DIRECTORIES } from "./discover.ts";
 import type { Host } from "./host.ts";
 import { packageScope } from "./inventory.ts";

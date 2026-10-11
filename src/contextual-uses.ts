@@ -26,8 +26,8 @@ import {
   type Expression,
   type Node,
   type ObjectLiteralExpression,
-} from "@typescript/native/unstable/ast";
-import { SignatureKind, type NodeHandle, type Type } from "@typescript/native/unstable/sync";
+} from "@typescript/native/ast";
+import { SignatureKind, type NodeHandle, type Type } from "@typescript/native/sync";
 import type { AliasChains } from "./alias-chain.ts";
 import type { Inventory, SymbolKind } from "./inventory.ts";
 import { isAnswered, type PropertyTables } from "./query.ts";

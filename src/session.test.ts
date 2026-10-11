@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Snapshot, TimingInfo } from "@typescript/native/unstable/sync";
+import type { Snapshot, TimingInfo } from "@typescript/native/sync";
 import { nodeHost } from "../bin/node-host.ts";
 import { fixture } from "../__test-helpers__/fixtures.ts";
 import { diagnosticErrors, discoverProjects, DiscoveryError } from "./discover.ts";

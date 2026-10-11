@@ -6,16 +6,16 @@
  * member import keeps the project the compiler opens for it.
  */
 
-import { ModuleKind, ModuleResolutionKind } from "@typescript/native/unstable/sync";
+import { ModuleKind, ModuleResolutionKind } from "@typescript/native/sync";
 import type {
   CreateSnapshotProgramParams,
   ModuleResolutionEntry,
   ModuleResolver,
   Program,
   ResolutionMode,
-} from "@typescript/native/unstable/sync";
-import { isStringLiteralLikeNode } from "@typescript/native/unstable/ast";
-import type { StringLiteralLikeNode } from "@typescript/native/unstable/ast";
+} from "@typescript/native/sync";
+import { isStringLiteralLikeNode } from "@typescript/native/ast";
+import type { StringLiteralLikeNode } from "@typescript/native/ast";
 import type { Host } from "./host.ts";
 import { dirnamePath, resolvePath } from "./paths.ts";
 import type { Engine } from "./session.ts";

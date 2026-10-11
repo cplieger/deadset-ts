@@ -15,8 +15,8 @@ import {
   isStringLiteral,
   type ElementAccessExpression,
   type Node,
-} from "@typescript/native/unstable/ast";
-import type { Symbol as TSSymbol, Type } from "@typescript/native/unstable/sync";
+} from "@typescript/native/ast";
+import type { Symbol as TSSymbol, Type } from "@typescript/native/sync";
 import type { AliasChains } from "./alias-chain.ts";
 import type { InventorySymbol } from "./inventory.ts";
 import { isAnswered, type PropertyTables } from "./query.ts";

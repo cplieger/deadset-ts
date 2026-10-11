@@ -44,7 +44,7 @@ import {
   type ParenthesizedExpression,
   type SatisfiesExpression,
   type SourceFile,
-} from "@typescript/native/unstable/ast";
+} from "@typescript/native/ast";
 import { lineOf } from "./component-files.ts";
 import {
   CONVENTION_ROWS,

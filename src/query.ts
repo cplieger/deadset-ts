@@ -7,7 +7,7 @@
  * form where it has one and otherwise as one batch, one round trip per capped run.
  */
 
-import { isIdentifier, type Expression, type Node } from "@typescript/native/unstable/ast";
+import { isIdentifier, type Expression, type Node } from "@typescript/native/ast";
 import type {
   APIRequestGenerator,
   Checker,
@@ -18,7 +18,7 @@ import type {
   SymbolFlags,
   Symbol as TSSymbol,
   Type,
-} from "@typescript/native/unstable/sync";
+} from "@typescript/native/sync";
 
 /**
  * The greatest number of locations one batched request asks about. A batch is

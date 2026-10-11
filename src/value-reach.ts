@@ -13,7 +13,7 @@ import {
   type ObjectType,
   type Symbol as TSSymbol,
   type Type,
-} from "@typescript/native/unstable/sync";
+} from "@typescript/native/sync";
 import { classNames, typesAt } from "./class-members.ts";
 import type { Inventory } from "./inventory.ts";
 import { must } from "./query.ts";

@@ -34,14 +34,14 @@ import {
   type Expression,
   type Node,
   type ParameterDeclaration,
-} from "@typescript/native/unstable/ast";
+} from "@typescript/native/ast";
 import {
   SignatureKind,
   SymbolFlags,
   TypeFlags,
   type Symbol as TSSymbol,
   type Type,
-} from "@typescript/native/unstable/sync";
+} from "@typescript/native/sync";
 import { aliasChains, type AliasChains } from "./alias-chain.ts";
 import { calleeName, resolvedTargets, valuesPassed } from "./calls.ts";
 import { classMembers, memberComponent, typesAt } from "./class-members.ts";

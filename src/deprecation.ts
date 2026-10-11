@@ -7,7 +7,7 @@
  * the list's own tags from the tree.
  */
 
-import { isVariableStatement, SyntaxKind, type Node } from "@typescript/native/unstable/ast";
+import { isVariableStatement, SyntaxKind, type Node } from "@typescript/native/ast";
 import { nodeKey, type Inventory } from "./inventory.ts";
 import { isAnswered, UNANSWERED } from "./query.ts";
 import type { Handle, ProjectView } from "./session.ts";

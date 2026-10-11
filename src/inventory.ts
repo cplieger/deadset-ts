@@ -28,8 +28,8 @@ import {
   ModifierFlags,
   type Node,
   type SourceFile,
-} from "@typescript/native/unstable/ast";
-import type { Symbol as TSSymbol } from "@typescript/native/unstable/sync";
+} from "@typescript/native/ast";
+import type { Symbol as TSSymbol } from "@typescript/native/sync";
 import type { Host } from "./host.ts";
 import { dirnamePath, joinPath, relativePath } from "./paths.ts";
 import {
