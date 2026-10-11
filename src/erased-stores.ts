@@ -1,11 +1,10 @@
 /**
- * The values the program stores in a slot of a container: a property, an index signature,
- * an array element, and a variable. A serializer walking the container emits the value the
- * slot holds, so it walks each stored value at its own static type, a subtype stored where
- * the slot's type names a supertype, `object`, `unknown` or `any` included. A container is
- * identified by the checker's type identity, so two containers of one type share what
+ * The values the program stores in a property, an index signature, an array element or a
+ * variable. A serializer emits the value a slot holds, so it walks each stored value at its
+ * own static type and each type it is checked against, whatever supertype the slot names.
+ * Containers are identified by the checker's type identity, so two of one type share what
  * either stores. A store into an erased property of a type the analyzed program does not
- * declare hands the value to the code that declares the type.
+ * declare hands the value to the code that declares it.
  */
 
 import {
@@ -31,6 +30,7 @@ import {
 import { SymbolFlags, TypeFlags, type Type } from "@typescript/native/sync";
 import { must } from "./query.ts";
 import type { ProjectView } from "./session.ts";
+import { checkedTypes } from "./value-reach.ts";
 
 /** The types that keep nothing of the value they are given. */
 const ERASED = TypeFlags.Any | TypeFlags.Unknown;
@@ -348,15 +348,27 @@ export function erasedStores<Brand>(project: ProjectView<Brand>): ErasedStores {
       (at, step) => (at === undefined ? undefined : slotOf(at, String(step))),
       type,
     );
-  const valueTypes = queries
-    .typesAt(stores.map((one) => one.value))
-    .map((type, at) => partOf(must(type), stores[at]?.path ?? []));
+  /** The types of what each stored value puts in its slot: its own and those it is checked against. */
+  const storedTypes = (stored: readonly Stored[]): readonly (readonly Type[])[] => {
+    const checked = checkedTypes(
+      project,
+      stored.map((one) => one.value),
+    );
+    return queries
+      .typesAt(stored.map((one) => one.value))
+      .map((type, at) =>
+        [must(type), ...(checked[at] ?? [])].flatMap(
+          (one) => partOf(one, stored[at]?.path ?? []) ?? [],
+        ),
+      );
+  };
+  const valueTypes = storedTypes(stores);
   const inside = new Map<number, Type[]>();
   const outside: OutsideStore[] = [];
   stores.forEach((store, at) => {
     const container = containerOf.get(store);
-    const value = valueTypes[at];
-    if (container === undefined || value === undefined) {
+    const values = valueTypes[at] ?? [];
+    if (container === undefined) {
       return;
     }
     const parts =
@@ -370,9 +382,9 @@ export function erasedStores<Brand>(project: ProjectView<Brand>): ErasedStores {
       const { name } = store;
       const erased = name !== undefined && ((slotOf(part, name)?.flags ?? 0) & ERASED) !== 0;
       if (erased && declaredOutside(part)) {
-        outside.push({ value: store.value, type: value, property: name });
+        outside.push(...values.map((type) => ({ value: store.value, type, property: name })));
       } else {
-        inside.set(part.id, [...(inside.get(part.id) ?? []), value]);
+        inside.set(part.id, [...(inside.get(part.id) ?? []), ...values]);
       }
     }
   });
@@ -386,15 +398,13 @@ export function erasedStores<Brand>(project: ProjectView<Brand>): ErasedStores {
     const handle = symbol?.valueDeclaration ?? symbol?.declarations[0];
     return handle === undefined ? undefined : project.declarationAt(handle)?.node;
   };
-  const assignedTypes = queries
-    .typesAt(assigned.map((one) => one.value))
-    .map((type, at) => partOf(must(type), assigned[at]?.path ?? []));
+  const assignedTypes = storedTypes(assigned);
   const byVariable = new Map<Node, Type[]>();
   assigned.forEach((_one, at) => {
     const declaration = declarationOf(symbols[at]);
-    const type = assignedTypes[at];
-    if (declaration !== undefined && slots.has(declaration) && type !== undefined) {
-      byVariable.set(declaration, [...(byVariable.get(declaration) ?? []), type]);
+    const types = assignedTypes[at] ?? [];
+    if (declaration !== undefined && slots.has(declaration) && types.length > 0) {
+      byVariable.set(declaration, [...(byVariable.get(declaration) ?? []), ...types]);
     }
   });
 

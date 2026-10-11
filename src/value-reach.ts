@@ -8,6 +8,13 @@
  */
 
 import {
+  isAsExpression,
+  isParenthesizedExpression,
+  isSatisfiesExpression,
+  isTypeAssertion,
+  type Node,
+} from "@typescript/native/ast";
+import {
   ObjectFlags,
   SymbolFlags,
   type ObjectType,
@@ -43,6 +50,42 @@ interface ValueReach {
 
 /** The two conversion methods a serializer or a formatter resolves on a value's own shape. */
 const CONVERSION_NAMES: ReadonlySet<string> = new Set(["toJSON", "toString"]);
+
+/**
+ * The types each value is checked against by the `satisfies` expressions and type assertions
+ * it is written as, through parentheses, and the innermost operand's own type where there is
+ * one. A `satisfies` expression's static type is its operand's, so an object literal it
+ * checks carries its own members and not the target's, though the literal's properties
+ * write the target's; an assertion to `unknown` or `any` hides the operand's type.
+ */
+export function checkedTypes<Brand>(
+  project: ProjectView<Brand>,
+  values: readonly Node[],
+): readonly (readonly Type[])[] {
+  const nodes = values.map((value) => {
+    const found: Node[] = [];
+    let at = value;
+    while (
+      isParenthesizedExpression(at) ||
+      isSatisfiesExpression(at) ||
+      isAsExpression(at) ||
+      isTypeAssertion(at)
+    ) {
+      if (!isParenthesizedExpression(at)) {
+        found.push(at.type);
+      }
+      at = at.expression;
+    }
+    return found.length === 0 ? found : [...found, at];
+  });
+  const types = typesAt(project, nodes.flat());
+  let next = 0;
+  return nodes.map((one) => {
+    const part = types.slice(next, next + one.length);
+    next += one.length;
+    return part.filter((type): type is Type => type !== undefined);
+  });
+}
 
 /** The global array types, whose element type is what an array value carries. */
 function arrayTargets<Brand>(project: ProjectView<Brand>): ReadonlySet<number> {
