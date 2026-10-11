@@ -8,10 +8,13 @@
  */
 
 import {
+  isClassDeclaration,
+  isClassExpression,
   isComputedPropertyName,
   isGetAccessorDeclaration,
   isIdentifier,
   isMethodDeclaration,
+  isMethodSignatureDeclaration,
   isNoSubstitutionTemplateLiteral,
   isNumericLiteral,
   isObjectLiteralExpression,
@@ -24,7 +27,7 @@ import {
   type Node,
   type ObjectLiteralExpression,
 } from "@typescript/native/unstable/ast";
-import { SignatureKind, SymbolFlags, type Type } from "@typescript/native/unstable/sync";
+import { SignatureKind, type NodeHandle, type Type } from "@typescript/native/unstable/sync";
 import type { AliasChains } from "./alias-chain.ts";
 import type { Inventory, SymbolKind } from "./inventory.ts";
 import { isAnswered, type PropertyTables } from "./query.ts";
@@ -115,11 +118,30 @@ interface Checked {
 /** One member of an object type, by the inventory's declarations and the checker's declaration handles. */
 interface Member {
   readonly ids: readonly string[];
+  /** The inventory's interface methods it is, which a position reads but no literal writes. */
+  readonly methods: readonly string[];
   readonly handles: ReadonlySet<string>;
   /** Whether a declaration of it is in one of the target's own files. */
   readonly own: boolean;
-  /** Whether the checker reads it as an accessor. */
-  readonly accessor: boolean;
+  /** The checker's declarations of it in the target's own files. */
+  readonly declarations: readonly NodeHandle[];
+}
+
+/**
+ * Whether an object spread copies a member a declaration declares: a method, a method
+ * signature and a class's accessor are no own data property of the value, while an
+ * accessor of an interface or a type literal describes one. It is decided on the
+ * declaration, because a mapped type over a class keeps the class's declarations on
+ * plain property symbols.
+ */
+function copiedBySpread(node: Node): boolean {
+  if (isMethodDeclaration(node) || isMethodSignatureDeclaration(node)) {
+    return false;
+  }
+  return !(
+    (isGetAccessorDeclaration(node) || isSetAccessorDeclaration(node)) &&
+    (isClassDeclaration(node.parent) || isClassExpression(node.parent))
+  );
 }
 
 /**
@@ -182,11 +204,14 @@ export function contextualUses<Brand>(
         ids: chains
           .declarationsOf(property)
           .filter((id) => MEMBER_KINDS.has(kinds.get(id) ?? "file")),
+        methods: chains
+          .declarationsOf(property)
+          .filter((id) => kinds.get(id) === "interface-method"),
         handles: new Set(
           property.declarations.map((handle) => `${handle.path}#${String(handle.index)}`),
         ),
         own: property.declarations.some((handle) => ownPaths.has(handle.path)),
-        accessor: (property.flags & SymbolFlags.Accessor) !== 0,
+        declarations: property.declarations.filter((handle) => ownPaths.has(handle.path)),
       });
     }
     tables.set(type.id, table);
@@ -250,8 +275,10 @@ export function contextualUses<Brand>(
     cap,
   );
   /** The members a position may read structurally: those of object types, not of classes. */
-  const readable = (member: Member): readonly string[] =>
-    member.ids.filter((id) => kinds.get(id) === "type-member");
+  const readable = (member: Member): readonly string[] => [
+    ...member.ids.filter((id) => kinds.get(id) === "type-member"),
+    ...member.methods,
+  ];
   const carries = (part: Type): boolean =>
     [...membersOf(part).values()].some((member) => readable(member).length > 0);
   /** Whether an object type has members and declares none of them in the target. */
@@ -276,6 +303,20 @@ export function contextualUses<Brand>(
     }
     elements.set(type.id, element);
     return element;
+  };
+
+  const argumentsOf = new Map<number, readonly Type[]>();
+  /** The type arguments of an instantiation of a generic type, read once per type. */
+  const typeArgumentsOf = (type: Type): readonly Type[] => {
+    const known = argumentsOf.get(type.id);
+    if (known !== undefined) {
+      return known;
+    }
+    lookups += type.isTypeReference() ? 1 : 0;
+    const held = queries.typeArguments(type);
+    const found = isAnswered(held) ? held : [];
+    argumentsOf.set(type.id, found);
+    return found;
   };
 
   const calls = new Map<number, Called | undefined>();
@@ -315,10 +356,11 @@ export function contextualUses<Brand>(
 
   /**
    * Each object type a value of `source` is checked as against the object types of
-   * `target`: the value's own, and through array elements and through a function's
-   * parameters, checked the other way, and its result. A source that is one of the
-   * target's own object types matches it as it stands. Each pair is compared once, which
-   * ends the walk over a recursive type.
+   * `target`: the value's own, and through array elements, a function's parameters,
+   * checked the other way, and result, and the type arguments two instantiations share
+   * by place, an array among them, as an array reaches `Iterable<T>`.
+   * A source that is one of the target's own object types matches it as it stands. Each
+   * pair is compared once, which ends the walk over a recursive type.
    */
   const compared = (
     source: Type | undefined,
@@ -344,9 +386,20 @@ export function contextualUses<Brand>(
       }
       const element = elementOf(one);
       const called = element === undefined ? callOf(one) : undefined;
+      const sourceArguments = typeArgumentsOf(one);
       for (const part of targets) {
+        const partElement = elementOf(part);
+        if (element !== undefined && partElement !== undefined) {
+          compared(element, partElement, into, seen);
+          continue;
+        }
+        const targetArguments = typeArgumentsOf(part);
+        // A defaulted trailing parameter, as `Iterable<T, TReturn, TNext>` has, leaves
+        // the places two instantiations share comparable.
+        sourceArguments.slice(0, targetArguments.length).forEach((argument, index) => {
+          compared(argument, targetArguments[index], into, seen);
+        });
         if (element !== undefined) {
-          compared(element, elementOf(part), into, seen);
           continue;
         }
         const other = called === undefined ? undefined : callOf(part);
@@ -378,7 +431,7 @@ export function contextualUses<Brand>(
       if (element !== undefined) {
         return mayCarry(element, seen);
       }
-      return callOf(part) !== undefined;
+      return callOf(part) !== undefined || typeArgumentsOf(part).some((one) => mayCarry(one, seen));
     });
   };
 
@@ -433,6 +486,19 @@ export function contextualUses<Brand>(
       reads.push({ at: flow.value, from: flow.from, ids: [...ids] });
     }
   });
+  const copies = new Map<Member, boolean>();
+  /** Whether a spread copies the member: where any declaration of it declares data. */
+  const copied = (member: Member): boolean => {
+    let known = copies.get(member);
+    if (known === undefined) {
+      known = member.declarations.some((handle) => {
+        const node = project.declarationAt(handle)?.node;
+        return node === undefined || copiedBySpread(node);
+      });
+      copies.set(member, known);
+    }
+    return known;
+  };
   const spreads = literals.flatMap(({ literal, from }) =>
     literal.properties.flatMap((property) =>
       isSpreadAssignment(property) ? [{ value: property.expression, from }] : [],
@@ -448,12 +514,10 @@ export function contextualUses<Brand>(
     if (type === undefined || !isAnswered(type)) {
       return;
     }
-    // A spread gets every own enumerable property, an overwritten key's getter included.
-    // So it reads each data member but a class's accessor, which sits on the prototype with
-    // the class's methods (never data members), and a private name, which is no property
+    // A spread gets every own enumerable property, an overwritten key's getter included,
+    // and no private name, which is no property
     // (https://tc39.es/ecma262/#sec-copydataproperties).
-    const own = (member: Member, id: string): boolean =>
-      !privateNames.has(id) && !(member.accessor && kinds.get(id) === "class-member");
+    const own = (member: Member, id: string): boolean => !privateNames.has(id) && copied(member);
     const ids = [
       ...new Set(
         partsOf(type).flatMap((part) =>

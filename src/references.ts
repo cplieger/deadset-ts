@@ -43,7 +43,10 @@ import { namespaceUses } from "./namespace-objects.ts";
 import { globExpression } from "./glob.ts";
 import { declarationsByName, nodeKey, type Inventory, type InventorySymbol } from "./inventory.ts";
 import { augmentationReferences } from "./augmentations.ts";
+import { elementAccessReferences } from "./element-access.ts";
 import { indexedAccessReferences } from "./indexed-access.ts";
+import { keyofComparisonReferences } from "./keyof-comparisons.ts";
+import { unimplementedCalleeReads } from "./unimplemented-callees.ts";
 import { moduleDeclarationReferences } from "./module-declarations.ts";
 import { overrideReferences } from "./overrides.ts";
 import { dirnamePath, queriedModulePath, relativePath, resolvePath } from "./paths.ts";
@@ -185,6 +188,13 @@ export interface ReferenceCost {
   readonly contextualBatches: number;
   /** Per-type lookups for the contextual uses: each distinct type's constituents, properties and symbol. */
   readonly contextualLookups: number;
+  /**
+   * The requests the passes that read members through the checker's types make: element
+   * accesses, key comparisons, instantiated signatures and values handed to unimplemented
+   * callees. They are
+   * counted where the caller measures the client, through `requestCount`, and are 0 otherwise.
+   */
+  readonly typedLookups: number;
 }
 
 /** One project's references, in position order, and what reading them cost. */
@@ -221,6 +231,8 @@ export interface ReferenceOptions {
    * reference to a declaration of `held`, the target's, is recorded.
    */
   readonly consumer?: ConsumerSide;
+  /** The client's running request count, where the caller measures the client. */
+  readonly requestCount?: () => number;
 }
 
 /**
@@ -1556,12 +1568,21 @@ export function references<Brand>(
     }
   }
 
+  let typedLookups = 0;
   if (consumer === undefined) {
     found.push(...overrideReferences(project, held, chains, new Set(tests)));
+    const before = options.requestCount?.() ?? 0;
     found.push(...indexedAccessReferences(project, held, chains, root, new Set(tests)));
+    found.push(...elementAccessReferences(project, held, chains, root, new Set(tests)));
+    found.push(...keyofComparisonReferences(project, held, chains, root, new Set(tests)));
+    found.push(...unimplementedCalleeReads(project, held, chains, root, new Set(tests)));
+    typedLookups = (options.requestCount?.() ?? 0) - before;
     found.push(...moduleDeclarationReferences(project, held, root, new Set(tests)));
   }
-  found.push(...augmentationReferences(held, found));
+  const scripts = new Set(
+    walked.filter((one) => one.file.externalModuleIndicator === undefined).map((one) => one.fileId),
+  );
+  found.push(...augmentationReferences(held, found, scripts));
   found.sort(
     (a, b) =>
       byPosition(a.position, b.position) ||
@@ -1586,6 +1607,7 @@ export function references<Brand>(
       patternLookups: destructured.cost.patternLookups,
       contextualBatches: contextual.batches,
       contextualLookups: contextual.lookups,
+      typedLookups,
     },
   };
 }

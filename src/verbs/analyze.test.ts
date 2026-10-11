@@ -562,6 +562,32 @@ describe("the baseline", () => {
   );
 
   it(
+    "keeps the Go analyzer's rows of the baseline it rewrites, before its own",
+    () => {
+      const tree = mkdtempSync(join(tmpdir(), "deadset-ts-baseline-"));
+      onTestFinished(() => {
+        rmSync(tree, { recursive: true, force: true });
+      });
+      cpSync(fixture("projects", "unused-declarations"), tree, { recursive: true });
+      const baseline = join(tree, "deadset-baseline.json");
+      const goRow = {
+        code: "DS1001",
+        symbol: "go://example.com/app#Unused",
+        path: "app.go",
+        reason: "recorded by deadset-go 1.0.0",
+      };
+      writeFileSync(baseline, JSON.stringify({ baseline: [goRow] }));
+
+      analyze(tree, [`--baseline-write=${baseline}`], tree);
+      const rows = (JSON.parse(readFileSync(baseline, "utf8")) as { baseline: unknown[] }).baseline;
+
+      expect(rows[0]).toEqual(goRow);
+      expect(rows).toHaveLength(34);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
     "leaves an existing baseline untouched when the run fails",
     () => {
       const tree = failingToLoad();

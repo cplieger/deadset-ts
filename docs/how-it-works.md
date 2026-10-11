@@ -41,7 +41,7 @@ A root is a declaration the analysis keeps live without a reference. `print-root
 - A file that a string names, read against the directory of such a configuration file or of its JSON form, like `<stem>.config.json` or `.<stem>rc`. A string that starts with `/` or holds a glob character names no file. Nor does a string at a key that only selects files, such as Stryker's `mutate` or Vitest's `test.coverage.include`.
 - A file that a token of a `package.json` script names, such as `node ./scripts/seed.ts`
 - A file that a `run:` step of a workflow in `.github/workflows` names by its path from the target root, such as `node scripts/check.ts`
-- The test files, Vitest's workspace configuration and the setup files it names, and the test files in Playwright's test directory
+- The test files, Vitest's workspace configuration and the setup and global setup files it names, and the test files in Playwright's test directory
 - A global that a declaration file declares as `typeof import("<module>")["<name>"]`, which stands for that export, so using the global uses the export
 - A worker or service worker that a call addresses by a string literal. A module URL, `new URL("./x.ts", import.meta.url)` or `import.meta.resolve("./x.ts")`, imports its file for its effects.
 - A file that a script of an HTML file below the target loads, through the `src` attribute of a module or a classic script or an import in an inline module script. A `src` that names compiled output, such as `./app.js`, is read back to the source file that emits it.
@@ -49,7 +49,9 @@ A root is a declaration the analysis keeps live without a reference. `print-root
 
 A string in such a configuration file that spells a dependency its `package.json` declares, alone or followed by a subpath, keeps that dependency from `DS1601`. So does a string in a module such a configuration file imports by a relative specifier. A data file it imports, such as `./package.json`, is not read for strings. Both kinds of module are read whether or not a compiler configuration includes the file.
 
-A dependency is used where a script of the `package.json` that declares it runs its command, and so is one of the target's own `package.json` that a workflow `run:` step runs. So is a package that `import.meta.resolve` or `require.resolve` names by a literal specifier. A peer that another dependency requires is used only as any other dependency is. `DS1601` also checks each workspace member's `package.json` once a built project holds a file below the member. A dependency of a member whose source sits only in dropped configurations is reported at confidence `possible`.
+A dependency is used where a script of the `package.json` that declares it runs its command, and so is one that a workflow `run:` step of the target runs. So is a package that `import.meta.resolve` or `require.resolve` names by a literal specifier. A declared dependency that the installed `package.json` of a needed dependency names in its `peerDependencies`, optional or not, is used too, and so on through the peers of that peer, because the declaration is what keeps the package the needed dependency expects beside it present.
+
+`DS1601` also checks each workspace member's `package.json` once a built project holds a file below the member. It also checks each nested package's `package.json`, in a directory below the target at or above a source file or a compiler configuration. Each `package.json` is read against its own directory: an import keeps the dependency of that name in each `package.json` at or above the importing file, so a dependency a nested package declares and only a file outside it imports is reported there. A nested package's dependency that nothing installs is not checked. A dependency of a member whose source sits only in dropped configurations is reported at confidence `possible`.
 
 A `roots.patterns` entry that names nothing is reported as `DS1704` and fails the run. Other entry-point conventions are not read, and the `DECLINED_CONVENTIONS` export lists each one with the reason.
 
@@ -107,11 +109,13 @@ An exemption holds a declaration back from the report when something the compile
 
 A library's published API has callers outside the target. A scope document passed with `--scope` names the consumers loaded beside it, each a directory whose compiler configurations open in the same session. A reference from a consumer keeps a target declaration live, and the report names every consumer it loaded. A consumer that is absent or does not load ends the run with exit code 3.
 
-The published API is reported at confidence `certain` once every declared consumer loads, and `possible` when the scope declares none. In that second case the default `analysis.min_confidence`, `probable`, withholds those findings, and the visibility-narrowing kinds report only in files no manifest export reaches. Every other declaration is `certain`, unless it is dead in a group with a published member, as the next section says, or only tests reach it. A declaration only tests reach, such as a test helper, is `possible` while a test references it, and `certain` when nothing does. The default withholds those `possible` findings too.
+The published API is reported at confidence `certain` once every declared consumer loads, and `possible` when the scope declares none. In that second case the default `analysis.min_confidence`, `probable`, withholds those findings, and the visibility-narrowing kinds report only in files no manifest export reaches. Every other declaration is `certain`, unless it is dead in a group with a published member, as the next section says, or only tests reach it. A declaration only tests reach, such as a test helper, is `possible` while a test references it, and `certain` when nothing does. So is a member whose name a production file tests with `in`, as in `"uploaded" in value`, because the value is read back by that name where no type links the read to the member. The default withholds those `possible` findings too.
 
 ## Groups that keep each other alive
 
 Declarations that reference only each other, with no path from a root, are dead together. The report counts each group as one component with its deletable lines. `reporters.cascade` decides whether a rendering lists only the group's root members or every member. Every finding of a group carries the lowest confidence among the group's root members, so `analysis.min_confidence` reports or withholds a group whole.
+
+Deleting an enum member moves the value of each later member with no initializer. A dead member that a live one follows that way carries fixability `manual` and deletes no line: give the next member an initializer holding its value instead. A dead member such a member names, or one before it, is held the same way. Dead members whose deletion moves only other dead members fall in one group.
 
 ## Explaining one declaration
 

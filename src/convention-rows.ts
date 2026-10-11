@@ -158,7 +158,8 @@ const VITEST_CONFIG = `{vitest,vite}.config.${ANY_MODULE}`;
 
 /**
  * The properties Vitest takes its project root from, `test.root` before Vite's `root`; it
- * resolves `setupFiles` against that root (https://vitest.dev/config/setupfiles).
+ * resolves `setupFiles` and `globalSetup` against that root
+ * (https://vitest.dev/config/setupfiles, https://vitest.dev/config/globalsetup).
  */
 const VITEST_ROOTS = ["test.root", "root"] as const;
 
@@ -660,6 +661,9 @@ export const CONVENTION_ROWS: readonly ConventionRow[] = [
       { property: "test.coverage.include", files: [VITEST_CONFIG] },
       { property: "test.coverage.exclude", files: [VITEST_CONFIG] },
     ],
-    testFiles: [{ property: "test.setupFiles", files: [VITEST_CONFIG], roots: VITEST_ROOTS }],
+    testFiles: [
+      { property: "test.setupFiles", files: [VITEST_CONFIG], roots: VITEST_ROOTS },
+      { property: "test.globalSetup", files: [VITEST_CONFIG], roots: VITEST_ROOTS },
+    ],
   },
 ];

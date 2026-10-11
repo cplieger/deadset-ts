@@ -8,6 +8,8 @@ import {
   corpusFixtures,
   declarationRef,
   edgeDifferences,
+  inEffectDifference,
+  notBuiltDifference,
   runCorpus,
   STALE_GAP,
   unexpectedOf,
@@ -263,5 +265,46 @@ describe("the edge evaluations of a fixture", () => {
         edge_evaluations: [{ edge: "wire/one", side: "provides", symbol: "s", state: "live" }],
       } as unknown as Report),
     ).toBe("evaluation of wire/one provides, which no entry names");
+  });
+});
+
+describe("the dropped configurations of a rendering", () => {
+  const report = (ids: readonly string[]) =>
+    ({
+      configurations_not_built: ids.map((id) => ({ id, project: id, error: "e" })),
+    }) as unknown as Report;
+
+  it("compares nothing where the manifest names no list", () => {
+    expect(notBuiltDifference({}, report(["tools/tsconfig.json"]))).toBe("");
+  });
+
+  it("agrees with the report's identifiers in order, and names a list that differs", () => {
+    expect(
+      notBuiltDifference(
+        { configurations_not_built: ["tools/tsconfig.json"] },
+        report(["tools/tsconfig.json"]),
+      ),
+    ).toBe("");
+    expect(notBuiltDifference({ configurations_not_built: [] }, report(["a/tsconfig.json"]))).toBe(
+      'configurations_not_built want [] got ["a/tsconfig.json"]',
+    );
+    expect(
+      notBuiltDifference(
+        { configurations_not_built: ["b/tsconfig.json"] },
+        report(["a/tsconfig.json"]),
+      ),
+    ).toBe('configurations_not_built want ["b/tsconfig.json"] got ["a/tsconfig.json"]');
+  });
+});
+
+describe("the suppressions a fixture pins in effect", () => {
+  const report = { totals: { suppressions_in_effect: 2 } } as unknown as Report;
+
+  it("agree where the fixture pins none or the report's count, and differ otherwise", () => {
+    expect(inEffectDifference({}, report)).toBe("");
+    expect(inEffectDifference({ suppressions_in_effect: 2 }, report)).toBe("");
+    expect(inEffectDifference({ suppressions_in_effect: 3 }, report)).toBe(
+      "suppressions_in_effect want 3 got 2",
+    );
   });
 });

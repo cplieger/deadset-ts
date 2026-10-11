@@ -165,6 +165,7 @@ const NO_REFERENCE_COST: ReferenceCost = {
   patternLookups: 0,
   contextualBatches: 0,
   contextualLookups: 0,
+  typedLookups: 0,
 };
 
 const NO_INVENTORY_COST: InventoryCost = { batches: 0, exportTables: 0, memberTables: 0 };
@@ -226,6 +227,7 @@ function onePass(dir: string, cap: Cap): Pass {
         patternLookups: sum.patternLookups + reference.patternLookups,
         contextualBatches: sum.contextualBatches + reference.contextualBatches,
         contextualLookups: sum.contextualLookups + reference.contextualLookups,
+        typedLookups: sum.typedLookups + reference.typedLookups,
       }),
       NO_REFERENCE_COST,
     ),

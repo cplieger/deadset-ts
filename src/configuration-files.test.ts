@@ -202,6 +202,36 @@ describe("a configuration file no program holds", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it("reads no file a relative specifier reaches in node_modules or outside the target root", () => {
+    const root = writeProject({
+      "app/package.json":
+        '{ "name": "@example/app", "type": "module", "main": "./main.ts", "devDependencies": { "@example/installed": "1.0.0", "@example/outside": "1.0.0", "@example/project": "1.0.0" } }\n',
+      "app/main.ts": "export const main = 1;\n",
+      "app/tsconfig.json":
+        '{ "compilerOptions": { "strict": true, "module": "NodeNext", "moduleResolution": "nodenext", "noEmit": true }, "include": ["*.ts"] }\n',
+      "app/lint.config.mjs":
+        'export { a } from "./node_modules/@example/kit/rules.js";\nexport { b } from "../shared/rules.mjs";\nexport { c } from "./lint/rules.mjs";\n',
+      "app/node_modules/@example/kit/rules.js":
+        'export const a = { plugin: "@example/installed" };\n',
+      "shared/rules.mjs": 'export const b = { plugin: "@example/outside" };\n',
+      "app/lint/rules.mjs": 'export const c = { plugin: "@example/project" };\n',
+    });
+    try {
+      const { config } = resolve({
+        repository: '{ "target": { "kind": "application" } }',
+        repositoryLabel: "deadset.json",
+      });
+      const emit = EMITTERS.get("dependencies-and-module-machinery");
+      const unused =
+        emit === undefined
+          ? []
+          : emit(emitterInputOf(join(root, "app"), config)).map((finding) => finding.symbol.name);
+      expect(unused).toEqual(["@example/installed", "@example/outside"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("a configuration file a script names by its configuration flag", () => {

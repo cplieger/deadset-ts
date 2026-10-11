@@ -2,8 +2,9 @@
  * The suppression grammar's records, and the ledger that decides what each one did. A
  * record is one code bound to one site with its reason, from an inline directive, an
  * ignore entry or a baseline row. A bound record marks its declaration live before the
- * sweep, and is in effect when it withholds the finding its code would have produced
- * there, dormant when the configuration withholds that finding anyway, and stale otherwise.
+ * sweep, unless its code reports a part or a dependency row, and is in effect when it
+ * withholds a finding its code would have produced there, dormant when the configuration
+ * withholds every such finding anyway, and stale otherwise.
  */
 
 import { ConfigError } from "./config.ts";
@@ -141,8 +142,8 @@ export type Verdict = "in-effect" | "dormant" | "stale";
  * them withholds is dormant.
  */
 export interface Dials<F extends Finding = Finding> {
-  /** Whether the configuration withholds every finding of one code from one declaration. */
-  readonly withholdsCode: (code: string, bound: string) => boolean;
+  /** Whether the configuration sets the severity of one code to `allow`. */
+  readonly allows: (code: string) => boolean;
   /** Whether it withholds one finding: by its severity, its confidence, or its component's root. */
   readonly withholds: (finding: F) => boolean;
 }
@@ -156,28 +157,52 @@ export interface Ledger {
 }
 
 /**
+ * The subject kinds that are a dependency row, each with the code that reports one. An
+ * ignore entry or a baseline row naming the row's reference and file withholds its finding
+ * and marks nothing, and an inline directive never binds one.
+ */
+const DEPENDENCY_SUBJECTS: ReadonlyMap<string, readonly string[]> = new Map([
+  ["dependency", ["DS1601"]],
+  ["module-directive", ["DS1605"]],
+]);
+
+/**
  * The subject kinds that are a row of a document rather than a declaration of the program,
- * each with the codes that report one. A record binds to a declaration, so nothing
- * withholds a finding about one.
+ * each with the codes that report one. Apart from a dependency row, nothing withholds a
+ * finding about one.
  */
 const ROW_SUBJECTS: ReadonlyMap<string, readonly string[]> = new Map([
   ["file", ["DS1501", "DS1502"]],
-  ["dependency", ["DS1601"]],
-  ["module-directive", ["DS1605"]],
+  ...DEPENDENCY_SUBJECTS,
   ["root", ["DS1704"]],
   ["configured-declaration", ["DS1706"]],
   ["suppression", ["DS1701", "DS1702", "DS1703"]],
   ["edge", ["DS1705"]],
 ]);
 
-/** Whether a finding's subject is a row of a document, which no record can withhold. */
+/** Whether a finding's subject is a row of a document rather than a declaration. */
 export function isRowSubject(kind: string): boolean {
   return ROW_SUBJECTS.has(kind);
 }
 
-/** Whether a code reports a row of a document, so no record naming it can match. */
+/** Whether a code reports a row of a document. */
 export function isRowCode(code: string): boolean {
   return [...ROW_SUBJECTS.values()].some((codes) => codes.includes(code));
+}
+
+/** Whether a finding's subject is a dependency row. */
+export function isDependencySubject(kind: string): boolean {
+  return DEPENDENCY_SUBJECTS.has(kind);
+}
+
+/** Whether a code reports a dependency row, which only an ignore entry or a baseline row names. */
+export function isDependencyCode(code: string): boolean {
+  return [...DEPENDENCY_SUBJECTS.values()].some((codes) => codes.includes(code));
+}
+
+/** Whether a code reports a row of a document that no record of any mechanism can name. */
+export function isUnsuppressibleCode(code: string): boolean {
+  return isRowCode(code) && !isDependencyCode(code);
 }
 
 /**
@@ -219,10 +244,21 @@ function claimKey(finding: Finding): string {
  * Whether one record names one finding. A record reaches a finding in two ways: it bound
  * the declaration at the finding's position, or it names the finding's reference and the
  * file the finding is reported in, each exactly. The second is how an entry copied from a
- * finding about a part of a declaration reaches the part.
+ * finding about a part of a declaration reaches the part, and the only way any record
+ * reaches a dependency row.
  */
 export function pairs(record: SuppressionRecord, finding: Finding): boolean {
-  if (record.code !== finding.code || ROW_SUBJECTS.has(finding.symbol.kind)) {
+  if (record.code !== finding.code) {
+    return false;
+  }
+  if (DEPENDENCY_SUBJECTS.has(finding.symbol.kind)) {
+    return (
+      record.mechanism !== "inline" &&
+      record.symbol === finding.symbol.ref &&
+      record.path === finding.position.path
+    );
+  }
+  if (ROW_SUBJECTS.has(finding.symbol.kind)) {
     return false;
   }
   if (record.bound !== "" && record.bound === positionKey(finding.position)) {
@@ -233,11 +269,11 @@ export function pairs(record: SuppressionRecord, finding: Finding): boolean {
 
 /**
  * Decides every record against `would`, the findings the run would produce were no record
- * there: swept with no mark, where a kind about liveness reports the marked declaration,
- * and as swept, where a kind whose subject the sweep holds live reports it. The first
- * record in reading order claims a finding, so a second naming it is stale. A record whose
- * code the dials withhold from its declaration, or whose claimed finding they withhold, is
- * dormant.
+ * there: swept with no mark for a liveness kind, and as swept otherwise. The first record
+ * in reading order claims a finding, so a second naming it is stale; a part-kind record
+ * claims every finding of its code about a part of its declaration. A record is dormant
+ * when the dials withhold every finding it claims, read from those findings alone, or when
+ * it claims none and its code's severity is `allow`.
  */
 export function ledgerOf<F extends Finding>(
   records: readonly SuppressionRecord[],
@@ -247,23 +283,22 @@ export function ledgerOf<F extends Finding>(
   const taken = new Set<string>();
   const verdicts: Verdict[] = [];
   for (const record of records) {
-    if (record.bound !== "" && dials.withholdsCode(record.code, record.bound)) {
-      verdicts.push("dormant");
+    const open = (finding: F): boolean => !taken.has(claimKey(finding)) && pairs(record, finding);
+    const first = would.find(open);
+    const claimed =
+      first === undefined ? [] : isPartKind(record.code) ? would.filter(open) : [first];
+    if (claimed.length === 0) {
+      verdicts.push(record.bound !== "" && dials.allows(record.code) ? "dormant" : "stale");
       continue;
     }
-    const claimed = would.find(
-      (finding) => !taken.has(claimKey(finding)) && pairs(record, finding),
-    );
-    if (claimed === undefined) {
-      verdicts.push("stale");
-      continue;
+    for (const finding of claimed) {
+      taken.add(claimKey(finding));
     }
-    taken.add(claimKey(claimed));
-    verdicts.push(dials.withholds(claimed) ? "dormant" : "in-effect");
+    verdicts.push(claimed.every((finding) => dials.withholds(finding)) ? "dormant" : "in-effect");
   }
   return {
     verdicts,
-    withheld: (finding) => taken.has(claimKey(finding)) && !ROW_SUBJECTS.has(finding.symbol.kind),
+    withheld: (finding) => taken.has(claimKey(finding)),
   };
 }
 

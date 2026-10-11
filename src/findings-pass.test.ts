@@ -110,12 +110,12 @@ describe("the suppressions of a target", () => {
   });
 });
 
-describe("an ignore entry naming a row of a document", () => {
+describe("a record naming a row of a document", () => {
   const root = copyOf(SUPPRESSIONS);
   const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as object;
   writeFileSync(
     join(root, "package.json"),
-    JSON.stringify({ ...manifest, devDependencies: { "left-pad": "1.0.0" } }),
+    JSON.stringify({ ...manifest, devDependencies: { "left-pad": "1.0.0", "right-pad": "1.0.0" } }),
   );
   writeFileSync(
     join(root, "deadset-ignore.json"),
@@ -142,17 +142,23 @@ describe("an ignore entry naming a row of a document", () => {
   );
   const { result } = passOver(root);
 
-  it("is stale, and its message names the severity only where the code's is not fixed", () => {
+  it("withholds a dependency row an ignore entry names, and only that row", () => {
+    expect(
+      result.findings.filter((one) => one.code === "DS1601").map((one) => one.symbol.name),
+    ).toEqual(["right-pad"]);
+    expect(result.ledger.verdicts.filter((one) => one === "in-effect").length).toBeGreaterThan(0);
+  });
+
+  it("is stale where the row is no dependency row, and its message names the remedy", () => {
     expect(stale(result).filter((one) => one.includes("ignore:"))).toEqual([
-      "deadset-ignore.json:1:12 ignore: ignore entry for DS1601 matches no current finding, because DS1601 reports a row of a document, which no suppression can name; fix what the finding names or set the severity of DS1601 instead",
       "deadset-ignore.json:1:169 ignore: ignore entry for DS1704 matches no current finding, because DS1704 reports a row of a document, which no suppression can name; fix what the finding names instead; its declaration reports DS1002",
     ]);
   });
 
-  it("is stale, and its message names every row code and what its declaration reports", () => {
+  it("is stale inline, and its message names every row code and what its declaration reports", () => {
     expect(stale(result).filter((one) => /^src\/lib\.ts:3[69]:/u.test(one))).toEqual([
-      "src/lib.ts:36:1 inline: inline directive for DS1601 and DS1704 matches no current finding, because DS1601 and DS1704 report rows of a document, which no suppression can name; fix what the finding names or set the severity of DS1601 instead; its declaration reports DS1002",
-      "src/lib.ts:39:1 inline: inline directive for DS1001 and DS1601 matches no current finding, because DS1601 reports a row of a document, which no suppression can name; fix what the finding names or set the severity of DS1601 instead; its declaration reports DS1002",
+      "src/lib.ts:36:1 inline: inline directive for DS1601 and DS1704 matches no current finding, because DS1704 reports a row of a document, which no suppression can name; fix what the finding names instead; DS1601 reports a dependency row, which only an ignore entry or a baseline row can name; its declaration reports DS1002",
+      "src/lib.ts:39:1 inline: inline directive for DS1001 and DS1601 matches no current finding, because DS1601 reports a dependency row, which only an ignore entry or a baseline row can name; its declaration reports DS1002",
     ]);
   });
 
@@ -253,6 +259,93 @@ describe("a suppression of a finding only the marked sweep reports", () => {
     expect(result.ledger.verdicts).toEqual(["dormant", "in-effect"]);
     expect(result.totals.suppressionsInEffect).toBe(1);
     expect(exit).toBe(EXIT_CLEAN);
+  });
+});
+
+/** A written library whose one published file is `lib`, adjudicated by the entries given. */
+function libraryWith(lib: string, ignore: readonly Readonly<Record<string, string>>[]): string {
+  const root = writeProject({
+    "package.json": JSON.stringify({
+      name: "@example/parts",
+      type: "module",
+      exports: { ".": "./src/lib.ts" },
+    }),
+    "src/lib.ts": lib,
+    "deadset-ignore.json": JSON.stringify({ ignore }),
+  });
+  scratch.push(root);
+  return root;
+}
+
+describe("a suppression of a part of a published declaration", () => {
+  const lib = [
+    "// deadset:ignore DS1801 -- The signature is the published callback shape.",
+    "export function above(_a: number, _b: number): number {",
+    "  return 1;",
+    "}",
+    "export class Store {",
+    "  note(_committed: number): number { // deadset:ignore DS1801 -- Kept for the next minor.",
+    "    return 1;",
+    "  }",
+    "}",
+    "export function wrapped(",
+    "  first: number,",
+    "  _second: number, // deadset:ignore DS1801 -- Kept for the next minor.",
+    "): number {",
+    "  return first;",
+    "}",
+    "export function entry(_x: number): number {",
+    "  return 1;",
+    "}",
+    "// deadset:ignore DS1801 -- Nothing here is unused.",
+    "export function read(a: number): number {",
+    "  return a;",
+    "}",
+    "",
+  ].join("\n");
+  const root = libraryWith(lib, [
+    {
+      code: "DS1801",
+      symbol: "ts://@example/parts/src/lib.ts#entry",
+      path: "src/lib.ts",
+      reason: "The signature is the published callback shape.",
+    },
+  ]);
+  const { result } = passOver(root, JSON.stringify({ target: { kind: "library" } }));
+
+  it("is in effect at the default minimum confidence, one record holding every part of its code", () => {
+    expect(result.findings.filter((one) => one.code === "DS1801")).toEqual([]);
+    expect(result.totals.suppressionsInEffect).toBe(4);
+  });
+
+  it("is stale where the declaration's parts are all used", () => {
+    expect(stale(result).map((one) => one.slice(0, one.indexOf(" ")))).toEqual(["src/lib.ts:19:1"]);
+  });
+});
+
+describe("a trailing directive", () => {
+  const root = targetWith(
+    [
+      "export function used(): void {",
+      "  used.call(null); // deadset:ignore DS1002 -- No declaration begins on this line.",
+      "  const local = 1;",
+      "  void local;",
+      "}",
+      "const held = 1; // deadset:ignore DS1002 -- Read by the generator.",
+      "const next = 2;",
+      "",
+    ].join("\n"),
+    [],
+  );
+  const { result } = passOver(root, JSON.stringify({ target: { kind: "application" } }));
+
+  it("binds the declaration that begins on its own line and nothing on the next", () => {
+    expect(named(result).filter((one) => one.startsWith("DS1002"))).toEqual(["DS1002 next"]);
+    expect(result.totals.suppressionsInEffect).toBe(1);
+  });
+
+  it("binds nothing on a line where no declaration begins", () => {
+    expect(stale(result).map((one) => one.slice(0, one.indexOf(" ")))).toEqual(["src/lib.ts:2:20"]);
   });
 });
 

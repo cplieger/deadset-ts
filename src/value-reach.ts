@@ -1,11 +1,10 @@
 /**
  * The classes of the target a value of one type carries, and the members of the other
- * object types the target writes that it carries, as a serializer walking the value
- * reaches them: through union and intersection constituents, array and tuple elements,
- * and the data members and index signatures of the target's classes and of the
- * interfaces and object types the target writes. The walk stops at `any`, `unknown`, a
- * type parameter, a function and an interface or class of another program, so an
- * instance held only there is missed.
+ * object types the target writes that it carries, as a serializer walking the value reaches
+ * them: through constituents, array and tuple elements, the data members and index
+ * signatures of the types the target writes, and the values `stored` gives for a type where
+ * it erases them. The walk stops at `any`, `unknown`, a type parameter, a function and an
+ * interface or class of another program, so an instance held only there is missed.
  */
 
 import {
@@ -60,7 +59,11 @@ function arrayTargets<Brand>(project: ProjectView<Brand>): ReadonlySet<number> {
  * The walk over one project's types, against the classes of `held`, the same
  * project's inventory.
  */
-export function valueReach<Brand>(project: ProjectView<Brand>, held: Inventory): ValueReach {
+export function valueReach<Brand>(
+  project: ProjectView<Brand>,
+  held: Inventory,
+  stored: (type: Type) => readonly Type[] = () => [],
+): ValueReach {
   const queries = project.queries;
   const names = [...classNames(project, held)];
   const declared = typesAt(
@@ -161,6 +164,7 @@ export function valueReach<Brand>(project: ProjectView<Brand>, held: Inventory):
         found = must(queries.typeArguments(type));
       }
     }
+    found = [...found, ...stored(type)];
     children.set(type.id, found);
     return found;
   };

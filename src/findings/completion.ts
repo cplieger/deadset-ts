@@ -9,6 +9,7 @@ import { componentId, type Component } from "../components.ts";
 import type { Cascade, Confidence, Severity } from "../config.ts";
 import type { CompletedFinding, Finding, FindingComponent, PositionedSymbol } from "../finding.ts";
 import { OUTSIDE, type Graph } from "../graph.ts";
+import type { SymbolKind } from "../inventory.ts";
 import { KINDS, type KindRow } from "../kinds.ts";
 import { byPosition, positionKey } from "../position.ts";
 import { declarationKey } from "../ref.ts";
@@ -16,6 +17,17 @@ import { FAMILY_KEY_LENGTH } from "../resolve.ts";
 import { isPartSubject, isRowSubject, type Dials } from "../suppress.ts";
 import type { Boundary } from "./boundary.ts";
 import type { EmitterInput } from "./emitter.ts";
+
+/** The fixability grammar/analysis.md "Fixability" gives a finding about a held declaration. */
+const MANUAL = "manual";
+
+/** The member kinds an object property can declare, which an `in` expression tests by name. */
+const IN_TESTED: ReadonlySet<SymbolKind> = new Set([
+  "class-member",
+  "method",
+  "type-member",
+  "interface-method",
+]);
 
 /** The classes ranked by the claim each makes, the strongest highest. */
 const RANK: Readonly<Record<Confidence, number>> = { certain: 3, probable: 2, possible: 1 };
@@ -55,18 +67,42 @@ function publishedIds(union: Graph): ReadonlySet<string> {
 }
 
 /**
+ * The members whose name an `in` expression of a production file tests by a literal: a
+ * value narrowed that way is read back by the name, which no type links to the member.
+ */
+function testedByIn(input: EmitterInput): ReadonlySet<string> {
+  const names = input.files.inOperands ?? new Set<string>();
+  const union = input.swept.matrix.union;
+  if (names.size === 0) {
+    return names;
+  }
+  return new Set(
+    union.symbols.flatMap((symbol, at) => {
+      const parent = union.symbols[union.parent[at] ?? OUTSIDE];
+      return IN_TESTED.has(symbol.kind) &&
+        parent !== undefined &&
+        symbol.name.startsWith(`${parent.name}.`) &&
+        names.has(symbol.name.slice(parent.name.length + 1))
+        ? [symbol.id]
+        : [];
+    }),
+  );
+}
+
+/**
  * The reachability class of one declaration of the run. A declaration of a library's
  * published API, a public member of a published type included, is `certain` where the
  * run loaded every consumer the scope declared and declared one, `probable` where one did
  * not load, and `possible` where it declared none, whatever the configuration says of the
- * consumer set. A declaration of test-support code that test code references, outside the
- * test-of-dead-code rule, is `possible`. Every other declaration is `certain`.
+ * consumer set. Test-support code test code references, outside the test-of-dead-code
+ * rule, what it contains, and a member an `in` expression tests by name are `possible`.
  */
 function reachabilityClasses(input: EmitterInput): (id: string) => Confidence {
+  const tested = testedByIn(input);
   const published = publishedIds(input.swept.matrix.union);
   const usedByTests = new Set(
     input.swept.sweep.candidates
-      .filter((candidate) => candidate.heldByTests === candidate.id)
+      .filter((candidate) => candidate.heldByTests !== undefined)
       .map((candidate) => candidate.id),
   );
   const { declared } = input.boundary.consumers;
@@ -77,7 +113,7 @@ function reachabilityClasses(input: EmitterInput): (id: string) => Confidence {
         ? "certain"
         : "probable";
   return (id) => {
-    if (usedByTests.has(id)) {
+    if (usedByTests.has(id) || tested.has(id)) {
       return "possible";
     }
     return published.has(id) ? outside : "certain";
@@ -185,6 +221,9 @@ export function completed(
   const classOf = reachabilityClasses(input);
   const ceilingOf = testCeilings(input, classOf);
   const componentOf = findingComponents(swept, input.config.reporters.cascade);
+  const held = new Set(
+    swept.sweep.components.filter((one) => one.held).flatMap((one) => one.members),
+  );
   let minted = swept.sweep.components.length;
   const dead = new Set(swept.sweep.components.map((component) => component.id));
   const fallingWith = new Map<string, number>();
@@ -242,7 +281,14 @@ export function completed(
     const reachabilityClass =
       judged === undefined ? (finding.reachabilityClass ?? "certain") : classOf(judged.id);
     const generated = input.files.generated?.has(finding.position.path) === true;
-    const fixability = generated ? "none" : row.fixability;
+    const fixability = generated
+      ? "none"
+      : found !== undefined &&
+          symbol !== undefined &&
+          held.has(symbol.id) &&
+          row.findingFixabilities?.includes(MANUAL) === true
+        ? MANUAL
+        : row.fixability;
     const lastUses =
       fixability === "deletable" && candidate !== undefined
         ? input.dependencies.lastUses.get(candidate.id)
@@ -319,34 +365,22 @@ function dialed(
  * below the minimum confidence is withheld, and so is every finding of the component of a
  * root the dials withhold, because a symbol that falls with a root is dead only through it
  * and its deletion does not compile while the root stays. A withheld finding that is no
- * root withholds itself alone. A code is withheld from a declaration when the finding it
- * would report there, completed, is withheld by its own severity or confidence.
+ * root withholds itself alone.
  */
 export function dialsOf(
   input: EmitterInput,
   findings: readonly CompletedFinding[],
 ): Dials<CompletedFinding> {
   const minConfidence = input.config.analysis.minConfidence;
-  const classOf = reachabilityClasses(input);
-  const ceilingOf = testCeilings(input, classOf);
   const components = new Set(
     findings
       .filter((finding) => finding.component.root && dialed(finding, minConfidence))
       .map((finding) => finding.component.id),
   );
   return {
-    withholdsCode: (code, id) => {
+    allows: (code) => {
       const row = KINDS.get(code);
-      return (
-        row !== undefined &&
-        dialed(
-          {
-            severity: severityOf(input, code, row.defaultSeverity),
-            confidence: capped(capped(classOf(id), row.maxClass), ceilingOf(id)),
-          },
-          minConfidence,
-        )
-      );
+      return row !== undefined && severityOf(input, code, row.defaultSeverity) === "allow";
     },
     withholds: (finding) => dialed(finding, minConfidence) || components.has(finding.component.id),
   };

@@ -71,6 +71,11 @@ export interface ConventionManifest {
   readonly dir: string;
   /** The manifest's path below the target root, `/`-separated. */
   readonly path: string;
+  /**
+   * Whether the manifest is a nested package's, whose install no run requires: an
+   * enabling package it declares and nothing installs applies no row and fails nothing.
+   */
+  readonly nested?: boolean;
 }
 
 /** One row a run applied, as the report lists it. */
@@ -1007,7 +1012,11 @@ export function readConventions(
       }
       const version = versions.get(row.package);
       if (version === undefined) {
-        if (missing.has(row.package) || !declares(declared, row.package, REQUIRED_SECTIONS)) {
+        if (
+          missing.has(row.package) ||
+          manifest.nested === true ||
+          !declares(declared, row.package, REQUIRED_SECTIONS)
+        ) {
           continue;
         }
         missing.add(row.package);

@@ -122,15 +122,21 @@ describe("the reference table of every reference form", () => {
       [RESOLVED?.cost.contextualBatches, RESOLVED?.cost.contextualLookups],
       "one batch of contextual types for the object literals, one of value types and one " +
         "of the positions a value that may carry a member reaches, and one lookup per " +
-        "distinct type's constituents, properties, element type, call signature and, for a " +
-        "type with no call signature, construct signature",
-    ).toEqual([3, 18]);
+        "distinct type's constituents, properties, element type, type arguments of an " +
+        "instantiation, call signature and, for a type with no call signature, construct signature",
+    ).toEqual([3, 22]);
+    expect(
+      RESOLVED?.cost.typedLookups,
+      "one batch of argument types and one of element-access types, the call each literal " +
+        "argument names resolved with its generic signature, and the types of the values " +
+        "assertions and constructions hand over, and the key comparisons' operand symbols",
+    ).toBe(11);
     expect(
       EVERY_REFERENCE.referenceRequests,
       "the requests the client measured are the ones the pass accounts for: a declaration " +
         "outside the project's own files is never fetched to find out that the inventory " +
         "does not hold it",
-    ).toBe(4 + 0 + 4 + 11 + 2 + 2 + 3 + 18);
+    ).toBe(4 + 0 + 4 + 11 + 2 + 2 + 3 + 22 + 11);
   });
 
   it("records each decorator as a use of the declaration it is attached to, at the decorator", () => {
@@ -168,7 +174,8 @@ describe("the reference table of every reference form", () => {
         held.cost.patternBatches +
         held.cost.patternLookups +
         held.cost.contextualBatches +
-        held.cost.contextualLookups,
+        held.cost.contextualLookups +
+        held.cost.typedLookups,
       0,
     );
 

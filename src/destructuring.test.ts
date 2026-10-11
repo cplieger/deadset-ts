@@ -42,7 +42,8 @@ function accounted(cost: ReferenceCost | undefined): number {
     (cost?.patternBatches ?? 0) +
     (cost?.patternLookups ?? 0) +
     (cost?.contextualBatches ?? 0) +
-    (cost?.contextualLookups ?? 0)
+    (cost?.contextualLookups ?? 0) +
+    (cost?.typedLookups ?? 0)
   );
 }
 
@@ -131,6 +132,7 @@ describe("the members a destructuring reads", () => {
 
   it("accounts for every request it makes", () => {
     expect(RESOLVED?.cost.patternBatches, "one batch for the one module holding patterns").toBe(1);
+    expect(RESOLVED?.cost.typedLookups, "and the typed reads' batches of argument types").toBe(10);
     expect(ANALYZED.referenceRequests, "and the client measured no other").toBe(
       accounted(RESOLVED?.cost),
     );

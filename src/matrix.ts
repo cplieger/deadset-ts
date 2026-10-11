@@ -4,7 +4,7 @@
  * and intersected, with the dead components computed once over every configuration.
  */
 
-import { componentsOf, type Component } from "./components.ts";
+import { componentsOf, type Component, type Positional } from "./components.ts";
 import { graphOf, OUTSIDE, type Graph } from "./graph.ts";
 import type { InventorySymbol } from "./inventory.ts";
 import { byPosition } from "./position.ts";
@@ -36,6 +36,8 @@ export interface Configured {
    * finding.
    */
   readonly referenceOnly?: readonly string[] | undefined;
+  /** Each declaration's dependents, by id, as the configuration's inventory states them. */
+  readonly dependents?: ReadonlyMap<string, readonly string[]> | undefined;
 }
 
 /** The run's configurations, indexed for the sweep. */
@@ -56,6 +58,8 @@ export interface Matrix {
    * whose project holds it, in the run's order.
    */
   readonly heldIn: readonly (readonly string[])[];
+  /** Each declaration's dependents, by id, as the first configuration holding it states them. */
+  readonly dependents: ReadonlyMap<string, readonly string[]>;
 }
 
 /** One declaration dead in every configuration that holds it. */
@@ -128,7 +132,13 @@ export function matrixOf(per: readonly Configured[]): Matrix {
   const references: Reference[] = [];
   const firstSeen = new Map<string, number>();
   const judged = new Set<string>();
+  const dependents = new Map<string, readonly string[]>();
   per.forEach((one, index) => {
+    for (const [id, after] of one.dependents ?? []) {
+      if (!dependents.has(id)) {
+        dependents.set(id, after);
+      }
+    }
     const referenceOnly = new Set(one.referenceOnly);
     for (const symbol of one.symbols) {
       const held = holders.get(symbol.id);
@@ -168,6 +178,7 @@ export function matrixOf(per: readonly Configured[]): Matrix {
       [...new Set(per.flatMap((one) => one.supportFiles ?? []))],
     ),
     heldIn: symbols.map((symbol) => holders.get(symbol.id) ?? []),
+    dependents,
   };
 }
 
@@ -257,14 +268,16 @@ export function sweepMatrix(matrix: Matrix, input: SweepInput): SweepResult {
     });
   });
 
+  const liveUnder = liveAnywhere(union.symbols, per);
   return {
-    liveUnder: liveAnywhere(union.symbols, per),
+    liveUnder,
     candidates,
     components: componentsOf(
       union,
       dead.map((one, at) => one && heldBy[at] === undefined),
       testOfDeadCode,
       unreferencedTest,
+      positionsOf(union, matrix.dependents, liveUnder),
     ),
   };
 }
@@ -284,6 +297,25 @@ export function liveFilesAt(
       paths.has(symbol.position.path) &&
       (result.liveUnder.get(symbol.id)?.length ?? 0) === RELATIONS.length,
   );
+}
+
+/**
+ * Each declaration's dependents by its place in the union, and per place whether the
+ * declaration is live under reachability in some configuration.
+ */
+function positionsOf(
+  union: Graph,
+  dependents: ReadonlyMap<string, readonly string[]>,
+  liveUnder: ReadonlyMap<string, readonly Relation[]>,
+): Positional {
+  return {
+    dependents: union.symbols.map((symbol) =>
+      (dependents.get(symbol.id) ?? []).map((id) => union.at(id)).filter((at) => at !== OUTSIDE),
+    ),
+    live: union.symbols.map(
+      (symbol) => liveUnder.get(symbol.id)?.includes("reachability") === true,
+    ),
+  };
 }
 
 /** The relations in the order a declaration's entry lists them. */

@@ -19,7 +19,7 @@ function unusedDependencies(dependencies: Dependencies): Finding[] {
   return dependencies.declared
     .filter(
       (dependency) =>
-        !dependencies.needed.has(dependency.name) &&
+        !dependencies.needed.has(declarationKey(dependency)) &&
         !dependencies.ran.has(declarationKey(dependency)),
     )
     .map((dependency) => ({

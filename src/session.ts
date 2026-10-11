@@ -28,13 +28,10 @@ import {
 } from "./query.ts";
 
 /**
- * The compiler the analysis reads through. It is a client over a protocol to a
- * separate process, so every accessor call is a round trip and a run holds one
- * client and one snapshot.
- *
- * It is an interface because the run's own accounting for that lifetime is not on
- * the client's surface: a snapshot reports whether it is disposed and not how many
- * a client opened, so the count is observed at this seam.
+ * The compiler the analysis reads through: a client over a protocol to a separate
+ * process, so every accessor call is a round trip and a run holds one client and one
+ * snapshot. It is an interface because a snapshot reports whether it is disposed and not
+ * how many a client opened, so the run's count of them is observed at this seam.
  */
 export interface Engine {
   /**
@@ -187,14 +184,10 @@ export function openEngine(options: EngineOptions): Engine {
 }
 
 /**
- * A node of one project's program, carried with that project's identity.
- *
- * `Brand` is a type parameter and never a value: a view is handed to a visitor
- * that introduces its own `Brand`, so two projects' views have handle types the
- * compiler will not exchange and a handle cannot reach another project's checker.
- * Handles are only meaningful inside the program that produced them, and the
- * cross-project step of the analysis compares rendered positions rather than
- * handles.
+ * A node of one project's program, carried with that project's identity. `Brand` is a
+ * type parameter and never a value: each visitor introduces its own, so two projects'
+ * handle types do not exchange and a handle cannot reach another project's checker. The
+ * cross-project step compares rendered positions, never handles.
  */
 export interface Handle<Brand> {
   readonly node: Node;
@@ -253,14 +246,11 @@ export interface ProjectView<Brand> {
    */
   aliasStepOf(symbol: TSSymbol): Answer<TSSymbol | undefined>;
   /**
-   * The node one symbol's declaration handle names, read in this project's program,
-   * or `undefined` where this project's program does not hold that file.
-   *
-   * A symbol is shared by every project of the snapshot and remembers the project it
-   * was first seen in, so resolving its handle without saying which program to read
-   * would answer out of whichever project reached the symbol first. The project is
-   * named here instead, and the answer becomes a handle of this project like any
-   * other. The read is local once the file has been fetched.
+   * The node one symbol's declaration handle names, read in this project's program, or
+   * `undefined` where this program does not hold that file. A symbol is shared by every
+   * project of the snapshot and remembers the one it was first seen in, so the project is
+   * named here, or the answer would come from whichever project reached the symbol first.
+   * The read is local once the file has been fetched.
    */
   declarationAt(handle: NodeHandle): Handle<Brand> | undefined;
 }
@@ -271,6 +261,13 @@ export interface ProjectView<Brand> {
  * not a handle another invocation's view accepts.
  */
 export type ProjectVisitor<Result> = <Brand>(project: ProjectView<Brand>) => Result;
+
+/** One project a session opened: its configuration and the files of its own program. */
+export interface OpenedFiles {
+  readonly configFile: string;
+  /** The program's source files no default library and no external library holds. */
+  readonly fileNames: () => readonly string[];
+}
 
 /**
  * The source files of one program that `own` admits, in the program's order, none of
@@ -487,10 +484,10 @@ function projectsOf(
 /**
  * Runs `visit` over every project the compiler configurations name, inside one never updated
  * snapshot of one client, and answers in their order. A configuration `programs` describes is
- * built as that program, or opened from the configuration it writes, instead of as a project.
- * One the snapshot holds nothing for ends the run under `"refuse"` and is named in the result
- * under `"record"`. `last` runs after the last visit while the client still answers; the
- * snapshot is disposed and the client released after it, whether the visit completed or threw.
+ * built as that program, or opened from the configuration it writes. One the snapshot holds
+ * nothing for ends the run under `"refuse"` and is named in the result under `"record"`.
+ * `first` runs over every opened project before the first visit and `last` after the last,
+ * both while the client answers; the snapshot and the client are then released.
  */
 export function runSession<Result>(
   engine: Engine,
@@ -499,6 +496,7 @@ export function runSession<Result>(
   unopened: Unopened = "refuse",
   programs: ReadonlyMap<string, WorkspaceProgram> = new Map(),
   last: () => void = () => undefined,
+  first: (opened: readonly OpenedFiles[]) => void = () => undefined,
 ): SessionResult<Result> {
   try {
     const built: string[] = [];
@@ -523,7 +521,7 @@ export function runSession<Result>(
     try {
       const opened = projectsOf(snapshot, built, written);
       const log = new UnansweredLog();
-      const projects: Result[] = [];
+      const views: ProjectView<unknown>[] = [];
       const missing: string[] = [];
       for (const configFile of configFiles) {
         const project = opened.get(configFile);
@@ -534,8 +532,15 @@ export function runSession<Result>(
           missing.push(configFile);
           continue;
         }
-        projects.push(visit(viewOf(project, configFile, engine, log)));
+        views.push(viewOf(project, configFile, engine, log));
       }
+      first(
+        views.map((view) => ({
+          configFile: view.configFile,
+          fileNames: () => view.ownSourceFiles().map((file) => file.fileName),
+        })),
+      );
+      const projects = views.map((view) => visit(view));
       last();
       return {
         projects,

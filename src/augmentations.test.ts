@@ -166,3 +166,107 @@ describe("an augmentation of a dependency's interface whose member a string key 
     }
   });
 });
+
+/** Each finding of an application at `main.ts` over `files`, as its code and subject. */
+function findingsIn(files: Readonly<Record<string, string>>): string[] {
+  const root = writeProject({
+    "deadset.json": '{ "target": { "kind": "application" } }\n',
+    "package.json": '{ "name": "app", "private": true, "type": "module", "main": "./main.ts" }\n',
+    ...files,
+  });
+  try {
+    const document = join(root, "deadset.json");
+    const { config } = resolve({
+      repository: readFileSync(document, "utf8"),
+      repositoryLabel: document,
+    });
+    return findingsOf(emitterInputOf(root, config)).map(
+      (finding) => `${finding.code} ${finding.symbol.name}`,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+describe("an interface a file that is no module declares", () => {
+  it("merges into the global scope, so it is used through the member a use reads", () => {
+    expect(
+      findingsIn({
+        "env.d.ts":
+          "interface ImportMeta {\n  glob(pattern: string): Record<string, unknown>;\n  spare(): void;\n}\n",
+        "main.ts": 'export const files = import.meta.glob("./x/*");\n',
+      }),
+    ).toEqual(["DS1203 ImportMeta.spare"]);
+  });
+});
+
+describe("a module augmentation no import of the target names", () => {
+  it("is used through the member a use reads, as a declare global block is", () => {
+    expect(
+      findingsIn({
+        "package.json":
+          '{ "name": "app", "private": true, "type": "module", "main": "./main.ts", "dependencies": { "lib": "1.0.0" } }\n',
+        "node_modules/lib/package.json": '{ "name": "lib", "types": "./index.d.ts" }\n',
+        "node_modules/lib/index.d.ts": 'export { commands } from "./internal.js";\n',
+        "node_modules/lib/internal.d.ts":
+          "export interface Commands {}\nexport declare const commands: Commands;\n",
+        "main.ts": [
+          'import { commands } from "lib";',
+          "",
+          'declare module "lib/internal.js" {',
+          "  interface Commands {",
+          "    emulate(): void;",
+          "  }",
+          "}",
+          "",
+          "commands.emulate();",
+          "",
+        ].join("\n"),
+      }),
+    ).toEqual([]);
+  });
+});
+
+describe("a module augmentation in test-support code", () => {
+  it("is test-support code test code reaches, with every declaration it holds", () => {
+    const root = writeProject({
+      "deadset.json":
+        '{ "target": { "kind": "application" }, "analysis": { "min_confidence": "possible" } }\n',
+      "package.json":
+        '{ "name": "app", "private": true, "type": "module", "main": "./main.ts", "dependencies": { "lib": "1.0.0" } }\n',
+      "node_modules/lib/package.json": '{ "name": "lib", "types": "./index.d.ts" }\n',
+      "node_modules/lib/index.d.ts":
+        "export interface Commands {}\nexport declare const commands: Commands;\n",
+      "main.ts": "export const ready = true;\n",
+      "support.ts": [
+        'import { commands } from "lib";',
+        "",
+        'declare module "lib" {',
+        "  interface Commands {",
+        "    emulate(): void;",
+        "  }",
+        "}",
+        "",
+        "export function emulate(): void {",
+        "  commands.emulate();",
+        "}",
+        "",
+      ].join("\n"),
+      "main.test.ts": 'import { emulate } from "./support.js";\n\nemulate();\n',
+    });
+    try {
+      const document = join(root, "deadset.json");
+      const { config } = resolve({
+        repository: readFileSync(document, "utf8"),
+        repositoryLabel: document,
+      });
+      expect(
+        findingsOf(emitterInputOf(root, config)).map(
+          (finding) => `${finding.code} ${finding.symbol.name} ${finding.confidence}`,
+        ),
+      ).toEqual(["DS1004 lib possible", "DS1004 emulate possible", "DS1201 lib.Commands possible"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});

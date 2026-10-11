@@ -136,6 +136,15 @@ describe("a file the test runner's configuration names as a setup file", () => {
     ).toEqual(TEST_ONLY);
   });
 
+  it("is a test file where the configuration names it as a global setup file", () => {
+    expect(
+      registryFindings(
+        'export default { test: { globalSetup: "./registry-setup.ts" } };\n',
+        "registry-setup.ts",
+      ),
+    ).toEqual(TEST_ONLY);
+  });
+
   it("is read against the project root the configuration moves, test.root before root", () => {
     expect(
       registryFindings(

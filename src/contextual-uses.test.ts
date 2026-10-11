@@ -157,6 +157,31 @@ describe("a constructor reaching a constructor type", () => {
   });
 });
 
+describe("a value reaching a position of another type", () => {
+  it("reads each method of an interface the position's interface declares", () => {
+    expect(
+      findings({
+        "src/main.ts":
+          "interface Holder {\n  tick(): void;\n}\ninterface View {\n  tick(): void;\n  idle(): void;\n}\nfunction hold(holder: Holder): void {\n  holder.tick();\n}\nexport function mount(view: View): void {\n  hold(view);\n}\n",
+      }),
+    ).toEqual([
+      "DS1203 View.idle 6: no call site invokes or selects the method through the interface",
+    ]);
+  });
+
+  it("reaches through the type arguments of two instantiations, and from an array to an iterable", () => {
+    expect(
+      findings({
+        "src/main.ts":
+          "interface Result {\n  code?: string;\n  extra?: string;\n}\ninterface Reply {\n  code?: string;\n}\ninterface Holder {\n  tick(): void;\n}\ninterface View {\n  tick(): void;\n  idle(): void;\n}\nexport async function send(result: Result, views: readonly View[]): Promise<void> {\n  const answer: () => Promise<Reply | null> = () => Promise.resolve(result);\n  console.log((await answer())?.code);\n  for (const holder of new Set<Holder>(views)) {\n    holder.tick();\n  }\n}\n",
+      }),
+    ).toEqual([
+      "DS1003 Result.extra 3: type member has no reference in the target",
+      "DS1203 View.idle 13: no call site invokes or selects the method through the interface",
+    ]);
+  });
+});
+
 describe("an object spread", () => {
   it("reads a member a later property overwrites, since the copy gets it first", () => {
     expect(
@@ -196,5 +221,23 @@ describe("an object spread", () => {
           'interface Position {\n  readonly epoch: string;\n  readonly head: string;\n}\nfunction position(): Position {\n  return { epoch: "1", head: "2" };\n}\nconst copied = { kind: "ok", ...position() };\nconsole.log(copied.kind);\n',
       }),
     ).toEqual([]);
+  });
+
+  it("reads no accessor of a class it spreads through a mapped type over the class", () => {
+    expect(
+      findings({
+        "src/main.ts":
+          'class Counter {\n  count = 1;\n  get stale(): number {\n    return 3;\n  }\n}\nconst frozen: Readonly<Counter> = new Counter();\nconst copied = { kind: "ok", ...frozen };\nconsole.log(copied.kind);\n',
+      }),
+    ).toEqual(["DS1003 Counter.stale 3: class member has no reference in the target"]);
+  });
+
+  it("reads an accessor an interface declares, and no method signature a type literal declares", () => {
+    expect(
+      findings({
+        "src/main.ts":
+          'interface Sized {\n  get size(): number;\n}\ntype Shaped = {\n  area(): number;\n};\nfunction make(): Sized & Shaped {\n  return { size: 1, area: () => 2 };\n}\nconst copied = { kind: "ok", ...make() };\nconsole.log(copied.kind);\n',
+      }),
+    ).toEqual(["DS1301 Shaped.area 5: type member Shaped.area is written once and never read"]);
   });
 });

@@ -71,28 +71,37 @@ interface DeclaredDependency {
 /** What a configuration's own reading needs: packages no deletion of a declaration removes. */
 export function configurationNeeds(packages: readonly string[]): ProjectNeeds {
   return {
-    packages: new Set(packages),
     uses: new Map([[PROJECT_OWNER, new Set(packages)]]),
+    at: new Map([[ANYWHERE, new Set(packages)]]),
     unanswered: [],
   };
 }
+
+/** The key of {@link ProjectNeeds.at} for a use no file of the target governs. */
+const ANYWHERE = "";
 
 /** What the installed copy of one declared dependency states about itself. */
 interface InstalledDependency {
   /** The commands its manifest's `bin` declares, by name. */
   readonly commands: readonly string[];
+  /** The packages its manifest's `peerDependencies` names, optional ones included. */
+  readonly peers: readonly string[];
 }
 
 /** What one project's own files and configuration need from outside the target. */
 export interface ProjectNeeds {
-  /** Every package a use names or resolves to. */
-  readonly packages: ReadonlySet<string>;
   /**
    * Per declaration of the inventory, the packages the uses written inside it name; a
    * use is held by the innermost declaration around it. The empty key holds what the
    * compiler configuration names, which no deletion removes.
    */
   readonly uses: ReadonlyMap<string, ReadonlySet<string>>;
+  /**
+   * Per absolute path of the file a use is written in, the packages it names, which a
+   * dependency only a manifest at or above that file declares serves. The empty key holds
+   * the uses no one file holds, which every manifest's dependency of that name serves.
+   */
+  readonly at: ReadonlyMap<string, ReadonlySet<string>>;
   /**
    * The files writing a module specifier the checker left unanswered, each of which may
    * use any dependency a manifest at or above it declares.
@@ -104,11 +113,14 @@ export interface ProjectNeeds {
 export interface Dependencies {
   /** Every declared dependency, manifest by manifest, in the order each writes them. */
   readonly declared: readonly DeclaredDependency[];
-  /** Every package some project needs. */
+  /**
+   * The declared dependencies, by {@link declarationKey}, a use written at or below their
+   * manifest's directory needs, and each declared peer of a needed one.
+   */
   readonly needed: ReadonlySet<string>;
   /**
    * The declared dependencies whose command a script entry of the manifest declaring them,
-   * or a workflow step for the target's manifest, runs, each by {@link declarationKey}.
+   * or a workflow step of the target, runs, each by {@link declarationKey}.
    */
   readonly ran: ReadonlySet<string>;
   /**
@@ -322,9 +334,10 @@ export function projectNeeds<Brand>(
     programPackages,
   );
   const uses = new Map<string, Set<string>>();
-  const use = (owners: readonly string[], named: Iterable<string>): void => {
+  const at = new Map<string, Set<string>>();
+  const use = (owners: readonly string[], named: Iterable<string>, path: string): void => {
     for (const one of named) {
-      packages.add(one);
+      at.set(path, (at.get(path) ?? new Set()).add(one));
       for (const owner of owners) {
         let set = uses.get(owner);
         if (set === undefined) {
@@ -335,11 +348,14 @@ export function projectNeeds<Brand>(
       }
     }
   };
-  use([PROJECT_OWNER], packages);
+  use([PROJECT_OWNER], packages, project.configFile);
 
   const unanswered: string[] = [];
   for (const file of project.ownSourceFiles()) {
-    if (fileNeeds(project, held, file, programPackages, use)) {
+    const inFile = (owners: readonly string[], named: Iterable<string>): void => {
+      use(owners, named, file.fileName);
+    };
+    if (fileNeeds(project, held, file, programPackages, inFile)) {
       unanswered.push(file.fileName);
     }
   }
@@ -363,14 +379,14 @@ export function projectNeeds<Brand>(
   for (const { file } of configuration.modules) {
     const names = declaredAt(file.fileName);
     for (const { node, text } of moduleStrings(file)) {
-      use(ownersOf(file, held, node), dependenciesNamed(text, names));
+      use(ownersOf(file, held, node), dependenciesNamed(text, names), file.fileName);
     }
   }
   for (const { strings, manifestDirs } of configuration.documents) {
     for (const manifestDir of manifestDirs) {
       const names = declaredAt(joinPath(manifestDir, "package.json"));
       for (const text of strings) {
-        use([PROJECT_OWNER], dependenciesNamed(text, names));
+        use([PROJECT_OWNER], dependenciesNamed(text, names), joinPath(manifestDir, MANIFEST));
       }
     }
   }
@@ -378,11 +394,11 @@ export function projectNeeds<Brand>(
     for (const manifestDir of manifestDirs) {
       const names = declaredAt(joinPath(manifestDir, "package.json"));
       for (const { text } of moduleStrings(file)) {
-        use([PROJECT_OWNER], dependenciesNamed(text, names));
+        use([PROJECT_OWNER], dependenciesNamed(text, names), joinPath(manifestDir, MANIFEST));
       }
     }
   }
-  return { packages, uses, unanswered };
+  return { uses, at, unanswered };
 }
 
 /** The declarations of the inventory a use written at one node belongs to. */
@@ -638,8 +654,10 @@ function installedOf(host: Host, root: string, name: string): InstalledDependenc
     const read = readJSON(host, joinPath(dir, MODULES_DIR, name, MANIFEST));
     if (read !== undefined && isRecord(read.value)) {
       const bin = read.value["bin"];
+      const peers = read.value["peerDependencies"];
       // A string `bin` names one command, the package's name without its scope.
       return {
+        peers: isRecord(peers) ? Object.keys(peers) : [],
         commands:
           typeof bin === "string"
             ? bin === ""
@@ -711,13 +729,53 @@ function isInside(path: string, dir: string): boolean {
   return dir === "" || path.startsWith(`${dir}/`);
 }
 
+/** The directory below the target root a declared dependency's manifest is in, `""` being the root. */
+function manifestDir(dependency: DeclaredDependency): string {
+  const dir = dirnamePath(dependency.position.path);
+  return dir === "." ? "" : dir;
+}
+
 /**
- * The run's dependency evidence: the target's manifest and each workspace member's in
- * `members` below the target root, read with the position of every dependency each
- * declares, what the projects and the commands its scripts and workflow steps run need,
- * and the last uses each deletion candidate holds. A member in `unbuilt` holds source only
- * in configurations the run could not build. A manifest the program cannot read declares
- * nothing.
+ * Adds to `needed` each declared dependency that the installed manifest of a needed or
+ * run declared dependency names as a peer, until no further one joins: the declaration of
+ * that name in the needing dependency's manifest or in a manifest above it, where the
+ * installed peer is resolved from. `peers` holds each declaration's installed peers by
+ * {@link declarationKey}.
+ */
+function addNeededPeers(
+  declared: readonly DeclaredDependency[],
+  peers: ReadonlyMap<string, readonly string[]>,
+  needed: Set<string>,
+  ran: ReadonlySet<string>,
+): void {
+  const pending = declared.filter(
+    (dependency) => needed.has(declarationKey(dependency)) || ran.has(declarationKey(dependency)),
+  );
+  for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+    const below = manifestDir(next);
+    for (const peer of peers.get(declarationKey(next)) ?? []) {
+      for (const dependency of declared) {
+        const key = declarationKey(dependency);
+        if (
+          dependency.name === peer &&
+          !needed.has(key) &&
+          (below === manifestDir(dependency) || isInside(below, manifestDir(dependency)))
+        ) {
+          needed.add(key);
+          pending.push(dependency);
+        }
+      }
+    }
+  }
+}
+
+/**
+ * The run's dependency evidence over the target's manifest and those of `members` and
+ * `nested` packages below the root: each declared dependency's position, what the projects,
+ * scripts and workflow steps need, and each deletion candidate's last uses. A member in
+ * `unbuilt` holds source only in configurations the run could not build. An unreadable
+ * manifest declares nothing, nor does a nested package's uninstalled dependency, because
+ * no run requires a nested package to be installed.
  */
 export function dependenciesOf(
   host: Host,
@@ -726,12 +784,13 @@ export function dependenciesOf(
   candidates: readonly string[],
   members: readonly string[] = [],
   unbuiltMembers: readonly string[] = [],
+  nested: readonly string[] = [],
 ): Dependencies {
   const root = resolvePath(host.workingDirectory(), targetRoot);
   const scopeOf = packageScope(host, targetRoot);
   const manifests = new Map<string, string>([[root, MANIFEST]]);
   const unbuilt = new Set<string>();
-  for (const dir of [...members, ...unbuiltMembers]) {
+  for (const dir of [...members, ...unbuiltMembers, ...nested]) {
     const below = relativePath(root, dir);
     if (below !== undefined && !manifests.has(dir)) {
       manifests.set(dir, `${below}/${MANIFEST}`);
@@ -746,6 +805,8 @@ export function dependenciesOf(
   const workflow = new Set(workflowTokens(host, targetRoot));
   const declared: DeclaredDependency[] = [];
   const ran = new Set<string>();
+  const peers = new Map<string, readonly string[]>();
+  const uninstalledHere = new Set(nested);
   for (const [dir, path] of manifests) {
     const read = readJSON(host, joinPath(dir, MANIFEST));
     if (read === undefined || !isRecord(read.value)) {
@@ -753,13 +814,16 @@ export function dependenciesOf(
     }
     const tokens = scriptTokensOf(read.value);
     for (const dependency of declaredIn(read.text, read.value, path, scopeOf(path))) {
-      declared.push(dependency);
       const found = installedOf(host, dir, dependency.name);
+      if (found === undefined && uninstalledHere.has(dir)) {
+        continue;
+      }
+      declared.push(dependency);
       if (found === undefined) {
         continue;
       }
-      const runs = (command: string): boolean =>
-        tokens.has(command) || (dir === root && workflow.has(command));
+      peers.set(declarationKey(dependency), found.peers);
+      const runs = (command: string): boolean => tokens.has(command) || workflow.has(command);
       if (found.commands.some(runs)) {
         ran.add(declarationKey(dependency));
       }
@@ -769,25 +833,38 @@ export function dependenciesOf(
   // A declaration several projects compile is one user, and a use any project makes is
   // a use, so the uses are merged by declaration before anything is counted.
   const needed = new Set<string>();
+  const byName = new Map<string, DeclaredDependency[]>();
+  for (const dependency of declared) {
+    byName.set(dependency.name, [...(byName.get(dependency.name) ?? []), dependency]);
+  }
   const uses = new Map<string, Set<string>>();
   for (const project of perProject) {
     // A specifier the checker left unanswered may resolve to any dependency a manifest at
     // or above its file declares, and what the configuration needs is never deleted.
     const unanswered = project.unanswered.flatMap((file) => relativePath(root, file) ?? []);
-    const unknown = declared
-      .filter((dependency) => {
-        const dir = dirnamePath(dependency.position.path);
-        return unanswered.some((file) => isInside(file, dir === "." ? "" : dir));
-      })
-      .map((dependency) => dependency.name);
+    const unknownDeclared = declared.filter((dependency) =>
+      unanswered.some((file) => isInside(file, manifestDir(dependency))),
+    );
+    unknownDeclared.forEach((dependency) => needed.add(declarationKey(dependency)));
+    const unknown = unknownDeclared.map((dependency) => dependency.name);
     const held = unknown.length === 0 ? [] : [[PROJECT_OWNER, new Set(unknown)] as const];
     for (const [id, used] of [...project.uses, ...held]) {
       const merged = uses.get(id) ?? new Set<string>();
       used.forEach((one) => merged.add(one));
       uses.set(id, merged);
     }
-    [...project.packages, ...unknown].forEach((one) => needed.add(one));
+    for (const [path, named] of project.at) {
+      const below = path === ANYWHERE ? undefined : relativePath(root, path);
+      for (const one of named) {
+        for (const dependency of byName.get(one) ?? []) {
+          if (below === undefined || isInside(below, manifestDir(dependency))) {
+            needed.add(declarationKey(dependency));
+          }
+        }
+      }
+    }
   }
+  addNeededPeers(declared, peers, needed, ran);
   const users = new Map<string, number>();
   for (const used of uses.values()) {
     used.forEach((one) => users.set(one, (users.get(one) ?? 0) + 1));

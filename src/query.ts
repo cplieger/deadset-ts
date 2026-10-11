@@ -205,6 +205,8 @@ export interface Queries {
   targetOf(type: Type): Answer<Type>;
   /** The constraint of a type parameter, where it declares one; none for another type. */
   constraintOf(type: Type): Answer<Type | undefined>;
+  /** The object and the index of an indexed-access type; none for another type. */
+  indexedAccessOf(type: Type): Answer<{ readonly object: Type; readonly index: Type } | undefined>;
   /** The symbol a type is declared by. */
   symbolOfType(type: Type): Answer<TSSymbol | undefined>;
   signaturesOf(type: Type, kind: SignatureKind): Answer<readonly Signature[]>;
@@ -514,6 +516,14 @@ export function queriesOf(
             "getConstraint",
             () => typeLocation(type),
             () => type.getConstraint(),
+          )
+        : undefined,
+    indexedAccessOf: (type) =>
+      type.isIndexedAccessType()
+        ? one(
+            "getObjectType",
+            () => typeLocation(type),
+            () => ({ object: type.getObjectType(), index: type.getIndexType() }),
           )
         : undefined,
     symbolOfType: (type) =>

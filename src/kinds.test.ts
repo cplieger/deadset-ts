@@ -12,6 +12,7 @@ interface ContractRow {
   readonly default_severity: string;
   readonly max_class: string;
   readonly fixability: string;
+  readonly finding_fixabilities?: readonly string[];
   readonly fixed: boolean;
   readonly overlap?: { readonly ts: readonly string[] };
 }
@@ -32,6 +33,9 @@ describe("the issue-kind vocabulary table", () => {
         defaultSeverity: kind.default_severity,
         maxClass: kind.max_class,
         fixability: kind.fixability,
+        ...(kind.finding_fixabilities === undefined
+          ? {}
+          : { findingFixabilities: kind.finding_fixabilities }),
         fixed: kind.fixed,
         ...(kind.overlap === undefined ? {} : { overlap: kind.overlap.ts }),
       }))

@@ -361,3 +361,44 @@ describe("the intra-function family", () => {
     LOAD_TIMEOUT,
   );
 });
+
+describe("a result every call site awaits as a statement", () => {
+  it(
+    "is used where it is a promise, which the caller sequences on, and discarded where it is not",
+    () => {
+      expect(
+        partsOf(
+          {
+            "package.json": '{ "name": "@example/parts", "private": true, "type": "module" }\n',
+            "src/main.ts": [
+              "function work(): Promise<number> {",
+              "  return Promise.resolve(1);",
+              "}",
+              "",
+              "function step(): Promise<number> {",
+              "  return work();",
+              "}",
+              "",
+              "function count(): number {",
+              "  return 2;",
+              "}",
+              "",
+              "function fire(): Promise<number> {",
+              "  return work();",
+              "}",
+              "",
+              "export async function run(): Promise<void> {",
+              "  await step();",
+              "  await count();",
+              "  fire();",
+              "}",
+              "",
+            ].join("\n"),
+          },
+          ENTRY,
+        ).map(({ code, line }) => `${code} ${String(line)}`),
+      ).toEqual(["DS1803 9", "DS1803 13"]);
+    },
+    LOAD_TIMEOUT,
+  );
+});

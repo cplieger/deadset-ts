@@ -426,7 +426,7 @@ export function configurationFiles(
     outside:
       parse === undefined
         ? []
-        : outsideModules(host, [...dirs], files, holdsManifest, parse, named),
+        : outsideModules(host, root, [...dirs], files, holdsManifest, parse, named),
   };
 }
 
@@ -480,11 +480,12 @@ export function resolveRelativeSpecifier(
 
 /**
  * The configuration modules of the directories that hold a manifest which the program
- * does not hold, and the files they import by a relative specifier, until no further
- * file joins. A file that cannot be read is skipped.
+ * does not hold, and the project files below `root` they import by a relative specifier,
+ * until no further file joins. A file that cannot be read is skipped.
  */
 function outsideModules(
   host: Host,
+  root: string,
   dirs: readonly string[],
   files: SourceFiles,
   holdsManifest: (dir: string) => boolean,
@@ -533,7 +534,7 @@ function outsideModules(
     outside.manifestDirs.push(next.manifestDir);
     for (const specifier of relativeSpecifiers(outside.file)) {
       const reached = resolveRelativeSpecifier(host, dirnamePath(next.path), specifier);
-      if (reached !== undefined) {
+      if (reached !== undefined && isProjectPath(root, reached)) {
         pending.push({ path: reached, manifestDir: next.manifestDir });
       }
     }
