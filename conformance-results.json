@@ -1,8 +1,8 @@
 {
-  "corpus_version": "5.0.0",
+  "corpus_version": "5.1.0",
   "product": { "name": "deadset-ts", "version": "0.1.0", "language": "ts" },
   "result": "pass",
-  "totals": { "fixtures": 162, "pass": 162, "gap": 0, "fail": 0 },
+  "totals": { "fixtures": 163, "pass": 163, "gap": 0, "fail": 0 },
   "fixtures": [
     {
       "fixture": "abstract-member-through-this",
@@ -3658,6 +3658,39 @@
             "liveness_relation": "reference-counting"
           },
           "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "serialized-checked-values-and-ambient-callees",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "HiddenUnread",
+          "result": "pass",
+          "actual": {
+            "report": "DS1301",
+            "symbol_kind": "type-member",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "PushedKind",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "RelayedHop",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "SmallTiny",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
         }
       ],
       "unexpected": []

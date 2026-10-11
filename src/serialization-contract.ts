@@ -10,6 +10,7 @@
 import {
   isArrayLiteralExpression,
   isArrowFunction,
+  isAsExpression,
   isCallExpression,
   isClassDeclaration,
   isClassExpression,
@@ -18,17 +19,22 @@ import {
   isFunctionExpression,
   isGetAccessorDeclaration,
   isIdentifier,
+  isInterfaceDeclaration,
   isMethodDeclaration,
   isNoSubstitutionTemplateLiteral,
   isNumericLiteral,
   isObjectLiteralExpression,
   isParenthesizedExpression,
   isPropertyAccessExpression,
+  isPropertyDeclaration,
+  isSatisfiesExpression,
   isSetAccessorDeclaration,
   isSpreadElement,
   isStringLiteral,
+  isTypeLiteralNode,
   isVariableDeclaration,
   ModifierFlags,
+  NodeFlags,
   SyntaxKind,
   type CallExpression,
   type Expression,
@@ -58,7 +64,7 @@ import { renderPosition } from "./position.ts";
 import { must } from "./query.ts";
 import type { ProjectView } from "./session.ts";
 import { erasedStores, type ErasedStores } from "./erased-stores.ts";
-import { valueReach, type Reached } from "./value-reach.ts";
+import { checkedTypes, valueReach, type Reached } from "./value-reach.ts";
 
 /** The serializer every run reads, whatever the configuration names. */
 const JSON_STRINGIFY: DeclarationEntry = { shape: "global", global: "JSON.stringify" };
@@ -359,6 +365,73 @@ function handedOn<Brand>(
   });
 }
 
+/**
+ * The symbols of the interfaces and object types code of the analysis implements: those a
+ * class's `implements` and `extends` clauses name, those an object literal is typed as by
+ * a variable or property annotation or a `satisfies` or `as` expression, and every type
+ * each of those extends. Read at the first call, which asks the checker.
+ */
+function implementedOwners<Brand>(
+  project: ProjectView<Brand>,
+  inAnalysis: (path: string) => boolean,
+): () => ReadonlySet<number> {
+  let owners: Set<number> | undefined;
+  return () => {
+    if (owners !== undefined) {
+      return owners;
+    }
+    const found = new Set<number>();
+    const queries = project.queries;
+    const own = project.ownPaths();
+    const files = [
+      ...project.ownSourceFiles(),
+      ...project.program
+        .getSourceFileNames()
+        .filter((name) => !own.has(name) && inAnalysis(name))
+        .flatMap((name) => project.program.getSourceFile(name) ?? []),
+    ];
+    const naming: Node[] = [];
+    const visit = (node: Node): void => {
+      if (isClassDeclaration(node) || isClassExpression(node)) {
+        naming.push(...(node.heritageClauses ?? []).flatMap((clause) => [...clause.types]));
+      } else if (
+        (isVariableDeclaration(node) || isPropertyDeclaration(node)) &&
+        node.type !== undefined &&
+        node.initializer !== undefined &&
+        isObjectLiteralExpression(evaluated(node.initializer))
+      ) {
+        naming.push(node.type);
+      } else if (
+        (isSatisfiesExpression(node) || isAsExpression(node)) &&
+        isObjectLiteralExpression(evaluated(node.expression))
+      ) {
+        naming.push(node.type);
+      }
+      node.forEachChild(visit);
+    };
+    for (const file of files) {
+      file.forEachChild(visit);
+    }
+    const pending = typesAt(project, naming).filter((type) => type !== undefined);
+    const seen = new Set<number>();
+    for (let type = pending.pop(); type !== undefined; type = pending.pop()) {
+      for (const part of must(queries.constituents(type))) {
+        const target = must(queries.targetOf(part));
+        if (!seen.has(target.id)) {
+          seen.add(target.id);
+          const symbol = must(queries.symbolOfType(target));
+          if (symbol !== undefined) {
+            found.add(symbol.id);
+          }
+          pending.push(...must(queries.baseTypes(target)));
+        }
+      }
+    }
+    owners = found;
+    return owners;
+  };
+}
+
 /** The destination of each call's arguments, with the project's forwarding functions settled. */
 interface Destinations {
   /** The function one call invokes and the arguments its parameters bind. */
@@ -372,10 +445,10 @@ interface Destinations {
 /**
  * The destinations of one project's calls. A call is one at every argument where its
  * callee is a serializer an entry names; at the arguments its resolved signature types
- * `unknown` or `any` where its callee is declared outside the analysis; and, where its
- * callee is a function of the project, at each parameter the function hands on to a
- * destination, holding back the widest of what those destinations hold back, which is
- * settled by widening until no parameter moves.
+ * `unknown` or `any` where its callee is declared outside the analysis or only ambiently
+ * with no implementation in it; and, where its callee is a function of the project, at each
+ * parameter the function hands on to a destination, holding back the widest of what those
+ * destinations hold back, which is settled by widening until no parameter moves.
  */
 function destinations<Brand>(
   input: DetectorInput<Brand>,
@@ -407,13 +480,31 @@ function destinations<Brand>(
   for (const parameter of erased.values()) {
     byFunction.set(parameter.fn, [...(byFunction.get(parameter.fn) ?? []), parameter]);
   }
-  const outside = (target: TSSymbol): boolean =>
+  const inAnalysis = (path: string): boolean =>
+    own.has(path) || input.consumers.some((root) => path === root || path.startsWith(`${root}/`));
+  const implemented = implementedOwners(project, inAnalysis);
+  /**
+   * Whether every declaration of a callee is outside the analysis or ambient. An ambient
+   * declaration has no body, so the code that runs is outside the analysis, unless it is a
+   * member of an interface or an object type a class or a typed object literal of the
+   * analysis implements; `settled` false skips that question, which asks the checker.
+   */
+  const outside = (target: TSSymbol, settled: boolean): boolean =>
     target.declarations.length > 0 &&
-    target.declarations.every(
-      (handle) =>
-        !own.has(handle.path) &&
-        !input.consumers.some((root) => handle.path === root || handle.path.startsWith(`${root}/`)),
-    );
+    target.declarations.every((handle) => {
+      if (!inAnalysis(handle.path)) {
+        return true;
+      }
+      const node = project.declarationAt(handle)?.node;
+      if (node === undefined || (node.flags & NodeFlags.Ambient) === 0) {
+        return false;
+      }
+      if (!settled || !(isInterfaceDeclaration(node.parent) || isTypeLiteralNode(node.parent))) {
+        return true;
+      }
+      const owner = must(queries.parentOf(target));
+      return owner === undefined || !implemented().has(owner.id);
+    });
   const invocation = (call: CallExpression): Invocation => {
     const form = forms.get(call);
     const method = form === undefined ? undefined : callees.get(form.method);
@@ -422,7 +513,7 @@ function destinations<Brand>(
     if (
       form !== undefined &&
       method !== undefined &&
-      outside(method) &&
+      outside(method, false) &&
       FUNCTION_INTERFACES.has(must(project.queries.parentOf(method))?.name ?? "")
     ) {
       return form.invocation;
@@ -472,16 +563,15 @@ function destinations<Brand>(
     if (entry !== undefined) {
       return { reach: "properties", callee: spelledEntry(entry.entry, held) };
     }
-    const declared = chains.declarationsOf(target);
-    if (declared.length === 0) {
-      return outside(target) && erasedAt(call, argument)
+    if (outside(target, true)) {
+      return erasedAt(call, argument)
         ? {
             reach: "conversions",
             callee: invocation(call).callee.getText().replace(/\s+/gu, ""),
           }
         : undefined;
     }
-    for (const fn of declared) {
+    for (const fn of chains.declarationsOf(target)) {
       const parameter = (byFunction.get(fn) ?? []).find(
         (one) => one.index === argument || (one.rest && one.index <= argument),
       );
@@ -512,16 +602,12 @@ function destinations<Brand>(
     if (target === undefined) {
       return false;
     }
-    const declared = chains.declarationsOf(target);
-    if (named.some((one) => names(one, target, chains))) {
+    if (named.some((one) => names(one, target, chains)) || outside(target, false)) {
       return true;
     }
-    if (declared.length === 0) {
-      return outside(target);
-    }
-    return declared.some((fn) =>
-      (byFunction.get(fn) ?? []).some((parameter) => forwards.has(keyOf(parameter))),
-    );
+    return chains
+      .declarationsOf(target)
+      .some((fn) => (byFunction.get(fn) ?? []).some((parameter) => forwards.has(keyOf(parameter))));
   };
   return { invocation, at, mayReceive };
 }
@@ -567,7 +653,11 @@ function flowsOf<Brand>(
   const typeOf = new Map<Expression, Type | undefined>(
     asked.map((one, index) => [one.value, types[index]]),
   );
-  const passed = arguments_.flatMap((one) => {
+  const checked = checkedTypes(
+    project,
+    arguments_.map((one) => one.value),
+  );
+  const passed = arguments_.flatMap((one, index) => {
     const type = typeOf.get(one.value);
     let reached: Reached = { classes: new Set<string>(), members: [] };
     if (one.value.kind === SyntaxKind.ThisKeyword) {
@@ -578,7 +668,7 @@ function flowsOf<Brand>(
     } else if (type !== undefined) {
       reached = reach.reachedFrom(type);
     }
-    for (const stored of stores.ofVariable(one.value) ?? []) {
+    for (const stored of [...(checked[index] ?? []), ...(stores.ofVariable(one.value) ?? [])]) {
       reached = joined(reached, reach.reachedFrom(stored));
     }
     const carries = reached.classes.size > 0 || reached.members.length > 0;

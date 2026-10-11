@@ -1,0 +1,7 @@
+{
+  "name": "@example/serialization-checked-and-ambient",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./src/main.ts"
+}

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
+import { emitterInputOf, findingsOf } from "../__test-helpers__/emitter-input.ts";
 import { fixture } from "../__test-helpers__/fixtures.ts";
 import { runSweep, type RunSweep } from "./analysis.ts";
 import { resolve } from "./resolve.ts";
@@ -10,16 +11,17 @@ import { scopeForDir } from "./scope.ts";
 import { openEngine } from "./session.ts";
 
 const TARGET = fixture("projects", "serialization-contract");
+const CHECKED = fixture("projects", "serialization-checked-and-ambient");
 
 /** The fixture swept for production, under its own configuration or the one given. */
-function sweepFixture(document?: string): RunSweep {
-  const path = join(TARGET, "deadset.json");
+function sweepFixture(document?: string, target = TARGET): RunSweep {
+  const path = join(target, "deadset.json");
   const { config } = resolve({
     repository: document ?? readFileSync(path, "utf8"),
     repositoryLabel: path,
   });
   const host = nodeHost();
-  return runSweep(openEngine({ collectTiming: false }), host, scopeForDir(host, TARGET), config, {
+  return runSweep(openEngine({ collectTiming: false }), host, scopeForDir(host, target), config, {
     marked: [],
     mode: { production: true },
   });
@@ -183,15 +185,75 @@ describe("serialization-contract", () => {
     ]);
   });
 
-  it("reads JSON.stringify alone where the configuration names no serializer", () => {
+  it("reads JSON.stringify and the unknown parameters of ambient declarations where the configuration names no serializer", () => {
     const unconfigured = sweepFixture(JSON.stringify({ target: { kind: "application" } }));
 
     expect(serialized(unconfigured, "Order", "Payload", "Frame")).toEqual([
       "Order.id src/main.ts:45:16 passed to JSON.stringify",
       "Order.items src/main.ts:45:16 passed to JSON.stringify",
+      'Payload.body src/main.ts:47:28 passed to object({body:""}).parse',
     ]);
-    expect(deadMembers(unconfigured)).toContain("Payload.body");
+    expect(deadMembers(unconfigured)).not.toContain("Payload.body");
     expect(deadMembers(unconfigured)).toContain("Frame.bytes");
+  });
+});
+
+describe("serialization-contract over checked values and ambient callees", () => {
+  const swept = sweepFixture(undefined, CHECKED);
+
+  it("reads the members of a `satisfies` target where the checked literal reaches a destination", () => {
+    expect(serialized(swept, "Pushed", "Wrapped", "Asserted", "Annotated")).toEqual([
+      "Pushed.kind src/main.ts:73:20 passed to client.postMessage",
+      "Pushed.title src/main.ts:73:20 passed to client.postMessage",
+      "Wrapped.reason src/main.ts:74:20 passed to client.postMessage",
+      "Asserted.cause src/main.ts:75:20 passed to client.postMessage",
+      "Annotated.body src/main.ts:77:20 passed to client.postMessage",
+    ]);
+  });
+
+  it("reads the members of a `satisfies` target where the checked literal is stored in what a destination walks", () => {
+    expect(serialized(swept, "Boxed", "Assigned")).toEqual([
+      "Boxed.size src/main.ts:82:29 passed to JSON.stringify",
+      "Assigned.step src/main.ts:82:56 passed to JSON.stringify",
+    ]);
+  });
+
+  it("reads the operand's own type and each asserted type where an assertion erases them", () => {
+    expect(serialized(swept, "Small", "Never", "AnyCast")).toEqual([
+      "Small.tiny src/main.ts:152:20 passed to client.postMessage",
+      "Never.ghost src/main.ts:152:20 passed to client.postMessage",
+      "AnyCast.erased src/main.ts:154:20 passed to client.postMessage",
+    ]);
+  });
+
+  it("reads a value passed to an unknown parameter of a callee the project declares only ambiently", () => {
+    expect(serialized(swept, "Broadcast", "Relayed", "Forwarded", "Dropped")).toEqual([
+      "Broadcast.line src/main.ts:84:21 passed to channel.postMessage",
+      "Relayed.hop src/main.ts:86:7 passed to relay",
+      "Forwarded.leg src/main.ts:88:9 passed to forward",
+    ]);
+  });
+
+  it("reports only what reaches no destination, a function or an implemented member of the project included", () => {
+    const document = join(CHECKED, "deadset.json");
+    const { config } = resolve({
+      repository: readFileSync(document, "utf8"),
+      repositoryLabel: document,
+    });
+
+    expect(
+      findingsOf(emitterInputOf(CHECKED, config)).map(
+        (finding) =>
+          `${finding.code} ${finding.position.path}:${String(finding.position.line)} ${finding.symbol.name}`,
+      ),
+    ).toEqual([
+      "DS1301 src/main.ts:59 Dropped.gone",
+      "DS1301 src/main.ts:70 Unsent.note",
+      "DS1301 src/main.ts:94 HiddenD.viaDts",
+      "DS1301 src/main.ts:109 HiddenP.viaLiteral",
+      "DS1301 src/main.ts:122 HiddenT.viaExtends",
+      "DS1301 src/main.ts:158 HiddenS.viaSatisfies",
+    ]);
   });
 });
 
