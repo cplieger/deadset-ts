@@ -88,9 +88,10 @@ export const CODE_FORM = /^DS[0-9]{4}$/u;
 
 /**
  * A path inside the target: relative to the target root, the solidus as separator, no
- * leading `./`, no trailing solidus, no `.` or `..` segment, never absolute.
+ * leading `./`, no trailing solidus, no `.` or `..` segment, never absolute, and no
+ * control character; a backslash is a character of a name.
  */
-export const PATH_EXPRESSION = String.raw`^(?:[^/\\.\r\n][^/\\\r\n]*|\.[^/\\.\r\n][^/\\\r\n]*|\.\.[^/\\\r\n]+)(?:/(?:[^/\\.\r\n][^/\\\r\n]*|\.[^/\\.\r\n][^/\\\r\n]*|\.\.[^/\\\r\n]+))*$`;
+export const PATH_EXPRESSION = String.raw`^(?:[^/.\x00-\x1f\x7f][^/\x00-\x1f\x7f]*|\.[^/.\x00-\x1f\x7f][^/\x00-\x1f\x7f]*|\.\.[^/\x00-\x1f\x7f]+)(?:/(?:[^/.\x00-\x1f\x7f][^/\x00-\x1f\x7f]*|\.[^/.\x00-\x1f\x7f][^/\x00-\x1f\x7f]*|\.\.[^/\x00-\x1f\x7f]+))*$`;
 
 const PATH_FORM = new RegExp(PATH_EXPRESSION, "u");
 

@@ -13,6 +13,14 @@ export const REPOSITORY_DOCUMENT = "deadset.json";
  */
 export type TargetKind = "application" | "library";
 
+/** The target kind as a source writes it: one kind for every language, or one per language. */
+export type TargetKindSetting = TargetKind | { readonly go: TargetKind; readonly ts: TargetKind };
+
+/** The kind a target kind setting gives one language's declarations. */
+export function kindOf(setting: TargetKindSetting, language: Language): TargetKind {
+  return typeof setting === "string" ? setting : setting[language];
+}
+
 /** The lowest reachability class a finding must reach to be reported. */
 export type Confidence = "certain" | "probable" | "possible";
 
@@ -183,7 +191,7 @@ export interface TSSection {
  */
 export interface Config {
   readonly contractVersion: string;
-  readonly targetKind: TargetKind | "";
+  readonly targetKind: TargetKindSetting | "";
   readonly analysis: Analysis;
   readonly consumersComplete: boolean;
   readonly rootPatterns: readonly string[];

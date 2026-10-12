@@ -150,7 +150,7 @@ describe("every entry and row case of the published token corpus", () => {
   );
 
   it("is read, and none of it is left out", () => {
-    expect(cases.length).toBe(25);
+    expect(cases.length).toBe(38);
   });
 });
 
@@ -243,6 +243,22 @@ describe("a written baseline", () => {
     expect(whole(writeBaseline(recorded, provenance))).toBe(
       whole(writeBaseline(recorded, provenance)),
     );
+  });
+
+  it("writes the line and paragraph separators as escapes and a lone surrogate as U+FFFD", () => {
+    const kept = [
+      {
+        code: "DS1001",
+        symbol: "go://example.com/app#Unused",
+        path: "a\u2028b\u2029c.go",
+        reason: "kept \ud800 here",
+      },
+    ];
+    const text = whole(writeBaseline(recorded, { analyzer: "deadset-ts", version: "1.2.3" }, kept));
+
+    expect(text).toContain(String.raw`"path": "a\u2028b\u2029c.go"`);
+    expect(text).toContain(`"reason": "kept \ufffd here"`);
+    expect(text).not.toMatch(/[\u2028\u2029]/u);
   });
 
   it("is refused where a row could carry no reason", () => {

@@ -8,7 +8,7 @@ deadset-ts reads up to three JSON documents. A command-line option wins over `de
 
 `print-config` prints the resolved configuration and the source of each setting.
 
-`target.kind` is the one required setting, and it has no default. Write `application` when every caller is inside the analyzed projects, and `library` when the published API has callers outside them.
+`target.kind` is the one required setting, and it has no default. Write `application` when every caller is inside the analyzed projects, and `library` when the published API has callers outside them. A target that holds Go and TypeScript code can name a kind per language instead, as an object naming both: `{"go": "application", "ts": "library"}`. deadset-ts reads the `ts` member and writes it to its report as its one kind.
 
 ```json
 { "target": { "kind": "library" } }
@@ -18,8 +18,8 @@ deadset-ts reads up to three JSON documents. A command-line option wins over `de
 
 | Key | Default | Description |
 | --- | --- | --- |
-| `target.kind` | required | `application` or `library` |
-| `contract_version` | `7.1.0` | The Contract version the file is written against |
+| `target.kind` | required | `application` or `library`, or an object naming the kind of `go` and of `ts` |
+| `contract_version` | `7.2.0` | The Contract version the file is written against |
 | `analysis.configurations` | `[]` | Entries shaped `{id, project}`, each naming a `tsconfig`. With none, every `tsconfig` project under the target. Platform entries are for the Go analyzer |
 | `analysis.matrix.complete` | `false` | Declares that `configurations` lists every build, so a file no configuration builds is reported as `DS1501` |
 | `analysis.min_confidence` | `probable` | The lowest confidence reported: `certain`, `probable` or `possible` |

@@ -6,7 +6,7 @@ import {
   type RunAnalysis,
   type RunProject,
 } from "../analysis.ts";
-import { ConfigError, type Format } from "../config.ts";
+import { ConfigError, kindOf, type Format } from "../config.ts";
 import { CONFORMANCE, DECLARED_GAPS } from "../conformance.ts";
 import { moduleIdentity } from "../consumers.ts";
 import { analyzerProvenance, verdictOf } from "../findings-pass.ts";
@@ -16,6 +16,7 @@ import type { NotBuilt } from "../discover.ts";
 import { partialNotes } from "../partial.ts";
 import {
   buildReport,
+  LANGUAGE,
   capFindings,
   sortFindings,
   type Report,
@@ -265,7 +266,11 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
       version,
       conformance: CONFORMANCE,
       declaredGaps: DECLARED_GAPS,
-      target: { kind, root, identity: moduleIdentity(host, scoped.target) },
+      target: {
+        kind: kindOf(kind, LANGUAGE),
+        root,
+        identity: moduleIdentity(host, scoped.target),
+      },
       configurations: configurationsOf(run.projects, targetRoot),
       notBuilt: notBuiltOf(run.notBuilt, targetRoot),
       loaded: run.consumers.map((consumer) => ({

@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
 import { fixture } from "../__test-helpers__/fixtures.ts";
+import { writeProject } from "../__test-helpers__/projects.ts";
 import type { Host } from "./host.ts";
 import { run, type Writer } from "./run.ts";
 
@@ -180,6 +181,37 @@ describe("component files, read through the compiler's content mapper", () => {
     expect(none.skips).toHaveLength(10);
     expect(none.findings).not.toContain("DS1502 src/Orphan.vue:1:1-4 src/Orphan.vue");
   });
+});
+
+describe("a component file's import binding of a module namespace", () => {
+  it.each([
+    ["a namespace import", 'import * as ns from "./inner.js";'],
+    ["a named import of a namespace re-export", 'import { ns } from "./barrel.js";'],
+    ["a default import of a namespace re-exported as the default", 'import ns from "./whole.js";'],
+  ])(
+    "keeps every export of the module through %s, because the markup is not parsed",
+    (_label, binding) => {
+      const root = writeProject({
+        "package.json": '{ "name": "@example/ns", "private": true, "type": "module" }\n',
+        "src/main.ts": 'import Widget from "./Widget.vue";\nconsole.log(Widget);\n',
+        "src/Widget.vue": `<template>\n  <p>{{ ns.shown }}</p>\n</template>\n\n<script setup lang="ts">\n${binding}\n</script>\n`,
+        "src/barrel.ts": 'export * as ns from "./inner.js";\n',
+        "src/whole.ts": 'export * as default from "./inner.js";\n',
+        "src/inner.ts": "export const shown = 1;\nexport const hidden = 2;\n",
+      });
+      const into = mkdtempSync(join(tmpdir(), "deadset-ts-component-namespace-"));
+      const got = analyze(
+        '{"target":{"kind":"application"},"ts":{"entry_files":["src/main.ts"]}}\n',
+        root,
+        into,
+      );
+      rmSync(root, { recursive: true, force: true });
+      rmSync(into, { recursive: true, force: true });
+
+      expect(got.findings.filter((line) => line.includes(" src/inner.ts:"))).toEqual([]);
+    },
+    60_000,
+  );
 });
 
 describe("content mappers a configuration declares", () => {

@@ -369,6 +369,47 @@ describe("a store that reads its target", () => {
   });
 });
 
+describe("a parameter property", () => {
+  const root = writeProject({
+    "package.json": `${JSON.stringify({ name: "@example/box", private: true, type: "module", bin: "./src/main.ts" })}\n`,
+    "src/main.ts": [
+      "class Box<T> {",
+      "  constructor(",
+      "    private readonly label: string,",
+      "    private readonly kept: number,",
+      "    private readonly spare: T,",
+      "  ) {",
+      "    console.log(label);",
+      "  }",
+      "  show(): number {",
+      "    return this.kept;",
+      "  }",
+      "}",
+      "",
+      'console.log(new Box("a", 1, true).show());',
+      "",
+    ].join("\n"),
+  });
+  const found = findingsOf(root, JSON.stringify({ target: { kind: "application" } }));
+  rmSync(root, { recursive: true, force: true });
+
+  it("is written by its constructor at its name, and read by no read of the parameter its body makes", () => {
+    expect(
+      found.map((finding) => [
+        finding.code,
+        finding.symbol.kind,
+        finding.message,
+        (finding.details.writePositions ?? []).map(
+          (at) => `${String(at.line)}:${String(at.column)}`,
+        ),
+      ]),
+    ).toEqual([
+      ["DS1301", "class-member", "member Box.label is written once and never read", ["3:22"]],
+      ["DS1301", "class-member", "member Box.spare is written once and never read", ["5:22"]],
+    ]);
+  });
+});
+
 describe("a store a for loop's incrementor makes", () => {
   const root = writeProject({
     "package.json": `${JSON.stringify({ name: "@example/loop", private: true, type: "module", bin: "./src/main.ts" })}\n`,

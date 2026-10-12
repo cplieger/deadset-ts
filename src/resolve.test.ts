@@ -155,7 +155,27 @@ describe("a value the closed key list constrains", () => {
       name: "a value outside a closed set",
       text: '{"target":{"kind":"module"}}',
       setting: "target.kind",
-      detail: '"module" is not one of "application", "library"',
+      detail:
+        '"module" is not one of "application", "library", nor an object naming the kind of each of "go", "ts"',
+    },
+    {
+      name: "a target kind of another type",
+      text: '{"target":{"kind":["application"]}}',
+      setting: "target.kind",
+      detail:
+        '["application"] is neither one of "application", "library" nor an object naming the kind of each of "go", "ts"',
+    },
+    {
+      name: "a target kind per language that leaves a language out",
+      text: '{"target":{"kind":{"ts":"module"}}}',
+      setting: "target.kind.go",
+      detail: 'is not set, and an object naming the kind of each of "go", "ts" names each',
+    },
+    {
+      name: "a target kind per language whose member is null",
+      text: '{"target":{"kind":{"go":null,"ts":"library"}}}',
+      setting: "target.kind.go",
+      detail: 'null is not one of "application", "library"',
     },
     {
       name: "a value of the wrong type",
@@ -296,7 +316,7 @@ describe("a value the closed key list constrains", () => {
       setting: "analysis.configurations[0].project",
       detail:
         '"../tsconfig.json" is not a path below the target root: segments joined by /, ' +
-        "none empty, . or .., and no backslash or line break",
+        "none empty, . or .., and no control character",
     },
     {
       name: "a project naming no file",
@@ -405,6 +425,10 @@ describe("the build matrix", () => {
     "a\\tsconfig.json",
     "a\ntsconfig.json",
     "tsconfig.json\r",
+    "a\ttsconfig.json",
+    "a\u007ftsconfig.json",
+    "src/routes/(app)/+layout/tsconfig.json",
+    "pages/[...auth] $x/tsconfig.json",
     ".",
     "..",
     "a/..",
@@ -585,6 +609,14 @@ function declaredMembers(node: Json): Set<string> {
   return new Set(shapes.flatMap((shape) => Object.keys((shape["properties"] ?? {}) as Json)));
 }
 
+/** The members an object shape of a schema node requires, in the order it lists them. */
+function requiredMembers(node: Json): string[] {
+  const shapes = [node, ...((node["oneOf"] ?? []) as Json[])];
+  return shapes.flatMap((shape) =>
+    shape["type"] === "object" ? ((shape["required"] ?? []) as string[]) : [],
+  );
+}
+
 /** The schema node one member name or array index leads to. */
 function childNode(node: Json, segment: string): Json {
   if (/^[0-9]+$/u.test(segment)) {
@@ -600,7 +632,8 @@ function childNode(node: Json, segment: string): Json {
 /**
  * The refusal a refused configuration document carries, derived from the schema and
  * the index row: the key the row's instance path spells, extended by the one member
- * of that object no shape of the schema declares, which is then an unimplemented key.
+ * of that object no shape of the schema declares, which is then an unimplemented key,
+ * or else by the first member an object shape requires and the object leaves out.
  */
 function refusalOf(row: Negative): { kind: string; key: string } {
   const segments = row.instance_path.split("/").slice(1);
@@ -621,7 +654,8 @@ function refusalOf(row: Negative): { kind: string; key: string } {
   if (undeclared.length === 1) {
     return { kind: "unimplemented-key", key: `${key}.${String(undeclared[0])}` };
   }
-  return { kind: "malformed", key };
+  const missing = requiredMembers(node).find((name) => !Object.hasOwn(value as Json, name));
+  return { kind: "malformed", key: missing === undefined ? key : `${key}.${missing}` };
 }
 
 describe("the Contract's refused configuration documents", () => {

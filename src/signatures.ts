@@ -13,6 +13,7 @@ import {
   isPropertyDeclaration,
   isVariableDeclaration,
   type ArrowFunction,
+  type ConstructorDeclaration,
   type FunctionDeclaration,
   type FunctionExpression,
   type MethodDeclaration,
@@ -21,7 +22,11 @@ import {
 
 /** A function-like node that carries a body of its own. */
 export type SignatureNode =
-  FunctionDeclaration | MethodDeclaration | ArrowFunction | FunctionExpression;
+  | FunctionDeclaration
+  | MethodDeclaration
+  | ArrowFunction
+  | FunctionExpression
+  | ConstructorDeclaration;
 
 /** Whether one node is a function value written in place: an arrow or a function expression. */
 function isFunctionValue(node: Node | undefined): node is ArrowFunction | FunctionExpression {

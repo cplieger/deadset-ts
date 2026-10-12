@@ -14,6 +14,8 @@
         "Block",
         "CallExpression",
         "CatchClause",
+        "ClassDeclaration",
+        "ConstructorDeclaration",
         "Decorator",
         "ElementAccessExpression",
         "Expression",

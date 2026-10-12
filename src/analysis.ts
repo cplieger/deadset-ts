@@ -7,7 +7,7 @@
  */
 
 import { lineOf, readComponent } from "./component-files.ts";
-import type { Config, Provenance } from "./config.ts";
+import { kindOf, type Config, type Provenance } from "./config.ts";
 import {
   consumerLoads,
   consumerReferences,
@@ -83,7 +83,7 @@ import {
 import { dirnamePath, joinPath, normalizePath, relativePath, resolvePath } from "./paths.ts";
 import type { UnansweredQuestion } from "./query.ts";
 import { byPosition, isComponentFile, type Position } from "./position.ts";
-import type { TypeErrorSkip, UnansweredCount } from "./report.ts";
+import { LANGUAGE, type TypeErrorSkip, type UnansweredCount } from "./report.ts";
 import { SetupError, setupLine, type SetupFailure } from "./setup-failure.ts";
 import {
   pathsOf,
@@ -377,7 +377,7 @@ function readProjects<Answer>(
       conventions,
       testFiles: config.ts.testFiles,
       parse,
-      publishedAPI: config.targetKind === "library",
+      publishedAPI: config.targetKind !== "" && kindOf(config.targetKind, LANGUAGE) === "library",
       publishedMembers: new Set(
         (workspace?.entries ?? []).filter((entry) => entry.published).map((entry) => entry.dir),
       ),

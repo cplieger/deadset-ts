@@ -1,6 +1,7 @@
 import {
   isClassDeclaration,
   isComputedPropertyName,
+  isConstructorDeclaration,
   isEnumDeclaration,
   isEnumMember,
   isExportAssignment,
@@ -15,6 +16,7 @@ import {
   isModuleBlock,
   isModuleDeclaration,
   isNamespaceExport,
+  isParameterDeclaration,
   isParenthesizedTypeNode,
   isPrivateIdentifier,
   isPropertyDeclaration,
@@ -26,6 +28,7 @@ import {
   isUnionTypeNode,
   isVariableStatement,
   ModifierFlags,
+  type ClassDeclaration,
   type Node,
   type SourceFile,
 } from "@typescript/native/ast";
@@ -490,6 +493,26 @@ function unnamedStart(node: Node): number {
   return prefix === null ? start : start + prefix[0].length;
 }
 
+/**
+ * Whether one node is a parameter property: a constructor parameter carrying an
+ * accessibility, `readonly` or `override` modifier, which also declares an instance
+ * member of the class, with the parameter's node as the member's declaration.
+ */
+export function isParameterProperty(node: Node): boolean {
+  return (
+    isParameterDeclaration(node) &&
+    isConstructorDeclaration(node.parent) &&
+    (modifiersOf(node) & ModifierFlags.ParameterPropertyModifier) !== 0
+  );
+}
+
+/** The parameter properties every constructor of one class declares. */
+function parameterPropertiesOf(node: ClassDeclaration): readonly Node[] {
+  return node.members.flatMap((member) =>
+    isConstructorDeclaration(member) ? member.parameters.filter(isParameterProperty) : [],
+  );
+}
+
 /** The kind a class element takes: a method, or a property or accessor. */
 function classMemberKind(node: Node): SymbolKind {
   return isMethodDeclaration(node) ? "method" : "class-member";
@@ -647,7 +670,7 @@ export function inventory<Brand>(
         owner: record,
         declaration: node,
         nameNode: node.name,
-        members: node.members,
+        members: [...node.members, ...parameterPropertiesOf(node)],
         memberKind: "class-member",
         isClass: true,
         membersAreExports: false,
@@ -974,7 +997,8 @@ export function inventory<Brand>(
         isPropertyDeclaration(node) ||
         isMethodDeclaration(node) ||
         isGetAccessorDeclaration(node) ||
-        isSetAccessorDeclaration(node)
+        isSetAccessorDeclaration(node) ||
+        isParameterProperty(node)
       ) {
         return classMemberKind(node);
       }

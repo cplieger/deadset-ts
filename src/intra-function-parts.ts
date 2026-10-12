@@ -19,6 +19,7 @@ import {
   isCatchClause,
   isClassDeclaration,
   isClassExpression,
+  isConstructorDeclaration,
   isContinueStatement,
   isDecorator,
   isDefaultClause,
@@ -37,6 +38,7 @@ import {
   isMethodDeclaration,
   isModuleDeclaration,
   isNamespaceImport,
+  isNewExpression,
   isNoSubstitutionTemplateLiteral,
   isNumericLiteral,
   isObjectBindingPattern,
@@ -61,6 +63,7 @@ import {
   type Block,
   type CallExpression,
   type CatchClause,
+  type ConstructorDeclaration,
   type FunctionExpression,
   type Identifier,
   type Node,
@@ -68,7 +71,7 @@ import {
   type Statement,
 } from "@typescript/native/ast";
 import type { FindingPosition } from "./finding.ts";
-import { nodeKey, type Inventory } from "./inventory.ts";
+import { isParameterProperty, nodeKey, type Inventory } from "./inventory.ts";
 import { positionKey, renderPosition } from "./position.ts";
 import { isAnswered, UNANSWERED, type Answer } from "./query.ts";
 import type { Reference } from "./references.ts";
@@ -117,8 +120,10 @@ interface SignatureFact {
   readonly declaration: string;
   /** Whether the body is empty or does nothing but throw. */
   readonly stub: boolean;
-  /** Whether a class hierarchy fixes the signature: the method overrides, or is overridden. */
+  /** Whether a class hierarchy fixes the signature, or a decorator a constructor's. */
   readonly fixed: boolean;
+  /** Whether the signature is a constructor's, which its class's identifier stands for. */
+  readonly constructor: boolean;
 }
 
 /** What one project answers about the parts of its declarations. */
@@ -129,6 +134,8 @@ export interface ProjectParts {
   readonly calls: ReadonlyMap<string, CallUse>;
   /** Each name an import or an export specifier writes, by position, which uses no value. */
   readonly specifiers: ReadonlySet<string>;
+  /** Each name of {@link constructionNames}, by position, which uses no constructor as a value. */
+  readonly constructions: ReadonlySet<string>;
 }
 
 /** The codes of the parts this module reads. */
@@ -391,6 +398,50 @@ function hierarchyFixes(declared: Node, extended: ReadonlySet<string>): boolean 
   return owner.name !== undefined && extended.has(owner.name.text);
 }
 
+/** Whether a decorator on a constructor's class or on one of its parameters fixes its signature. */
+function decoratorFixes(constructor: ConstructorDeclaration): boolean {
+  const owner = constructor.parent;
+  return (
+    ((owner as { readonly modifiers?: readonly Node[] }).modifiers ?? []).some(isDecorator) ||
+    constructor.parameters.some((parameter) =>
+      ((parameter as { readonly modifiers?: readonly Node[] }).modifiers ?? []).some(isDecorator),
+    )
+  );
+}
+
+/** The name an expression spells a class by: an identifier, or the member a property access names. */
+function spelledName(expression: Node): Identifier | undefined {
+  const node = unwrapped(expression);
+  if (isIdentifier(node)) {
+    return node;
+  }
+  return isPropertyAccessExpression(node) && isIdentifier(node.name) ? node.name : undefined;
+}
+
+/**
+ * The names one node writes that use a class without using its constructor as a value:
+ * the class a `new` expression calls, the class an `extends` or `implements` clause
+ * names, and the name a type reference spells.
+ */
+function constructionNames(node: Node): readonly Identifier[] {
+  if (isNewExpression(node)) {
+    return [spelledName(node.expression) ?? []].flat();
+  }
+  if (
+    isHeritageClause(node) &&
+    (isClassDeclaration(node.parent) || isClassExpression(node.parent))
+  ) {
+    return node.types.flatMap((type) =>
+      isTypeReferenceNode(type) ? [] : (spelledName(type.expression) ?? []),
+    );
+  }
+  if (isTypeReferenceNode(node)) {
+    const named = isQualifiedName(node.typeName) ? node.typeName.right : node.typeName;
+    return isIdentifier(named) ? [named] : [];
+  }
+  return [];
+}
+
 /** One declaration of the inventory that declares a function, and that function. */
 interface Declared {
   readonly id: string;
@@ -483,13 +534,17 @@ export function projectParts<Brand>(
   const signatures: SignatureFact[] = [];
   const calls = new Map<string, CallUse>();
   const specifiers = new Set<string>();
+  const constructions = new Set<string>();
   const sites: { readonly file: SourceFile; readonly declared: Declared }[] = [];
   const contextual: ContextualParameter[] = [];
 
   for (const file of files) {
+    // A parameter property's own parts stay with the parameter when its member goes.
     const declarationAt = (node: Node): string | undefined => {
       const id = held.declarations.get(nodeKey(file, node));
-      return id === undefined || kinds.get(id) === "file" ? undefined : id;
+      return id === undefined || kinds.get(id) === "file" || isParameterProperty(node)
+        ? undefined
+        : id;
     };
     // A part no declaration holds belongs to the file, which is judged while the file is live.
     const fileId = held.declarations.get(nodeKey(file, file));
@@ -542,6 +597,18 @@ export function projectParts<Brand>(
       if (id !== undefined && signature !== undefined) {
         walk.declared.push({ id, node, signature });
         covered.add(signature);
+      }
+      // A constructor is no declaration, so the class it belongs to holds its parts.
+      const constructs =
+        isConstructorDeclaration(node) && node.body !== undefined
+          ? declarationAt(node.parent)
+          : undefined;
+      if (constructs !== undefined && isConstructorDeclaration(node)) {
+        walk.declared.push({ id: constructs, node, signature: node });
+        covered.add(node);
+      }
+      for (const name of constructionNames(node)) {
+        constructions.add(position(name));
       }
       const value = covered.has(node) ? undefined : valueSignature(node);
       const valueHolder = id ?? holderOf(node);
@@ -628,11 +695,15 @@ export function projectParts<Brand>(
     const ids = resolvedIds(project, [...new Set(asked)]);
 
     for (const one of walk.declared) {
-      sites.push({ file, declared: one });
+      const constructor = isConstructorDeclaration(one.node);
+      if (!constructor) {
+        sites.push({ file, declared: one });
+      }
       signatures.push({
         declaration: one.id,
         stub: isStub(one.signature),
-        fixed: hierarchyFixes(one.node, extended),
+        fixed: constructor ? decoratorFixes(one.node) : hierarchyFixes(one.node, extended),
+        constructor,
       });
       const reader = readers.get(one.signature);
       if (reader !== undefined) {
@@ -699,7 +770,13 @@ export function projectParts<Brand>(
   }
 
   parts.push(...resultParts(project, targetRoot, sites, references, calls));
-  return { parts: withContextualRead(project, parts, contextual), signatures, calls, specifiers };
+  return {
+    parts: withContextualRead(project, parts, contextual),
+    signatures,
+    calls,
+    specifiers,
+    constructions,
+  };
 }
 
 /**
@@ -722,8 +799,8 @@ function valueSignature(node: Node): SignatureNode | undefined {
 
 /**
  * Every name one function's parameters bind, a binding pattern's names one by one. A
- * `this` parameter receives no argument and a decorated one is read by its decorator, so
- * neither binds a subject.
+ * `this` parameter receives no argument, a decorated one is read by its decorator, and a
+ * parameter property is read by the write to its member, so none binds a subject.
  */
 function parameterNames(signature: SignatureNode): ParameterName[] {
   const found: ParameterName[] = [];
@@ -750,7 +827,8 @@ function parameterNames(signature: SignatureNode): ParameterName[] {
   signature.parameters.forEach((parameter, at) => {
     const name = parameter.name;
     if (
-      ((parameter as { readonly modifiers?: readonly Node[] }).modifiers ?? []).some(isDecorator)
+      ((parameter as { readonly modifiers?: readonly Node[] }).modifiers ?? []).some(isDecorator) ||
+      isParameterProperty(parameter)
     ) {
       return;
     }
@@ -1096,7 +1174,7 @@ export function intraFunctionFacts(
     for (const [at, value] of one.calls) {
       calls.set(at, value);
     }
-    for (const at of one.specifiers) {
+    for (const at of [...one.specifiers, ...one.constructions]) {
       specifiers.add(at);
     }
   }
@@ -1127,10 +1205,16 @@ export function intraFunctionFacts(
       .map((one) => one.declaration)
       .filter((id) => !fixed.has(id) && !exempted.has(id) && !valued.has(id)),
   );
+  // A class used as a value fixes its constructor's whole signature, whatever reads follow.
+  const constructors = new Set(
+    signatures.filter((one) => one.constructor).map((one) => one.declaration),
+  );
   const freeButValued = new Set(
     signatures
       .map((one) => one.declaration)
-      .filter((id) => !fixed.has(id) && !exempted.has(id) && valued.has(id)),
+      .filter(
+        (id) => !fixed.has(id) && !exempted.has(id) && valued.has(id) && !constructors.has(id),
+      ),
   );
   // Awaiting a thenable result sequences on it, so a call that awaits one uses it.
   const sequenced = new Set(

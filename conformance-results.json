@@ -1,8 +1,8 @@
 {
-  "corpus_version": "5.1.0",
+  "corpus_version": "5.2.0",
   "product": { "name": "deadset-ts", "version": "0.1.0", "language": "ts" },
   "result": "pass",
-  "totals": { "fixtures": 163, "pass": 163, "gap": 0, "fail": 0 },
+  "totals": { "fixtures": 172, "pass": 172, "gap": 0, "fail": 0 },
   "fixtures": [
     {
       "fixture": "abstract-member-through-this",
@@ -384,6 +384,30 @@
           },
           "suppression": { "suppressed": true, "stale": false }
         }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "component-namespace-re-export",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "barrelSpare",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "defaultHidden", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "defaultShown", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "namedHidden", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "namedShown", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "wholeHidden", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "wholeShown", "result": "pass", "actual": { "report": "none" } }
       ],
       "unexpected": []
     },
@@ -1236,6 +1260,15 @@
       "unexpected": []
     },
     {
+      "fixture": "dependency-row-of-an-unnamed-nested-manifest",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "EntryInEffect", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "NestedDependency", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "dependency-row-suppression",
       "result": "pass",
       "expectations": [
@@ -1994,6 +2027,36 @@
         { "symbol": "OtherUnscopedEntry", "result": "pass", "actual": { "report": "none" } },
         { "symbol": "OwnEntry", "result": "pass", "actual": { "report": "none" } },
         { "symbol": "Unused", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "ignore-entry-windows-path",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "SolidusEntry", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "WindowsEntry",
+          "result": "pass",
+          "actual": {
+            "report": "DS1703",
+            "symbol_kind": "suppression",
+            "confidence": "certain",
+            "details": { "mechanism": "ignore" }
+          }
+        },
+        { "symbol": "kept", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "spare",
+          "result": "pass",
+          "actual": {
+            "report": "DS1002",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
       ],
       "unexpected": []
     },
@@ -2964,6 +3027,97 @@
       "unexpected": []
     },
     {
+      "fixture": "parameter-property-injected",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "Clock.retries", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Clock.ticks",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["injection-container"] }
+        },
+        {
+          "symbol": "Clock.zone",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["injection-container"] }
+        },
+        {
+          "symbol": "Report.title",
+          "result": "pass",
+          "actual": {
+            "report": "DS1301",
+            "symbol_kind": "class-member",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "parameter-property-suppression",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "DialDirective",
+          "result": "pass",
+          "actual": {
+            "report": "DS1703",
+            "symbol_kind": "suppression",
+            "confidence": "certain",
+            "details": { "mechanism": "inline" }
+          }
+        },
+        { "symbol": "Gauge.scale", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Gauge.unit", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Meter.scale", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Meter.unit", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "parameter-property-unread",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "Box.count",
+          "result": "pass",
+          "actual": {
+            "report": "DS1801",
+            "symbol_kind": "parameter",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "details": {
+              "overlap": ["tsc --noUnusedParameters", "@typescript-eslint/no-unused-vars"]
+            }
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "Box.depth",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["reflective-lookup"] }
+        },
+        { "symbol": "Box.height", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Box.label", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Box.spare",
+          "result": "pass",
+          "actual": {
+            "report": "DS1301",
+            "symbol_kind": "class-member",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "Box.width", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Shelf.size", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "parameters-a-context-reads",
       "result": "pass",
       "expectations": [
@@ -3542,6 +3696,95 @@
       "unexpected": []
     },
     {
+      "fixture": "route-file-paths",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "GET", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "POST",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "PageFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1502",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        {
+          "symbol": "action",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "format", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "formatLong",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "handler", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "headline",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "layoutTitle",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "load", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "loader", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "signOut",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "summary", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "satisfies-target-members",
       "result": "pass",
       "expectations": [
@@ -3855,6 +4098,34 @@
             "details": { "mechanism": "inline" }
           }
         }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "target-kind-per-language-ts-application",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "Kit", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "shown",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "method",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "target-kind-per-language-ts-library",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "Kit", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "shown", "result": "pass", "actual": { "report": "none" } }
       ],
       "unexpected": []
     },

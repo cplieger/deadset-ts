@@ -836,3 +836,30 @@ describe("an override of a member of a class a dependency declares", () => {
     ).toEqual(["DS1003 Card.palette"]);
   });
 });
+
+describe("an enum member of a test file nothing names", () => {
+  it("is reported once, under the enum-member kind, in the run that counts test references", () => {
+    const root = writeProject({
+      "package.json": '{ "name": "@example/enums", "private": true, "type": "module" }\n',
+      "src/main.ts": 'console.log("entry");\n',
+      "src/main.test.ts": [
+        "enum Mode {",
+        "  Used,",
+        "  Spare,",
+        "}",
+        "console.log(Mode.Used);",
+        "",
+      ].join("\n"),
+    });
+    const config = configOf(
+      '{ "target": { "kind": "application" }, "ts": { "entry_files": ["src/main.ts"] } }',
+    );
+
+    expect(
+      findingsOf(emitterInputOf(root, config, { mode: { production: false } })).map(
+        (finding) => `${finding.code} ${finding.symbol.name}`,
+      ),
+    ).toEqual(["DS1302 Mode.Spare"]);
+    rmSync(root, { recursive: true, force: true });
+  });
+});

@@ -255,6 +255,16 @@ const RENDERED: readonly { module: Module; fragment: Fragment; input: string }[]
     fragment: { of: "dependency", name: "typescript", section: "peer-dependency" },
     input: "ts://@example/app/package.json#typescript:peer-dependency",
   },
+  {
+    module: { package: ".", path: "static-src/package.json" },
+    fragment: { of: "dependency", name: "html-validate", section: "dev-dependency" },
+    input: "ts://./static-src/package.json#html-validate:dev-dependency",
+  },
+  {
+    module: { package: "@example/app", path: "tools/package.json" },
+    fragment: { of: "dependency", name: "lodash", section: "dependency" },
+    input: "ts://@example/app/tools/package.json#lodash:dependency",
+  },
 ];
 
 describe("the reference grammar", () => {

@@ -1,9 +1,10 @@
 /**
  * The injection-container class: a container constructs a class passed to a call
  * `ts.injection_registrations` names, or one a parameter of whose constructor carries a
- * decorator, and populates each of its properties and accessors that carries one, a base
- * class's included. A constructor and its parameters are no declarations of the
- * inventory, so the class stands for them and the registration referencing it keeps it.
+ * decorator, passes every argument of its constructor, and populates each of its
+ * properties and accessors that carries a decorator, a base class's included. So each
+ * parameter property is injected, decorated or not. A constructor is no declaration of
+ * the inventory, so the class stands for it and the registration referencing it keeps it.
  */
 
 import {
@@ -14,6 +15,7 @@ import {
   isPropertyDeclaration,
   isSetAccessorDeclaration,
   type CallExpression,
+  type Decorator,
   type Node,
 } from "@typescript/native/ast";
 import { aliasChains } from "./alias-chain.ts";
@@ -27,7 +29,7 @@ import {
   type ResolvedEntry,
 } from "./configured-declarations.ts";
 import type { DetectorInput, Evidence } from "./exempt.ts";
-import { nodeKey } from "./inventory.ts";
+import { isParameterProperty, nodeKey } from "./inventory.ts";
 import { renderPosition } from "./position.ts";
 
 /** One class a container constructs, by the registration that says so. */
@@ -37,13 +39,14 @@ interface Registration {
   readonly detail: string;
 }
 
-/** Whether one member declaration is a property or an accessor carrying a decorator. */
+/** Whether one member declaration is a parameter property, or a property or accessor carrying a decorator. */
 function isInjected(node: Node): boolean {
   return (
-    (isPropertyDeclaration(node) ||
+    isParameterProperty(node) ||
+    ((isPropertyDeclaration(node) ||
       isGetAccessorDeclaration(node) ||
       isSetAccessorDeclaration(node)) &&
-    decoratorsOf(node).length > 0
+      decoratorsOf(node).length > 0)
   );
 }
 
@@ -77,21 +80,24 @@ function registrations<Brand>(input: DetectorInput<Brand>): readonly Registratio
   });
 }
 
-/** The classes of the target a parameter of whose constructor carries a decorator. */
-function constructedForParameters<Brand>(input: DetectorInput<Brand>): ReadonlySet<string> {
+/**
+ * The classes of the target a parameter of whose constructor carries a decorator, each
+ * with the first such decorator.
+ */
+function constructedForParameters<Brand>(
+  input: DetectorInput<Brand>,
+): ReadonlyMap<string, Decorator> {
   const { project, held } = input;
-  const found = new Set<string>();
+  const found = new Map<string, Decorator>();
   for (const file of project.ownSourceFiles()) {
     const visit = (node: Node): void => {
       if (isClassDeclaration(node) || isClassExpression(node)) {
         const id = held.declarations.get(nodeKey(file, node));
-        const asks = node.members.some(
-          (member) =>
-            isConstructorDeclaration(member) &&
-            member.parameters.some((parameter) => decoratorsOf(parameter).length > 0),
+        const [asks] = node.members.flatMap((member) =>
+          isConstructorDeclaration(member) ? member.parameters.flatMap(decoratorsOf) : [],
         );
-        if (id !== undefined && asks) {
-          found.add(id);
+        if (id !== undefined && asks !== undefined) {
+          found.set(id, asks);
         }
       }
       node.forEachChild(visit);
@@ -110,7 +116,7 @@ export function injectionContainer<Brand>(input: DetectorInput<Brand>): readonly
   const { project, held, targetRoot } = input;
   const registered = registrations(input);
   const constructed = constructedForParameters(input);
-  const classes = new Set([...registered.map((one) => one.id), ...constructed]);
+  const classes = new Set([...registered.map((one) => one.id), ...constructed.keys()]);
   if (classes.size === 0) {
     return [];
   }
@@ -125,16 +131,15 @@ export function injectionContainer<Brand>(input: DetectorInput<Brand>): readonly
       found.push({ id: member.id, detail: registration.detail, site: at(registration.site) });
     }
   }
-  for (const id of constructed) {
+  for (const [id, asks] of constructed) {
     for (const member of injected(id)) {
-      const [decorator] = decoratorsOf(member.node);
-      if (decorator !== undefined) {
-        found.push({
-          id: member.id,
-          detail: `injected by ${spelledDecorator(decorator)}`,
-          site: at(decorator),
-        });
-      }
+      // An undecorated parameter property is passed because a sibling parameter asks.
+      const [decorator = asks] = decoratorsOf(member.node);
+      found.push({
+        id: member.id,
+        detail: `injected by ${spelledDecorator(decorator)}`,
+        site: at(decorator),
+      });
     }
   }
   return found;
