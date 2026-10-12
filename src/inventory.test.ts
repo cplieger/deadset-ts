@@ -1,8 +1,14 @@
+import { rmSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { nodeHost } from "../bin/node-host.ts";
 import { contractDocument, fixture } from "../__test-helpers__/fixtures.ts";
-import { analyzeProject, analyzeRoot } from "../__test-helpers__/projects.ts";
-import type { InventorySymbol, Visibility } from "./inventory.ts";
+import { analyzeProject, analyzeRoot, writeProject } from "../__test-helpers__/projects.ts";
+import { discoverProjects } from "./discover.ts";
+import { inventory, type InventorySymbol, type Visibility } from "./inventory.ts";
 import { positionKey } from "./position.ts";
+import { UNANSWERED } from "./query.ts";
+import { scopeForDir } from "./scope.ts";
+import { openEngine, runSession } from "./session.ts";
 import { isRef } from "./ref.ts";
 
 /**
@@ -418,4 +424,53 @@ describe("one declaration in two projects", () => {
     expect(shared(app).length, "the referencing project builds the shared file too").toBe(3);
     expect(shared(app)).toEqual(shared(core));
   });
+});
+
+describe("a parameter property", () => {
+  const FILES = {
+    "package.json": '{ "name": "@example/box", "private": true, "type": "module" }\n',
+    "src/box.ts": [
+      "export class Box {",
+      "  constructor(",
+      "    private readonly label: string,",
+      "    count: number,",
+      "  ) {",
+      "    console.log(count);",
+      "  }",
+      "}",
+      "",
+    ].join("\n"),
+  };
+
+  /** The class members of the project, with the class's member table answered or not. */
+  function members(answered: boolean): string[] {
+    const root = writeProject(FILES);
+    const host = nodeHost();
+    const engine = openEngine({ collectTiming: false });
+    try {
+      const configFiles = discoverProjects(engine, host, scopeForDir(host, root)).configFiles;
+      const { projects } = runSession(engine, configFiles, (project) =>
+        inventory(
+          answered
+            ? project
+            : { ...project, queries: { ...project.queries, membersOf: () => UNANSWERED } },
+          host,
+          root,
+        ),
+      );
+      return (projects[0]?.symbols ?? [])
+        .filter((symbol) => symbol.kind === "class-member")
+        .map((symbol) => `${symbol.ref} ${symbol.visibility} ${String(symbol.position.line)}`);
+    } finally {
+      engine.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  it.each([true, false])(
+    "declares a class member at its name, a plain parameter none, with the member table answered: %s",
+    (answered) => {
+      expect(members(answered)).toEqual(["ts://@example/box/src/box.ts#Box.label private 3"]);
+    },
+  );
 });

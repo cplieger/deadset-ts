@@ -1,4 +1,12 @@
-import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -19,8 +27,8 @@ import { resolve } from "./resolve.ts";
 import { scopeForDir } from "./scope.ts";
 import { isRowCode, isRowSubject } from "./suppress.ts";
 import { openEngine } from "./session.ts";
-import { BASELINE_FILE, writeBaseline } from "./suppress-file.ts";
-import { EXIT_CLEAN, EXIT_FINDINGS } from "./verbs/verb.ts";
+import { BASELINE_FILE, otherSchemeRows, writeBaseline } from "./suppress-file.ts";
+import { EXIT_CLEAN, EXIT_FAILURE, EXIT_FINDINGS } from "./verbs/verb.ts";
 import { whole } from "../__test-helpers__/whole.ts";
 
 const SUPPRESSIONS = fixture("projects", "suppressions");
@@ -555,29 +563,69 @@ function baselineCase(name: string, file: string): unknown {
   return JSON.parse(readFileSync(fixture("vectors", "baseline", name, file), "utf8")) as unknown;
 }
 
+/** Whether one baseline vector case expects its write to be refused. */
+function refused(name: string): boolean {
+  return existsSync(fixture("vectors", "baseline", name, "expected-error.json"));
+}
+
 describe("the published baseline vectors", () => {
   it("are the case set this suite runs", () => {
     expect(baselineCases()).toEqual([
+      "backslash-in-a-file-name",
       "declarations-and-parts",
       "document-rows-left-out",
+      "existing-document-not-a-baseline",
+      "line-separator-written-by-go",
+      "line-separator-written-by-typescript",
       "nothing-to-record",
+      "one-document-written-by-go",
+      "one-document-written-by-typescript",
+      "other-scheme-row-unreadable",
+      "other-scheme-rows-kept",
+      "own-scheme-row-unreadable",
       "typescript-rows",
     ]);
   });
 
-  it.each(baselineCases())("records the rows %s states from its round's report", (name) => {
+  /** The document one case's round writes over its existing document, or the refusal. */
+  const writeOf = (name: string): (() => string) => {
     const report = baselineCase(name, "report.json") as {
-      analyzer: { name: string; version: string };
+      analyzer: { name: string; version: string; languages: readonly string[] };
       findings: RecordableFinding[];
     };
-    const expected = baselineCase(name, "expected.json") as { baseline: unknown[] };
-    const written = whole(
-      writeBaseline(recordedFindings(report.findings), {
-        analyzer: report.analyzer.name,
-        version: report.analyzer.version,
-      }),
-    );
+    const path = fixture("vectors", "baseline", name, "existing.json");
+    const existing = existsSync(path) ? readFileSync(path, "utf8") : undefined;
+    const own = `${String(report.analyzer.languages[0])}://`;
+    return () =>
+      whole(
+        writeBaseline(
+          recordedFindings(report.findings),
+          { analyzer: report.analyzer.name, version: report.analyzer.version },
+          existing === undefined ? [] : otherSchemeRows(existing, own),
+        ),
+      );
+  };
 
-    expect((JSON.parse(written) as { baseline: unknown[] }).baseline).toEqual(expected.baseline);
-  });
+  it.each(baselineCases().filter((name) => !refused(name)))(
+    "records the rows %s states from its round's report, in the bytes it states",
+    (name) => {
+      const expected = baselineCase(name, "expected.json") as { baseline: unknown[] };
+      const written = writeOf(name)();
+
+      expect((JSON.parse(written) as { baseline: unknown[] }).baseline).toEqual(expected.baseline);
+      expect(written).toBe(
+        readFileSync(fixture("vectors", "baseline", name, "expected.json"), "utf8"),
+      );
+    },
+  );
+
+  it.each(baselineCases().filter(refused))(
+    "refuses to rewrite the document %s holds, which the verb ends with its exit code",
+    (name) => {
+      const want = baselineCase(name, "expected-error.json") as { exit_code: number };
+
+      expect(want.exit_code).toBe(EXIT_FAILURE);
+      expect(writeOf(name)).toThrow(/cannot be rewritten/u);
+    },
+  );
 });

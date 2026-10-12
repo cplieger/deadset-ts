@@ -32,6 +32,7 @@ import {
   isVoidExpression,
   SyntaxKind,
   type Node,
+  type ParameterDeclaration,
   type SourceFile,
 } from "@typescript/native/ast";
 import type { Symbol as TSSymbol } from "@typescript/native/sync";
@@ -41,7 +42,13 @@ import { destructuring, propertyReadsOf, type PropertyRead } from "./destructuri
 import { specifierCandidates } from "./configuration-files.ts";
 import { namespaceUses } from "./namespace-objects.ts";
 import { globExpression } from "./glob.ts";
-import { declarationsByName, nodeKey, type Inventory, type InventorySymbol } from "./inventory.ts";
+import {
+  declarationsByName,
+  isParameterProperty,
+  nodeKey,
+  type Inventory,
+  type InventorySymbol,
+} from "./inventory.ts";
 import { augmentationReferences } from "./augmentations.ts";
 import { elementAccessReferences } from "./element-access.ts";
 import { indexedAccessReferences } from "./indexed-access.ts";
@@ -478,6 +485,13 @@ interface Decorated {
   readonly declaration: string;
 }
 
+/** One parameter property, which its constructor writes, and the declaration that writes it. */
+interface ParameterWrite {
+  readonly name: Node;
+  readonly from: string;
+  readonly member: string;
+}
+
 /** One property a pattern reads, and the declaration the pattern is written inside. */
 interface Read extends PropertyRead {
   readonly from: string;
@@ -494,6 +508,7 @@ interface FileSites {
   readonly wholes: readonly WholeRead[];
   readonly urls: readonly ModuleURL[];
   readonly decorated: readonly Decorated[];
+  readonly parameterWrites: readonly ParameterWrite[];
   readonly keyed: readonly KeyedAccess[];
 }
 
@@ -682,6 +697,7 @@ function sitesOf(
   const wholes: WholeRead[] = [];
   const urls: ModuleURL[] = [];
   const decorated: Decorated[] = [];
+  const parameterWrites: ParameterWrite[] = [];
   const namespaces = namespaceUses(file);
   const literals: LiteralAt[] = [];
   const flows: FlowAt[] = [];
@@ -766,7 +782,15 @@ function sitesOf(
     }
     const held = declarations.get(nodeKey(file, node));
     const outer = enclosing;
-    if (held !== undefined) {
+    // A parameter property's annotation, initializer and decorators stay with the
+    // parameter when the member goes, so they are written inside the constructor's class.
+    if (held !== undefined && isParameterProperty(node)) {
+      parameterWrites.push({
+        name: (node as ParameterDeclaration).name,
+        from: outer,
+        member: held,
+      });
+    } else if (held !== undefined) {
       enclosing = held;
       for (const modifier of (node as { readonly modifiers?: readonly Node[] }).modifiers ?? []) {
         if (isDecorator(modifier)) {
@@ -789,6 +813,7 @@ function sitesOf(
     wholes,
     urls,
     decorated,
+    parameterWrites,
     keyed,
   };
 }
@@ -884,15 +909,12 @@ function importedNames(file: SourceFile): ReadonlyMap<string, readonly (string |
   return names;
 }
 
-/**
- * The name node of every import binding one file's top level declares, and whether it
- * binds a whole module.
- */
-function importBindings(file: SourceFile): readonly { node: Node; whole: boolean }[] {
-  const found: { node: Node; whole: boolean }[] = [];
+/** The name node of every import binding one file's top level declares. */
+function importBindings(file: SourceFile): readonly { node: Node }[] {
+  const found: { node: Node }[] = [];
   for (const statement of file.statements) {
     if (isImportEqualsDeclaration(statement)) {
-      found.push({ node: statement.name, whole: true });
+      found.push({ node: statement.name });
       continue;
     }
     const clause = isImportDeclaration(statement) ? statement.importClause : undefined;
@@ -900,16 +922,16 @@ function importBindings(file: SourceFile): readonly { node: Node; whole: boolean
       continue;
     }
     if (clause.name !== undefined) {
-      found.push({ node: clause.name, whole: false });
+      found.push({ node: clause.name });
     }
     const bindings = clause.namedBindings;
     if (bindings === undefined) {
       continue;
     }
     if (bindings.kind === SyntaxKind.NamespaceImport) {
-      found.push({ node: bindings.name, whole: true });
+      found.push({ node: bindings.name });
     } else {
-      found.push(...bindings.elements.map((element) => ({ node: element.name, whole: false })));
+      found.push(...bindings.elements.map((element) => ({ node: element.name })));
     }
   }
   return found;
@@ -1286,6 +1308,7 @@ export function references<Brand>(
     wholes,
     urls,
     decorated,
+    parameterWrites,
     keyed,
   } of walked) {
     const test = testFile.get(file) === true;
@@ -1302,6 +1325,18 @@ export function references<Brand>(
         to: declaration,
         position: renderPosition(file, root, decorator.getStart()),
         use: "decorator",
+        resolution: "syntax",
+        test,
+      });
+    }
+
+    // The constructor stores its argument in the member a parameter property declares.
+    for (const { name, from, member } of parameterWrites) {
+      found.push({
+        from,
+        to: member,
+        position: renderPosition(file, root, name.getStart()),
+        use: "write",
         resolution: "syntax",
         test,
       });
@@ -1456,15 +1491,14 @@ export function references<Brand>(
           symbol === UNANSWERED
             ? named(binding.node).map((id) => ({ id, stepped: false, guessed: true }))
             : chains.chainOf(symbol);
-        // The markup may name any export of a module a binding holds whole.
-        const targets = binding.whole
-          ? chained.flatMap((target) => [
-              target,
-              ...declaredIn(target.id)
-                .filter((one) => one.exported)
-                .map((one) => ({ ...target, id: one.id })),
-            ])
-          : chained;
+        // The markup may name any export of a module a binding's chain reaches, whether a
+        // namespace import binds it or a named or default import of a namespace re-export.
+        const targets = chained.flatMap((target) => [
+          target,
+          ...declaredIn(target.id)
+            .filter((one) => one.exported)
+            .map((one) => ({ ...target, id: one.id })),
+        ]);
         for (const target of targets) {
           found.push({
             from: fileId,

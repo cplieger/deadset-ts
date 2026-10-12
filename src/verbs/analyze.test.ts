@@ -180,6 +180,24 @@ describe("analyze over a fixture", () => {
     },
     LOAD_TIMEOUT,
   );
+
+  it.each([
+    { go: "application", ts: "library" },
+    { go: "library", ts: "application" },
+  ])(
+    "writes the kind a per-language target kind gives TypeScript, %j, as its one kind",
+    (kind) => {
+      const root = project({
+        ...CLEAN_APPLICATION,
+        "deadset.json": `${JSON.stringify({ target: { kind }, ts: { entry_files: ["src/main.ts"] } })}\n`,
+      });
+      const got = reportOf(analyze(root, [], tmpdir()));
+
+      expect(validate(got)).toEqual([]);
+      expect(got["target"]).toMatchObject({ kind: kind.ts });
+    },
+    LOAD_TIMEOUT,
+  );
 });
 
 describe("the order and the cap", () => {
@@ -583,6 +601,24 @@ describe("the baseline", () => {
 
       expect(rows[0]).toEqual(goRow);
       expect(rows).toHaveLength(34);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "refuses with exit code 3 to rewrite a baseline whose other language's row it cannot read, and leaves it as it was",
+    () => {
+      const tree = mkdtempSync(join(tmpdir(), "deadset-ts-baseline-"));
+      onTestFinished(() => {
+        rmSync(tree, { recursive: true, force: true });
+      });
+      cpSync(fixture("projects", "unused-declarations"), tree, { recursive: true });
+      const baseline = join(tree, "deadset-baseline.json");
+      const held = `${JSON.stringify({ baseline: [{ code: "DS1001", symbol: "go://example.com/app#Unused", line: 3 }] })}\n`;
+      writeFileSync(baseline, held);
+
+      expect(analyze(tree, [`--baseline-write=${baseline}`], tree).code).toBe(3);
+      expect(readFileSync(baseline, "utf8")).toBe(held);
     },
     LOAD_TIMEOUT,
   );

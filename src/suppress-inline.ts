@@ -4,12 +4,18 @@
  * below it, or on its own line where it trails a token there.
  */
 
-import { SyntaxKind, type Node, type SourceFile } from "@typescript/native/ast";
-import { nodeKey, type Inventory } from "./inventory.ts";
+import {
+  isConstructorDeclaration,
+  SyntaxKind,
+  type Node,
+  type SourceFile,
+} from "@typescript/native/ast";
+import { isParameterProperty, nodeKey, type Inventory } from "./inventory.ts";
 import { byPosition, positionKey, renderPosition, type Position } from "./position.ts";
 import type { ProjectView } from "./session.ts";
 import { signatureOf } from "./signatures.ts";
 import {
+  isPartKind,
   SUPPRESSION_WITHOUT_REASON,
   SuppressionError,
   siteText,
@@ -167,34 +173,63 @@ interface Declared {
 }
 
 /**
+ * What one placement binds: the declaration a record for a code that reports a
+ * declaration binds, and the one a record for a part kind binds, which holds the part.
+ * A parameter property's field is the first and its class the second; a constructor's
+ * plain parameter binds only the second, because a constructor is no declaration.
+ */
+interface Binding {
+  readonly declared: Declared | undefined;
+  readonly part: Declared;
+}
+
+function bindingKey(one: Binding): string {
+  return `${one.declared?.id ?? ""}\u0000${one.part.id}`;
+}
+
+/**
  * The declarations of one file by the line each begins on, the line of its first token: a
  * decorator, a modifier or the keyword. A variable's first token is its statement's
  * keyword, and a variable written on a later line of the statement also begins there. A
- * function also begins, for a directive, on the line of each of its parameters.
+ * function also begins, for a directive, on the line of each of its parameters, and a
+ * class, for a part kind, on the lines of its constructor and its constructor's parameters.
  */
 function declarationLines(
   file: SourceFile,
   held: Inventory,
   symbols: ReadonlyMap<string, Declared>,
-): ReadonlyMap<number, readonly Declared[]> {
-  const below = new Map<number, Declared[]>();
-  const add = (offset: number, one: Declared): void => {
+): ReadonlyMap<number, readonly Binding[]> {
+  const below = new Map<number, Binding[]>();
+  const add = (offset: number, one: Binding): void => {
     const line = file.getLineAndCharacterOfPosition(tokenStart(file.text, offset)).line + 1;
     const at = below.get(line) ?? [];
-    if (!at.some((known) => known.id === one.id)) {
+    if (!at.some((known) => bindingKey(known) === bindingKey(one))) {
       at.push(one);
     }
     below.set(line, at);
   };
-  const visit = (node: Node): void => {
+  const declaredAt = (node: Node): Declared | undefined => {
     const id = held.declarations.get(nodeKey(file, node));
-    const one = id === undefined ? undefined : symbols.get(id);
+    return id === undefined ? undefined : symbols.get(id);
+  };
+  const visit = (node: Node): void => {
+    const one = declaredAt(node);
+    const owner = isConstructorDeclaration(node) ? declaredAt(node.parent) : undefined;
+    if (owner !== undefined && isConstructorDeclaration(node)) {
+      for (const at of [node, ...node.parameters.filter((one) => !isParameterProperty(one))]) {
+        add(at.pos, { declared: undefined, part: owner });
+      }
+    }
+    const holder =
+      one !== undefined && isParameterProperty(node) ? declaredAt(node.parent.parent) : one;
+    if (one !== undefined && holder !== undefined) {
+      add(node.pos, { declared: one, part: holder });
+    }
     if (one !== undefined) {
-      add(node.pos, one);
       // A parameter on a later line of a wrapped signature takes its directive on the
       // line above it, inside the parameter list, and the directive binds the function.
       for (const parameter of signatureOf(node)?.parameters ?? []) {
-        add(parameter.pos, one);
+        add(parameter.pos, { declared: one, part: one });
       }
       const list = node.parent;
       if (
@@ -202,7 +237,7 @@ function declarationLines(
         list.kind === SyntaxKind.VariableDeclarationList &&
         list.parent.kind === SyntaxKind.VariableStatement
       ) {
-        add(list.parent.pos, one);
+        add(list.parent.pos, { declared: one, part: one });
       }
     }
     node.forEachChild(visit);
@@ -225,7 +260,7 @@ export interface InlineDirective {
   readonly site: Position;
   readonly text: string;
   readonly directive: Directive;
-  readonly bound: Declared[];
+  readonly bound: Binding[];
 }
 
 /**
@@ -282,7 +317,7 @@ export function inlineSuppressions(
       continue;
     }
     for (const one of written.bound) {
-      if (!known.bound.some((other) => other.id === one.id)) {
+      if (!known.bound.some((other) => bindingKey(other) === bindingKey(one))) {
         known.bound.push(one);
       }
     }
@@ -311,8 +346,15 @@ export function inlineSuppressions(
         }
         break;
       case "directive": {
-        const declared = [...bound].sort((a, b) => byPosition(a.position, b.position));
         for (const code of directive.codes) {
+          const targets = new Map<string, Declared>();
+          for (const one of bound) {
+            const target = isPartKind(code) ? one.part : one.declared;
+            if (target !== undefined) {
+              targets.set(target.id, target);
+            }
+          }
+          const declared = [...targets.values()].sort((a, b) => byPosition(a.position, b.position));
           const base = {
             code,
             path: site.path,

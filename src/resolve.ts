@@ -19,6 +19,7 @@ import {
   type Sort,
   type Source,
   type TargetKind,
+  type TargetKindSetting,
   type TemplateDelimiters,
 } from "./config.ts";
 import { CONVENTION_ROWS } from "./convention-rows.ts";
@@ -57,9 +58,9 @@ const PROJECT_MEMBER = "project";
 
 /**
  * One segment of a project path: not empty, not `.` or `..`, and holding no
- * solidus, backslash or line break.
+ * solidus or control character.
  */
-const PROJECT_SEGMENT = String.raw`(?:[^/\\.\r\n][^/\\\r\n]*|\.[^/\\.\r\n][^/\\\r\n]*|\.\.[^/\\\r\n]+)`;
+const PROJECT_SEGMENT = String.raw`(?:[^/.\x00-\x1f\x7f][^/\x00-\x1f\x7f]*|\.[^/.\x00-\x1f\x7f][^/\x00-\x1f\x7f]*|\.\.[^/\x00-\x1f\x7f]+)`;
 
 /**
  * A project path: segments joined by a solidus, so the path is relative, below
@@ -85,7 +86,7 @@ const CASCADES: readonly Cascade[] = ["roots", "full"];
  */
 interface Doc {
   readonly contractVersion: string | undefined;
-  readonly targetKind: TargetKind | undefined;
+  readonly targetKind: TargetKindSetting | undefined;
   readonly languages: readonly Language[] | undefined;
   readonly minConfidence: Confidence | undefined;
   readonly generatedFiles: GeneratedFiles | undefined;
@@ -281,6 +282,55 @@ function readStrings<T extends string>(
   return value as readonly T[];
 }
 
+/**
+ * The target kind, a string or an object naming every language. The walk has
+ * already refused an undeclared member, so an object is refused for the first
+ * language it leaves out, then for the first language whose value is refused,
+ * each in the vocabulary's language order.
+ */
+function readTargetKind(
+  target: Record<string, unknown> | undefined,
+  label: string,
+): TargetKindSetting | undefined {
+  const value = member(target, "kind");
+  const perLanguage = `an object naming the kind of each of ${spell(LANGUAGES)}`;
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value === "string") {
+    if (!(TARGET_KINDS as readonly string[]).includes(value)) {
+      throw malformed(
+        label,
+        "target.kind",
+        `${JSON.stringify(value)} is not one of ${spell(TARGET_KINDS)}, nor ${perLanguage}`,
+      );
+    }
+    return value as TargetKind;
+  }
+  if (!isRecord(value)) {
+    throw malformed(
+      label,
+      "target.kind",
+      `${JSON.stringify(value)} is neither one of ${spell(TARGET_KINDS)} nor ${perLanguage}`,
+    );
+  }
+  const missing = LANGUAGES.find((language) => !Object.hasOwn(value, language));
+  if (missing !== undefined) {
+    throw malformed(label, `target.kind.${missing}`, `is not set, and ${perLanguage} names each`);
+  }
+  for (const language of LANGUAGES) {
+    const kind = value[language];
+    if (typeof kind !== "string" || !(TARGET_KINDS as readonly string[]).includes(kind)) {
+      throw malformed(
+        label,
+        `target.kind.${language}`,
+        `${JSON.stringify(kind)} is not one of ${spell(TARGET_KINDS)}`,
+      );
+    }
+  }
+  return { go: value["go"] as TargetKind, ts: value["ts"] as TargetKind };
+}
+
 /** A component file's extension: a full stop followed by letters and digits. */
 const COMPONENT_EXTENSION = /^\.[A-Za-z0-9]+$/u;
 
@@ -355,7 +405,7 @@ function readProject(
       label,
       path,
       `${JSON.stringify(project)} is not a path below the target root: segments joined by /, ` +
-        "none empty, . or .., and no backslash or line break",
+        "none empty, . or .., and no control character",
     );
   }
   return { shape: "project", id, project };
@@ -795,7 +845,7 @@ function readDoc(value: unknown, label: string): Doc {
 
   return {
     contractVersion,
-    targetKind: readEnum(target, "kind", "target.kind", label, TARGET_KINDS),
+    targetKind: readTargetKind(target, label),
     languages: readStrings(analysis, "languages", "analysis.languages", label, 0, LANGUAGES),
     minConfidence: readEnum(
       analysis,
@@ -1052,7 +1102,7 @@ function settleAll(inputs: Inputs): { config: Config; provenance: Map<string, Or
 
   const config: Config = {
     contractVersion: at("contract_version", defaults.contractVersion, (doc) => doc.contractVersion),
-    targetKind: at<TargetKind | "">("target.kind", "", (doc) => doc.targetKind),
+    targetKind: at<TargetKindSetting | "">("target.kind", "", (doc) => doc.targetKind),
     analysis: {
       languages: at("analysis.languages", defaults.analysis.languages, (doc) => doc.languages),
       minConfidence: at(

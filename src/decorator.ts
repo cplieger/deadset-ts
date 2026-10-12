@@ -14,7 +14,12 @@
 import type { Node } from "@typescript/native/ast";
 import { decoratorsOf, spelledDecorator } from "./calls.ts";
 import type { DetectorInput, Evidence } from "./exempt.ts";
-import { nodeKey, type InventorySymbol, type SymbolKind } from "./inventory.ts";
+import {
+  isParameterProperty,
+  nodeKey,
+  type InventorySymbol,
+  type SymbolKind,
+} from "./inventory.ts";
 import { renderPosition } from "./position.ts";
 
 /** The kinds of declaration a decorator is attached to and holds back. */
@@ -44,7 +49,8 @@ export function decorator<Brand>(input: DetectorInput<Brand>): readonly Evidence
     const visit = (node: Node): void => {
       const id = held.declarations.get(nodeKey(file, node));
       const symbol = id === undefined ? undefined : byId.get(id);
-      if (symbol !== undefined && DECORATED.has(symbol.kind)) {
+      // A parameter property's decorator is attached to its parameter, and to no member.
+      if (symbol !== undefined && DECORATED.has(symbol.kind) && !isParameterProperty(node)) {
         for (const attached of decoratorsOf(node)) {
           const detail = `decorated by ${spelledDecorator(attached)}`;
           const site = renderPosition(file, targetRoot, attached.getStart());

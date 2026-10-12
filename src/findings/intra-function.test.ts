@@ -362,6 +362,124 @@ describe("the intra-function family", () => {
   );
 });
 
+describe("a constructor's parameters", () => {
+  it(
+    "report an unread plain parameter as a part of the class, unless a value use, a decorator or a stub fixes the constructor, an implements clause being none",
+    () => {
+      const found = partsOf(
+        {
+          "package.json": '{ "name": "@example/parts", "private": true, "type": "module" }\n',
+          "src/main.ts": [
+            "function tag(value: unknown, context: ClassDecoratorContext): void {",
+            "  console.log(value, context.name);",
+            "}",
+            "",
+            "class Typed {",
+            "  constructor(used: number, unused: string) {",
+            "    console.log(used);",
+            "  }",
+            "}",
+            "",
+            "class Base {",
+            "  constructor(spare: number) {",
+            '    console.log("base");',
+            "  }",
+            "}",
+            "",
+            "class Derived extends Base {",
+            "  constructor() {",
+            "    super(1);",
+            "  }",
+            "}",
+            "",
+            "class Valued {",
+            "  constructor(spare: number) {",
+            '    console.log("valued");',
+            "  }",
+            "}",
+            "",
+            "@tag",
+            "class Decorated {",
+            "  constructor(spare: number) {",
+            '    console.log("decorated");',
+            "  }",
+            "}",
+            "",
+            "class Stub {",
+            "  constructor(spare: number) {}",
+            "}",
+            "",
+            "class Held {",
+            "  constructor(",
+            "    private readonly kept: number,",
+            "    spare: number,",
+            "  ) {",
+            "    console.log(this.kept);",
+            "  }",
+            "}",
+            "",
+            'const typed: Typed = new Typed(1, "a");',
+            "const make = Valued;",
+            "console.log(typed, new Derived(), new make(1), new Decorated(1), new Stub(1));",
+            "console.log(new Held(1, 2));",
+            "",
+            "class Shape {",
+            "  constructor(spare: number) {",
+            '    console.log("shape");',
+            "  }",
+            "}",
+            "",
+            "class Square implements Shape {}",
+            "console.log(new Shape(1), new Square());",
+            "",
+          ].join("\n"),
+        },
+        ENTRY,
+      );
+
+      expect(
+        found.map(({ code, name, line, finding }) => ({
+          code,
+          name,
+          line,
+          kind: finding.symbol.kind,
+          ref: finding.symbol.ref,
+        })),
+      ).toEqual([
+        {
+          code: "DS1801",
+          name: "unused",
+          line: 6,
+          kind: "parameter",
+          ref: "ts://@example/parts/src/main.ts#Typed",
+        },
+        {
+          code: "DS1801",
+          name: "spare",
+          line: 12,
+          kind: "parameter",
+          ref: "ts://@example/parts/src/main.ts#Base",
+        },
+        {
+          code: "DS1801",
+          name: "spare",
+          line: 43,
+          kind: "parameter",
+          ref: "ts://@example/parts/src/main.ts#Held",
+        },
+        {
+          code: "DS1801",
+          name: "spare",
+          line: 55,
+          kind: "parameter",
+          ref: "ts://@example/parts/src/main.ts#Shape",
+        },
+      ]);
+    },
+    LOAD_TIMEOUT,
+  );
+});
+
 describe("a result every call site awaits as a statement", () => {
   it(
     "is used where it is a promise, which the caller sequences on, and discarded where it is not",

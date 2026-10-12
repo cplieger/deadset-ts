@@ -1,19 +1,12 @@
 import { ConfigError } from "./config.ts";
 
 /**
- * How one node of the closed key list is written.
- *
- * - `leaf` is a setting: a scalar, or an array of scalars.
- * - `section` is an object whose member names the key list declares and which
- *   holds no value of its own.
- * - `map` is an object whose member names the key list leaves open, its values
- *   scalars: the severity and provenance objects.
- * - `list` is an array whose entries are objects with declared members. Where
- *   the key list admits an entry in more than one shape, the members are every
- *   shape's together, and which of them one entry may hold is the decoder's
- *   refusal, not the walk's.
- * - `object` is one setting written as an object: its member names are declared
- *   and a source supplies the object whole.
+ * How one node of the closed key list is written: `leaf`, a scalar or an array of
+ * scalars; `section`, an object of declared members and no value of its own; `map`, an
+ * object of open member names and scalar values (severity, provenance); `list`, an
+ * array of objects holding every admitted shape's members; `object`, one setting
+ * written as an object of declared members and supplied whole. Which shape an entry or
+ * a value takes, where the key list admits several, is the decoder's refusal.
  */
 type KeyKind = "leaf" | "section" | "map" | "list" | "object";
 
@@ -46,7 +39,10 @@ export const SCHEMA_ROOT: KeyNode = {
   kind: "section",
   members: {
     contract_version: leaf,
-    target: { kind: "section", members: { kind: leaf } },
+    target: {
+      kind: "section",
+      members: { kind: { kind: "object", members: { go: leaf, ts: leaf } } },
+    },
     analysis: {
       kind: "section",
       members: {

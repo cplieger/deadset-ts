@@ -138,7 +138,7 @@ interface SetupFailureExpectation {
 interface ExpectationFile {
   readonly name: string;
   readonly languages: readonly string[];
-  readonly target_kind: string;
+  readonly target_kind: string | Readonly<Record<string, string>>;
   readonly min_confidence?: string;
   readonly consumer_tests?: string;
   readonly severity?: Readonly<Record<string, string>>;
@@ -809,8 +809,12 @@ function suppressionPhase(
       suppressed: findingsAt(second.report.findings, sites.get(row.symbol)).every(
         (one) => one.code !== entry.code,
       ),
+      // Another entry naming the same code and symbol under another path is another record.
       stale: second.report.stale_suppressions.some(
-        (one) => one.entry.code === entry.code && one.entry.symbol === entry.symbol,
+        (one) =>
+          one.entry.code === entry.code &&
+          one.entry.symbol === entry.symbol &&
+          one.entry.path === entry.path,
       ),
     };
   }

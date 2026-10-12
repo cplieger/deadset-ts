@@ -27,10 +27,11 @@ const TS_COMPUTED = String.raw`\[[^\]\r\n\t ]+\]`;
 const TS_HEAD = `(?:${TS_IDENT}|${TS_QUOTED})`;
 const TS_MEMBER = `(?:${TS_IDENT}|#${TS_IDENT}|${TS_QUOTED}|${TS_COMPUTED})`;
 const TS_PACKAGE = String.raw`(?:@[A-Za-z0-9._-]+/)?[A-Za-z0-9._-]+`;
-const TS_FILE = String.raw`(?:[^/#\r\n]+/)*[^/#\r\n]+(?:(?:\.d)?\.[mc]?ts|\.tsx|\.[mc]?js|\.jsx)`;
+const TS_DIRS = String.raw`(?:[^/#\r\n]+/)*`;
+const TS_FILE = String.raw`${TS_DIRS}[^/#\r\n]+(?:(?:\.d)?\.[mc]?ts|\.tsx|\.[mc]?js|\.jsx)`;
 
 const SCOPE = `${PREFIX}${TS_PACKAGE}/${TS_FILE}`;
-const MANIFEST_SCOPE = `${PREFIX}${TS_PACKAGE}/package\\.json`;
+const MANIFEST_SCOPE = `${PREFIX}${TS_PACKAGE}/${TS_DIRS}package\\.json`;
 
 /**
  * One expression per form the grammar defines, each anchored and each the whole of

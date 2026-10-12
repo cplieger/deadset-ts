@@ -19,7 +19,7 @@ import type { StaleSuppression } from "./findings/self-check.ts";
 import type { TestFileRule } from "./references.ts";
 
 /** The version of the report schema this analyzer writes a report to. */
-const SCHEMA_VERSION = "8.1.0";
+const SCHEMA_VERSION = "8.2.0";
 
 /** Every report schema version this analyzer reads: the one the Contract it implements admits. */
 export const SCHEMA_VERSIONS_ACCEPTED: readonly string[] = [SCHEMA_VERSION];

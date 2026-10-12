@@ -96,7 +96,7 @@ An exemption holds a declaration back from the report when something the compile
 | `interface-satisfaction` | A member an interface requires of a class whose value reaches that interface, unless the member only implements interface methods nothing calls |
 | `enum-group` | Every member of an enum whose value arrives by conversion, such as a number asserted to the enum type, rather than by a member's name |
 | `decorator` | A decorated member, and every member of a decorated class |
-| `injection-container` | A decorated property of a class a dependency-injection container constructs: one passed to a call `ts.injection_registrations` names, or one with a decorated constructor parameter |
+| `injection-container` | A decorated property, and every parameter property, of a class a dependency-injection container constructs: one passed to a call `ts.injection_registrations` names, or one with a decorated constructor parameter |
 | `framework-lifecycle` | A member a `ts.lifecycle_contracts` entry lists, on a class the entry's decorator, call or base class makes a component |
 | `serialization-contract` | The properties of a class whose values reach `JSON.stringify` or a `ts.serializers` declaration, and its `toJSON` and `toString` when a value reaches an `unknown` or `any` parameter outside the analysis |
 | `generated-file` | Every declaration in a file marked `@generated` or `Code generated ... DO NOT EDIT.`, or below a directory an applied convention row names as generated |

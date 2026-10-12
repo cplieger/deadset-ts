@@ -14,7 +14,7 @@ import {
   isNamespaceImport,
 } from "@typescript/native/ast";
 import { SymbolFlags, type Symbol as TSSymbol } from "@typescript/native/sync";
-import { declarationsByName, nodeKey, type Inventory } from "./inventory.ts";
+import { declarationsByName, isParameterProperty, nodeKey, type Inventory } from "./inventory.ts";
 import { UNANSWERED, type Answer } from "./query.ts";
 import type { ProjectView } from "./session.ts";
 
@@ -76,7 +76,12 @@ export function aliasChains<Brand>(project: ProjectView<Brand>, held: Inventory)
       const node = project.declarationAt(handle)?.node;
       const id =
         node === undefined ? undefined : held.declarations.get(nodeKey(node.getSourceFile(), node));
-      if (id !== undefined && !ids.includes(id)) {
+      // A parameter property's node declares the parameter too, whose reads are no member's.
+      const parameter =
+        node !== undefined &&
+        isParameterProperty(node) &&
+        (symbol.flags & SymbolFlags.Property) === 0;
+      if (id !== undefined && !parameter && !ids.includes(id)) {
         ids.push(id);
       }
     }

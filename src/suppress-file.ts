@@ -303,11 +303,12 @@ interface KeptRow {
 }
 
 /**
- * The rows of the other language's scheme that the baseline document `text` holds, in
- * document order and as written, which a write keeps. A document that is not a baseline,
- * or a row in a shape no record takes, is refused rather than dropped.
+ * The rows of a scheme other than `own` that the baseline document `text` holds, in
+ * document order and as written, which a write of `own`'s rows keeps. A document that is
+ * not a baseline, or a row in a shape no record takes, of any scheme, is refused rather
+ * than dropped.
  */
-export function otherSchemeRows(text: string): readonly KeptRow[] {
+export function otherSchemeRows(text: string, own: string = OWN_SCHEME): readonly KeptRow[] {
   const refuse = (detail: string): never => {
     throw new Error(
       `${BASELINE_FILE} cannot be rewritten keeping the other language's rows: ${detail}`,
@@ -331,7 +332,7 @@ export function otherSchemeRows(text: string): readonly KeptRow[] {
     }
     // readRecord has checked every member is a string and the code and symbol are present.
     const { code, symbol, path, reason } = value as Readonly<Record<string, string>>;
-    if (code === undefined || symbol === undefined || symbol.startsWith(OWN_SCHEME)) {
+    if (code === undefined || symbol === undefined || symbol.startsWith(own)) {
       return [];
     }
     return [
@@ -345,10 +346,37 @@ export function otherSchemeRows(text: string): readonly KeptRow[] {
   });
 }
 
+/** The reference schemes in the order a baseline holds their rows. */
+const SCHEME_ORDER: readonly string[] = ["go://", "ts://"];
+
+function schemeRank(row: { readonly symbol: string }): number {
+  return SCHEME_ORDER.findIndex((scheme) => row.symbol.startsWith(scheme));
+}
+
+/** A surrogate half no other completes, which Go's encoding/json decodes as U+FFFD. */
+const LONE_SURROGATE = /[\ud800-\udfff]/gu;
+
+/** One string with every lone surrogate written as U+FFFD. */
+function wellFormed(text: string): string {
+  return text.replace(LONE_SURROGATE, "\ufffd");
+}
+
 /**
- * A baseline holding one row per finding, in the order given, which is the report's, after
- * the other language's rows `kept`, so two analyzers writing one document in either order
- * write the same bytes. Every recorded row carries the provenance as its reason. A finding
+ * The pieces of a JSON document with U+2028 and U+2029 escaped, as Go's encoding/json
+ * writes them. Neither is JSON syntax, so each stands inside a string.
+ */
+function* separatorsEscaped(pieces: Iterable<string>): Generator<string, void, undefined> {
+  for (const piece of pieces) {
+    yield piece.replaceAll("\u2028", "\\u2028").replaceAll("\u2029", "\\u2029");
+  }
+}
+
+/**
+ * A baseline holding one row per finding, in the order given, which is the report's, and
+ * the other language's rows `kept`, Go's rows ahead of TypeScript's and each scheme's in
+ * the order given, so two analyzers writing one document in either order write the same
+ * bytes, in the form grammar/suppression.md fixes. Every recorded row carries the
+ * provenance as its reason. A finding
  * missing a value a row needs, and an identity missing its name or version, are refused
  * rather than written, because the grammar requires a reason on every row.
  */
@@ -371,5 +399,16 @@ export function writeBaseline(
     }
     return { code: found.code, symbol: found.symbol, path: found.path, reason };
   });
-  return jsonChunks({ description: BASELINE_DESCRIPTION, baseline: [...kept, ...baseline] }, 2);
+  const rows = [...kept, ...baseline]
+    .sort((a, b) => schemeRank(a) - schemeRank(b))
+    .map((row: KeptRow): KeptRow => {
+      const { code, symbol, path, reason } = row;
+      return {
+        code: wellFormed(code),
+        symbol: wellFormed(symbol),
+        ...(path === undefined ? {} : { path: wellFormed(path) }),
+        ...(reason === undefined ? {} : { reason: wellFormed(reason) }),
+      };
+    });
+  return separatorsEscaped(jsonChunks({ description: BASELINE_DESCRIPTION, baseline: rows }, 2));
 }

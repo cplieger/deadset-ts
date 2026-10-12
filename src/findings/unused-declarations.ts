@@ -78,12 +78,12 @@ function codeOf(judged: Judged): string | undefined {
   ) {
     return undefined;
   }
-  if (candidate.unreferencedTest) {
-    return unreferencedCode(symbol);
-  }
   const referenced = candidate.productionRefs + candidate.testRefs > 0;
   if (symbol.kind === "enum-member" && !referenced) {
     return undefined;
+  }
+  if (candidate.unreferencedTest) {
+    return unreferencedCode(symbol);
   }
   if (candidate.heldByTests === candidate.id) {
     return "DS1004";
