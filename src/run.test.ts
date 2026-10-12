@@ -598,6 +598,20 @@ describe("print-projects", () => {
     );
   });
 
+  it("substitutes what a paths alias's star matches as written, a dollar sign included", () => {
+    const target = matrixTree({
+      "app/tsconfig.json":
+        '{ "compilerOptions": { "strict": true, "noEmit": true, "module": "esnext", "moduleResolution": "bundler", "paths": { "@/*": ["./*"] } }, "include": ["*.ts"] }\n',
+      "app/public/$&.png": "",
+      "app/main.ts": 'import logo from "@/public/$&.png";\nexport const shown = logo;\n',
+    });
+
+    const got = invoke(["print-projects", `--target=${join(target, "app")}`]);
+
+    expect(got.code, got.err).toBe(0);
+    expect(got.out).toBe("tsconfig.json\n");
+  });
+
   it("reads an import a paths alias maps to a directory, rather than a file, as a setup failure", () => {
     const target = matrixTree({
       "app/tsconfig.json":

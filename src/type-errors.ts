@@ -125,6 +125,15 @@ function mappedBy(key: string, specifier: string): string | undefined {
 }
 
 /**
+ * One `paths` target, its first `*` replaced by `star` taken literally, as the compiler does:
+ * https://github.com/microsoft/typescript-go/blob/89d5d5b2849a0db0957065889ca58536fa6d2e4a/internal/module/resolver.go#L1282
+ */
+function substituted(target: string, star: string): string {
+  const at = target.indexOf("*");
+  return at < 0 ? target : target.slice(0, at) + star + target.slice(at + 1);
+}
+
+/**
  * Whether a path names something on disk, as written or with any extension; under
  * `fileOnly`, only a file counts.
  */
@@ -214,7 +223,7 @@ function expectedModule(
     const star = mappedBy(key, specifier);
     return star === undefined
       ? []
-      : targets.map((target) => resolvePath(context.paths.base, target.replace("*", star)));
+      : targets.map((target) => resolvePath(context.paths.base, substituted(target, star)));
   });
   const name = packageOfSpecifier(specifier);
   // The compiler looks up in `node_modules` what `paths` does not resolve, so the error
