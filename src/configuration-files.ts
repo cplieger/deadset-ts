@@ -124,6 +124,7 @@ const CONFIG_FLAGS: ReadonlySet<string> = new Set(["--config", "-c"]);
 const MODULE_EXTENSIONS = [".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"] as const;
 
 /** The characters that end a word outside quotes and separate nothing: blanks. */
+// Stryker disable next-line Regex: its \v to \V mutant is no valid escape under the u flag, so the whole module fails to parse
 const BLANK = /[ \t\r\f\v]/u;
 
 /** The characters that end a word outside quotes and begin an operator: newline included. */
