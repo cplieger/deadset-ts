@@ -320,13 +320,13 @@ describe("the members an assignment target reads", () => {
     ).toEqual(["3 Other.value by-name", "3 Row.value by-name"]);
   });
 
-  it("cost no element lookup where the iterated value is no type reference", () => {
+  it("cost only the iteration protocol's lookups where the iterated value is no type reference", () => {
     const { reads, cost } = patternReads(
       'export function count(): number {\n  let length = 0;\n  for ({ length } of "ab") {\n    console.log(length);\n  }\n  return length;\n}',
     );
 
     expect(reads).toEqual([]);
-    expect(cost).toMatchObject({ patternBatches: 1, patternLookups: 0 });
+    expect(cost).toMatchObject({ patternBatches: 1, patternLookups: 14 });
   });
 
   it("cost no non-nullable lookup where the value is no union, and one where it is", () => {
