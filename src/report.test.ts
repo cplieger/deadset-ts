@@ -279,6 +279,226 @@ describe("the report", () => {
   });
 });
 
+function withoutRelation(one: CompletedFinding): CompletedFinding {
+  const { livenessRelation: _relation, ...rest } = one;
+  return rest;
+}
+
+describe("a finding's details and component", () => {
+  it("carries each member a code sets, in the schema's order, and no member it leaves unset", () => {
+    const report = buildReport(
+      input(
+        result([
+          finding("src/a.ts", 1, 1, {
+            details: {
+              narrowerVisibility: "file",
+              dependencyClass: "dev-dependency",
+              mechanism: "ignore",
+              entry: { code: "DS1001" },
+              overlap: ["no-unused-vars"],
+            },
+          }),
+          withoutRelation(
+            finding("src/a.ts", 2, 1, {
+              component: {
+                id: "deadset-ts/c-700",
+                root: true,
+                symbolCount: 1,
+                deletableLines: 1,
+                members: [
+                  {
+                    ref: "ts://@example/app/src/a.ts#f2x1",
+                    name: "f2x1",
+                    position: { path: "src/a.ts", line: 2, column: 1, endLine: 4 },
+                  },
+                ],
+              },
+            }),
+          ),
+        ]),
+      ),
+    );
+    const [detailed, listed] = report.findings;
+
+    expect(detailed?.details).toStrictEqual({
+      narrower_visibility: "file",
+      dependency_class: "dev-dependency",
+      mechanism: "ignore",
+      entry: { code: "DS1001" },
+      overlap: ["no-unused-vars"],
+    });
+    expect(Object.keys(detailed?.details ?? {})).toEqual([
+      "narrower_visibility",
+      "dependency_class",
+      "mechanism",
+      "entry",
+      "overlap",
+    ]);
+    expect(detailed?.liveness_relation).toBe("reference-counting");
+    expect(listed?.details).toStrictEqual({});
+    expect(Object.keys(listed ?? {})).not.toContain("liveness_relation");
+    expect(listed?.component.members).toEqual([
+      {
+        ref: "ts://@example/app/src/a.ts#f2x1",
+        name: "f2x1",
+        position: { path: "src/a.ts", line: 2, column: 1, end_line: 4 },
+      },
+    ]);
+  });
+
+  it("names a refused entry's symbol, path and reason only where the entry writes one", () => {
+    const report = buildReport(
+      input(
+        result([
+          finding("src/a.ts", 1, 1, {
+            details: {
+              mechanism: "baseline",
+              entry: { code: "DS1001", symbol: "ts://@example/app/src/a.ts#a" },
+            },
+          }),
+          finding("src/a.ts", 2, 1, {
+            details: { mechanism: "ignore", entry: { code: "DS1002", path: "src/a.ts" } },
+          }),
+          finding("src/a.ts", 3, 1, {
+            details: { mechanism: "ignore", entry: { code: "DS1003", reason: "kept" } },
+          }),
+        ]),
+      ),
+    );
+
+    expect(report.findings.map((one) => one.details.entry)).toStrictEqual([
+      { code: "DS1001", symbol: "ts://@example/app/src/a.ts#a" },
+      { code: "DS1002", path: "src/a.ts" },
+      { code: "DS1003", reason: "kept" },
+    ]);
+  });
+
+  it("names a stale entry's symbol only where the entry writes one", () => {
+    const entry = { code: "DS1001", path: "src/a.ts", reason: "kept for a caller" };
+    const report = buildReport(
+      input(result([], [{ ...stale("src/a.ts", 3, "ts://@example/app/src/a.ts#gone"), entry }])),
+    );
+
+    expect(report.stale_suppressions[0]?.entry).toStrictEqual(entry);
+  });
+});
+
+describe("the report's other arrays", () => {
+  it("orders the loaded consumers by identity, then by path", () => {
+    const report = buildReport(
+      input(result([]), {
+        loaded: [
+          { id: "@example/web", path: "a" },
+          { id: "@example/cli", path: "z" },
+          { id: "@example/cli", path: "b" },
+        ],
+      }),
+    );
+
+    expect(report.consumers.loaded.map((one) => `${one.id} ${one.path}`)).toEqual([
+      "@example/cli b",
+      "@example/cli z",
+      "@example/web a",
+    ]);
+  });
+
+  it("orders the configurations it could not build by identifier", () => {
+    const report = buildReport(
+      input(result([]), {
+        notBuilt: [
+          { id: "web", project: "web/tsconfig.json", error: "no inputs" },
+          { id: "node", project: "tsconfig.node.json", error: "no inputs" },
+        ],
+      }),
+    );
+
+    expect(report.configurations_not_built.map((one) => one.id)).toEqual(["node", "web"]);
+  });
+
+  it("orders edge evaluations by edge, then side, bytewise and not by their encodings", () => {
+    const evaluation = (edge: string, side: "provides" | "used_by") => ({
+      edge,
+      side,
+      symbol: "ts://@example/app/src/a.ts#a",
+      state: "live" as const,
+    });
+    const report = buildReport(
+      input({
+        ...result([]),
+        edgeEvaluations: [
+          evaluation("cli tool", "provides"),
+          evaluation("cli", "used_by"),
+          evaluation("cli", "provides"),
+        ],
+      }),
+    );
+
+    expect(report.edge_evaluations.map((one) => `${one.edge}/${one.side}`)).toEqual([
+      "cli/provides",
+      "cli/used_by",
+      "cli tool/provides",
+    ]);
+  });
+
+  it("orders the test-file rules by rule, then by the count each matched", () => {
+    const report = buildReport(
+      input(result([]), {
+        testFileRules: [
+          { rule: "vitest", matched: 1 },
+          { rule: "jest", matched: 9 },
+          { rule: "jest", matched: 2 },
+          { rule: "jest", matched: 5 },
+        ],
+      }),
+    );
+
+    expect(report.test_file_rules.map((one) => `${one.rule} ${String(one.matched)}`)).toEqual([
+      "jest 2",
+      "jest 5",
+      "jest 9",
+      "vitest 1",
+    ]);
+  });
+
+  it("orders the type-error skips by path, then by line as a number, each skip once", () => {
+    const skip = (path: string, line: number) => ({ path, line, message: "Type error." });
+    const report = buildReport(
+      input(result([]), {
+        typeErrorSkips: [
+          skip("src/b.ts", 1),
+          skip("src/a.ts", 10),
+          skip("src/a.ts", 9),
+          skip("src/a.ts", 9),
+          skip("src/a.ts", 30),
+        ],
+      }),
+    );
+
+    expect(report.type_error_skips.map((one) => `${one.path}:${String(one.line)}`)).toEqual([
+      "src/a.ts:9",
+      "src/a.ts:10",
+      "src/a.ts:30",
+      "src/b.ts:1",
+    ]);
+  });
+
+  it("orders the unanswered counts by configuration, then by their encodings", () => {
+    const report = buildReport(
+      input(result([]), {
+        unanswered: [
+          { configuration: "web", questions: 1, declarations: 1 },
+          { configuration: "node", questions: 3, declarations: 1 },
+          { configuration: "node", questions: 2, declarations: 1 },
+        ],
+      }),
+    );
+
+    expect(
+      report.unanswered_questions.map((one) => `${one.configuration} ${String(one.questions)}`),
+    ).toEqual(["node 2", "node 3", "web 1"]);
+  });
+});
+
 describe("the size order", () => {
   it("puts the larger deletion first, then the larger subject, then the canonical key", () => {
     const component = (deletableLines: number) => ({

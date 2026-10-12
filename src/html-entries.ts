@@ -131,9 +131,6 @@ function manifestDirectory(host: Host, root: string, dir: string): string {
     if (host.kindOf(joinPath(at, "package.json")) === "file") {
       return at;
     }
-    if (at === root) {
-      break;
-    }
   }
   return root;
 }

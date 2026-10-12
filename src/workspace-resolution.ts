@@ -45,7 +45,6 @@ const DEPENDENCY_MEMBERS = [
 ] as const;
 
 const SOURCE = /(?<!\.d)\.(?:[mc]?ts|tsx)$/u;
-const OUTPUT = /(?:\.d\.[mc]?ts|\.[mc]?js|\.jsx)$/u;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -70,7 +69,7 @@ export function packageNameOf(specifier: string): string | undefined {
 }
 
 function inside(dir: string, path: string): boolean {
-  return path === dir || relativePath(dir, path) !== undefined;
+  return relativePath(dir, path) !== undefined;
 }
 
 /** The `exports` entry one subpath selects, with what a pattern's `*` matched. */
@@ -274,12 +273,10 @@ export function workspaceResolver(host: Host, workspace: Workspace): WorkspaceRe
         return found;
       }
     }
-    if (OUTPUT.test(path)) {
-      const beside = emittedFrom(path, { sourceDirs: [] });
-      const found = beside.find((candidate) => host.kindOf(candidate) === "file");
-      if (found !== undefined) {
-        return found;
-      }
+    const beside = emittedFrom(path, { sourceDirs: [] });
+    const found = beside.find((candidate) => host.kindOf(candidate) === "file");
+    if (found !== undefined) {
+      return found;
     }
     return compiled(member, path) && host.kindOf(path) === "file" ? path : undefined;
   };

@@ -7,6 +7,7 @@ import { writeProject } from "../../__test-helpers__/projects.ts";
 import type { Config } from "../config.ts";
 import type { CompletedFinding } from "../finding.ts";
 import { resolve } from "../resolve.ts";
+import type { Mode } from "../sweep.ts";
 import type { EmitterInput } from "./emitter.ts";
 import { EMITTERS } from "./emitters.ts";
 
@@ -53,10 +54,8 @@ function named(findings: readonly CompletedFinding[]): string[] {
 }
 
 describe("the unused-declarations emitter over an application", () => {
-  const input = sweepProject("unused-declarations");
-  const findings = family(input);
-
   it("is the committed golden table, finding for finding", async () => {
+    const findings = family(sweepProject("unused-declarations"));
     await expect(
       `${findings.map(line).join("\n")}\n`,
       "regenerate with `npx vitest --run src/findings/unused-declarations.test.ts -u` and review the diff",
@@ -64,6 +63,7 @@ describe("the unused-declarations emitter over an application", () => {
   });
 
   it("reports an exported and an unexported declaration nothing references, and neither when referenced", () => {
+    const findings = family(sweepProject("unused-declarations"));
     const reported = named(findings);
 
     expect(reported).toContain("DS1001 unusedExported");
@@ -75,6 +75,7 @@ describe("the unused-declarations emitter over an application", () => {
   });
 
   it("reports a declaration only dead code references by reachability, in its root's component", () => {
+    const findings = family(sweepProject("unused-declarations"));
     const caller = findings.find((finding) => finding.symbol.name === "deadCaller");
     const callee = findings.find((finding) => finding.symbol.name === "calledOnlyByDead");
 
@@ -86,6 +87,7 @@ describe("the unused-declarations emitter over an application", () => {
   });
 
   it("reports a member of a live container, a private name at certain, and no member of a dead one", () => {
+    const findings = family(sweepProject("unused-declarations"));
     const reported = named(findings);
 
     expect(reported).toEqual(
@@ -109,10 +111,12 @@ describe("the unused-declarations emitter over an application", () => {
   });
 
   it("leaves an enumerated member nothing names to its own kind", () => {
+    const findings = family(sweepProject("unused-declarations"));
     expect(named(findings).filter((one) => one.includes("Color.Blue"))).toEqual([]);
   });
 
   it("reports a declaration only test files reference under the test-only code", () => {
+    const findings = family(sweepProject("unused-declarations"));
     const tested = findings.find((finding) => finding.symbol.name === "onlyTested");
 
     expect(tested?.code).toBe("DS1004");
@@ -121,6 +125,7 @@ describe("the unused-declarations emitter over an application", () => {
   });
 
   it("reports a test whose every target is dead, and not a test that references a live one", () => {
+    const findings = family(sweepProject("unused-declarations"));
     const reported = named(findings);
 
     expect(reported).toContain("DS1005 testOfDeadCode");
@@ -129,6 +134,7 @@ describe("the unused-declarations emitter over an application", () => {
   });
 
   it("reports a deprecated declaration with no production reference under the deprecated code alone", () => {
+    const findings = family(sweepProject("unused-declarations"));
     const reported = named(findings);
 
     expect(reported).toEqual(
@@ -147,6 +153,7 @@ describe("the unused-declarations emitter over an application", () => {
   });
 
   it("reports each declaration once", () => {
+    const findings = family(sweepProject("unused-declarations"));
     const subjects = findings.map((finding) => finding.symbol.ref);
 
     expect(new Set(subjects).size).toBe(subjects.length);
@@ -154,11 +161,9 @@ describe("the unused-declarations emitter over an application", () => {
 });
 
 describe("the dials over the unused-declarations family", () => {
-  const input = sweepProject("unused-declarations");
   const under = (document: string): string[] =>
-    named(family({ ...input, config: configOf(document) }));
+    named(family({ ...sweepProject("unused-declarations"), config: configOf(document) }));
   const application = (extra: string): string => `{ "target": { "kind": "application" }${extra} }`;
-  const everything = under(application(""));
 
   it("withholds a root at allow and every finding that falls with it", () => {
     const allowed = under(application(`, "severity": { "DS1001": "allow" }`));
@@ -170,6 +175,7 @@ describe("the dials over the unused-declarations family", () => {
   });
 
   it("withholds a finding that falls with a root alone", () => {
+    const everything = under(application(""));
     const allowed = under(application(`, "severity": { "DS1002": "allow" }`));
 
     expect(allowed).not.toContain("DS1002 calledOnlyByDead");
@@ -179,7 +185,7 @@ describe("the dials over the unused-declarations family", () => {
 
   it("reads a code's key before its family's", () => {
     const findings = family({
-      ...input,
+      ...sweepProject("unused-declarations"),
       config: configOf(application(`, "severity": { "DS10": "warn", "DS1003": "allow" }`)),
     });
 
@@ -188,17 +194,18 @@ describe("the dials over the unused-declarations family", () => {
   });
 
   it("gives every code its default severity where nothing names it", () => {
-    const findings = family({ ...input, config: configOf(application("")) });
+    const findings = family({
+      ...sweepProject("unused-declarations"),
+      config: configOf(application("")),
+    });
 
     expect(new Set(findings.map((finding) => finding.severity))).toEqual(new Set(["deny"]));
   });
 });
 
 describe("the unused-declarations emitter over a library", () => {
-  const input = sweepProject("unused-declarations-library");
-  const findings = family(input);
-
   it("is the committed golden table, finding for finding", async () => {
+    const findings = family(sweepProject("unused-declarations-library"));
     await expect(
       `${findings.map(line).join("\n")}\n`,
       "regenerate with `npx vitest --run src/findings/unused-declarations.test.ts -u` and review the diff",
@@ -207,7 +214,7 @@ describe("the unused-declarations emitter over a library", () => {
 
   it("classes the published API possible and a private member certain, with no consumer information", () => {
     const every = family({
-      ...input,
+      ...sweepProject("unused-declarations-library"),
       config: configOf(
         `{ "target": { "kind": "library" }, "analysis": { "min_confidence": "possible" } }`,
       ),
@@ -224,6 +231,8 @@ describe("the unused-declarations emitter over a library", () => {
   });
 
   it("leaves an unused export no code outside the target can import to the unreachable-export kind", () => {
+    const input = sweepProject("unused-declarations-library");
+    const findings = family(input);
     const unreachable = EMITTERS.get("visibility-narrowing")?.(input) ?? [];
 
     expect(named(findings).filter((one) => one.endsWith(" internalUnused"))).toEqual([]);
@@ -233,6 +242,8 @@ describe("the unused-declarations emitter over a library", () => {
   });
 
   it("keeps a deprecated one, which the deprecated code names alone", () => {
+    const input = sweepProject("unused-declarations-library");
+    const findings = family(input);
     const unreachable = EMITTERS.get("visibility-narrowing")?.(input) ?? [];
 
     expect(named(findings)).toContain("DS1006 internalRetired");
@@ -241,7 +252,7 @@ describe("the unused-declarations emitter over a library", () => {
 
   it("withholds below the minimum confidence", () => {
     const certain = family({
-      ...input,
+      ...sweepProject("unused-declarations-library"),
       config: configOf(
         `{ "target": { "kind": "library" }, "analysis": { "min_confidence": "certain" } }`,
       ),
@@ -861,5 +872,151 @@ describe("an enum member of a test file nothing names", () => {
       ),
     ).toEqual(["DS1302 Mode.Spare"]);
     rmSync(root, { recursive: true, force: true });
+  });
+});
+
+describe("the code a dead declaration is reported under", () => {
+  function reported(
+    files: Readonly<Record<string, string>>,
+    extra = "",
+    mode: Mode = { production: true },
+  ): string[] {
+    const root = writeProject({
+      "package.json": '{ "name": "@example/app", "type": "module", "main": "./src/main.ts" }\n',
+      ...files,
+    });
+    try {
+      return named(
+        family(
+          emitterInputOf(root, configOf(`{ "target": { "kind": "application" }${extra} }`), {
+            mode,
+          }),
+        ),
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  it("is its shape's unreferenced code for a test-file declaration the tests never reach, deprecated or not", () => {
+    expect(
+      reported({
+        "src/main.ts": "console.log(1);\n",
+        "src/main.test.ts":
+          "/** @deprecated */\nfunction oldHelper(): void {}\n\nfunction plain(): void {}\n\nconsole.log(2);\n",
+      }),
+    ).toEqual(["DS1002 oldHelper", "DS1002 plain"]);
+  });
+
+  it("is the member code for a test-file member the tests never reach, in a run that counts them", () => {
+    expect(
+      reported(
+        {
+          "src/main.ts": "console.log(1);\n",
+          "src/main.test.ts": "class Probe {\n  unused(): void {}\n}\n\nconsole.log(Probe);\n",
+        },
+        "",
+        { production: false },
+      ),
+    ).toEqual(["DS1003 Probe.unused"]);
+  });
+
+  it("is the test-only code for test-support code the tests use, deprecated or not", () => {
+    expect(
+      reported(
+        {
+          "src/main.ts": "console.log(1);\n",
+          "src/fakes/fake.ts":
+            "/** @deprecated */\nexport function oldFake(): number {\n  return 1;\n}\n",
+          "src/main.test.ts":
+            'import { oldFake } from "./fakes/fake.js";\n\nconsole.log(oldFake());\n',
+        },
+        ', "analysis": { "min_confidence": "possible" }',
+      ),
+    ).toEqual(["DS1004 oldFake"]);
+  });
+
+  it("is no deprecated code for a deprecated declaration only dead code references", () => {
+    expect(
+      reported({
+        "src/main.ts": [
+          "/** @deprecated */",
+          "function old(): number {",
+          "  return 1;",
+          "}",
+          "",
+          "function deadCaller(): number {",
+          "  return old();",
+          "}",
+          "",
+          "console.log(1);",
+          "",
+        ].join("\n"),
+      }),
+    ).toEqual(["DS1002 old", "DS1002 deadCaller"]);
+  });
+
+  it("is the test-only code for an enum member only a test file names", () => {
+    expect(
+      reported({
+        "src/main.ts":
+          "export enum Mode {\n  Read,\n  Write,\n  Gone,\n}\n\nconsole.log(Mode.Read);\n",
+        "src/main.test.ts": 'import { Mode } from "./main.js";\n\nconsole.log(Mode.Write);\n',
+      }),
+    ).toEqual(["DS1004 Mode.Write"]);
+  });
+});
+
+describe("a member naming a type parameter of its type beside another member", () => {
+  const PAIR = [
+    "export interface Pair<P> {",
+    "  readonly id: number;",
+    "  readonly first?: P;",
+    "  readonly second?: P;",
+    "}",
+    "export const pair: Pair<string> = { id: 1 };",
+    "console.log(pair.id);",
+    "",
+  ].join("\n");
+
+  function reported(main: string, test?: string): string[] {
+    const root = writeProject({
+      "package.json": '{ "name": "@example/app", "type": "module", "main": "./src/main.ts" }\n',
+      "src/main.ts": main,
+      ...(test === undefined ? {} : { "src/main.test.ts": test }),
+    });
+    try {
+      return named(
+        family(emitterInputOf(root, configOf('{ "target": { "kind": "application" } }'))),
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  it("is reported once a test file reads the other, which is then no brand", () => {
+    expect(
+      reported(PAIR, 'import { pair } from "./main.js";\n\nconsole.log(pair.second);\n'),
+    ).toEqual(["DS1003 Pair.first", "DS1004 Pair.second"]);
+  });
+
+  it("is reported once dead code and a test file read the other as often", () => {
+    expect(
+      reported(
+        `${PAIR}function deadReader(): string | undefined {\n  return pair.second;\n}\n`,
+        'import { pair } from "./main.js";\n\nconsole.log(pair.second);\n',
+      ),
+    ).toEqual(["DS1003 Pair.first", "DS1003 Pair.second", "DS1002 deadReader"]);
+  });
+
+  it("is reported deprecated though both are brands, the deprecated code naming no brand", () => {
+    expect(
+      reported(
+        PAIR.replace(
+          "  readonly first?: P;",
+          "  /** @deprecated */\n  readonly first?: P;",
+        ).replace("  readonly second?: P;", "  /** @deprecated */\n  readonly second?: P;"),
+      ),
+    ).toEqual(["DS1006 Pair.first", "DS1006 Pair.second"]);
   });
 });

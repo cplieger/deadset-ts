@@ -616,15 +616,11 @@ function skipWhitespace(text: string, at: number): number {
  */
 function membersAt(text: string, at: number): Map<string, { key: number; value: number }> {
   const found = new Map<string, { key: number; value: number }>();
-  if (text.charAt(at) !== "{") {
-    return found;
-  }
   let cursor = skipWhitespace(text, at + 1);
   while (text.charAt(cursor) === '"') {
     const keyEnd = valueEnd(text, cursor);
     const key = JSON.parse(text.slice(cursor, keyEnd)) as string;
     const value = skipWhitespace(text, skipWhitespace(text, keyEnd) + 1);
-    found.delete(key);
     found.set(key, { key: cursor, value });
     cursor = skipWhitespace(text, valueEnd(text, value));
     if (text.charAt(cursor) === ",") {

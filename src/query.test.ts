@@ -1,17 +1,27 @@
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import type { Expression, Node } from "@typescript/native/ast";
+import { SyntaxKind, type Expression, type Node } from "@typescript/native/ast";
 import type {
   APIRequestGenerator,
   Checker,
+  Signature,
   Symbol as TSSymbol,
   Type,
 } from "@typescript/native/sync";
 import { nodeHost } from "../bin/node-host.ts";
 import { writeProject } from "../__test-helpers__/projects.ts";
 import { discoverProjects } from "./discover.ts";
-import { must, queriesOf, Unanswerable, UNANSWERED, UnansweredLog, type Batch } from "./query.ts";
+import {
+  isAnswered,
+  must,
+  propertyTables,
+  queriesOf,
+  Unanswerable,
+  UNANSWERED,
+  UnansweredLog,
+  type Batch,
+} from "./query.ts";
 import { scopeForDir } from "./scope.ts";
 import { openEngine, runSession } from "./session.ts";
 
@@ -134,6 +144,13 @@ describe("a guarded question", () => {
       50,
     ]);
     expect(fake.alone, "no question is asked again on its own").toEqual([]);
+    expect(log.questions).toEqual([
+      {
+        configFile: "/src/tsconfig.json",
+        accessor: "getContextualType",
+        location: "/src/a.ts:20",
+      },
+    ]);
   });
 
   it("asks a batch the server fails as a whole again one question at a time", () => {
@@ -170,6 +187,222 @@ describe("a guarded question", () => {
 
   it("stops a pass that needs the answer it did not get", () => {
     expect(() => must(UNANSWERED)).toThrow(Unanswerable);
+  });
+
+  it("tells an answer, an absent one among them, from a question the checker did not answer", () => {
+    expect([isAnswered(UNANSWERED), isAnswered(undefined), isAnswered(0)]).toEqual([
+      false,
+      true,
+      true,
+    ]);
+  });
+
+  it("lets a failure that is no panic end the run from a single question", () => {
+    // A test fake: the one accessor asked fails as a closed channel does.
+    const closed = {
+      getTypeAtLocation: () => {
+        throw new Error("the compiler server closed its channel");
+      },
+    } as unknown as Checker;
+    const log = new UnansweredLog();
+    const queries = queriesOf(closed, "/src/tsconfig.json", runEach, log);
+
+    expect(() => queries.typeAt(nodeAt(10))).toThrow("closed its channel");
+    expect(log.questions).toEqual([]);
+  });
+
+  it("lets a failure that is no panic end the run from one question of a batch", () => {
+    // A test fake: the contextual lookup fails as a closed channel does.
+    const closed = {
+      getContextualType: {
+        gen: function* (): APIRequestGenerator<Type> {
+          yield* [];
+          throw new Error("the compiler server closed its channel");
+        },
+      },
+    } as unknown as Checker;
+    const log = new UnansweredLog();
+    const queries = queriesOf(closed, "/src/tsconfig.json", runEach, log);
+
+    expect(() => queries.contextualTypes(NODES as unknown as readonly Expression[])).toThrow(
+      "closed its channel",
+    );
+    expect(log.questions).toEqual([]);
+  });
+
+  it("lets a batch the server fails with no panic end the run", () => {
+    const closed: Batch = () => {
+      throw new Error("the compiler server closed its channel");
+    };
+    const fake = panickingAt(-1);
+    const queries = queriesOf(fake.checker, "/src/tsconfig.json", closed, new UnansweredLog());
+
+    expect(() => queries.contextualTypes(NODES as unknown as readonly Expression[])).toThrow(
+      "closed its channel",
+    );
+    expect(fake.alone, "no question is asked again on its own").toEqual([]);
+  });
+});
+
+describe("questions over many locations", () => {
+  it("go out as one round trip per capped run of a batch, each answered once and in order", () => {
+    const runs: number[] = [];
+    const counting: Batch = (questions) => {
+      runs.push(questions.length);
+      return runEach(questions);
+    };
+    const queries = queriesOf(
+      panickingAt(-1).checker,
+      "/src/tsconfig.json",
+      counting,
+      new UnansweredLog(),
+    );
+    const ids = (nodes: readonly Node[], cap: number): unknown[] =>
+      queries
+        .contextualTypes(nodes as unknown as readonly Expression[], cap)
+        .map((answer) => (answer === UNANSWERED ? "unanswered" : answer?.id));
+
+    expect(ids(NODES, 2)).toEqual([10, 20, 30, 40, 50]);
+    expect(ids(NODES.slice(0, 4), 2)).toEqual([10, 20, 30, 40]);
+    expect(ids([], 2)).toEqual([]);
+    expect(runs).toEqual([2, 2, 1, 2, 2]);
+  });
+
+  it("go out as one array question per capped run, each answered once and in order", () => {
+    const runs: number[][] = [];
+    // A test fake: only the array lookup is asked.
+    const checker = {
+      getSymbolAtLocation: (nodes: readonly Node[]) => {
+        runs.push(nodes.map((node) => node.pos));
+        return nodes.map(symbolFor);
+      },
+    } as unknown as Checker;
+    const queries = queriesOf(checker, "/src/tsconfig.json", runEach, new UnansweredLog());
+
+    const answers = queries.symbolsAt(NODES, 2);
+
+    expect(answers.map((answer) => (answer === UNANSWERED ? "unanswered" : answer?.name))).toEqual([
+      "at10",
+      "at20",
+      "at30",
+      "at40",
+      "at50",
+    ]);
+    expect(runs).toEqual([[10, 20], [30, 40], [50]]);
+  });
+
+  it("put each question of a batch through the run's ask, naming its own location", () => {
+    const asked: string[] = [];
+    const queries = queriesOf(
+      panickingAt(-1).checker,
+      "/src/tsconfig.json",
+      runEach,
+      new UnansweredLog(),
+      (accessor, locations, question) => {
+        asked.push(`${accessor} ${locations().join(" ")}`);
+        return question();
+      },
+    );
+
+    queries.contextualTypes(NODES.slice(0, 2) as unknown as readonly Expression[]);
+
+    expect(asked).toEqual(["getContextualType /src/a.ts:10", "getContextualType /src/a.ts:20"]);
+  });
+});
+
+describe("the questions a fake checker answers", () => {
+  it("resolve an identifier by name, and ask nothing of another node", () => {
+    const resolved: number[] = [];
+    // A test fake: only the name lookup is asked.
+    const checker = {
+      getResolvedSymbol: (node: Node) => {
+        resolved.push(node.pos);
+        return symbolFor(node);
+      },
+    } as unknown as Checker;
+    const queries = queriesOf(checker, "/src/tsconfig.json", runEach, new UnansweredLog());
+    // A test fake: the layer reads a node's kind, file and offset.
+    const identifier = { ...nodeAt(10), kind: SyntaxKind.Identifier } as unknown as Node;
+    const call = { ...nodeAt(20), kind: SyntaxKind.CallExpression } as unknown as Node;
+
+    const answers = [queries.resolvedSymbol(identifier), queries.resolvedSymbol(call)];
+
+    expect(answers.map((answer) => (typeof answer === "object" ? answer.name : answer))).toEqual([
+      "at10",
+      undefined,
+    ]);
+    expect(resolved).toEqual([10]);
+  });
+
+  it("answer a type that is no union or intersection as its own one constituent", () => {
+    const queries = queriesOf({} as Checker, "/src/tsconfig.json", runEach, new UnansweredLog());
+    // A test fake: the layer reads only what kind of type it is and its constituents.
+    const plain = { id: 1, isUnionType: () => false, isIntersectionType: () => false };
+    const parts = [{ id: 2 }, { id: 3 }];
+    const union = { id: 4, isUnionType: () => true, getTypes: () => parts };
+
+    expect(queries.constituents(plain as unknown as Type)).toEqual([plain]);
+    expect(queries.constituents(union as unknown as Type)).toEqual(parts);
+  });
+
+  it("answer no generic signature for a signature that instantiates none, asking nothing", () => {
+    const queries = queriesOf({} as Checker, "/src/tsconfig.json", runEach, new UnansweredLog());
+    const generic = { id: 1 };
+    // A test fake: the layer reads a signature's target and asks for it.
+    const instantiated = { id: 2, target: generic, getTarget: () => generic };
+    const plain = {
+      id: 3,
+      target: undefined,
+      getTarget: () => {
+        throw new Error("asked for the target of a signature without one");
+      },
+    };
+
+    expect(queries.genericOf(instantiated as unknown as Signature)).toBe(generic);
+    expect(queries.genericOf(plain as unknown as Signature)).toBeUndefined();
+  });
+});
+
+describe("the run's record of unanswered questions", () => {
+  it("keeps questions apart that differ in project, accessor or place", () => {
+    const log = new UnansweredLog();
+    const first = { configFile: "/a/tsconfig.json", accessor: "getSymbol", location: "type 1" };
+    const others = [
+      { ...first, configFile: "/b/tsconfig.json" },
+      { ...first, accessor: "getTypes" },
+      { ...first, location: "type 2" },
+    ];
+
+    for (const question of [first, ...others, first]) {
+      log.note(question);
+    }
+
+    expect(log.questions).toEqual([first, ...others]);
+  });
+});
+
+describe("the property tables", () => {
+  it("ask for one type's properties once, an unanswered answer included", () => {
+    const asked: number[] = [];
+    // A test fake: a type is read by its identity number only.
+    const type = (id: number): Type => ({ id }) as unknown as Type;
+    const property = { name: "p" } as unknown as TSSymbol;
+    const tables = propertyTables({
+      propertiesOf: (one) => {
+        asked.push(one.id);
+        return one.id === 2 ? UNANSWERED : [property];
+      },
+    });
+
+    const reads = [1, 1, 2, 2].map((id) => tables.of(type(id)));
+
+    expect(reads).toEqual([
+      { properties: [property], asked: true },
+      { properties: [property], asked: false },
+      { properties: UNANSWERED, asked: true },
+      { properties: UNANSWERED, asked: false },
+    ]);
+    expect(asked).toEqual([1, 2]);
   });
 });
 

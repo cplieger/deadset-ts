@@ -57,11 +57,20 @@ interface Analyzed {
   readonly report: Record<string, unknown> | undefined;
 }
 
-/** Runs `analyze` from the workspace root over the scope naming `target` and its consumers. */
-function analyze(root: string, consumers: readonly string[] = ["consumer"]): Analyzed {
+/**
+ * Runs `analyze` from the workspace root over the scope naming `target` and its consumers,
+ * each a directory or a scope entry.
+ */
+function analyze(
+  root: string,
+  consumers: readonly (string | { readonly path: string; readonly id: string })[] = ["consumer"],
+): Analyzed {
   writeFileSync(
     join(root, "scope.json"),
-    JSON.stringify({ target: { path: "target" }, consumers: consumers.map((path) => ({ path })) }),
+    JSON.stringify({
+      target: { path: "target" },
+      consumers: consumers.map((one) => (typeof one === "string" ? { path: one } : one)),
+    }),
   );
   const host: Host = {
     ...nodeHost(),
@@ -80,6 +89,20 @@ function analyze(root: string, consumers: readonly string[] = ["consumer"]): Ana
     ? (JSON.parse(readFileSync(reportPath, "utf8")) as Record<string, unknown>)
     : undefined;
   return { code, err: err.text, report };
+}
+
+/** What `explain` writes, run from the workspace root over the target and `consumers`. */
+function explain(root: string, consumers: readonly string[], ...args: readonly string[]): string {
+  writeFileSync(
+    join(root, "scope.json"),
+    JSON.stringify({ target: { path: "target" }, consumers: consumers.map((path) => ({ path })) }),
+  );
+  const out = new MemoryWriter();
+  run(["explain", "--target=target", "--scope=scope.json", ...args], out, new MemoryWriter(), {
+    ...nodeHost(),
+    workingDirectory: () => root,
+  });
+  return out.text;
 }
 
 /** Each finding as its code, its subject's name and its confidence. */
@@ -101,6 +124,41 @@ const WRITTEN_IN_A_CONSUMER_TEST: Readonly<Record<string, string>> = {
 };
 
 describe("a consumer the scope declares", () => {
+  it(
+    "is named by the identifier the scope gives it over its package name",
+    () => {
+      const root = workspace({
+        "target/lib.ts": "export function dead(): number {\n  return 1;\n}\n",
+        "consumer/main.ts": 'import "../target/lib.js";\n',
+      });
+
+      const { report } = analyze(root, [{ path: "consumer", id: "@example/declared" }]);
+      const findings = (report?.["findings"] ?? []) as { readonly consumers_loaded: string[] }[];
+
+      expect(findings.map((one) => one.consumers_loaded)).toEqual([["@example/declared"]]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "reads a configuration a later consumer's directory also holds as the earlier consumer's",
+    () => {
+      const root = workspace({
+        "tsconfig.json": TSCONFIG.replace('"**/*.ts"', '"main.ts"'),
+        "package.json": manifest("@example/workspace"),
+        "target/lib.ts": "export const version = 1;\n",
+        "target/extra.ts": "export function entry(): number {\n  return 1;\n}\n",
+        "main.ts": "export const unrelated = 1;\n",
+        "consumer/main.ts": 'import { entry } from "../target/extra.js";\n\nentry();\n',
+      });
+
+      expect(explain(root, ["consumer", "."], "--why-live=entry")).toContain(
+        "  reached from: consumer @example/consumer\n",
+      );
+    },
+    LOAD_TIMEOUT,
+  );
+
   it(
     "keeps the export it references live and classes the one nothing references certain",
     () => {

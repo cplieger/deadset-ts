@@ -181,10 +181,7 @@ function findingComponents(
               },
             ];
       })
-      .sort(
-        (a, b) =>
-          byPosition(a.position, b.position) || (a.ref === b.ref ? 0 : a.ref < b.ref ? -1 : 1),
-      );
+      .sort((a, b) => byPosition(a.position, b.position));
   return (id) => {
     const component = held.get(id);
     return component === undefined

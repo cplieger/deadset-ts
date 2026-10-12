@@ -113,9 +113,6 @@ interface Named {
 function namedBy(
   held: Inventory,
 ): (specifier: string, names: readonly string[]) => readonly Named[] {
-  if (held.modules.size === 0) {
-    return () => [];
-  }
   const refs = new Map<string, string>();
   const children = new Map<string, InventorySymbol[]>();
   for (const symbol of held.symbols) {

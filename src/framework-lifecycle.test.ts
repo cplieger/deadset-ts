@@ -1,8 +1,9 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
 import { fixture } from "../__test-helpers__/fixtures.ts";
+import { writeProject } from "../__test-helpers__/projects.ts";
 import { runSweep, type RunSweep } from "./analysis.ts";
 import { resolve } from "./resolve.ts";
 import { run, type Writer } from "./run.ts";
@@ -100,6 +101,70 @@ describe("framework-lifecycle", () => {
     expect(called(swept)).toEqual([]);
     expect(deadMembers(swept)).toContain("Counter.connectedCallback");
     expect(deadMembers(swept)).toContain("Panel.mount");
+  });
+});
+
+function sweptElements(main: string): RunSweep {
+  const root = writeProject({
+    "package.json": '{ "name": "app", "private": true, "type": "module", "main": "./main.ts" }\n',
+    "main.ts": main,
+  });
+  try {
+    const { config } = resolve({
+      repository: JSON.stringify({
+        target: { kind: "application" },
+        ts: {
+          lifecycle_contracts: [
+            { bases: [{ global: "HTMLElement" }], members: ["connectedCallback"] },
+          ],
+        },
+      }),
+      repositoryLabel: "deadset.json",
+    });
+    const host = nodeHost();
+    return runSweep(openEngine({ collectTiming: false }), host, scopeForDir(host, root), config, {
+      marked: [],
+      mode: { production: true },
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+describe("a class a contract's base makes a component", () => {
+  it("is one extending the base, not one extending another class", () => {
+    const swept = sweptElements(
+      [
+        "class Widget {}",
+        "export class Element extends HTMLElement {",
+        "  connectedCallback(): void {}",
+        "}",
+        "export class Plain extends Widget {",
+        "  connectedCallback(): void {}",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    expect(called(swept)).toEqual(["Element.connectedCallback main.ts:2:30 extends HTMLElement"]);
+    expect(deadMembers(swept)).toEqual(["Plain.connectedCallback"]);
+  });
+
+  it("is one declared inside a namespace", () => {
+    const swept = sweptElements(
+      [
+        "export namespace Views {",
+        "  export class Inner extends HTMLElement {",
+        "    connectedCallback(): void {}",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    expect(called(swept)).toEqual([
+      "Views.Inner.connectedCallback main.ts:2:30 extends HTMLElement",
+    ]);
   });
 });
 

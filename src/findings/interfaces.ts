@@ -19,14 +19,6 @@ function positionOf(symbol: InventorySymbol): FindingPosition {
   return { ...symbol.position, endLine: Math.max(symbol.position.line, symbol.endLine) };
 }
 
-/** Two strings ordered bytewise. */
-function compare(a: string, b: string): number {
-  if (a === b) {
-    return 0;
-  }
-  return a < b ? -1 : 1;
-}
-
 /** One run's declarations and candidates, indexed for the two kinds. */
 function indexed(input: EmitterInput): {
   readonly symbolOf: (id: string) => InventorySymbol | undefined;
@@ -49,7 +41,7 @@ function indexed(input: EmitterInput): {
         .map(symbolOf)
         .filter((symbol): symbol is InventorySymbol => symbol !== undefined)
         .map((symbol) => ({ ref: symbol.ref, name: symbol.name, position: positionOf(symbol) }))
-        .sort((a, b) => byPosition(a.position, b.position) || compare(a.ref, b.ref)),
+        .sort((a, b) => byPosition(a.position, b.position)),
   };
 }
 

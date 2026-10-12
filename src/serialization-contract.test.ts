@@ -1,9 +1,10 @@
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
 import { emitterInputOf, findingsOf } from "../__test-helpers__/emitter-input.ts";
 import { fixture } from "../__test-helpers__/fixtures.ts";
+import { writeProject } from "../__test-helpers__/projects.ts";
 import { runSweep, type RunSweep } from "./analysis.ts";
 import { resolve } from "./resolve.ts";
 import { run, type Writer } from "./run.ts";
@@ -12,6 +13,8 @@ import { openEngine } from "./session.ts";
 
 const TARGET = fixture("projects", "serialization-contract");
 const CHECKED = fixture("projects", "serialization-checked-and-ambient");
+
+const LOAD_TIMEOUT = 60_000;
 
 /** The fixture swept for production, under its own configuration or the one given. */
 function sweepFixture(document?: string, target = TARGET): RunSweep {
@@ -269,4 +272,386 @@ describe("print-retained over a project whose values reach serializers", () => {
       "regenerate with `npx vitest --run -u src/serialization-contract.test.ts` and review the diff",
     ).toMatchFileSnapshot(fixture("golden", "serialization-contract.retained.txt"));
   });
+});
+
+const SINK = {
+  "node_modules/@example/sink/package.json": JSON.stringify({
+    name: "@example/sink",
+    version: "0.0.0",
+    types: "./index.d.ts",
+  }),
+  "node_modules/@example/sink/index.d.ts": [
+    "export declare function hold(first: unknown, second: { id: number }): void;",
+    "export declare function place(value: { id: number }): void;",
+    "export declare function store(value: { id: number }): void;",
+    "export declare function store(value: unknown, slot: number): void;",
+    "",
+  ].join("\n"),
+};
+
+function retainedIn(main: readonly string[]): string[] {
+  const root = writeProject({
+    "package.json": JSON.stringify({ name: "@example/tree", private: true, type: "module" }),
+    "main.ts": `${main.join("\n")}\n`,
+    ...SINK,
+  });
+  try {
+    const { config } = resolve({
+      repository: JSON.stringify({
+        target: { kind: "application" },
+        ts: { entry_files: ["main.ts"] },
+      }),
+      repositoryLabel: "deadset.json",
+    });
+    const host = nodeHost();
+    const swept = runSweep(
+      openEngine({ collectTiming: false }),
+      host,
+      scopeForDir(host, root),
+      config,
+      { marked: [], mode: { production: true } },
+    );
+    return swept.retained
+      .filter((held) => held.class === "serialization-contract")
+      .map(
+        (held) =>
+          `${nameOf(swept, held.id)} ${String(held.site.line)}:${String(held.site.column)} ${held.detail}`,
+      );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+describe("serialization-contract over a written tree", () => {
+  it(
+    "holds back a class's properties, and not its toString, where a function hands it on to a serializer",
+    () => {
+      expect(
+        retainedIn([
+          'class Message { text = ""; toString(): string { return ""; } }',
+          "function send(value: unknown): void { JSON.stringify(value); }",
+          "send(new Message());",
+        ]),
+      ).toEqual(["Message.text 3:6 passed to send"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "holds back the conversion methods too where a function hands its parameter to a serializer and then out of the analysis",
+    () => {
+      expect(
+        retainedIn([
+          'class Note { text = ""; toString(): string { return ""; } }',
+          "function emit(value: unknown): void { JSON.stringify(value); console.log(value); }",
+          "emit(new Note());",
+        ]),
+      ).toEqual(["Note.text 3:6 passed to emit", "Note.toString 3:6 passed to emit"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "holds back toJSON and not toString of a class a serializer is given",
+    () => {
+      expect(
+        retainedIn([
+          'class Ticket { id = 1; toJSON(): number { return 1; } toString(): string { return ""; } }',
+          "JSON.stringify(new Ticket());",
+        ]),
+      ).toEqual([
+        "Ticket.id 2:16 passed to JSON.stringify",
+        "Ticket.toJSON 2:16 passed to JSON.stringify",
+      ]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "holds back the data members and toJSON of an interface a serialized value is typed by",
+    () => {
+      expect(
+        retainedIn([
+          "interface Shape { side: number; describe(): string; toJSON(): unknown; toString(): string }",
+          "declare const shape: Shape;",
+          "JSON.stringify(shape);",
+        ]),
+      ).toEqual([
+        "Shape.side 3:16 passed to JSON.stringify",
+        "Shape.toJSON 3:16 passed to JSON.stringify",
+      ]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "reads `this` in an arrow function an object literal's property holds as the enclosing method's",
+    () => {
+      expect(
+        retainedIn([
+          "class Box {",
+          "  size = 1;",
+          "  wrap(): { run: () => string } {",
+          "    return { run: () => JSON.stringify(this) };",
+          "  }",
+          "}",
+          "new Box().wrap().run();",
+        ]),
+      ).toEqual(["Box.size 4:40 passed to JSON.stringify"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "binds each argument to the parameter at its position, and every one from a rest parameter's on",
+    () => {
+      expect(
+        retainedIn([
+          "class First { id = 1; }",
+          "class Second { id = 1; }",
+          "class Third { id = 1; }",
+          "class Fourth { id = 1; }",
+          "function deliver(first: object, value: unknown): void { JSON.stringify(value); }",
+          "function deliverAll(first: object, ...values: unknown[]): void { JSON.stringify(values); }",
+          "deliver(new First(), new Second());",
+          "deliverAll(new Third(), new Fourth());",
+        ]),
+      ).toEqual(["Second.id 7:22 passed to deliver", "Fourth.id 8:25 passed to deliverAll"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "holds back what a typed rest parameter's type reaches, and nothing of the class an argument is",
+    () => {
+      expect(
+        retainedIn([
+          "interface Sized { size: number }",
+          "class Crate { size = 1; }",
+          "function pack(...items: Sized[]): void { JSON.stringify(items); }",
+          "pack(new Crate());",
+        ]),
+      ).toEqual(["Sized.size 3:57 passed to JSON.stringify"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "settles a function that hands its parameter on to one declared after it",
+    () => {
+      expect(
+        retainedIn([
+          "class Parcel { id = 1; }",
+          "function outer(value: unknown): void { inner(value); }",
+          "function inner(value: unknown): void { JSON.stringify(value); }",
+          "outer(new Parcel());",
+        ]),
+      ).toEqual(["Parcel.id 4:7 passed to outer"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "holds back what a function hands on, though another of its unknown parameters goes nowhere",
+    () => {
+      expect(
+        retainedIn([
+          "class Page { id = 1; }",
+          "function report(value: unknown, note: unknown): void { JSON.stringify(value); void note; }",
+          'report(new Page(), "draft");',
+        ]),
+      ).toEqual(["Page.id 3:8 passed to report"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "holds back what a function a namespace merges with hands on",
+    () => {
+      expect(
+        retainedIn([
+          "class Flyer { id = 1; }",
+          "function announce(value: unknown): void { JSON.stringify(value); }",
+          "namespace announce { export const tone = 1; }",
+          "announce(new Flyer());",
+        ]),
+      ).toEqual(["Flyer.id 4:10 passed to announce"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "holds back nothing of a value passed to a callback the project's own function receives",
+    () => {
+      expect(
+        retainedIn([
+          "class Leaf { id = 1; }",
+          "function each(visit: (value: unknown) => void): void { visit(new Leaf()); }",
+          "each(() => undefined);",
+        ]),
+      ).toEqual([]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "holds back nothing of a value passed to a member a mapped type of the project declares",
+    () => {
+      expect(
+        retainedIn([
+          'type Api = { [K in "send"]: (value: unknown) => void };',
+          "const api: Api = { send: () => undefined };",
+          "class Leaf { id = 1; }",
+          "api.send(new Leaf());",
+        ]),
+      ).toEqual([]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "holds back nothing of a value passed to a typed parameter outside the analysis, called or through call",
+    () => {
+      expect(
+        retainedIn([
+          'import { place } from "@example/sink";',
+          "class Plate { id = 1; }",
+          "class Dish { id = 1; }",
+          "place(new Plate());",
+          "place.call(undefined, new Dish());",
+        ]),
+      ).toEqual([]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "reads a direct call by the overload it resolves to, and a call through call by any overload",
+    () => {
+      expect(
+        retainedIn([
+          'import { store } from "@example/sink";',
+          "class Shelf { id = 1; }",
+          "class Bin { id = 1; }",
+          "store(new Shelf());",
+          "store.call(undefined, new Bin(), 1);",
+        ]),
+      ).toEqual(["Bin.id 5:23 passed to store"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "passes on through call every argument after the value bound to `this`",
+    () => {
+      expect(
+        retainedIn([
+          "class Alpha { id = 1; }",
+          "class Beta { id = 1; }",
+          "console.log.call(console, new Alpha(), new Beta());",
+        ]),
+      ).toEqual(["Alpha.id 3:27 passed to console.log", "Beta.id 3:40 passed to console.log"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "reads an apply argument that is no array literal as the arguments it holds",
+    () => {
+      expect(
+        retainedIn([
+          "class Gamma { id = 1; }",
+          "const list: [Gamma] = [new Gamma()];",
+          "JSON.stringify.apply(JSON, list);",
+        ]),
+      ).toEqual(["Gamma.id 3:28 passed to JSON.stringify"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "reads a bound function outside the analysis against its own parameters",
+    () => {
+      expect(
+        retainedIn([
+          'import { hold } from "@example/sink";',
+          "class Head { id = 1; }",
+          "class Tail { id = 1; }",
+          "hold.bind(undefined, new Head())(new Tail());",
+        ]),
+      ).toEqual(["Head.id 4:22 passed to hold"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "reads a call of what a call through call answers as a call of that answer, not of the function",
+    () => {
+      expect(
+        retainedIn([
+          "class Lead { id = 1; }",
+          "class Lag { id = 1; }",
+          "function pair(first: unknown, second?: unknown): () => void {",
+          "  JSON.stringify(first);",
+          "  JSON.stringify(second);",
+          "  return () => undefined;",
+          "}",
+          "pair.call(undefined, new Lead())(new Lag());",
+        ]),
+      ).toEqual(["Lead.id 8:22 passed to pair"]);
+    },
+    LOAD_TIMEOUT,
+  );
+});
+
+describe("serialization-contract over a target and a consumer it imports", () => {
+  it(
+    "holds back nothing of a value passed to the consumer's function, which the analysis reads",
+    () => {
+      const compilerOptions = {
+        strict: true,
+        module: "NodeNext",
+        moduleResolution: "nodenext",
+        noEmit: true,
+      };
+      const top = writeProject({
+        "lib/package.json": JSON.stringify({ name: "@example/lib", private: true, type: "module" }),
+        "lib/tsconfig.json": JSON.stringify({ compilerOptions, include: ["*.ts"] }),
+        "lib/main.ts":
+          'import { hook } from "@example/app";\nclass Signal { id = 1; }\nhook(new Signal());\n',
+        "app/package.json": JSON.stringify({ name: "@example/app", types: "./hooks.ts" }),
+        "app/tsconfig.json": JSON.stringify({ compilerOptions, include: ["*.ts"] }),
+        "app/hooks.ts": "export function hook(value: unknown): void {\n  void value;\n}\n",
+      });
+      try {
+        mkdirSync(join(top, "lib", "node_modules", "@example"), { recursive: true });
+        symlinkSync(join(top, "app"), join(top, "lib", "node_modules", "@example", "app"));
+        const { config } = resolve({
+          repository: JSON.stringify({
+            target: { kind: "application" },
+            ts: { entry_files: ["main.ts"] },
+          }),
+          repositoryLabel: "deadset.json",
+        });
+        const swept = runSweep(
+          openEngine({ collectTiming: false }),
+          nodeHost(),
+          {
+            target: { id: "@example/lib", path: join(top, "lib") },
+            consumers: [{ id: "@example/app", path: join(top, "app") }],
+          },
+          config,
+          { marked: [], mode: { production: true } },
+        );
+
+        expect(swept.retained.filter((held) => held.class === "serialization-contract")).toEqual(
+          [],
+        );
+        expect(deadMembers(swept)).toEqual(["Signal.id"]);
+      } finally {
+        rmSync(top, { recursive: true, force: true });
+      }
+    },
+    LOAD_TIMEOUT,
+  );
 });

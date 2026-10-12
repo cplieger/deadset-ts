@@ -1,79 +1,9 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { nodeHost } from "../bin/node-host.ts";
-import { findWorkspace, type ParsedLayout } from "./workspace.ts";
-import {
-  packageNameOf,
-  workspaceResolver,
-  type DefaultResolution,
-  type MemberResolution,
-} from "./workspace-resolution.ts";
+import { removeWorkspaces, source, workspaceAt } from "../__test-helpers__/workspace-tree.ts";
+import { packageNameOf } from "./workspace-resolution.ts";
 
-const written: string[] = [];
-
-afterEach(() => {
-  for (const root of written.splice(0)) {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-/** The conditions an ECMAScript import under `nodenext` reads, with no custom one. */
-const IMPORT = new Set(["types", "import", "node", "default"]);
-
-/**
- * A workspace below a fresh directory: `files` maps paths to text, `links` maps link
- * paths to the directory each names, and `layouts` maps a configuration path to what
- * parsing it answers, every path below the root.
- */
-function workspaceAt(
-  files: Readonly<Record<string, string>>,
-  links: Readonly<Record<string, string>> = {},
-  layouts: Readonly<
-    Record<string, { files: readonly string[]; outDir?: string; rootDir?: string }>
-  > = {},
-): {
-  readonly root: string;
-  readonly resolve: (
-    specifier: string,
-    from: string,
-    answered?: DefaultResolution,
-    conditions?: ReadonlySet<string>,
-  ) => MemberResolution;
-} {
-  const root = mkdtempSync(join(tmpdir(), "deadset-ts-resolution-"));
-  written.push(root);
-  mkdirSync(join(root, ".git"));
-  for (const [path, text] of Object.entries(files)) {
-    mkdirSync(dirname(join(root, path)), { recursive: true });
-    writeFileSync(join(root, path), text);
-  }
-  for (const [path, target] of Object.entries(links)) {
-    mkdirSync(dirname(join(root, path)), { recursive: true });
-    symlinkSync(join(root, target), join(root, path));
-  }
-  const parse = (configFile: string): ParsedLayout | undefined => {
-    const layout = layouts[configFile.slice(root.length + 1)];
-    return layout === undefined
-      ? undefined
-      : {
-          fileNames: layout.files.map((file) => join(root, file)),
-          outDir: layout.outDir === undefined ? undefined : join(root, layout.outDir),
-          rootDir: layout.rootDir === undefined ? undefined : join(root, layout.rootDir),
-        };
-  };
-  const workspace = findWorkspace(nodeHost(), root, parse);
-  if (workspace === undefined) {
-    throw new Error("the written tree declares no workspace");
-  }
-  const resolver = workspaceResolver(nodeHost(), workspace);
-  return {
-    root,
-    resolve: (specifier, from, answered, conditions = IMPORT) =>
-      resolver.resolve(specifier, join(root, from), conditions, answered),
-  };
-}
+afterEach(removeWorkspaces);
 
 const ROOT_MANIFEST = JSON.stringify({ name: "root", private: true, workspaces: ["packages/*"] });
 
@@ -102,11 +32,6 @@ const A_LAYOUT = {
   },
 };
 
-/** A resolution to one file below the root. */
-function source(root: string, path: string, member: string): MemberResolution {
-  return { kind: "source", file: join(root, path), member };
-}
-
 describe("packageNameOf", () => {
   it.each([
     ["a", "a"],
@@ -117,6 +42,8 @@ describe("packageNameOf", () => {
     ["#internal", undefined],
     ["node:fs", undefined],
     ["@scope", undefined],
+    ["@scope/", undefined],
+    ["", undefined],
   ])("reads %s as %s", (specifier, name) => {
     expect(packageNameOf(specifier)).toBe(name);
   });

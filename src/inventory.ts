@@ -1042,9 +1042,7 @@ export function inventory<Brand>(
   }
 
   const byId = new Map(building.map((record) => [positionKey(record.position), record]));
-  const symbols = building
-    .map(render)
-    .sort((a, b) => byPosition(a.position, b.position) || (a.ref < b.ref ? -1 : 1));
+  const symbols = building.map(render).sort((a, b) => byPosition(a.position, b.position));
 
   return {
     symbols,

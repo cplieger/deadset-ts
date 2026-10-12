@@ -36,6 +36,45 @@ describe("the component layer", () => {
     );
   });
 
+  it("reads past a comment on a later line, and a block comment that opens with its own solidus", () => {
+    expect(withContentMappers('{\n  "a": 1, // note\n  "contentMappers": []\n}', MAPPERS)).toBe(
+      '{\n  "a": 1, // note\n  "contentMappers": [{"package":"m","extensions":[".vue"]}]\n}',
+    );
+    expect(withContentMappers('{ /*/ "contentMappers": 1 */ "include": [] }', MAPPERS)).toBe(
+      '{"contentMappers":[{"package":"m","extensions":[".vue"]}], /*/ "contentMappers": 1 */ "include": [] }',
+    );
+  });
+
+  it("reads a key whose string escapes a quote", () => {
+    expect(withContentMappers('{ "say \\"hi\\"": 1, "contentMappers": 2 }', MAPPERS)).toBe(
+      '{ "say \\"hi\\"": 1, "contentMappers": [{"package":"m","extensions":[".vue"]}] }',
+    );
+  });
+
+  it("reads past a bare value, and replaces one the mappers member holds", () => {
+    expect(
+      withContentMappers('{ "strict": true, "contentMappers": null, "include": [] }', MAPPERS),
+    ).toBe(
+      '{ "strict": true, "contentMappers": [{"package":"m","extensions":[".vue"]}], "include": [] }',
+    );
+  });
+
+  it("reads past a nested value whose strings hold brackets and comment openers", () => {
+    const text = '{ "compilerOptions": { "paths": { "a/*": ["}"] } }, "contentMappers": [] }';
+    expect(withContentMappers(text, MAPPERS)).toBe(
+      '{ "compilerOptions": { "paths": { "a/*": ["}"] } }, "contentMappers": [{"package":"m","extensions":[".vue"]}] }',
+    );
+  });
+
+  it("writes the mappers first where the text ends inside a comment or a string", () => {
+    const written = '{"contentMappers":[{"package":"m","extensions":[".vue"]}],';
+    expect(withContentMappers('{ "include": [] // trailing', MAPPERS)).toBe(
+      `${written} "include": [] // trailing`,
+    );
+    expect(withContentMappers("{ /* open", MAPPERS)).toBe(`${written} /* open`);
+    expect(withContentMappers('{"include', MAPPERS)).toBe(`${written}"include`);
+  });
+
   it("leaves a configuration that holds no object for the compiler to refuse", () => {
     expect(withContentMappers("[]", MAPPERS)).toBe("[]");
   });

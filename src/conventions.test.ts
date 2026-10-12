@@ -5,7 +5,12 @@ import { afterAll, describe, expect, it, onTestFinished } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
 import { fixture } from "../__test-helpers__/fixtures.ts";
 import { CONVENTION_ROWS, type ConventionRow, type OptionsCall } from "./convention-rows.ts";
-import { readConventions, readProperty, type Conventions } from "./conventions.ts";
+import {
+  conventionFailuresFor,
+  readConventions,
+  readProperty,
+  type Conventions,
+} from "./conventions.ts";
 import type { DirectoryEntry, Host, PathKind } from "./host.ts";
 import { run, type Writer } from "./run.ts";
 import { openEngine } from "./session.ts";
@@ -165,6 +170,76 @@ describe("readProperty", () => {
     expect(
       read('import { tool } from "tool";\ntool({ ...shared, other: 1 });', TOOL).notLiteral,
     ).toBeDefined();
+  });
+
+  it("reads the object assigned to module.exports and no other assignment's", () => {
+    const text =
+      'other.exports = { layout: { dir: "a" } };\n' +
+      'module.other = { layout: { dir: "b" } };\n' +
+      'module.exports ??= { layout: { dir: "c" } };\n' +
+      'module.exports = { layout: { dir: "d" } };\n';
+
+    expect(read(text)).toEqual({ values: ["d"] });
+  });
+
+  it("reads no declaration exported by name and no default re-exported from another module", () => {
+    const text =
+      'export function helper() {}\nexport class Model {}\nexport { default } from "./base";\n' +
+      'const named = { layout: { dir: "a" } };\nconst chosen = { layout: { dir: "b" } };\n' +
+      "export { named, chosen as default };\n";
+
+    expect(read(text)).toEqual({ values: ["b"] });
+  });
+
+  it("refuses a member whose computed key is not a literal, and reads one whose key is", () => {
+    expect(read("export default { layout: { [key]: 'x' } };").notLiteral).toBeDefined();
+    expect(read('export default { layout: { ["dir"]: "web" } };')).toEqual({ values: ["web"] });
+  });
+
+  it("refuses an array of literals where the property holds one directory", () => {
+    expect(read('export default { layout: { dir: ["web"] } };').notLiteral).toBeDefined();
+  });
+
+  it("reads every member that writes the path, and refuses a spread written after them", () => {
+    expect(read('export default { layout: { dir: "a" }, layout: { dir: "b" } };').values).toEqual([
+      "a",
+      "b",
+    ]);
+    expect(read('export default { layout: { dir: "a" }, ...rest };').notLiteral).toBeDefined();
+  });
+
+  it("refuses a default export whose declarations name each other in a cycle", () => {
+    expect(read("const a = b;\nconst b = a;\nexport default a;\n").notLiteral).toBeDefined();
+  });
+
+  it("reads the options of a call to the export a require of the module binds", () => {
+    const text =
+      'const { tool } = require("tool");\nconst { tool: renamed } = require("tool");\n' +
+      'const ns = require("tool");\nconst options = { layout: { dir: "d" } };\n' +
+      'tool({ layout: { dir: "a" } });\nrenamed({ layout: { dir: "b" } });\n' +
+      'ns.tool({ layout: { dir: "c" } });\n';
+
+    expect(read(text, TOOL)).toEqual({ values: ["a", "b", "c"] });
+  });
+
+  it("reads no call a require binds unless it requires the module alone and names the export", () => {
+    const text =
+      'const other = require("other");\nconst loaded = load("tool");\n' +
+      'const twice = require("tool", "extra");\nconst { ...tool } = require("tool");\n' +
+      'const { helper } = require("tool");\nimport * as space from "tool";\n' +
+      'other.tool({ layout: { dir: "a" } });\nloaded.tool({ layout: { dir: "b" } });\n' +
+      'twice.tool({ layout: { dir: "c" } });\ntool({ layout: { dir: "d" } });\n' +
+      'helper({ layout: { dir: "e" } });\nspace.helper({ layout: { dir: "f" } });\n';
+
+    expect(read(text, TOOL)).toEqual({ values: [] });
+  });
+
+  it("reads no call a require binds where the file declares its own require at any depth", () => {
+    const text =
+      'const { tool } = require("tool");\ntool({ layout: { dir: "a" } });\n' +
+      "function load(require) {\n  return require;\n}\n";
+
+    expect(read(text, TOOL)).toEqual({ values: [] });
   });
 });
 
@@ -363,6 +438,92 @@ describe("readConventions", () => {
     expect(matches(decided, "app/x.ts")).toEqual(["tool", "tool"]);
     expect(matches(decided, "x.ts")).toEqual(["tool"]);
   });
+
+  it("applies nothing and fails nothing for a manifest that is not an object", () => {
+    expect(decide({ "/repo/package.json": "null", ...INSTALLED })).toEqual({
+      applied: [],
+      globs: [],
+      generated: [],
+      failures: [],
+      uses: [],
+      selected: new Map(),
+      testFiles: new Set(),
+    });
+  });
+
+  it("orders the rows applied in several manifests by manifest, whatever their versions", () => {
+    const decided = readConventions(
+      hostWith({
+        "/repo/z/package.json": '{ "dependencies": { "tool": "2" } }',
+        "/repo/z/node_modules/tool/package.json": '{ "version": "2.1.0" }',
+        "/repo/a/package.json": '{ "dependencies": { "tool": "2" } }',
+        "/repo/a/node_modules/tool/package.json": '{ "version": "2.5.0" }',
+      }),
+      parse,
+      [
+        { dir: "/repo/z", path: "z/package.json" },
+        { dir: "/repo/a", path: "a/package.json" },
+      ],
+      [],
+      [ROW],
+    );
+
+    expect(decided.applied.map((one) => `${one.manifest} ${one.version}`)).toEqual([
+      "a/package.json 2.5.0",
+      "z/package.json 2.1.0",
+    ]);
+  });
+
+  it("names a nested manifest's configuration file by its path below the target root", () => {
+    const decided = readConventions(
+      hostWith({
+        "/repo/apps/web/package.json": '{ "dependencies": { "tool": "2" } }',
+        "/repo/apps/web/tool.config.ts": "export default { layout: { dir: name } };\n",
+        ...INSTALLED,
+      }),
+      parse,
+      [{ dir: "/repo/apps/web", path: "apps/web/package.json" }],
+      [],
+      [ROW],
+    );
+
+    expect(decided.failures[0]?.failure.detail).toMatch(/^apps\/web\/tool\.config\.ts:1 sets /u);
+  });
+
+  it("reads no file the reading's globs do not name", () => {
+    const decided = decide({
+      "/repo/package.json": '{ "dependencies": { "tool": "2" } }',
+      "/repo/other.config.ts": 'export default { layout: { dir: "web" } };',
+      ...INSTALLED,
+    });
+
+    expect(matches(decided, "src/b.ts")).toEqual(["tool"]);
+    expect(matches(decided, "web/b.ts")).toEqual([]);
+  });
+
+  it("names the first configuration file by name where several set a moving property to no literal", () => {
+    const decided = decide({
+      "/repo/package.json": '{ "dependencies": { "tool": "2" } }',
+      "/repo/tool.config.ts": "export default { layout: { dir: one } };\n",
+      "/repo/tool.config.js": "export default { layout: { dir: other } };\n",
+      ...INSTALLED,
+    });
+
+    expect(decided.failures[0]?.failure.detail).toMatch(/^tool\.config\.js:1 /u);
+  });
+
+  it("reads one glob per entry and directory, none for a placeholder no move declares, and no exclude or generated directory the row does not name", () => {
+    const decided = decide(
+      { "/repo/package.json": '{ "dependencies": { "tool": "2" } }', ...INSTALLED },
+      [],
+      [{ ...ROW, entries: ["<dir>/**/*.ts", "<undeclared>/*.ts"] }],
+    );
+
+    expect(decided.globs.map((one) => one.row)).toEqual(["tool"]);
+    expect(matches(decided, "src/a.ts")).toEqual(["tool"]);
+    expect(decided.globs.map((one) => one.excludes)).toEqual([[]]);
+    expect(decided.generated).toEqual([]);
+  });
 });
 
 describe("a row's short names", () => {
@@ -436,6 +597,40 @@ describe("a row's short names", () => {
       ).uses,
     ).toEqual([]);
   });
+
+  const unread = (packageName: string, declared: Readonly<Record<string, string>>) =>
+    decide(
+      {
+        "/repo/package.json": JSON.stringify({ dependencies: { tool: "2", ...declared } }),
+        "/repo/tool.config.ts": "export default { plugin: { name: process.env.PLUGIN } };",
+        ...INSTALLED,
+      },
+      [],
+      [
+        {
+          ...ROW,
+          shortNames: [
+            { property: "plugin.name", files: ["tool.config.ts"], package: packageName },
+          ],
+        },
+      ],
+    ).uses;
+
+  it("uses every declared dependency where the short name is the whole package name", () => {
+    expect(unread("{}", { other: "1" })).toEqual(["other", "tool"]);
+  });
+
+  it("uses a declared dependency only where the package name's text before and after the value both fit it", () => {
+    expect(
+      unread("tool-{}-tool", {
+        "tool-a-tool": "1",
+        "tool--tool": "1",
+        "tool-tool": "1",
+        "tool-a": "1",
+        "unrelated-long-name": "1",
+      }),
+    ).toEqual(["tool--tool", "tool-a-tool"]);
+  });
 });
 
 describe("a row's package keys", () => {
@@ -485,6 +680,62 @@ describe("a row's package keys", () => {
         "/repo/tool.config.ts": 'export default defineConfig({ builder: ["named:build"] });',
       }),
     ).toEqual(["named"]);
+  });
+});
+
+describe("a row's manifest keys", () => {
+  it("uses each declared dependency a string under the key names exactly or by a subpath", () => {
+    const decided = decide(
+      {
+        "/repo/package.json": JSON.stringify({
+          dependencies: { tool: "2", b: "1", a: "1", c: "1", d: "1" },
+          tool: { x: "a", y: ["b/sub"], z: "cx", w: "x/d/" },
+        }),
+        ...INSTALLED,
+      },
+      [],
+      [{ ...ROW, manifestKeys: ["tool"] }],
+    );
+
+    expect(decided.uses).toEqual(["a", "b"]);
+  });
+});
+
+describe("a row's selections", () => {
+  const CONFIG = "/repo/tool.config.ts";
+  const selected = (text: string, call?: OptionsCall) =>
+    decide(
+      { "/repo/package.json": '{ "dependencies": { "tool": "2" } }', [CONFIG]: text, ...INSTALLED },
+      [],
+      [
+        {
+          ...ROW,
+          selections: ["files.ignore", "files.only"].map((property) => ({
+            property,
+            files: ["tool.config.ts"],
+            ...(call === undefined ? {} : { call }),
+          })),
+        },
+      ],
+    ).selected.get(CONFIG);
+
+  it("holds each literal at a selection key, alone or in an array, with where it starts", () => {
+    const text =
+      'const ignore = "ignore";\nexport default { files: { ignore: ["a", name, `b`], other: "x", ' +
+      '[ignore]: "y", only: "c" }, more: { files: "z" } };\n';
+
+    expect(selected(text)).toEqual({
+      starts: new Set([text.indexOf('"a"'), text.indexOf("`b`"), text.indexOf('"c"')]),
+      texts: ["a", "b", "c"],
+    });
+  });
+
+  it("holds the literals in each call's own options, and none in a call those options are wrapped in", () => {
+    const text =
+      'import { tool } from "tool";\nexport default { plugins: [tool({ files: { only: "a" } }), ' +
+      'tool(wrap({ files: { only: "b" } }))] };\n';
+
+    expect(selected(text, { module: "tool", export: "tool" })?.texts).toEqual(["a"]);
   });
 });
 
@@ -572,6 +823,58 @@ describe("a row's helper settings", () => {
         "vite.config.ts": 'export default { oxc: { helpers: { mode: "External" } } };',
       }),
     ).toEqual([]);
+  });
+
+  it("uses @babel/runtime where the transform-runtime plugin is one of several, and not where another plugin is listed alone", () => {
+    const babel = (config: Readonly<Record<string, string>>) =>
+      uses("babel", "@babel/core", "@babel/runtime", config);
+
+    expect(
+      babel({
+        "babel.config.json":
+          '{ "plugins": ["other-plugin", ["@babel/plugin-transform-runtime", {}]] }',
+      }),
+    ).toEqual(["@babel/runtime"]);
+    expect(
+      babel({ "babel.config.json": '{ "plugins": ["other-plugin", ["another", {}]] }' }),
+    ).toEqual([]);
+  });
+
+  it("uses @babel/runtime where one of several Babel configuration files lists the plugin", () => {
+    expect(
+      uses("babel", "@babel/core", "@babel/runtime", {
+        "babel.config.json": '{ "presets": ["@babel/preset-env"] }',
+        ".babelrc": '{ "plugins": ["@babel/plugin-transform-runtime"] }',
+      }),
+    ).toEqual(["@babel/runtime"]);
+  });
+});
+
+describe("conventionFailuresFor", () => {
+  const failuresFor = (configFile: string, ownFiles: readonly string[]) => {
+    const conventions = decide({ "/repo/package.json": '{ "dependencies": { "tool": "2" } }' });
+    return {
+      held: conventionFailuresFor(conventions, configFile, ownFiles),
+      failures: conventions.failures.map((one) => one.failure),
+    };
+  };
+
+  it("holds a failure for a configuration in or below the manifest's directory", () => {
+    const atRoot = failuresFor("/repo/tsconfig.json", []);
+    const below = failuresFor("/repo/a/tsconfig.json", []);
+
+    expect(atRoot.held).toEqual(atRoot.failures);
+    expect(below.held).toEqual(below.failures);
+    expect(atRoot.failures).toHaveLength(1);
+  });
+
+  it("holds a failure for a configuration elsewhere only where one of its files is below the manifest's directory", () => {
+    const outside = failuresFor("/other/tsconfig.json", ["/other/a.ts"]);
+    const reaching = failuresFor("/other/tsconfig.json", ["/other/a.ts", "/repo/b.ts"]);
+
+    expect(outside.held).toEqual([]);
+    expect(reaching.held).toEqual(reaching.failures);
+    expect(reaching.failures).toHaveLength(1);
   });
 });
 

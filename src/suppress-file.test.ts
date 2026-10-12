@@ -220,6 +220,52 @@ describe("a suppression document", () => {
   });
 });
 
+describe("a refused entry or document", () => {
+  const refusalOf = (text: string): string => {
+    try {
+      return JSON.stringify(readIgnoreFile(hostWith({ [IGNORE_FILE]: text }), ROOT, []));
+    } catch (error: unknown) {
+      return error instanceof ConfigError ? error.message : `not a usage refusal: ${String(error)}`;
+    }
+  };
+
+  it.each([
+    ["null", "null"],
+    ["a string", '"DS1002"'],
+    ["an array", "[]"],
+  ])("names an entry that is %s by its value", (_what, entry) => {
+    expect(refusalOf(`{"ignore": [${entry}]}`)).toContain(
+      `: ${entry}: want an entry naming code, symbol, path and reason, each a string`,
+    );
+  });
+
+  it("names a member the grammar does not declare, though it holds a string", () => {
+    expect(refusalOf(JSON.stringify({ ignore: [{ ...ENTRY, scope: "all" }] }))).toContain(
+      `1:12: the member "scope" is not one the grammar declares: want an entry naming code, symbol, path and reason, each a string`,
+    );
+  });
+
+  it("refuses a document that is null as no object", () => {
+    expect(refusalOf("null")).toBe(
+      `ignore ${IGNORE_FILE}: ${IGNORE_FILE}: want an object carrying the ignore array, and an optional description`,
+    );
+  });
+
+  it("names why a document that is not JSON could not be parsed", () => {
+    const text = '{"ignore": [}';
+    let reason = "";
+    try {
+      JSON.parse(text);
+    } catch (error: unknown) {
+      reason = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(refusalOf(text)).toBe(
+      `ignore ${IGNORE_FILE}: ${IGNORE_FILE}: ${reason}: want an object carrying the ignore array, and an optional description`,
+    );
+  });
+});
+
 describe("a written baseline", () => {
   const recorded = [{ code: ENTRY.code, symbol: ENTRY.symbol, path: ENTRY.path }];
 
@@ -265,6 +311,14 @@ describe("a written baseline", () => {
     expect(() => writeBaseline(recorded, { analyzer: "deadset-ts", version: "" })).toThrow(
       /would carry no reason/u,
     );
+    expect(() => writeBaseline(recorded, { analyzer: "", version: "1.2.3" })).toThrow(
+      /would carry no reason/u,
+    );
+    for (const missing of ["code", "symbol"] as const) {
+      expect(() =>
+        writeBaseline([{ ...ENTRY, [missing]: "" }], { analyzer: "deadset-ts", version: "1.2.3" }),
+      ).toThrow(/would carry no reason/u);
+    }
     expect(() =>
       writeBaseline([{ ...recorded[0], path: "" } as (typeof recorded)[number]], {
         analyzer: "deadset-ts",

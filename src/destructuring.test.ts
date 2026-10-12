@@ -165,6 +165,159 @@ describe("the members a destructuring reads", () => {
   });
 });
 
+/** The shapes the written modules below destructure. */
+const SHAPES = [
+  "export interface Inner {\n  deep: string;\n  spare: string;\n}",
+  "export interface Row {\n  key: string;\n  value: number;\n  pair: [Inner];\n}",
+  "export interface Other {\n  key: string;\n  value: number;\n}",
+  "export interface Extra {\n  note: string;\n}",
+  "export interface Bag {\n  key: string;\n  rest: string;\n  extra?: Extra;\n}",
+].join("\n");
+
+/**
+ * Each read a pattern of one written module makes, as its line, the member and how it
+ * was resolved, and what resolving them cost.
+ */
+function patternReads(
+  body: string,
+  panicsOn?: (accessor: string) => boolean,
+): { readonly reads: readonly string[]; readonly cost: ReferenceCost | undefined } {
+  const analyzed = analyzeProject(
+    { "unit.ts": `${SHAPES}\n${body}` },
+    {
+      references: { testFiles: [] },
+      ...(panicsOn === undefined ? {} : { panicsOn: (accessor: string) => panicsOn(accessor) }),
+    },
+  );
+  const symbols = analyzed.inventories[0]?.symbols ?? [];
+  const offset = SHAPES.split("\n").length;
+  return {
+    reads: (analyzed.references[0]?.references ?? [])
+      .filter((one) => one.resolution === "destructured" || one.resolution === "by-name")
+      .map(
+        (one) =>
+          `${String(one.position.line - offset)} ${symbols.find((symbol) => symbol.id === one.to)?.name ?? one.to} ${one.resolution}`,
+      ),
+    cost: analyzed.references[0]?.cost,
+  };
+}
+
+describe("the members an assignment target reads", () => {
+  it("are read through a property and then a tuple element, in that order", () => {
+    expect(
+      patternReads(
+        'export function assign(row: Row): string {\n  let deep = "";\n  ({ pair: [{ deep }] } = row);\n  return deep;\n}',
+      ).reads,
+    ).toEqual(["3 Row.pair destructured", "3 Inner.deep destructured"]);
+  });
+
+  it("are read through the element an iteration assigns, and then into it", () => {
+    expect(
+      patternReads(
+        'export function iterate(rows: readonly Row[]): string {\n  let deep = "";\n  for ({ pair: [{ deep }] } of rows) {\n    console.log(deep);\n  }\n  return deep;\n}',
+      ).reads,
+    ).toEqual(["3 Row.pair destructured", "3 Inner.deep destructured"]);
+  });
+
+  it("are read off the tuple element at the target's own place", () => {
+    const { reads, cost } = patternReads(
+      'export function second(pair: [Other, Row]): string {\n  let key = "";\n  [, { key }] = pair;\n  return key;\n}',
+    );
+
+    expect(reads).toEqual(["3 Row.key destructured"]);
+    expect(
+      cost,
+      "one batch and the tuple's element types: the row's table is the one an earlier pass read",
+    ).toMatchObject({ patternBatches: 1, patternLookups: 1 });
+  });
+
+  it("are read off an array's element type, asking once whether it is an array and once for the element", () => {
+    const { reads, cost } = patternReads(
+      "export function first(rows: Row[]): number {\n  let value = 0;\n  [{ value }] = rows;\n  return value;\n}",
+    );
+
+    expect(reads).toEqual(["3 Row.value destructured"]);
+    expect(cost).toMatchObject({ patternBatches: 1, patternLookups: 2 });
+  });
+
+  it("are read by name where the checker does not answer whether the value is an array", () => {
+    expect(
+      patternReads(
+        "export function first(rows: Row[]): number {\n  let value = 0;\n  [{ value }] = rows;\n  return value;\n}",
+        (accessor) => accessor === "isArrayType",
+      ).reads,
+    ).toEqual(["3 Other.value by-name", "3 Row.value by-name"]);
+  });
+
+  it("cost no element lookup where the iterated value is no type reference", () => {
+    const { reads, cost } = patternReads(
+      'export function count(): number {\n  let length = 0;\n  for ({ length } of "ab") {\n    console.log(length);\n  }\n  return length;\n}',
+    );
+
+    expect(reads).toEqual([]);
+    expect(cost).toMatchObject({ patternBatches: 1, patternLookups: 0 });
+  });
+
+  it("cost no non-nullable lookup where the value is no union, and one where it is", () => {
+    expect(
+      patternReads(
+        'export function plain(row: Row): string {\n  let key = "";\n  ({ key } = row);\n  return key;\n}',
+      ).cost,
+      "no lookup of its own: the row's table is the one an earlier pass read",
+    ).toMatchObject({ patternBatches: 1, patternLookups: 0 });
+    const optional = patternReads(
+      'export function optional(bag: Bag): string {\n  let note = "";\n  ({ extra: { note } = { note: "" } } = bag);\n  return note;\n}',
+    );
+    expect(optional.reads).toEqual(["3 Bag.extra destructured", "3 Extra.note destructured"]);
+    expect(
+      optional.cost,
+      "the member's type, its non-nullable part and that part's table",
+    ).toMatchObject({ patternBatches: 1, patternLookups: 3 });
+  });
+
+  it("is read where the assignment is a property's value in a literal that is no target", () => {
+    expect(
+      patternReads(
+        'export function held(row: Row): string {\n  let key = "";\n  const out = { last: ({ key } = row) };\n  return key + out.last.key;\n}',
+      ).reads,
+    ).toEqual(["3 Row.key destructured"]);
+  });
+
+  it("are none for a literal on the right of an assignment or the left of another operator", () => {
+    const { reads, cost } = patternReads(
+      'export class Holder {\n  static key = "";\n}\nexport function make(): boolean {\n  let row: { key: string };\n  row = { key: "a" };\n  return { key: row.key } instanceof Holder;\n}',
+    );
+
+    expect(reads).toEqual([]);
+    expect(cost).toMatchObject({ patternBatches: 0, patternLookups: 0 });
+  });
+});
+
+describe("the members a binding pattern reads", () => {
+  it("are none for a nested pattern in a function type's parameter list", () => {
+    expect(
+      patternReads("export type Reader = ({ pair: [{ deep }] }: Row) => string;").reads,
+    ).toEqual([]);
+  });
+
+  it("are none for a rest element, whatever member its local's name matches", () => {
+    expect(
+      patternReads(
+        "export function take({ key, ...rest }: Bag): string {\n  return key + String(Object.keys(rest).length);\n}",
+      ).reads,
+    ).toEqual(["1 Bag.key destructured"]);
+  });
+
+  it("cost no property table for a value of type any", () => {
+    const { reads, cost } = patternReads(
+      "export function loose({ key }: any): string {\n  return String(key);\n}",
+    );
+
+    expect(reads).toEqual([]);
+    expect(cost).toMatchObject({ patternBatches: 1, patternLookups: 0 });
+  });
+});
+
 describe("the unused members of a destructured tree", () => {
   it("are the members no pattern, access or rest copy reads", () => {
     const config = resolve({

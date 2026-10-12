@@ -189,9 +189,9 @@ describe("the completion of every family's findings", () => {
 describe("the dials over every family's findings", () => {
   const named = (findings: readonly CompletedFinding[]): string[] =>
     findings.map((finding) => `${finding.code} ${finding.symbol.name}`);
-  const everything = named(reportedUnder("interfaces"));
 
   it("withhold, with a root one family reports at allow, what another family reports in its component", () => {
+    const everything = named(reportedUnder("interfaces"));
     const allowed = named(reportedUnder("interfaces", { severity: { DS1002: "allow" } }));
 
     expect(everything).toContain("DS1201 OnlyDead");
@@ -202,6 +202,7 @@ describe("the dials over every family's findings", () => {
   });
 
   it("withhold a finding that falls with a root alone, leaving the root another family reports", () => {
+    const everything = named(reportedUnder("interfaces"));
     const allowed = named(reportedUnder("interfaces", { severity: { DS1201: "allow" } }));
 
     expect(allowed).toContain("DS1002 orphan");
@@ -211,6 +212,7 @@ describe("the dials over every family's findings", () => {
   });
 
   it("withhold every root of a component with one of them, whichever family reports each", () => {
+    const everything = named(reportedUnder("interfaces"));
     const allowed = named(reportedUnder("interfaces", { severity: { DS1005: "allow" } }));
 
     expect(everything).toEqual(expect.arrayContaining(["DS1005 testProbe", "DS1201 Probe"]));
@@ -369,5 +371,166 @@ describe("a test of dead code in a library", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+function reportedOver(
+  files: Readonly<Record<string, string>>,
+  document: Record<string, unknown>,
+): readonly CompletedFinding[] {
+  const root = writeProject(files);
+  try {
+    const { config } = resolve({
+      repository: JSON.stringify(document),
+      repositoryLabel: "deadset.json",
+    });
+    return findingsOf(emitterInputOf(root, config));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+describe("the configurations a finding holds in", () => {
+  it("are the matrix for a file, and the declaring file's for a live declaration and for a part", () => {
+    const options = { strict: true, module: "NodeNext", noEmit: true };
+    const found = reportedOver(
+      {
+        "package.json": '{ "name": "@example/split", "type": "module", "main": "./src/main.ts" }\n',
+        "tsconfig.json": `${JSON.stringify({ compilerOptions: options, include: ["src/**/*.ts"] })}\n`,
+        "tsconfig.tools.json": `${JSON.stringify({ compilerOptions: options, include: ["tools/**/*.ts"] })}\n`,
+        "src/main.ts": [
+          "let written = 0;",
+          "written = 1;",
+          "",
+          "function scale(value: number, unused: number): number {",
+          "  return value * 2;",
+          "}",
+          "",
+          "console.log(scale(1, 2));",
+          "",
+        ].join("\n"),
+        "src/orphan.ts": 'console.log("orphan");\n',
+        "tools/run.ts": 'console.log("tool");\n',
+      },
+      { target: { kind: "application" }, ts: { entry_files: ["src/main.ts", "tools/run.ts"] } },
+    );
+
+    expect(
+      found.map(
+        (finding) =>
+          `${finding.code} ${finding.symbol.name} [${finding.configurations.join(",")}] ${finding.testOnly ? "test-only" : "-"}`,
+      ),
+    ).toEqual([
+      "DS1301 written [tsconfig.json] -",
+      "DS1502 src/orphan.ts [tsconfig.json,tsconfig.tools.json] -",
+      "DS1801 unused [tsconfig.json] -",
+    ]);
+  });
+});
+
+describe("a part of test-support code only test code calls", () => {
+  it("is no test-only finding, which only a dead declaration's is", () => {
+    const found = reportedOver(
+      {
+        "package.json": '{ "name": "@example/parts", "type": "module", "main": "./src/main.ts" }\n',
+        "src/main.ts": "console.log(1);\n",
+        "src/fakes/fake.ts":
+          "export function fake(value: number, ignored: number): number {\n  return value;\n}\n",
+        "src/main.test.ts": 'import { fake } from "./fakes/fake.js";\n\nconsole.log(fake(1, 2));\n',
+      },
+      { target: { kind: "application" } },
+    );
+
+    expect(
+      found.map((finding) => `${finding.code} ${finding.symbol.name} ${String(finding.testOnly)}`),
+    ).toEqual(["DS1801 ignored false"]);
+  });
+});
+
+describe("a dead component whose root is certain and a member falling with it is not", () => {
+  // `in` tests the member by name, so only `area` of the two is possible.
+  const SHAPES = {
+    "package.json": '{ "name": "@example/shapes", "type": "module", "main": "./src/main.ts" }\n',
+    "src/main.ts": [
+      "class Shape {",
+      "  area(): number {",
+      "    return 1;",
+      "  }",
+      "  name(): string {",
+      '    return "shape";',
+      "  }",
+      "}",
+      "",
+      "function deadCaller(shape: Shape): number {",
+      "  return shape.area();",
+      "}",
+      "",
+      "const shape = new Shape();",
+      'console.log(shape.name(), "area" in shape);',
+      "",
+    ].join("\n"),
+  };
+  const claimed = (document: Record<string, unknown>): string[] =>
+    reportedOver(SHAPES, { target: { kind: "application" }, ...document }).map(
+      (finding) => `${finding.code} ${finding.symbol.name} ${finding.confidence}`,
+    );
+
+  it("keeps the root at its own class, and the member at its", () => {
+    expect(claimed({ analysis: { min_confidence: "possible" } })).toEqual([
+      "DS1003 Shape.area possible",
+      "DS1002 deadCaller certain",
+    ]);
+  });
+
+  it("reports the root alone under the default minimum confidence", () => {
+    expect(claimed({})).toEqual(["DS1002 deadCaller certain"]);
+  });
+});
+
+describe("a component listed in full", () => {
+  it("names every member in position order, each to the last line it spans", () => {
+    const found = reportedOver(
+      {
+        "package.json":
+          '{ "name": "@example/cascade", "type": "module", "main": "./src/main.ts" }\n',
+        "src/later.ts": "export function later(): number {\n  return 3;\n}\n",
+        "src/main.ts": [
+          'import { later } from "./later.js";',
+          "",
+          "function late(): number {",
+          "  return 1;",
+          "}",
+          "",
+          "function deadCaller(): number {",
+          "  return (",
+          "    late() +",
+          "    early() +",
+          "    later()",
+          "  );",
+          "}",
+          "",
+          "function early(): number {",
+          "  return 2;",
+          "}",
+          "",
+          "console.log(1);",
+          "",
+        ].join("\n"),
+      },
+      { target: { kind: "application" }, reporters: { cascade: "full" } },
+    );
+    const root = found.find((finding) => finding.symbol.name === "deadCaller");
+
+    expect(
+      root?.component.members?.map(
+        (member) =>
+          `${member.name} ${member.position.path}:${String(member.position.line)}-${String(member.position.endLine)}`,
+      ),
+    ).toEqual([
+      "later src/later.ts:1-3",
+      "late src/main.ts:3-5",
+      "deadCaller src/main.ts:7-13",
+      "early src/main.ts:15-17",
+    ]);
   });
 });

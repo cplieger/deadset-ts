@@ -6,10 +6,22 @@ import { nodeHost } from "../bin/node-host.ts";
 import { discoverProjects } from "../src/discover.ts";
 import { inventory, type Inventory } from "../src/inventory.ts";
 import { readManifest } from "../src/manifest.ts";
-import { references, type ReferenceOptions, type References } from "../src/references.ts";
+import { relativePath } from "../src/paths.ts";
+import {
+  references,
+  type Reference,
+  type ReferenceOptions,
+  type References,
+} from "../src/references.ts";
 import { roots, type RootOptions, type Roots } from "../src/roots.ts";
 import { scopeForDir } from "../src/scope.ts";
-import { openEngine, runSession, type ProjectView } from "../src/session.ts";
+import {
+  narrowedTo,
+  openEngine,
+  runSession,
+  type Engine,
+  type ProjectView,
+} from "../src/session.ts";
 
 /**
  * A project written outside the repository, for a case whose input the committed
@@ -144,13 +156,41 @@ export interface AnalyzeOptions {
    * for it.
    */
   readonly roots?: Omit<RootOptions, "manifest" | "host">;
+  /**
+   * The questions the compiler server panics on, by accessor and the locations asked,
+   * each location `<file>:<offset>`. Absent, every question is answered.
+   */
+  readonly panicsOn?: (accessor: string, locations: readonly string[]) => boolean;
+  /**
+   * The extensions of the files read as component files, through this analyzer's mapper.
+   * Absent, no mapper runs and no file is a component file.
+   */
+  readonly components?: readonly string[];
 }
 
 /** Enumerates one project under `root`, in one client and one snapshot. */
 export function analyzeRoot(root: string, options: AnalyzeOptions = {}): Analyzed {
   const host = nodeHost();
   const wanted = options.references;
-  const engine = openEngine({ collectTiming: wanted !== undefined });
+  const opened = openEngine({
+    collectTiming: wanted !== undefined,
+    ...(options.components === undefined
+      ? {}
+      : { components: { extensions: options.components, host } }),
+  });
+  const { panicsOn } = options;
+  const engine: Engine =
+    panicsOn === undefined
+      ? opened
+      : {
+          ...opened,
+          ask: (accessor, locations, question) => {
+            if (panicsOn(accessor, locations())) {
+              throw new Error(`panic: ${accessor}`);
+            }
+            return opened.ask(accessor, locations, question);
+          },
+        };
   const configFiles = discoverProjects(engine, host, scopeForDir(host, root)).configFiles;
   const programFiles: string[] = [];
   const tally: Tally = { members: [], exports: [] };
@@ -193,6 +233,57 @@ export function analyzeProject(
   const root = writeProject(files);
   try {
     return analyzeRoot(root, options);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+/** The references one consumer's pass made, and the target declarations they name. */
+export interface ConsumerPass {
+  readonly references: readonly Reference[];
+  /** The target's declarations, enumerated over the target files the consumer's program holds. */
+  readonly held: Inventory;
+}
+
+/**
+ * Writes one tree holding a target directory and a consumer directory, and runs the
+ * reference pass over the consumer's configuration alone, as a run reads a declared
+ * consumer: the target's declarations enumerated over the target files the consumer's
+ * program holds, against the target's root. Removes the tree.
+ */
+export function consumerPass(
+  files: Readonly<Record<string, string>>,
+  target: string,
+  consumer: string,
+): ConsumerPass {
+  const root = writeProject(files);
+  try {
+    const host = nodeHost();
+    const targetRoot = join(root, target);
+    const consumerRoot = join(root, consumer);
+    const passes: ConsumerPass[] = [];
+    runSession(
+      openEngine({ collectTiming: false }),
+      [join(consumerRoot, "tsconfig.json")],
+      (project) => {
+        const held = inventory(
+          narrowedTo(project, (file) => relativePath(targetRoot, file.fileName) !== undefined),
+          host,
+          targetRoot,
+        );
+        const found = references(project, held, targetRoot, {
+          testFiles: [],
+          consumer: { id: "@example/consumer", root: consumerRoot },
+        });
+        passes.push({ references: found.references, held });
+        return held;
+      },
+    );
+    const [pass] = passes;
+    if (pass === undefined) {
+      throw new Error(`no project opened at ${consumer}/tsconfig.json`);
+    }
+    return pass;
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

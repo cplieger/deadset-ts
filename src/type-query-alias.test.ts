@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { isIdentifier, isVariableDeclaration } from "@typescript/native/ast";
+import { afterAll, describe, expect, it } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
 import { emitterInputOf, findingsOf } from "../__test-helpers__/emitter-input.ts";
 import { fixture } from "../__test-helpers__/fixtures.ts";
@@ -8,6 +9,7 @@ import { runRoots } from "./analysis.ts";
 import { resolve } from "./resolve.ts";
 import { scopeForDir } from "./scope.ts";
 import { openEngine } from "./session.ts";
+import { typeQueryAliases } from "./type-query-alias.ts";
 
 const TARGET = fixture("projects", "type-query-alias");
 
@@ -76,6 +78,92 @@ describe("a global a declaration file declares as an alias of a module's export"
     expect(
       FINDINGS.filter((line) => line.endsWith(" useInSource")),
       "the global's literal indexed-access type references the export as any such type does",
+    ).toEqual([]);
+  });
+});
+
+const engine = openEngine({ collectTiming: false });
+afterAll(() => {
+  engine.close();
+});
+
+function aliasesOf(fileName: string, lines: readonly string[]): string[] {
+  return typeQueryAliases(engine.parseSourceFile(fileName, lines.join("\n"))).map((alias) => {
+    const name =
+      isVariableDeclaration(alias.declaration) && isIdentifier(alias.declaration.name)
+        ? alias.declaration.name.text
+        : "?";
+    return `${name} -> ${alias.name}, ${String(alias.containers.length)}`;
+  });
+}
+
+describe("the aliases one file declares", () => {
+  it("are the variables of a script declaration file typed as a module's export, in either form", () => {
+    expect(
+      aliasesOf("/target/globals.d.ts", [
+        'declare var indexed: typeof import("m")["x"];',
+        'declare var qualified: typeof import("m").y;',
+        'declare var typeOnly: import("m").Z;',
+        'declare var instantiated: typeof import("m").f<number>;',
+        'declare var notAModule: typeof import(m)["x"];',
+        'declare var notAnImport: Box["k"];',
+        'declare var qualifiedIndex: typeof import("m").ns["k"];',
+        "declare var plain: number;",
+      ]),
+    ).toEqual(["indexed -> x, 0", "qualified -> y, 0"]);
+  });
+
+  it("are, in a module declaration file, only those its declare global block holds", () => {
+    expect(
+      aliasesOf("/target/augment.d.ts", [
+        'declare var scoped: typeof import("m")["x"];',
+        "declare global {",
+        '  var inGlobal: typeof import("m")["y"];',
+        "}",
+        "export {};",
+      ]),
+    ).toEqual(["inGlobal -> y, 1"]);
+  });
+
+  it("are read in a declare global block an ambient module holds, with both around it", () => {
+    expect(
+      aliasesOf("/target/ambient.d.ts", [
+        'declare module "pkg" {',
+        "  global {",
+        '    var ambient: typeof import("m")["x"];',
+        "  }",
+        "}",
+      ]),
+    ).toEqual(["ambient -> x, 2"]);
+  });
+
+  it("are not read in a namespace or a module named by an identifier", () => {
+    expect(
+      aliasesOf("/target/named.d.ts", [
+        "declare namespace global {",
+        '  var namespaced: typeof import("m")["x"];',
+        "}",
+        "declare module Named {",
+        '  var moduled: typeof import("m")["x"];',
+        "}",
+        "declare namespace Outer {",
+        "  global {",
+        '    var nested: typeof import("m")["x"];',
+        "  }",
+        "}",
+        "export {};",
+      ]),
+    ).toEqual([]);
+  });
+
+  it("are none in a source file that is no declaration file", () => {
+    expect(
+      aliasesOf("/target/source.ts", [
+        'declare var top: typeof import("m")["x"];',
+        "declare global {",
+        '  var inBlock: typeof import("m")["y"];',
+        "}",
+      ]),
     ).toEqual([]);
   });
 });

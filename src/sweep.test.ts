@@ -12,7 +12,7 @@ import type { Root } from "./roots.ts";
 import { scopeForDir } from "./scope.ts";
 import { openEngine } from "./session.ts";
 import type { SweepResult } from "./matrix.ts";
-import { sweep, type Liveness, type Mode } from "./sweep.ts";
+import { reachedWithTheTests, sweep, type Liveness, type Mode } from "./sweep.ts";
 
 const PRODUCTION: Mode = { production: true };
 const PLAIN: Mode = { production: false };
@@ -268,6 +268,19 @@ describe("the sweep over an in-memory graph", () => {
     ).toEqual([]);
   });
 
+  it("holds a marked file's top level and reaches none of what it exports", () => {
+    const worker = file("src/worker.ts");
+    const exported = { ...declared("exported", 2, "src/worker.ts"), exported: true };
+    const helper = declared("helper", 3, "src/worker.ts");
+    const own = [worker, exported, helper];
+    const graph = graphOf(own, [reference(exported, helper)], [], []);
+
+    expect(candidates(sweep(graph, { marked: [worker.id], mode: PLAIN }), own)).toEqual([
+      "exported reference-counting",
+      "helper reachability",
+    ]);
+  });
+
   it("reaches a file's exports through a reference to the file, and not through its root", () => {
     const worker = file("src/worker.ts");
     const exported = { ...declared("exported", 2, "src/worker.ts"), exported: true };
@@ -328,6 +341,130 @@ describe("the sweep over an in-memory graph", () => {
       "head reference-counting",
       "middle reachability",
       "tail reachability",
+    ]);
+  });
+});
+
+describe("the relations an in-memory graph holds live", () => {
+  it("hold no entry for a declaration neither relation holds live", () => {
+    const source = file();
+    const [head, middle, tail] = [declared("head", 2), declared("middle", 3), declared("tail", 4)];
+    const graph = graphOf(
+      [source, head, middle, tail],
+      [reference(head, middle), reference(middle, tail)],
+      [],
+      [],
+    );
+
+    expect([...sweep(graph, { marked: [], mode: PLAIN }).liveUnder.keys()]).toEqual([
+      middle.id,
+      tail.id,
+    ]);
+  });
+});
+
+describe("what a run counting test references reaches", () => {
+  it("is what a test file's top level and its top-level exports reference, and nothing else", () => {
+    const source = file();
+    const exportedProduction = { ...declared("exportedProduction", 2), exported: true };
+    const usedByTopLevel = declared("usedByTopLevel", 3);
+    const usedByCheck = declared("usedByCheck", 4);
+    const testFile = file("src/a.test.ts");
+    const check = { ...declared("check", 2, "src/a.test.ts"), exported: true };
+    const local = declared("local", 3, "src/a.test.ts");
+    const suite: InventorySymbol = {
+      ...declared("suite", 4, "src/a.test.ts"),
+      kind: "namespace",
+      exported: true,
+    };
+    const inner = { ...declared("inner", 5, "src/a.test.ts"), exported: true, parent: suite.id };
+    const all = [
+      source,
+      exportedProduction,
+      usedByTopLevel,
+      usedByCheck,
+      testFile,
+      check,
+      local,
+      suite,
+      inner,
+    ];
+    const graph = graphOf(
+      all,
+      [reference(testFile, usedByTopLevel, true), reference(check, usedByCheck, true)],
+      [],
+      ["src/a.test.ts"],
+    );
+
+    const reached = reachedWithTheTests(graph, []);
+
+    expect(all.filter((_symbol, at) => reached[at] === true).map((one) => one.name)).toEqual([
+      "usedByTopLevel",
+      "usedByCheck",
+      "src/a.test.ts",
+      "check",
+      "suite",
+    ]);
+  });
+});
+
+describe("the tests of dead code", () => {
+  it("admit test and test-support code whose production targets are all dead, and no test sharing support with a live one", () => {
+    const inTest = (name: string, line: number): InventorySymbol =>
+      declared(name, line, "src/a.test.ts");
+    const inSupport = (name: string, line: number): InventorySymbol =>
+      declared(name, line, "src/support.ts");
+    const source = file();
+    const dead = declared("dead", 2);
+    const live = declared("live", 3);
+    const onlyDead = inTest("onlyDead", 2);
+    const liveAndDead = inTest("liveAndDead", 3);
+    const liveAndShared = inTest("liveAndShared", 4);
+    const sharedAndDead = inTest("sharedAndDead", 5);
+    const deadAndFile = inTest("deadAndFile", 6);
+    const supportOfDead = inSupport("supportOfDead", 2);
+    const shared = inSupport("shared", 3);
+    const all = [
+      source,
+      dead,
+      live,
+      file("src/a.test.ts"),
+      onlyDead,
+      liveAndDead,
+      liveAndShared,
+      sharedAndDead,
+      deadAndFile,
+      file("src/support.ts"),
+      supportOfDead,
+      shared,
+    ];
+    const graph = graphOf(
+      all,
+      [
+        reference(onlyDead, dead, true),
+        reference(liveAndDead, live, true),
+        reference(liveAndDead, dead, true),
+        reference(liveAndShared, live, true),
+        reference(liveAndShared, shared, true),
+        reference(sharedAndDead, shared, true),
+        reference(sharedAndDead, dead, true),
+        reference(deadAndFile, dead, true),
+        reference(deadAndFile, source, true),
+        reference(supportOfDead, dead, true),
+      ],
+      [{ id: live.id, kind: "configured", source: "live" }],
+      ["src/a.test.ts"],
+      ["src/support.ts"],
+    );
+
+    const admitted = sweep(graph, { marked: [], mode: PRODUCTION }).candidates.filter(
+      (candidate) => candidate.testOfDeadCode,
+    );
+
+    expect(admitted.map((candidate) => all.find((one) => one.id === candidate.id)?.name)).toEqual([
+      "onlyDead",
+      "deadAndFile",
+      "supportOfDead",
     ]);
   });
 });

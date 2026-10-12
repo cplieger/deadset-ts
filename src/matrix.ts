@@ -94,14 +94,6 @@ export interface SweepResult {
   readonly components: readonly Component[];
 }
 
-/** Two strings ordered bytewise. */
-function compare(a: string, b: string): number {
-  if (a === b) {
-    return 0;
-  }
-  return a < b ? -1 : 1;
-}
-
 /**
  * What makes one reference one reference, whichever configuration made it. A consumer's
  * position is rendered against its own root, so the consumer is part of what it names.
@@ -163,7 +155,7 @@ export function matrixOf(per: readonly Configured[]): Matrix {
       references.push(reference);
     }
   });
-  symbols.sort((a, b) => byPosition(a.position, b.position) || compare(a.ref, b.ref));
+  symbols.sort((a, b) => byPosition(a.position, b.position));
 
   return {
     configurations: per.map((one) => one.configuration),

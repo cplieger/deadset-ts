@@ -222,6 +222,48 @@ describe("print-config", () => {
     expect(got.code).toBe(2);
     expect(got.err).toContain('unknown option "--nope"');
   });
+
+  it("refuses an argument that is no option, even one spelling a source-edit token, and exits 2", () => {
+    expect(invoke(["print-config", "delete"])).toEqual({
+      code: 2,
+      out: "",
+      err: `deadset-ts: unexpected argument "delete"\n${USAGE}`,
+    });
+  });
+
+  it("refuses an option written without its value and exits 2", () => {
+    expect(invoke(["print-config", "--target"])).toEqual({
+      code: 2,
+      out: "",
+      err: `deadset-ts: option "--target" takes a value\n${USAGE}`,
+    });
+  });
+
+  it.each(["config", "central"])(
+    "refuses a configuration document --%s names that cannot be read, naming it, and exits 2",
+    (option) => {
+      const missing = join(tmpdir(), "deadset-ts-absent", "deadset.json");
+
+      const got = invoke(["print-config", `--target=${tmpdir()}`, `--${option}=${missing}`]);
+
+      expect(got.code).toBe(2);
+      expect(got.err).toContain(`deadset-ts: ${missing}: `);
+    },
+  );
+
+  it("resolves the target kind the central configuration an option names supplies", () => {
+    const scratch = mkdtempSync(join(tmpdir(), "deadset-ts-central-"));
+    onTestFinished(() => {
+      rmSync(scratch, { recursive: true, force: true });
+    });
+    const central = join(scratch, "central.json");
+    writeFileSync(central, '{"target":{"kind":"application"}}\n');
+
+    const got = invoke(["print-config", `--target=${scratch}`, `--central=${central}`]);
+
+    expect(got.code, got.err).toBe(0);
+    expect(JSON.parse(got.out)).toMatchObject({ target: { kind: "application" } });
+  });
 });
 
 describe("print-projects", () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { contractDocument, readFixture } from "../__test-helpers__/fixtures.ts";
 import type { Finding } from "./finding.ts";
+import type { Host } from "./host.ts";
 import {
   CODE_FORM,
   GO_REF_EXPRESSIONS,
@@ -10,6 +11,7 @@ import {
   type Dials,
   type SuppressionRecord,
 } from "./suppress.ts";
+import { IGNORE_FILE, readIgnoreFile } from "./suppress-file.ts";
 
 /** The expressions the symbol-reference page publishes for one language. */
 function publishedExpressions(language: string): string[] {
@@ -193,11 +195,62 @@ describe("the ledger over a run's records", () => {
     expect(directive.withheld(row)).toBe(false);
   });
 
+  it("reaches the finding at the declaration a record bound, whatever reference the record names", () => {
+    const renamed = {
+      ...recordOf(helper, "inline"),
+      symbol: "ts://@example/app/src/lib.ts#renamed",
+    };
+
+    expect(ledgerOf([renamed], [helper], OPEN).verdicts).toEqual(["in-effect"]);
+  });
+
+  it("withholds no finding of its code about another declaration of the file", () => {
+    const other = finding("DS1002", "other", 9);
+
+    expect(ledgerOf([recordOf(helper, "inline")], [other], OPEN).verdicts).toEqual(["stale"]);
+    expect(
+      ledgerOf([{ ...recordOf(helper, "ignore"), bound: "" }], [other], OPEN).verdicts,
+    ).toEqual(["stale"]);
+  });
+
+  it("withholds no finding through its reference where the record names another file", () => {
+    const elsewhere = { ...recordOf(helper, "ignore"), bound: "", path: "src/other.ts" };
+
+    expect(ledgerOf([elsewhere], [helper], OPEN).verdicts).toEqual(["stale"]);
+  });
+
   it("withholds no finding about a row of a document, which no record binds", () => {
     const row = finding("DS1501", "file", 1, "file");
     const ledger = ledgerOf([recordOf(row, "ignore")], [row], OPEN);
 
     expect(ledger.verdicts).toEqual(["stale"]);
     expect(ledger.withheld(row)).toBe(false);
+  });
+});
+
+function ignoreFileHost(document: string): Host {
+  const held = (path: string): boolean => path === `/target/${IGNORE_FILE}`;
+  return {
+    workingDirectory: () => "/target",
+    readFile: (path) => (held(path) ? document : ""),
+    readDirectory: () => [],
+    kindOf: (path) => (held(path) ? "file" : "absent"),
+    realPath: (path) => path,
+    analyzerVersion: () => "0.0.0-devel",
+    temporaryDirectory: () => {
+      throw new Error("no temporary directory");
+    },
+    componentMapperCommand: () => [],
+    writeDocument: (path) => {
+      throw new Error(`${path}: this host writes nothing`);
+    },
+  };
+}
+
+describe("a suppression document refused as a whole", () => {
+  it("is named by its path alone, with no line or column", () => {
+    expect(() => readIgnoreFile(ignoreFileHost("{"), "/target", [])).toThrow(
+      `ignore ${IGNORE_FILE}: ${IGNORE_FILE}: `,
+    );
   });
 });

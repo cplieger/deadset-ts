@@ -1,89 +1,131 @@
 import { rmSync } from "node:fs";
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
 import { writeProject } from "../__test-helpers__/projects.ts";
 import { aliasChains } from "./alias-chain.ts";
 import { calleeName, callsOf, resolvedTargets } from "./calls.ts";
 import type { DeclarationEntry } from "./config.ts";
 import {
+  declarationsNamed,
+  entriesAt,
   names,
   namesADeclaration,
   resolveEntries,
   spelledEntry,
 } from "./configured-declarations.ts";
 import { discoverProjects } from "./discover.ts";
-import { inventory } from "./inventory.ts";
+import { inventory, type Inventory } from "./inventory.ts";
+import { Unanswerable } from "./query.ts";
 import { scopeForDir } from "./scope.ts";
-import { openEngine, runSession } from "./session.ts";
+import { openEngine, runSession, type Engine, type ProjectView } from "./session.ts";
 
-const ROOT = writeProject({
-  "package.json": '{ "name": "@example/app", "type": "module" }\n',
-  "tsconfig.json": JSON.stringify({
-    compilerOptions: {
-      strict: true,
-      target: "ESNext",
-      lib: ["ESNext", "DOM"],
-      types: [],
-      module: "NodeNext",
-      moduleResolution: "nodenext",
-      noEmit: true,
-    },
-    include: ["src/**/*.ts"],
-  }),
-  "node_modules/@example/container/package.json": JSON.stringify({
-    name: "@example/container",
-    type: "module",
-    exports: { ".": { types: "./index.d.ts" } },
-  }),
-  "node_modules/@example/container/index.d.ts": [
-    'export { Container, Tokens, register as provide } from "./impl.js";',
-    'export { default } from "./impl.js";',
-    "",
-  ].join("\n"),
-  "node_modules/@example/container/impl.d.ts": [
-    "export declare class Container<T> {",
-    "  bind(target: unknown): T;",
-    "  static create(): void;",
-    "}",
-    "export declare namespace Tokens {",
-    "  function named(name: string): void;",
-    "}",
-    "export declare function register(target: unknown): void;",
-    "export default function setup(): void;",
-    "",
-  ].join("\n"),
-  "src/local.ts": [
-    "export function wrap(value: unknown): unknown {",
-    "  return value;",
-    "}",
-    "export class Registry {",
-    "  static add(value: unknown): void {}",
-    "}",
-    "declare global {",
-    "  function provideGlobally(value: unknown): void;",
-    "}",
-    "",
-  ].join("\n"),
-  "src/main.ts": [
-    'import setup, { Container, Tokens, provide as give } from "@example/container";',
-    'import { Registry, wrap } from "./local.ts";',
-    "new Container<string>().bind(1);",
-    "Container.create();",
-    "Tokens.named('a');",
-    "give(1);",
-    "setup();",
-    "JSON.stringify(1);",
-    "customElements.define('x-a', class extends HTMLElement {});",
-    "provideGlobally(1);",
-    "wrap(1);",
-    "Registry.add(1);",
-    "",
-  ].join("\n"),
-});
-
-afterAll(() => {
-  rmSync(ROOT, { recursive: true, force: true });
-});
+/** The project every case resolves its entries in, written for that case. */
+function written(): string {
+  const root = writeProject({
+    "package.json": '{ "name": "@example/app", "type": "module" }\n',
+    "tsconfig.json": JSON.stringify({
+      compilerOptions: {
+        strict: true,
+        target: "ESNext",
+        lib: ["ESNext", "DOM"],
+        types: [],
+        module: "NodeNext",
+        moduleResolution: "nodenext",
+        noEmit: true,
+      },
+      include: ["src/**/*.ts", "src/**/*.cts"],
+    }),
+    "node_modules/@example/container/package.json": JSON.stringify({
+      name: "@example/container",
+      type: "module",
+      exports: { ".": { types: "./index.d.ts" } },
+    }),
+    "node_modules/@example/container/index.d.ts": [
+      'export { Container, Tokens, register as provide } from "./impl.js";',
+      'export { Quoted as "a.b" } from "./impl.js";',
+      'export { default } from "./impl.js";',
+      "",
+    ].join("\n"),
+    "node_modules/@example/container/impl.d.ts": [
+      "export declare class Container<T> {",
+      "  bind(target: unknown): T;",
+      "  static create(): void;",
+      "}",
+      "export declare namespace Tokens {",
+      "  function named(name: string): void;",
+      "}",
+      "export declare class Quoted {",
+      `  "it's.x"(): void;`,
+      "}",
+      "export declare function register(target: unknown): void;",
+      "export default function setup(): void;",
+      "",
+    ].join("\n"),
+    "node_modules/@example/lazy/package.json": JSON.stringify({
+      name: "@example/lazy",
+      type: "module",
+      exports: { ".": { types: "./index.d.ts" } },
+    }),
+    "node_modules/@example/lazy/index.d.ts": "export declare function load(): void;\n",
+    "node_modules/later/package.json": JSON.stringify({
+      name: "later",
+      type: "module",
+      exports: { ".": { types: "./index.d.ts" } },
+    }),
+    "node_modules/later/index.d.ts": "export declare function late(): void;\n",
+    "node_modules/@example/legacy/package.json": JSON.stringify({
+      name: "@example/legacy",
+      types: "./index.d.ts",
+    }),
+    "node_modules/@example/legacy/index.d.ts": "export declare function old(): void;\n",
+    "src/legacy.cts": 'import legacy = require("@example/legacy");\nlegacy.old();\n',
+    "src/local.ts": [
+      "export function wrap(value: unknown): unknown {",
+      "  return value;",
+      "}",
+      "wrap.helper = (): void => {};",
+      "export class Registry {",
+      "  static add(value: unknown): void {}",
+      "}",
+      "export namespace Registry {",
+      "  export function lookup(): void {}",
+      "}",
+      "declare global {",
+      "  function provideGlobally(value: unknown): void;",
+      "}",
+      'export const label = String("@example/lazy");',
+      "",
+    ].join("\n"),
+    "src/main.ts": [
+      "declare const later: string;",
+      "void import(later);",
+      'import { late } from "later";',
+      'import setup, { Container, Tokens, provide as give } from "@example/container";',
+      'import { Registry, wrap } from "./local.ts";',
+      "new Container<string>().bind(1);",
+      "Container.create();",
+      "Tokens.named('a');",
+      "give(1);",
+      "setup();",
+      "JSON.stringify(1);",
+      "customElements.define('x-a', class extends HTMLElement {});",
+      "provideGlobally(1);",
+      "wrap(1);",
+      "Registry.add(1);",
+      "wrap.helper();",
+      "Registry.lookup();",
+      "late();",
+      'declare const routes: Record<"go", () => void>;',
+      "routes.go();",
+      'void import("@example/lazy");',
+      "",
+    ].join("\n"),
+  });
+  onTestFinished(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+  return root;
+}
 
 /** The entries named, each with the label a case reads it by. */
 const ENTRIES: readonly (readonly [string, DeclarationEntry])[] = [
@@ -97,6 +139,12 @@ const ENTRIES: readonly (readonly [string, DeclarationEntry])[] = [
   ["ambient", { shape: "global", global: "provideGlobally" }],
   ["wrap", { shape: "symbol", symbol: "ts://@example/app/src/local.ts#wrap" }],
   ["add", { shape: "symbol", symbol: "ts://@example/app/src/local.ts#Registry.add:static" }],
+  ["quoted", { shape: "module", module: "@example/container", name: "'a.b'.'it\\'s.x'" }],
+  ["dynamic", { shape: "module", module: "@example/lazy", name: "load" }],
+  ["required", { shape: "module", module: "@example/legacy", name: "old" }],
+  ["expando", { shape: "module", module: "./local.ts", name: "wrap.helper" }],
+  ["merged", { shape: "module", module: "./local.ts", name: "Registry.lookup" }],
+  ["late", { shape: "module", module: "later", name: "late" }],
   [
     "static-as-instance",
     { shape: "module", module: "@example/container", name: "Container.create" },
@@ -105,10 +153,31 @@ const ENTRIES: readonly (readonly [string, DeclarationEntry])[] = [
     "instance-as-static",
     { shape: "module", module: "@example/container", name: "Container.bind:static" },
   ],
+  ["lone-static", { shape: "global", global: "JSON:static" }],
+  ["merged-as-static", { shape: "module", module: "./local.ts", name: "Registry.lookup:static" }],
+  ["quoted-global", { shape: "global", global: "'JSON'.stringify" }],
   ["unimported", { shape: "module", module: "@example/other", name: "bind" }],
   ["absent-member", { shape: "global", global: "JSON.serialize" }],
   ["absent-symbol", { shape: "symbol", symbol: "ts://@example/app/src/local.ts#unwrap" }],
 ];
+
+/** The result of `visit` over the one project of the written project, read through `engine`. */
+function inProject<Result>(
+  visit: (project: ProjectView<unknown>, held: Inventory) => Result,
+  engine: Engine = openEngine({ collectTiming: false }),
+): Result {
+  const root = written();
+  const host = nodeHost();
+  const { configFiles } = discoverProjects(engine, host, scopeForDir(host, root));
+  const { projects } = runSession(engine, configFiles, (project) =>
+    visit(project, inventory(project, host, root)),
+  );
+  const [only] = projects;
+  if (only === undefined) {
+    throw new Error("the written project opened no project");
+  }
+  return only;
+}
 
 /** Each call of the main file with the labels of the entries its callee is, and each entry's spelling. */
 function resolveAll(): {
@@ -116,11 +185,7 @@ function resolveAll(): {
   readonly unmatched: readonly string[];
   readonly spelled: readonly string[];
 } {
-  const host = nodeHost();
-  const engine = openEngine({ collectTiming: false });
-  const { configFiles } = discoverProjects(engine, host, scopeForDir(host, ROOT));
-  const { projects } = runSession(engine, configFiles, (project) => {
-    const held = inventory(project, host, ROOT);
+  return inProject((project, held) => {
     const resolved = resolveEntries(
       project,
       held,
@@ -151,18 +216,39 @@ function resolveAll(): {
       spelled: ENTRIES.map(([, entry]) => spelledEntry(entry, held)),
     };
   });
-  const [only] = projects;
-  if (only === undefined) {
-    throw new Error("the written project opened no project");
-  }
-  return only;
 }
 
-describe("the declarations a configuration names", () => {
-  const resolved = resolveAll();
+/**
+ * A client whose checker, once `failing.on` is set, fails every symbol question: with a
+ * server panic, which leaves the question unanswered, or with any other error.
+ */
+function failingEngine(message: string): {
+  readonly engine: Engine;
+  readonly failing: { on: boolean };
+} {
+  const real = openEngine({ collectTiming: false });
+  const failing = { on: false };
+  return {
+    failing,
+    engine: {
+      ...real,
+      ask: (accessor, asked, question) => {
+        if (failing.on && accessor === "getSymbolAtLocation") {
+          throw new Error(message);
+        }
+        return real.ask(accessor, asked, question);
+      },
+    },
+  };
+}
 
+/** The entries as the configuration lists them, each under the serializers key. */
+const CONFIGURED = ENTRIES.map(([, entry]) => ({ key: "ts.serializers", entry }));
+
+describe("the declarations a configuration names", () => {
   it("match the call whose callee resolves to them, through every import, re-export and instantiation", () => {
-    expect(resolved.calls).toEqual([
+    expect(resolveAll().calls).toEqual([
+      "import: ",
       "new Container<string>().bind: bind",
       "Container.create: create",
       "Tokens.named: named",
@@ -173,13 +259,21 @@ describe("the declarations a configuration names", () => {
       "provideGlobally: ambient",
       "wrap: wrap",
       "Registry.add: add",
+      "wrap.helper: expando",
+      "Registry.lookup: merged",
+      "late: late",
+      "routes.go: ",
+      "import: ",
     ]);
   });
 
   it("name nothing where the path, the side of the member or the module names nothing", () => {
-    expect(resolved.unmatched).toEqual([
+    expect(resolveAll().unmatched).toEqual([
       "static-as-instance",
       "instance-as-static",
+      "lone-static",
+      "merged-as-static",
+      "quoted-global",
       "unimported",
       "absent-member",
       "absent-symbol",
@@ -187,7 +281,7 @@ describe("the declarations a configuration names", () => {
   });
 
   it("are spelled by their path, and a declaration of the program by its display name", () => {
-    expect(resolved.spelled.slice(0, 10)).toEqual([
+    expect(resolveAll().spelled.slice(0, 11)).toEqual([
       "Container.bind",
       "Container.create:static",
       "Tokens.named",
@@ -198,6 +292,82 @@ describe("the declarations a configuration names", () => {
       "provideGlobally",
       "wrap",
       "Registry.add",
+      "'a.b'.'it\\'s.x'",
     ]);
+  });
+
+  it("each count as naming one where the checker leaves a question of the resolution unanswered", () => {
+    const { engine, failing } = failingEngine("panic: runtime error");
+    const named = inProject((project, held) => {
+      failing.on = true;
+      return declarationsNamed(project, held, CONFIGURED);
+    }, engine);
+
+    expect(named).toEqual(ENTRIES.map(() => true));
+  });
+
+  it("fail the resolution on a checker failure that is no unanswered question", () => {
+    const { engine, failing } = failingEngine("the client lost its connection");
+
+    expect(() =>
+      inProject((project, held) => {
+        failing.on = true;
+        return declarationsNamed(project, held, CONFIGURED);
+      }, engine),
+    ).toThrow("the client lost its connection");
+  });
+
+  it("are found at each name node an entry names, and at no other", () => {
+    const found = inProject((project, held) => {
+      const resolved = resolveEntries(
+        project,
+        held,
+        ENTRIES.map(([, entry]) => entry),
+      );
+      const nodes = callsOf(project).flatMap((call) => calleeName(call.expression) ?? []);
+      const named = entriesAt(project, aliasChains(project, held), nodes, resolved);
+      return [...named].map(
+        ([node, entries]) =>
+          `${node.getText()}: ${entries.map((one) => spelledEntry(one.entry, held)).join(" ")}`,
+      );
+    });
+
+    expect(found.toSorted()).toEqual([
+      "add: Registry.add",
+      "bind: Container.bind",
+      "create: Container.create:static",
+      "define: CustomElementRegistry.define",
+      "give: provide",
+      "helper: wrap.helper",
+      "late: late",
+      "lookup: Registry.lookup",
+      "named: Tokens.named",
+      "old: old",
+      "provideGlobally: provideGlobally",
+      "setup: default",
+      "stringify: JSON.stringify",
+      "wrap: wrap",
+    ]);
+  });
+
+  it("ask the checker nothing at a name node where no entry names a declaration", () => {
+    const { engine, failing } = failingEngine("panic: runtime error");
+    const found = inProject((project, held) => {
+      const resolved = resolveEntries(
+        project,
+        held,
+        ENTRIES.slice(-3).map(([, entry]) => entry),
+      );
+      const nodes = callsOf(project).flatMap((call) => calleeName(call.expression) ?? []);
+      const chains = aliasChains(project, held);
+      failing.on = true;
+      try {
+        return entriesAt(project, chains, nodes, resolved).size;
+      } catch (error: unknown) {
+        return error instanceof Unanswerable ? "unanswerable" : "failed";
+      }
+    }, engine);
+
+    expect(found).toBe(0);
   });
 });

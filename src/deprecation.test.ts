@@ -6,31 +6,65 @@ import { deprecatedDeclarations } from "./deprecation.ts";
 import { discoverProjects } from "./discover.ts";
 import { inventory } from "./inventory.ts";
 import { scopeForDir } from "./scope.ts";
-import { openEngine, runSession } from "./session.ts";
+import { openEngine, runSession, type Engine } from "./session.ts";
 
-/** The display names of the deprecated declarations of one written project, and what reading them cost. */
-function deprecatedIn(files: Readonly<Record<string, string>>): {
+/**
+ * The display names of the deprecated declarations of one written project, of those whose
+ * marker went unanswered, and what reading them cost. `panicsOn` names the questions the
+ * compiler server fails, by accessor.
+ */
+function deprecatedIn(
+  files: Readonly<Record<string, string>>,
+  panicsOn: (accessor: string) => boolean = () => false,
+): {
   readonly names: readonly string[];
+  readonly unanswered: readonly string[];
   readonly requests: number;
 } {
   const root = writeProject(files);
   try {
     const host = nodeHost();
-    const engine = openEngine({ collectTiming: true });
+    const opened = openEngine({ collectTiming: true });
+    const engine: Engine = {
+      ...opened,
+      ask: (accessor, locations, question) => {
+        if (panicsOn(accessor)) {
+          throw new Error(`panic: ${accessor}`);
+        }
+        return opened.ask(accessor, locations, question);
+      },
+    };
     const configFiles = discoverProjects(engine, host, scopeForDir(host, root)).configFiles;
     let requests = 0;
     const { projects } = runSession(engine, configFiles, (project) => {
       const held = inventory(project, host, root);
       const before = engine.getTimingInfo().totals.requestCount;
-      const ids = new Set(deprecatedDeclarations(project, held).deprecated);
+      const found = deprecatedDeclarations(project, held);
       requests += engine.getTimingInfo().totals.requestCount - before;
-      return held.symbols.filter((symbol) => ids.has(symbol.id)).map((symbol) => symbol.name);
+      const named = (ids: readonly string[]): string[] =>
+        held.symbols.filter((symbol) => ids.includes(symbol.id)).map((symbol) => symbol.name);
+      return { names: named(found.deprecated), unanswered: named(found.unanswered) };
     });
-    return { names: projects.flat(), requests };
+    return {
+      names: projects.flatMap((one) => one.names),
+      unanswered: projects.flatMap((one) => one.unanswered),
+      requests,
+    };
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 }
+
+/** A module holding one deprecated function beside a current one. */
+const MARKED = {
+  "src/a.ts": [
+    "/** @deprecated use fresh */",
+    "export function old(): number { return 1; }",
+    "/** Current. */",
+    "export function fresh(): number { return 2; }",
+    "",
+  ].join("\n"),
+};
 
 describe("deprecated declarations", () => {
   it("are the declarations whose documentation carries the tag, each name of a list included", () => {
@@ -96,5 +130,51 @@ describe("deprecated declarations", () => {
 
     expect(names).toEqual([]);
     expect(requests).toBe(0);
+  });
+
+  it("cost no request where the documentation holds other tags alone", () => {
+    const { names, requests } = deprecatedIn({
+      "src/a.ts": [
+        "/** @remarks covers both names */",
+        "export const first = 1,",
+        "  second = 2;",
+        "/** @see first */",
+        "export function fresh(): number { return 2; }",
+        "",
+      ].join("\n"),
+    });
+
+    expect(names).toEqual([]);
+    expect(requests).toBe(0);
+  });
+
+  it("are read for a symbol merged across files where one file's declaration holds the tag", () => {
+    const { names } = deprecatedIn({
+      "src/a.ts":
+        "export {};\ndeclare global {\n  /** @deprecated use Fresh */\n  interface Legacy {\n    a: number;\n  }\n}\n",
+      "src/b.ts": "export {};\ndeclare global {\n  interface Legacy {\n    b: number;\n  }\n}\n",
+    });
+
+    expect(names).toEqual(["global.Legacy", "global.Legacy"]);
+  });
+  it("are unknown for every declaration of a file holding the tag whose symbol went unanswered", () => {
+    const { names, unanswered } = deprecatedIn(
+      MARKED,
+      (accessor) => accessor === "getSymbolAtLocation",
+    );
+
+    expect(names, "the tag is read from the tree for a declaration list alone").toEqual([]);
+    expect(unanswered).toEqual(["old", "fresh"]);
+  });
+
+  it("are unknown for every declaration whose symbol's tags went unanswered", () => {
+    const { names, unanswered } = deprecatedIn(MARKED, (accessor) => accessor === "getJsDocTags");
+
+    expect(names).toEqual([]);
+    expect(unanswered).toEqual(["old", "fresh"]);
+  });
+
+  it("are known for every declaration the checker answered", () => {
+    expect(deprecatedIn(MARKED)).toMatchObject({ names: ["old"], unanswered: [] });
   });
 });

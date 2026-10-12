@@ -220,6 +220,18 @@ describe("the records a run holds", () => {
 
     expect(exemptionsOf([passed, named, other])).toEqual([other, named, passed]);
   });
+
+  it("orders the records of one site and class by their declaration", () => {
+    const records = ["src/a.ts:9:1", "src/a.ts:2:1", "src/a.ts:5:1"].map((id) =>
+      record(id, "decorator", "named by @register", 3),
+    );
+
+    expect(exemptionsOf(records).map((one) => one.id)).toEqual([
+      "src/a.ts:2:1",
+      "src/a.ts:5:1",
+      "src/a.ts:9:1",
+    ]);
+  });
 });
 
 /** One declaration of an in-memory graph, a function at its own line of one file. */
@@ -477,10 +489,9 @@ function retainedNames(run: RunSweep): string[] {
 }
 
 describe("the framework over a project", () => {
-  const production = sweepFixture(PRODUCTION);
-  const plain = sweepFixture(PLAIN);
-
   it("lists every held-back declaration with its classes, and not the declaration a reference holds live", async () => {
+    const production = sweepFixture(PRODUCTION);
+
     expect(retainedNames(production)).toEqual([
       "heldTwice decorator",
       "heldTwice serialization-contract",
@@ -492,6 +503,7 @@ describe("the framework over a project", () => {
   });
 
   it("reports no candidate an exemption holds back, so no finding is built with a retained_by", () => {
+    const production = sweepFixture(PRODUCTION);
     const retainedBy = (id: string): string[] =>
       production.retained.filter((held) => held.id === id).map((held) => held.class);
 
@@ -502,22 +514,65 @@ describe("the framework over a project", () => {
   });
 
   it("holds live what a held-back declaration references, and lists it nowhere", () => {
+    const production = sweepFixture(PRODUCTION);
+
     expect(deadNames(production)).not.toContain("keptByHeld");
     expect(retainedNames(production).some((name) => name.startsWith("keptByHeld"))).toBe(false);
   });
 
   it("drops the records of a class the configuration switches off", () => {
-    expect(deadNames(production), "production").toContain("heldByDisabled");
-    expect(deadNames(plain), "plain").toContain("heldByDisabled");
+    expect(deadNames(sweepFixture(PRODUCTION)), "production").toContain("heldByDisabled");
+    expect(deadNames(sweepFixture(PLAIN)), "plain").toContain("heldByDisabled");
   });
 
   it("holds evidence written in a test file under the plain mode alone", () => {
+    const production = sweepFixture(PRODUCTION);
+    const plain = sweepFixture(PLAIN);
+
     expect(deadNames(production), "production").toEqual(["heldInATest", "heldByDisabled"]);
     expect(deadNames(plain), "plain").toEqual(["heldByDisabled"]);
     expect(retainedNames(plain), "plain").toEqual([
       "heldInATest framework-lifecycle",
       "heldTwice decorator",
       "heldTwice serialization-contract",
+    ]);
+  });
+
+  it("counts evidence written in a test file as a test reference under a production mode", () => {
+    const production = sweepFixture(PRODUCTION);
+    const heldInATest = production.matrix.union.symbols.find(
+      (symbol) => symbol.name === "heldInATest",
+    );
+
+    expect(
+      production.sweep.candidates
+        .filter((candidate) => candidate.id === heldInATest?.id)
+        .map((candidate) => `${String(candidate.productionRefs)} ${String(candidate.testRefs)}`),
+    ).toEqual(["0 1"]);
+  });
+
+  it("holds by the gap nothing a detector found evidence for", () => {
+    expect(sweepFixture(PRODUCTION).heldByUnanswered).toEqual([]);
+  });
+
+  it("holds by the gap every production declaration a detector that could not finish holds back", () => {
+    const stopped: Detectors = new Map<TSExemptionClass, Detector>([
+      [
+        "decorator",
+        () => {
+          throw new Unanswerable();
+        },
+      ],
+    ]);
+    const swept = sweepFixture(PRODUCTION, TARGET, stopped);
+    const nameOf = (id: string): string =>
+      swept.matrix.union.symbols.find((symbol) => symbol.id === id)?.name ?? id;
+
+    expect(swept.heldByUnanswered.map(nameOf)).toEqual([
+      "heldTwice",
+      "keptByHeld",
+      "liveAnyway",
+      "heldByDisabled",
     ]);
   });
 });
@@ -534,22 +589,25 @@ describe("the private members a class may retain", () => {
       named(held, "Held.#named"),
     ];
   };
-  const swept = sweepFixture(
-    PRODUCTION,
-    visibility,
-    new Map<TSExemptionClass, Detector>([
-      ["interface-satisfaction", allThree("satisfies Shape")],
-      ["decorator", allThree("named by @register")],
-    ]),
-  );
+  const swept = (): RunSweep =>
+    sweepFixture(
+      PRODUCTION,
+      visibility,
+      new Map<TSExemptionClass, Detector>([
+        ["interface-satisfaction", allThree("satisfies Shape")],
+        ["decorator", allThree("named by @register")],
+      ]),
+    );
 
   it("drops evidence on a private member under a class that retains neither kind, and on a private name under every class", () => {
-    expect(retainedNames(swept)).toEqual([
+    const run = swept();
+
+    expect(retainedNames(run)).toEqual([
       "Held.visible decorator",
       "Held.visible interface-satisfaction",
       "Held.hidden decorator",
     ]);
-    expect(deadNames(swept)).toEqual(["Held.#named"]);
+    expect(deadNames(run)).toEqual(["Held.#named"]);
   });
 });
 
