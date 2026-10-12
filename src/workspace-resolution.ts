@@ -45,6 +45,7 @@ const DEPENDENCY_MEMBERS = [
 ] as const;
 
 const SOURCE = /(?<!\.d)\.(?:[mc]?ts|tsx)$/u;
+const OUTPUT = /(?:\.d\.[mc]?ts|\.[mc]?js|\.jsx)$/u;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

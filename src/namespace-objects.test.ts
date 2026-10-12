@@ -168,7 +168,7 @@ describe("a module namespace object", () => {
   });
 
   it("references only the export paramed reads, beside a parameter of its name", () => {
-    expect(found.filter((line) => line.includes(" paramed"))).toEqual([
+    expect(reported().filter((line) => line.includes(" paramed"))).toEqual([
       "DS1001 paramedSpare",
       "DS1801 paramed",
     ]);
@@ -233,18 +233,6 @@ describe("a module namespace object in a project of its own", () => {
 
   it.each([
     [
-      "shadowed",
-      "a declaration of its name in a nested scope",
-      [
-        'import * as shadowed from "./shadowed.js";',
-        "function shadow(): void {",
-        "  const shadowed = { other: 1 };",
-        "  hold(shadowed.other);",
-        "}",
-        "shadow();",
-      ],
-    ],
-    [
       "lettered",
       "a let binding of the object",
       [
@@ -306,6 +294,18 @@ describe("a module namespace object in a project of its own", () => {
         "const { spelled: renamed } = shapes;",
         "const shape: Spelled = renamed;",
         "hold(shape);",
+      ],
+    ],
+    [
+      "shadowed",
+      "a declaration of its name in a nested scope",
+      [
+        'import * as shadowed from "./shadowed.js";',
+        "function shadow(): void {",
+        "  const shadowed = { other: 1 };",
+        "  hold(shadowed.other);",
+        "}",
+        "shadow();",
       ],
     ],
     [

@@ -159,7 +159,7 @@ describe("the edges document", () => {
     ["an array", '["a"]'],
   ])("names an edge that is %s as it is written", (_name, value) => {
     expect(refusal(`{"edges": [${value}]}`)).toBe(
-      `deadset-edges.json: ${value}: want an edge naming id, provides and used_by, each a string, and an optional because`,
+      `deadset-edges.json:1:12: ${value}: want an edge naming id, provides and used_by, each a string, and an optional because`,
     );
   });
 

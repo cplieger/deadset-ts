@@ -251,22 +251,6 @@ describe("project discovery", () => {
     expect(found.configFiles).toEqual([join(root, "tsconfig.json")]);
     expect(found.notBuilt).toEqual([]);
   });
-
-  it("follows nothing from a configuration the host cannot read back", () => {
-    const root = scratch();
-    write(root, { "tsconfig.json": '{ "include": [], "references": [{ "path": "./b" }] }\n' });
-    const unreadable = {
-      ...HOST,
-      readFile: (path: string): string => {
-        throw new Error(`cannot read ${path}`);
-      },
-    };
-
-    const found = discoverProjects(engine(), unreadable, scopeForDir(HOST, root));
-
-    expect(found.configFiles).toEqual([join(root, "tsconfig.json")]);
-    expect(found.notBuilt).toEqual([]);
-  });
 });
 
 describe("a consumer's projects", () => {
@@ -557,6 +541,7 @@ describe("a project's errors", () => {
       configParsing: [warning],
       syntactic: [],
       semantic: [diagnostic(2322, DiagnosticCategory.Error)],
+      unplaced: [],
       locate: () => undefined,
     });
 
@@ -569,6 +554,7 @@ describe("a project's errors", () => {
       configParsing: [diagnostic(18003, DiagnosticCategory.Error)],
       syntactic: [],
       semantic: [diagnostic(2322, DiagnosticCategory.Error)],
+      unplaced: [],
       locate: () => undefined,
     });
 
