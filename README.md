@@ -1,6 +1,6 @@
 # deadset-ts
 
-[![npm](https://img.shields.io/npm/v/@cplieger/deadset-ts)](https://www.npmjs.com/package/@cplieger/deadset-ts) [![JSR](https://jsr.io/badges/@cplieger/deadset-ts)](https://jsr.io/@cplieger/deadset-ts)
+[![npm](https://img.shields.io/npm/v/@cplieger/deadset-ts)](https://www.npmjs.com/package/@cplieger/deadset-ts) [![JSR](https://jsr.io/badges/@cplieger/deadset-ts)](https://jsr.io/@cplieger/deadset-ts) [![Mutation (TS)](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/cplieger/deadset-ts/badges/mutation-ts.json)](https://github.com/cplieger/deadset-ts/issues?q=label%3Astryker-tracker)
 
 deadset-ts finds dead code in TypeScript projects, down to class members, type members and dead stores inside functions, and writes a report your CI can fail on.
 

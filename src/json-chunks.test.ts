@@ -36,6 +36,20 @@ describe("a document written in pieces", () => {
     );
   });
 
+  it("leaves out an object member holding a function or a symbol, and writes null for an element", () => {
+    const value = { kept: 1, run: () => 0, tag: Symbol("tag"), list: [() => 0] };
+
+    expect([...jsonChunks(value, 0)].join("")).toBe('{"kept":1,"list":[null]}\n');
+  });
+
+  it("hands on a run as soon as it reaches the chunk length, and no empty piece after it", () => {
+    const full = "x".repeat(CHUNK_LENGTH);
+
+    expect([...coalesced([full, "y"])]).toEqual([full, "y"]);
+    expect([...coalesced([full])]).toEqual([full]);
+    expect([...coalesced([])]).toEqual([]);
+  });
+
   it("holds no piece longer than twice the chunk length, however large the document", () => {
     const pieces = [...jsonChunks(largeDocument(16 * CHUNK_LENGTH * 16), 2)];
 

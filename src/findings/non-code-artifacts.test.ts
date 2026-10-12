@@ -148,6 +148,51 @@ describe("DS1501 under the build matrix", () => {
 
     expect(reported(emit(inputFor(MATRIX, config)))).toEqual([]);
   });
+
+  it("reports nothing where the matrix declared complete lists platforms, which name no project", () => {
+    const config = configOf(
+      MATRIX,
+      JSON.stringify({
+        target: { kind: "application" },
+        analysis: {
+          configurations: [{ id: "linux", os: "linux", arch: "amd64" }],
+          matrix: { complete: true },
+        },
+        ts: { entry_files: ["scripts/check.ts"] },
+      }),
+    );
+
+    expect(reported(emit(inputFor(MATRIX, config)))).toEqual([]);
+  });
+
+  it("counts a file a project includes as built though it declares nothing", () => {
+    const root = writeProject({
+      "package.json":
+        '{ "name": "@example/statements", "type": "module", "main": "./src/main.ts" }\n',
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: { strict: true, module: "NodeNext", noEmit: true },
+        include: ["src/**/*.ts"],
+      }),
+      "src/main.ts": "console.log(1);\n",
+      "unbuilt.ts": "console.log(2);\n",
+    });
+    try {
+      const config = configOf(
+        root,
+        JSON.stringify({
+          target: { kind: "application" },
+          analysis: {
+            configurations: [{ id: "only", project: "tsconfig.json" }],
+            matrix: { complete: true },
+          },
+        }),
+      );
+
+      expect(reported(emit(inputFor(root, config)))).toEqual(["DS1501 unbuilt.ts"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("DS1502 over the import graph", () => {
@@ -238,14 +283,14 @@ describe("the corpus fixture entry-file-declaring-nothing", () => {
     readFixture("corpus", "entry-file-declaring-nothing", "ts", "fixture.json"),
   ) as { readonly symbols: Readonly<Record<string, { file: string; line: number }>> };
   const target = join(CORPUS, "ts", "target");
-  const findings = emit(
-    inputFor(
-      target,
-      configOf(target, JSON.stringify({ target: { kind: expectation.target_kind } })),
-    ),
-  );
 
   it.each(expectation.expect)("answers the row naming $symbol with $report", (row) => {
+    const findings = emit(
+      inputFor(
+        target,
+        configOf(target, JSON.stringify({ target: { kind: expectation.target_kind } })),
+      ),
+    );
     const bound = manifest.symbols[row.symbol];
     expect(bound).toBeDefined();
     const at = findings.filter(

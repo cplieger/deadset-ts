@@ -73,7 +73,7 @@ export function deprecatedDeclarations<Brand>(
         }
       }
       const id = held.declarations.get(nodeKey(file, node));
-      if (id !== undefined && node !== file) {
+      if (id !== undefined) {
         named.push({ id, handle: project.handle(nameNode(node)) });
       }
       node.forEachChild(visit);

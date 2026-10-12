@@ -529,7 +529,6 @@ export function projectParts<Brand>(
 ): ProjectParts {
   const files = project.ownSourceFiles();
   const extended = extendedNames(files);
-  const kinds = new Map(held.symbols.map((symbol) => [symbol.id, symbol.kind]));
   const parts: PartFact[] = [];
   const signatures: SignatureFact[] = [];
   const calls = new Map<string, CallUse>();
@@ -540,12 +539,8 @@ export function projectParts<Brand>(
 
   for (const file of files) {
     // A parameter property's own parts stay with the parameter when its member goes.
-    const declarationAt = (node: Node): string | undefined => {
-      const id = held.declarations.get(nodeKey(file, node));
-      return id === undefined || kinds.get(id) === "file" || isParameterProperty(node)
-        ? undefined
-        : id;
-    };
+    const declarationAt = (node: Node): string | undefined =>
+      isParameterProperty(node) ? undefined : held.declarations.get(nodeKey(file, node));
     // A part no declaration holds belongs to the file, which is judged while the file is live.
     const fileId = held.declarations.get(nodeKey(file, file));
     const holderOf = (node: Node): string | undefined => {
@@ -804,11 +799,7 @@ function valueSignature(node: Node): SignatureNode | undefined {
  */
 function parameterNames(signature: SignatureNode): ParameterName[] {
   const found: ParameterName[] = [];
-  const patternNames = (pattern: BindingName, at: number): void => {
-    if (isIdentifier(pattern)) {
-      found.push({ name: pattern, at, pattern: true, exempt: false });
-      return;
-    }
+  const patternNames = (pattern: Exclude<BindingName, Identifier>, at: number): void => {
     const rest =
       isObjectBindingPattern(pattern) &&
       pattern.elements.some((element) => element.dotDotDotToken !== undefined);
@@ -1039,10 +1030,7 @@ function deadStores(
     for (const write of writes) {
       // The rest of the write's own statement runs after it: a later declarator may read the local.
       const own = statements[write.at];
-      const sameStatement =
-        own !== undefined && write.target === local.name
-          ? usesIn(own).filter((use) => use !== local.name)
-          : [];
+      const sameStatement = own !== undefined && write.target === local.name ? usesIn(own) : [];
       if (sameStatement.length > 0) {
         continue;
       }

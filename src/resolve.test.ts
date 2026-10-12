@@ -114,6 +114,34 @@ describe("a severity key", () => {
     expect(got.message).toContain(names);
   });
 
+  it("is refused at the first key in ascending order, whatever order the document writes them", () => {
+    const got = refuse(
+      repository('{"target":{"kind":"library"},"severity":{"DS1999":"warn","DS1":"warn"}}'),
+    );
+
+    expect(got.key).toBe("severity.DS1");
+  });
+
+  it("names the one code it fixes on its own", () => {
+    const got = refuse(repository('{"target":{"kind":"library"},"severity":{"DS1703":"warn"}}'));
+
+    expect(got.message).toBe(
+      'deadset.json: key "severity.DS1703" is not implemented: ' +
+        "the Contract fixes the severity of DS1703, which this key names",
+    );
+  });
+
+  it("resolves the codes of every source in ascending order, whichever source names each", () => {
+    const { config } = resolve({
+      repository: '{"target":{"kind":"library"},"severity":{"DS1201":"warn"}}',
+      repositoryLabel: "deadset.json",
+      central: '{"severity":{"DS1101":"deny"}}',
+      centralLabel: "central.json",
+    });
+
+    expect([...config.severity.keys()]).toEqual(["DS1101", "DS1201"]);
+  });
+
   it("resolves per code, so a code only the central configuration names keeps its value", () => {
     const { config, provenance } = resolve({
       repository: '{"target":{"kind":"library"},"severity":{"DS1101":"allow"}}',
@@ -326,6 +354,44 @@ describe("a value the closed key list constrains", () => {
       setting: "analysis.configurations[0].project",
       detail: "is required and names nothing",
     },
+    {
+      name: "a section written as a string",
+      text: '{"target":"library"}',
+      setting: "target",
+      detail: "is not an object",
+    },
+    {
+      name: "a go section that is not an object",
+      text: '{"target":{"kind":"library"},"go":"modules"}',
+      setting: "go",
+      detail: "is not an object",
+    },
+    {
+      name: "a provenance object that is not an object",
+      text: '{"target":{"kind":"library"},"provenance":[]}',
+      setting: "provenance",
+      detail: "is not an object",
+    },
+    {
+      name: "a build matrix written as an object",
+      text: '{"target":{"kind":"library"},"analysis":{"configurations":{}}}',
+      setting: "analysis.configurations",
+      detail: "is not an array",
+    },
+    {
+      name: "a provider list written as an object",
+      text: '{"target":{"kind":"library"},"providers":{"analyzers":{}}}',
+      setting: "providers.analyzers",
+      detail: "is not an array",
+    },
+    {
+      name: "a provider name outside the analyzer name form",
+      text:
+        '{"target":{"kind":"library"},"providers":{"analyzers":[' +
+        '{"name":"Deadset TS","languages":["ts"],"command":"deadset-ts"}]}}',
+      setting: "providers.analyzers[0].name",
+      detail: '"Deadset TS" does not match ^[a-z][a-z0-9]*(-[a-z0-9]+)*$',
+    },
   ])("is refused when it is $name", ({ text, setting, detail }) => {
     const got = refuse(repository(text));
 
@@ -334,11 +400,31 @@ describe("a value the closed key list constrains", () => {
     expect(got.message).toBe(`deadset.json: ${setting}: ${detail}`);
   });
 
-  it("is refused when the document is not JSON, naming the document", () => {
+  it("is refused when the document is not JSON, naming the document and the parse error", () => {
+    let parseError = "";
+    try {
+      JSON.parse("{");
+    } catch (error: unknown) {
+      parseError = error instanceof Error ? error.message : "";
+    }
     const got = refuse(repository("{"));
 
     expect(got.kind).toBe("malformed");
-    expect(got.message).toMatch(/^deadset\.json: /u);
+    expect(got.message).toBe(`deadset.json: ${parseError}`);
+  });
+
+  it("is refused when the document is JSON but not one object, naming the document alone", () => {
+    const got = refuse(repository("[]"));
+
+    expect(got.kind).toBe("malformed");
+    expect(got.key).toBe("");
+    expect(got.message).toBe("deadset.json: is not one JSON object");
+  });
+
+  it("names a document the invocation labels with nothing by what it is", () => {
+    const got = refuse({ repository: '{"target":"library"}', repositoryLabel: "" });
+
+    expect(got.message).toBe("the repository configuration: target: is not an object");
   });
 });
 
@@ -377,7 +463,27 @@ describe("a flag", () => {
       repositoryLabel: "deadset.json",
     });
 
-    expect(got.message).toContain("names no file or flag");
+    expect(got.message).toBe(
+      "the command-line flags: analysis.min_confidence: came from flag, which names no file or flag",
+    );
+  });
+
+  it("is refused at the first such setting in ascending order", () => {
+    const got = refuse({
+      flags: '{"target.kind":"library","analysis.min_confidence":"certain"}',
+    });
+
+    expect(got.key).toBe("analysis.min_confidence");
+  });
+});
+
+describe("a document the invocation labels with nothing", () => {
+  it("is refused once a setting resolves from it, naming its source", () => {
+    const got = refuse({ repository: LIBRARY, repositoryLabel: "" });
+
+    expect(got.message).toBe(
+      "repository: target.kind: came from repository, which names no file or flag",
+    );
   });
 });
 
@@ -534,6 +640,32 @@ describe("a declaration the ts section names", () => {
       setting: "ts.injection_registrations[0]",
       detail:
         'carries "symbol", "global", which is not one of "symbol", "module" with "name", or "global"',
+    },
+    {
+      name: "an entry carrying the module shape's members and another's",
+      ts: { serializers: [{ module: "@example/codec", name: "write", global: "write" }] },
+      setting: "ts.serializers[0]",
+      detail:
+        'carries "module", "name", "global", which is not one of "symbol", "module" with "name", or "global"',
+    },
+    {
+      name: "an entry carrying a name beside another shape's member",
+      ts: { serializers: [{ name: "write", global: "write" }] },
+      setting: "ts.serializers[0]",
+      detail:
+        'carries "name", "global", which is not one of "symbol", "module" with "name", or "global"',
+    },
+    {
+      name: "a declaration list written as an object",
+      ts: { serializers: {} },
+      setting: "ts.serializers",
+      detail: "is not an array",
+    },
+    {
+      name: "a lifecycle contract list written as an object",
+      ts: { lifecycle_contracts: {} },
+      setting: "ts.lifecycle_contracts",
+      detail: "is not an array",
     },
     {
       name: "an entry naming no declaration",

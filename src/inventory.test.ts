@@ -2,7 +2,12 @@ import { rmSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
 import { contractDocument, fixture } from "../__test-helpers__/fixtures.ts";
-import { analyzeProject, analyzeRoot, writeProject } from "../__test-helpers__/projects.ts";
+import {
+  analyzeProject,
+  analyzeRoot,
+  type Analyzed,
+  writeProject,
+} from "../__test-helpers__/projects.ts";
 import { discoverProjects } from "./discover.ts";
 import { inventory, type InventorySymbol, type Visibility } from "./inventory.ts";
 import { positionKey } from "./position.ts";
@@ -11,14 +16,14 @@ import { scopeForDir } from "./scope.ts";
 import { openEngine, runSession } from "./session.ts";
 import { isRef } from "./ref.ts";
 
-/**
- * The fixture holding one instance of every declaration form, enumerated once for
- * every case in this file: opening a compiler client and a snapshot is the expensive
- * part of a run, and every case here reads the same inventory.
- */
-const EVERY_DECLARATION = analyzeRoot(fixture("projects", "every-declaration"));
-const INVENTORY = EVERY_DECLARATION.inventories[0];
-const SYMBOLS: readonly InventorySymbol[] = INVENTORY?.symbols ?? [];
+/** The fixture holding one instance of every declaration form, enumerated afresh per case. */
+function everyDeclaration(): Analyzed {
+  return analyzeRoot(fixture("projects", "every-declaration"));
+}
+
+function symbolsOf(analyzed: Analyzed): readonly InventorySymbol[] {
+  return analyzed.inventories[0]?.symbols ?? [];
+}
 
 /** The golden table: one symbol per line, so a diff names the declarations that moved. */
 function goldenText(symbols: readonly InventorySymbol[]): string {
@@ -38,8 +43,8 @@ function goldenText(symbols: readonly InventorySymbol[]): string {
   return `[\n${rows.map((row) => `  ${row}`).join(",\n")}\n]\n`;
 }
 
-function named(name: string): InventorySymbol | undefined {
-  return SYMBOLS.find((symbol) => symbol.name === name);
+function named(symbols: readonly InventorySymbol[], name: string): InventorySymbol | undefined {
+  return symbols.find((symbol) => symbol.name === name);
 }
 
 /** The symbols whose table was read a second time, which must be none of them. */
@@ -49,15 +54,17 @@ function readTwice(names: readonly string[]): string[] {
 
 describe("the symbol table of every declaration form", () => {
   it("is the committed golden table, symbol for symbol", async () => {
+    const symbols = symbolsOf(everyDeclaration());
     await expect(
-      goldenText(SYMBOLS),
+      goldenText(symbols),
       "the table is produced by the production path; to record a reviewed change run " +
         "`npx vitest --run -u src/inventory.test.ts` and read the diff as production code",
     ).toMatchFileSnapshot(fixture("golden", "every-declaration.symbols.json"));
   });
 
   it("names every declaration form the analyzer enumerates", () => {
-    expect([...new Set(SYMBOLS.map((symbol) => symbol.kind))].sort()).toEqual([
+    const symbols = symbolsOf(everyDeclaration());
+    expect([...new Set(symbols.map((symbol) => symbol.kind))].sort()).toEqual([
       "class",
       "class-member",
       "enum",
@@ -77,8 +84,9 @@ describe("the symbol table of every declaration form", () => {
   });
 
   it("holds each declaration form exported and not exported", () => {
+    const symbols = symbolsOf(everyDeclaration());
     const forms = new Map<string, Set<boolean>>();
-    for (const symbol of SYMBOLS) {
+    for (const symbol of symbols) {
       if (symbol.parent === "" || symbol.kind === "type-parameter") {
         continue;
       }
@@ -104,31 +112,36 @@ describe("the symbol table of every declaration form", () => {
   });
 
   it("keys each declaration by its own position, one declaration per source site", () => {
-    expect(SYMBOLS.map((symbol) => symbol.id)).toEqual(
-      SYMBOLS.map((symbol) => positionKey(symbol.position)),
+    const symbols = symbolsOf(everyDeclaration());
+    expect(symbols.map((symbol) => symbol.id)).toEqual(
+      symbols.map((symbol) => positionKey(symbol.position)),
     );
-    expect(new Set(SYMBOLS.map((symbol) => symbol.id)).size).toBe(SYMBOLS.length);
+    expect(new Set(symbols.map((symbol) => symbol.id)).size).toBe(symbols.length);
   });
 
   it("renders every reference in the grammar's canonical spelling", () => {
-    expect(SYMBOLS.filter((symbol) => !isRef(symbol.ref)).map((symbol) => symbol.ref)).toEqual([]);
+    const symbols = symbolsOf(everyDeclaration());
+    expect(symbols.filter((symbol) => !isRef(symbol.ref)).map((symbol) => symbol.ref)).toEqual([]);
   });
 
   it("names the container of every declaration but a file", () => {
-    const ids = new Set(SYMBOLS.map((symbol) => symbol.id));
-    const files = new Set(SYMBOLS.filter((symbol) => symbol.kind === "file").map((s) => s.id));
+    const symbols = symbolsOf(everyDeclaration());
+    const ids = new Set(symbols.map((symbol) => symbol.id));
+    const files = new Set(symbols.filter((symbol) => symbol.kind === "file").map((s) => s.id));
 
-    expect(SYMBOLS.filter((symbol) => symbol.parent === "").map((symbol) => symbol.id)).toEqual([
+    expect(symbols.filter((symbol) => symbol.parent === "").map((symbol) => symbol.id)).toEqual([
       ...files,
     ]);
     expect(
-      SYMBOLS.filter((symbol) => symbol.parent !== "" && !ids.has(symbol.parent)),
+      symbols.filter((symbol) => symbol.parent !== "" && !ids.has(symbol.parent)),
       "a parent names a symbol of this inventory",
     ).toEqual([]);
   });
 
   it("reads one table per container, measured where the read crosses the boundary", () => {
-    const members = SYMBOLS.filter((symbol) =>
+    const analyzed = everyDeclaration();
+    const symbols = symbolsOf(analyzed);
+    const members = symbols.filter((symbol) =>
       ["class-member", "method", "type-member", "interface-method", "enum-member"].includes(
         symbol.kind,
       ),
@@ -138,7 +151,7 @@ describe("the symbol table of every declaration form", () => {
     // belong to the object type its declaration writes, so the declaration is what
     // carries them and no read is made for it. The class a module exports as its
     // default is named for the export, which is the name the binder holds it under.
-    expect([...EVERY_DECLARATION.tableReads.members].sort()).toEqual([
+    expect([...analyzed.tableReads.members].sort()).toEqual([
       "Event",
       "ExportedClass",
       "ExportedInterface",
@@ -148,25 +161,32 @@ describe("the symbol table of every declaration form", () => {
     ]);
     // Three modules, three namespaces, two enums, and three classes for the static
     // members a class keeps in a second table.
-    expect(EVERY_DECLARATION.tableReads.exports.length).toBe(11);
-    expect(readTwice(EVERY_DECLARATION.tableReads.members), "one members table each").toEqual([]);
-    expect(readTwice(EVERY_DECLARATION.tableReads.exports), "one exports table each").toEqual([]);
+    expect(analyzed.tableReads.exports.length).toBe(11);
+    expect(readTwice(analyzed.tableReads.members), "one members table each").toEqual([]);
+    expect(readTwice(analyzed.tableReads.exports), "one exports table each").toEqual([]);
     expect(members.length, "far more members than tables read").toBeGreaterThan(20);
   });
 
   it("reports the reads it made, which is one batch and the tables measured above", () => {
-    const { members, exports } = EVERY_DECLARATION.tableReads;
+    const analyzed = everyDeclaration();
+    const { members, exports } = analyzed.tableReads;
 
-    expect(INVENTORY?.cost).toEqual({ batches: 1, exportTables: 6, memberTables: 11 });
+    expect(analyzed.inventories[0]?.cost).toEqual({
+      batches: 1,
+      exportTables: 6,
+      memberTables: 11,
+    });
     expect(
-      (INVENTORY?.cost.memberTables ?? 0) + (INVENTORY?.cost.exportTables ?? 0),
+      (analyzed.inventories[0]?.cost.memberTables ?? 0) +
+        (analyzed.inventories[0]?.cost.exportTables ?? 0),
       "the reported cost is the number of table reads the client boundary saw",
     ).toBe(members.length + exports.length);
   });
 
   it("enumerates none of the names a bare star re-export carries", () => {
+    const symbols = symbolsOf(everyDeclaration());
     expect(
-      SYMBOLS.filter(
+      symbols.filter(
         (symbol) => symbol.position.path === "src/index.ts" && symbol.name === "alsoExported",
       ),
       "a name a star re-export carries forward is the other module's declaration",
@@ -184,14 +204,14 @@ describe("a class member", () => {
     { member: "ExportedClass.#frame", visibility: "private-name", isStatic: false },
     { member: "ExportedClass.size", visibility: "public", isStatic: false },
   ])("enumerates $member as $visibility", ({ member, visibility, isStatic }) => {
-    const found = named(member);
+    const found = named(symbolsOf(everyDeclaration()), member);
 
     expect(found?.visibility, member).toBe(visibility);
     expect(found?.static, member).toBe(isStatic);
   });
 
   it("enumerates a member whose key is computed, which no symbol table holds", () => {
-    const found = named("ExportedClass.[Symbol.toStringTag]");
+    const found = named(symbolsOf(everyDeclaration()), "ExportedClass.[Symbol.toStringTag]");
 
     expect(found?.kind).toBe("class-member");
     expect(found?.ref).toBe(
@@ -200,27 +220,30 @@ describe("a class member", () => {
   });
 
   it("makes one symbol of a getter and a setter of one name, spanning both", () => {
-    const found = named("ExportedClass.size");
+    const symbols = symbolsOf(everyDeclaration());
+    const found = named(symbols, "ExportedClass.size");
 
-    expect(SYMBOLS.filter((symbol) => symbol.name === "ExportedClass.size").length).toBe(1);
+    expect(symbols.filter((symbol) => symbol.name === "ExportedClass.size").length).toBe(1);
     expect(found?.position.line).toBe(41);
     expect(found?.endLine, "the record spans the setter too").toBe(47);
   });
 
   it("marks a static member in its reference and an instance member not at all", () => {
-    expect(named("ExportedClass.count")?.ref).toBe(
+    const symbols = symbolsOf(everyDeclaration());
+    expect(named(symbols, "ExportedClass.count")?.ref).toBe(
       "ts://@example/every-declaration/src/declarations.ts#ExportedClass.count:static",
     );
-    expect(named("ExportedClass.plain")?.ref).toBe(
+    expect(named(symbols, "ExportedClass.plain")?.ref).toBe(
       "ts://@example/every-declaration/src/declarations.ts#ExportedClass.plain",
     );
   });
 
   it("carries no export of its own, because a member is not a module export", () => {
+    const symbols = symbolsOf(everyDeclaration());
     expect(
-      SYMBOLS.filter((symbol) => symbol.kind === "class-member" || symbol.kind === "method").every(
-        (symbol) => !symbol.exported,
-      ),
+      symbols
+        .filter((symbol) => symbol.kind === "class-member" || symbol.kind === "method")
+        .every((symbol) => !symbol.exported),
       "a class member's reach outside its module is its visibility and its container's",
     ).toBe(true);
   });
@@ -228,9 +251,10 @@ describe("a class member", () => {
 
 describe("the two private facts", () => {
   it("records a private modifier and a private name as two different visibilities", () => {
+    const symbols = symbolsOf(everyDeclaration());
     const visibilities = new Set<Visibility>([
-      named("ExportedClass.hidden")?.visibility ?? "public",
-      named("ExportedClass.#frame")?.visibility ?? "public",
+      named(symbols, "ExportedClass.hidden")?.visibility ?? "public",
+      named(symbols, "ExportedClass.#frame")?.visibility ?? "public",
     ]);
 
     expect([...visibilities].sort()).toEqual(["private", "private-name"]);

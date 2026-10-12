@@ -3,11 +3,17 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { emitterInputOf, findingsOf } from "../__test-helpers__/emitter-input.ts";
 import { fixture, ROOT } from "../__test-helpers__/fixtures.ts";
-import { analyzeRoot, writeProject } from "../__test-helpers__/projects.ts";
+import {
+  analyzeProject,
+  analyzeRoot,
+  consumerPass,
+  TSCONFIG,
+  writeProject,
+} from "../__test-helpers__/projects.ts";
 import type { InventorySymbol } from "./inventory.ts";
 import { positionKey } from "./position.ts";
 import { DEFAULT_BATCH_CAP } from "./query.ts";
-import { testFileRulesOf, type Reference } from "./references.ts";
+import { testFileRulesOf, type Reference, type References } from "./references.ts";
 import { resolve } from "./resolve.ts";
 
 /**
@@ -432,6 +438,181 @@ describe("the test-file pattern", () => {
       { rule: "test-file-pattern-1", matched: 2 },
       { rule: "test-file-pattern-2", matched: 2 },
       { rule: "test-file-pattern-3", matched: 0 },
+    ]);
+  });
+
+  it("orders the rules by name bytewise, so the tenth pattern's rule comes before the second's", () => {
+    const patterns = Array.from({ length: 10 }, (_, index) => `p${String(index)}/**`);
+
+    expect(
+      testFileRulesOf(patterns, ["p9/a.ts"], ["support.ts"]).map(
+        (rule) => `${rule.rule} ${String(rule.matched)}`,
+      ),
+    ).toEqual([
+      "test-file-pattern-1 0",
+      "test-file-pattern-10 1",
+      "test-file-pattern-2 0",
+      "test-file-pattern-3 0",
+      "test-file-pattern-4 0",
+      "test-file-pattern-5 0",
+      "test-file-pattern-6 0",
+      "test-file-pattern-7 0",
+      "test-file-pattern-8 0",
+      "test-file-pattern-9 0",
+      "test-support 1",
+    ]);
+  });
+});
+
+const ESM = '{ "name": "@example/references", "type": "module" }\n';
+
+describe("the test files of a written project", () => {
+  it("are listed in path order, whatever order the program reads them in", () => {
+    const analyzed = analyzeProject(
+      {
+        "package.json": ESM,
+        "a.test.ts": 'import { b } from "./b.test.js";\nconsole.log(b);\n',
+        "b.test.ts": "export const b = 1;\n",
+        "main.ts": "export const m = 1;\n",
+      },
+      { references: { testFiles: ["**/*.test.ts"] } },
+    );
+
+    expect(analyzed.references[0]?.testFilePaths).toEqual(["a.test.ts", "b.test.ts"]);
+  });
+
+  it("make test references of the members a literal they write is checked against", () => {
+    const analyzed = analyzeProject(
+      {
+        "package.json": ESM,
+        "shape.ts": "export interface Shape {\n  a: number;\n}\n",
+        "a.test.ts":
+          'import type { Shape } from "./shape.js";\nexport const s: Shape = { a: 1 };\n',
+      },
+      { references: { testFiles: ["**/*.test.ts"] } },
+    );
+
+    expect(
+      (analyzed.references[0]?.references ?? [])
+        .filter((reference) => reference.resolution === "contextual")
+        .map(
+          (reference) =>
+            `${positionKey(reference.position)} ${reference.use} ${String(reference.test)}`,
+        ),
+    ).toEqual(["a.test.ts:2:27 write true"]);
+  });
+});
+
+function accounted(cost: References["cost"] | undefined): number {
+  return cost === undefined
+    ? 0
+    : cost.fileBatches +
+        cost.residueFallbacks +
+        cost.shorthandLookups +
+        cost.aliasSteps +
+        cost.patternBatches +
+        cost.patternLookups +
+        cost.contextualBatches +
+        cost.contextualLookups +
+        cost.typedLookups;
+}
+
+describe("the cost of one pass", () => {
+  it("is one lookup per shorthand and one per name a batch leaves, and no batched shorthand", () => {
+    const analyzed = analyzeProject(
+      {
+        "package.json": ESM,
+        "main.ts":
+          "export const x = 1;\nouter: for (;;) {\n  break outer;\n}\nexport const o = { x };\n",
+      },
+      { references: { testFiles: [] } },
+    );
+    const cost = analyzed.references[0]?.cost;
+
+    expect(
+      [cost?.batched, cost?.residueFallbacks, cost?.shorthandLookups],
+      "the batch holds the two label names, which it leaves, and not the shorthand",
+    ).toEqual([2, 2, 1]);
+    expect(analyzed.referenceRequests).toBe(accounted(cost));
+  });
+
+  it("accounts for every request where a use reads a literal's property", () => {
+    const analyzed = analyzeProject(
+      {
+        "package.json": ESM,
+        "node_modules/@example/dep/package.json":
+          '{ "name": "@example/dep", "version": "1.0.0", "types": "index.d.ts" }\n',
+        "node_modules/@example/dep/index.d.ts": "export declare class Box {\n  open(): void;\n}\n",
+        "main.ts": [
+          'import { Box } from "@example/dep";',
+          "interface Shape {",
+          "  a: number;",
+          "}",
+          "export const one = { a: 1 } satisfies Shape;",
+          "console.log(one.a);",
+          "new Box().open();",
+          "",
+        ].join("\n"),
+      },
+      { references: { testFiles: [] } },
+    );
+
+    expect(
+      analyzed.referenceRequests,
+      "no declaration outside the project's own files is fetched to look for a literal, a " +
+        "dependency's method among them",
+    ).toBe(accounted(analyzed.references[0]?.cost));
+  });
+});
+
+describe("a consumer's pass", () => {
+  it("records the references its own files make to the target, and no other", () => {
+    const pass = consumerPass(
+      {
+        "package.json": ESM,
+        "target/package.json": ESM,
+        "target/lib.ts": [
+          "export interface Shape {",
+          "  a: number;",
+          "}",
+          'export type A = Shape["a"];',
+          "export const libValue = 1;",
+          "",
+        ].join("\n"),
+        "shared/use.ts":
+          'import { libValue } from "../target/lib.js";\nexport const shared = libValue;\n',
+        "consumer/package.json": ESM,
+        "consumer/tsconfig.json": TSCONFIG,
+        "consumer/side.ts": 'console.log("side");\nexport {};\n',
+        "consumer/main.ts": [
+          'import "./side.js";',
+          'import { shared } from "../shared/use.js";',
+          'import { libValue } from "../target/lib.js";',
+          "console.log(shared, libValue);",
+          'console.log(new URL("./side.ts", import.meta.url));',
+          "",
+        ].join("\n"),
+      },
+      "target",
+      "consumer",
+    );
+    const labels = new Map(
+      pass.held.symbols.map((symbol) => [
+        symbol.id,
+        symbol.kind === "file" ? symbol.position.path : symbol.name,
+      ]),
+    );
+
+    expect(
+      pass.references.map(
+        (reference) =>
+          `${positionKey(reference.position)} ${labels.get(reference.to) ?? reference.to} ${reference.use} ${reference.consumer ?? ""}`,
+      ),
+      "none from a file outside the consumer's directory the consumer imports, none to a " +
+        "file of the consumer's own, and none the target's files make of themselves",
+    ).toEqual([
+      "main.ts:3:26 lib.ts evaluation @example/consumer",
+      "main.ts:4:21 libValue read @example/consumer",
     ]);
   });
 });

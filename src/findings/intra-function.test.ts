@@ -4,6 +4,8 @@ import { emitterInputOf, findingsOf } from "../../__test-helpers__/emitter-input
 import { writeProject } from "../../__test-helpers__/projects.ts";
 import type { CompletedFinding } from "../finding.ts";
 import { resolve } from "../resolve.ts";
+import type { Mode } from "../sweep.ts";
+import type { Boundary } from "./boundary.ts";
 
 /** The bound on one case, each of which loads a whole target. */
 const LOAD_TIMEOUT = 60_000;
@@ -117,10 +119,11 @@ const APPLICATION = {
   ].join("\n"),
 };
 
-/** One project's intra-function findings under a configuration document, in line order. */
 function partsOf(
   files: Readonly<Record<string, string>>,
   document: Record<string, unknown>,
+  consumers?: Boundary["consumers"],
+  mode: Mode = { production: true },
 ): { code: string; name: string; line: number; finding: CompletedFinding }[] {
   const root = writeProject(files);
   roots.push(root);
@@ -128,7 +131,10 @@ function partsOf(
     repository: JSON.stringify(document),
     repositoryLabel: "deadset.json",
   });
-  return findingsOf(emitterInputOf(root, config))
+  const input = emitterInputOf(root, config, { mode });
+  return findingsOf(
+    consumers === undefined ? input : { ...input, boundary: { ...input.boundary, consumers } },
+  )
     .filter((finding) => finding.code.startsWith("DS18"))
     .sort((a, b) => a.position.line - b.position.line)
     .map((finding) => ({
@@ -516,6 +522,291 @@ describe("a result every call site awaits as a statement", () => {
           ENTRY,
         ).map(({ code, line }) => `${code} ${String(line)}`),
       ).toEqual(["DS1803 9", "DS1803 13"]);
+    },
+    LOAD_TIMEOUT,
+  );
+});
+
+function placed(found: readonly { finding: CompletedFinding }[]): string[] {
+  return found.map(
+    ({ finding }) =>
+      `${finding.code} ${finding.symbol.name} ${finding.position.path}:${String(finding.position.line)}`,
+  );
+}
+
+describe("a parameter of a function expression a free function holds", () => {
+  it(
+    "is reported where no read parameter follows it, since a caller of the value may pass it, and never before a read one",
+    () => {
+      expect(
+        placed(
+          partsOf(
+            {
+              "package.json": '{ "name": "@example/values", "private": true, "type": "module" }\n',
+              "src/main.ts": [
+                "function run(values: number[]): number[] {",
+                "  return values.map((unused, index) => index).map((value, position) => value);",
+                "}",
+                "",
+                "console.log(run([1]));",
+                "",
+              ].join("\n"),
+            },
+            ENTRY,
+          ),
+        ),
+      ).toEqual(["DS1801 position src/main.ts:2"]);
+    },
+    LOAD_TIMEOUT,
+  );
+});
+
+describe("an unreachable statement written over several lines", () => {
+  it(
+    "is one part, as long as the lines it spans",
+    () => {
+      const found = partsOf(
+        {
+          "package.json": '{ "name": "@example/spans", "private": true, "type": "module" }\n',
+          "src/main.ts": [
+            "function early(): number {",
+            "  return 1;",
+            "  console.log(",
+            '    "never",',
+            "  );",
+            "}",
+            "",
+            "console.log(early());",
+            "",
+          ].join("\n"),
+        },
+        ENTRY,
+      );
+
+      expect(
+        found.map(({ finding }) => [finding.code, finding.position.line, finding.symbol.sizeLines]),
+      ).toEqual([["DS1805", 3, 3]]);
+    },
+    LOAD_TIMEOUT,
+  );
+});
+
+describe("a part of test code", () => {
+  it(
+    "is reported where the run that counts test references reaches its declaration and that is no test of dead code",
+    () => {
+      expect(
+        placed(
+          partsOf(
+            {
+              "package.json": '{ "name": "@example/tested", "private": true, "type": "module" }\n',
+              "src/main.ts": 'import { kept } from "./lib.js";\n\nconsole.log(kept());\n',
+              "src/lib.ts": [
+                "export function kept(): number {",
+                "  return 1;",
+                "}",
+                "",
+                "export function retired(value: number): number {",
+                "  return value;",
+                "}",
+                "",
+              ].join("\n"),
+              "src/fakes/fake.ts": [
+                "export function fake(value: number, ignored: number): number {",
+                "  return value;",
+                "}",
+                "",
+                "export function unreached(gone: number): number {",
+                "  return 1;",
+                "}",
+                "",
+              ].join("\n"),
+              "src/main.test.ts": [
+                'import { fake } from "./fakes/fake.js";',
+                'import { kept, retired } from "./lib.js";',
+                "",
+                "function helper(value: number, unused: number): number {",
+                "  return value;",
+                "}",
+                "",
+                "function orphan(lost: number): number {",
+                "  return 1;",
+                "}",
+                "",
+                "export function checksRetired(skipped: number): void {",
+                "  console.log(retired(1));",
+                "}",
+                "",
+                "export function checksKept(dropped: number): void {",
+                "  console.log(kept());",
+                "}",
+                "",
+                "console.log(helper(1, 2), fake(1, 2));",
+                "",
+              ].join("\n"),
+            },
+            ENTRY,
+          ),
+        ),
+      ).toEqual([
+        "DS1801 ignored src/fakes/fake.ts:1",
+        "DS1801 unused src/main.test.ts:4",
+        "DS1801 dropped src/main.test.ts:16",
+      ]);
+    },
+    LOAD_TIMEOUT,
+  );
+});
+
+describe("a part of test code", () => {
+  it(
+    "is reported inside a declaration the test file reaches as it loads, and not inside one nothing reaches",
+    () => {
+      expect(
+        placed(
+          partsOf(
+            {
+              "package.json": '{ "name": "@example/suites", "private": true, "type": "module" }\n',
+              "src/main.ts": "console.log(1);\n",
+              "src/main.test.ts": [
+                "function register(target: unknown, context: ClassDecoratorContext): void {",
+                "  console.log(target, context.name);",
+                "}",
+                "",
+                "@register",
+                "class Suite {",
+                "  static check(value: number, unused: number): number {",
+                "    return value;",
+                "  }",
+                "}",
+                "",
+                "function helper(value: number, ignored: number): number {",
+                "  return Suite.check(value, 1);",
+                "}",
+                "",
+              ].join("\n"),
+            },
+            ENTRY,
+          ),
+        ),
+      ).toEqual(["DS1801 unused src/main.test.ts:7"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "is reported inside a declaration only an exemption record holds, in a run that counts test references",
+    () => {
+      expect(
+        placed(
+          partsOf(
+            {
+              "package.json": '{ "name": "@example/suites", "private": true, "type": "module" }\n',
+              "src/main.ts": "console.log(1);\n",
+              "src/main.test.ts": [
+                "interface Port {",
+                "  send(value: number): number;",
+                "}",
+                "",
+                "class Fake implements Port {",
+                "  send(value: number): number {",
+                "    let kept = value;",
+                "    kept = 2;",
+                "    return value;",
+                "  }",
+                "}",
+                "",
+                "const port: Port = new Fake();",
+                "console.log(port.send(1));",
+                "",
+              ].join("\n"),
+            },
+            ENTRY,
+            undefined,
+            { production: false },
+          ),
+        ),
+      ).toEqual(["DS1807 kept src/main.test.ts:7", "DS1807 kept src/main.test.ts:8"]);
+    },
+    LOAD_TIMEOUT,
+  );
+});
+
+describe("a result every call discards", () => {
+  const LIBRARY = {
+    "package.json": '{ "name": "@example/results", "private": true, "type": "module" }\n',
+    "src/lib.ts": [
+      "export function measure(): number {",
+      "  return 1;",
+      "}",
+      "",
+      "export class Meter {",
+      "  read(): number {",
+      "    return 2;",
+      "  }",
+      "}",
+      "",
+      "function helper(): number {",
+      "  return 3;",
+      "}",
+      "",
+      "function pending(): number {",
+      '  throw new Error("not written");',
+      "}",
+      "",
+      "export function run(): void {",
+      "  helper();",
+      "  pending();",
+      "}",
+      "",
+    ].join("\n"),
+    "src/main.ts": [
+      'import { Meter, measure, run } from "./lib.js";',
+      "",
+      "measure();",
+      "new Meter().read();",
+      "run();",
+      "",
+    ].join("\n"),
+  };
+  const COMPLETE = { ...ENTRY, consumers: { complete: true } };
+
+  it(
+    "is reported only of a declaration no module exports, a member of an exported class included, while the consumer set is open",
+    () => {
+      expect(placed(partsOf(LIBRARY, ENTRY))).toEqual(["DS1803 result src/lib.ts:11"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "is reported of an exported declaration too once the consumer set is declared complete and every declared consumer loaded",
+    () => {
+      const reported = [
+        "DS1803 result src/lib.ts:1",
+        "DS1803 result src/lib.ts:6",
+        "DS1803 result src/lib.ts:11",
+      ];
+
+      expect(placed(partsOf(LIBRARY, COMPLETE))).toEqual(reported);
+      expect(
+        placed(partsOf(LIBRARY, COMPLETE, { declared: ["@example/c"], loaded: ["@example/c"] })),
+      ).toEqual(reported);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "is not reported of an exported declaration while a declared consumer did not load, the consumer set declared complete",
+    () => {
+      expect(
+        placed(
+          partsOf(LIBRARY, COMPLETE, {
+            declared: ["@example/c", "@example/d"],
+            loaded: ["@example/c"],
+          }),
+        ),
+      ).toEqual(["DS1803 result src/lib.ts:11"]);
     },
     LOAD_TIMEOUT,
   );

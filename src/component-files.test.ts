@@ -17,6 +17,11 @@ function warningsOf(text: string): string[] {
   );
 }
 
+/** Every markup action of one file's text, as one line. */
+function actionsOf(text: string): string[] {
+  return readComponent(text).markup.map((one) => one.action);
+}
+
 /**
  * Every offset of the file's text in the module either holds the same code unit, inside
  * a block or as a line terminator or the BOM, or a space or `;` outside every block.
@@ -105,6 +110,77 @@ describe("component files", () => {
     ["a first line that is not a fence", "<h1>---</h1>\n---\nconst m = 12;\n---\n", []],
     ["a frontmatter never closed", "---\nconst n = 13;\n", []],
     ["a file holding no block", "<template><p>text</p></template>\n", []],
+    ["words before a block", "<p>some text</p>\n<script>const o = 14;</script>", ["const o = 14;"]],
+    ["a less-than in the text", "1 < 2\n<script>const p = 15;</script>", ["const p = 15;"]],
+    [
+      "a stray brace in the markup",
+      "<p>{ open</p>\n<script>const q = 16;</script>",
+      ["const q = 16;"],
+    ],
+    [
+      "a comment holding a greater-than",
+      "<!-- a > b\n<script>bad(</script>\n-->\n<script>const r = 17;</script>",
+      ["const r = 17;"],
+    ],
+    ["a comment never closed", "<!--\n<script>const hidden = 1;</script>", []],
+    [
+      "a comment ending in what looks like a tag",
+      "<!--<b-->\n<script>const s = 18;</script>",
+      ["const s = 18;"],
+    ],
+    ["an end tag closing no element", "</div>\n<script>const t = 19;</script>", ["const t = 19;"]],
+    [
+      "a void and a self-closing element before a block",
+      '<Child />\n<img src="a.png">\n<script>const u = 20;</script>',
+      ["const u = 20;"],
+    ],
+    [
+      "a type and a lang padded with spaces",
+      '<script type=" Module " lang=" TS ">const v: number = 21;</script>',
+      ["const v: number = 21;"],
+    ],
+    [
+      "a self-closing script naming no src",
+      '<script lang="ts" />\n<script>const w = 22;</script>',
+      ["const w = 22;"],
+    ],
+    ["a BOM inside the markup", "<p>\ufeff</p>\n<script>const x = 23;</script>", ["const x = 23;"]],
+    ["a block right after a BOM", "\ufeff<script>const y = 24;</script>", ["const y = 24;"]],
+    ["a start tag after a space on the first line", " <script>const no = 0;</script>", []],
+    [
+      "a start tag after a BOM that does not begin a line",
+      "\ufeff<p></p> <script>const no = 0;</script>",
+      [],
+    ],
+    [
+      "a stray brace whose match lies past a block",
+      '<p>{ open</p>\n<script lang="ts">const z = 25;</script>\n<p>}</p>',
+      ["const z = 25;"],
+    ],
+    [
+      "an end tag with a solidus after its name",
+      "<div>\n</div/>\n<script>const a = 26;</script>",
+      ["const a = 26;"],
+    ],
+    [
+      "a solidus inside a start tag that does not end it",
+      "<div / >\n<script>const no = 0;</script>",
+      [],
+    ],
+    [
+      "a self-closing element whose last attribute has no value",
+      "<Child disabled/>\n<script>const b = 27;</script>",
+      ["const b = 27;"],
+    ],
+    [
+      "a block's end tag with a solidus after its name",
+      "<script>const c = 28;</script/>\n<script>const d = 29;</script>",
+      ["const c = 28;", "const d = 29;"],
+    ],
+    ["a frontmatter after a BOM", "\ufeff---\nconst e = 30;\n---\n", ["const e = 30;\n"]],
+    ["fences padded with spaces and tabs", "--- \nconst f = 31;\n---\t\n", ["const f = 31;\n"]],
+    ["a first line ending in a fence", "# ---\nconst m = 12;\n---\n", []],
+    ["a first line holding more than a fence", "---x\nconst m = 12;\n---\n", []],
   ];
 
   for (const [name, text, blocks] of cases) {
@@ -125,10 +201,10 @@ describe("component files", () => {
   });
 
   it("breaks the statement at the start tag of every block after the first", () => {
-    const text = "<script>const a = 1</script>\n<script>(b)</script>";
-    const module = componentModule(text).text;
-    expect(module[text.indexOf("<script>(b)")]).toBe(";");
-    expect(module[0]).toBe(" ");
+    const text = "<p>a</p>\n<script>const a = 1</script>\n<script>(b)</script>";
+    const module = componentModule(text).text.slice(0, text.length);
+    const breaks = [...module].flatMap((char, at) => (char === ";" ? [at] : []));
+    expect(breaks).toEqual([text.indexOf("<script>(b)")]);
   });
 
   it("takes the strongest language any block names, and TypeScript for a file with none", () => {
@@ -152,6 +228,16 @@ describe("component files", () => {
     );
     const own = "<script>\nexport default { name: 'own' };\n</script>";
     expect(componentModule(own).text.slice(own.length)).toBe("\n\n");
+  });
+
+  it("maps no segment for an empty block", () => {
+    expect(componentModule("<script></script>").mappings).toEqual([]);
+  });
+
+  it("appends a typed default export to a TSX module", () => {
+    const module = componentModule("<script lang='tsx'>let a;</script>");
+    expect(module.extension).toBe(".tsx");
+    expect(module.text.endsWith("\nexport default (0 as any);\n")).toBe(true);
   });
 
   it("imports the file a src attribute names, mapped to the attribute, in either form", () => {
@@ -190,6 +276,43 @@ describe("component files", () => {
     ]);
   });
 
+  it("warns for no element but a script, and for no script that does not begin a line", () => {
+    const text = [
+      "<div>",
+      "<p>a</p> <span>b</span>",
+      "</div>",
+      "<div> <script>const x = 1;</script></div>",
+    ].join("\n");
+    expect(warningsOf(text)).toEqual([]);
+  });
+
+  it("warns for a line-start script tag inside a block, and for none past its end or mid-line", () => {
+    expect(warningsOf("<script>\nconst a = '\n<script lang=\"ts\">';\n</script>")).toEqual([
+      "3: it begins a line inside a block",
+    ]);
+    expect(warningsOf("<script>a</script>\n<script>b</script>")).toEqual([]);
+    expect(warningsOf('<script>const s = "<script>";</script>')).toEqual([]);
+  });
+
+  it("imports the file a src attribute names, whatever its form, and warns for one naming none", () => {
+    const text = [
+      '<script src=" ./a.js "></script>',
+      '<script src="../b.js"></script>',
+      '<script src="./c:d.js"></script>',
+      '<script src=""></script>',
+      '<script src="/e.js"></script>',
+    ].join("\n");
+    expect(readComponent(text).imports.map((one) => one.specifier)).toEqual([
+      "./a.js",
+      "../b.js",
+      "./c:d.js",
+    ]);
+    expect(warningsOf(text)).toEqual([
+      '4: its src "" names no file',
+      '5: its src "/e.js" names no file',
+    ]);
+  });
+
   it("lists every expression and attribute value of the markup as an action", () => {
     const text =
       '<template>\n  <li v-for="row of rows" :key="row.id">{{ row.label }}</li>\n</template>\n<script>const rows = [];</script>';
@@ -204,6 +327,107 @@ describe("component files", () => {
       "disabled",
       "item.name",
     ]);
+    expect(actionsOf(svelte)).toEqual(["on:click={() => save(item)}", "{disabled}", "{item.name}"]);
+  });
+
+  it("lists each action at the offset its text starts at in the file", () => {
+    const text = '<p {disabled} title="a" on:click={go} :key=row.id>';
+    expect(readComponent(text).markup.map((one) => [one.start, one.text])).toEqual([
+      [4, "disabled"],
+      [21, "a"],
+      [34, "go"],
+      [43, "row.id"],
+    ]);
+  });
+
+  it("collapses an action written over several lines to one line", () => {
+    const text = '<p :class="{\n    active: on,\n  }">{ a  +\n  b }</p>';
+    expect(actionsOf(text)).toEqual([':class="{ active: on, }"', "{ a + b }"]);
+  });
+
+  it("ends an attribute name at a space, a solidus or the tag's end", () => {
+    expect(actionsOf('<p hidden>{x}</p><p title=a hidden :key="k">')).toEqual([
+      "{x}",
+      "title=a",
+      ':key="k"',
+    ]);
+  });
+
+  it("reads an equals sign that starts an attribute name as part of the name", () => {
+    expect(actionsOf("<p =x>")).toEqual([]);
+  });
+
+  for (const name of [
+    "Avatar",
+    "Zone",
+    "article",
+    "zone",
+    "Step0",
+    "Col9",
+    "my-el",
+    "a.b",
+    "svelte:head",
+    "h_1",
+  ]) {
+    it(`reads ${name} as a tag name`, () => {
+      expect(actionsOf(`<${name} title="{x}"></${name}>`)).toEqual(['title="{x}"']);
+    });
+  }
+
+  for (const [name, space] of [
+    ["a tab", "\t"],
+    ["a form feed", "\f"],
+    ["a carriage return", "\r"],
+  ] as const) {
+    it(`ends a tag name at ${name}`, () => {
+      expect(actionsOf(`<p${space}title="{x}"></p>`)).toEqual(['title="{x}"']);
+    });
+  }
+
+  it("reads a less-than before a character no tag name starts with as text", () => {
+    expect(actionsOf('a <~ title="{x}">')).toEqual(["{x}"]);
+  });
+
+  it("skips a quoted string inside an expression, a closing brace in it included", () => {
+    expect(
+      readComponent('<p>{"}"} {\'}\'} {`}`} {"\\"}"}</p>').markup.map((one) => one.text),
+    ).toEqual(['"}"', "'}'", "`}`", '"\\"}"']);
+  });
+
+  it("reads an expression holding a script tag that does not begin a line", () => {
+    expect(readComponent("<p>{a <script> b}</p>").markup.map((one) => one.text)).toEqual([
+      "a <script> b",
+    ]);
+  });
+
+  it("reads markup cut off at the end of the file", () => {
+    expect(actionsOf('<p title="a ')).toEqual(['title="a']);
+    expect(actionsOf("<p title=a")).toEqual(["title=a"]);
+    expect(actionsOf("<p {a ")).toEqual(["{a"]);
+    expect(actionsOf("<p title={a ")).toEqual(["title={a"]);
+    expect(actionsOf("<p>{x}</p")).toEqual(["{x}"]);
+    expect(warningsOf("<div>\n<script")).toEqual(["2: it is inside an element"]);
+    const mapped = componentModule("<script src=x.js").mappings.map((one) => one.slice(2, 4));
+    expect(mapped).toEqual([[8, 8]]);
+  });
+
+  it("lists no action for an attribute with no value", () => {
+    const text = '<button disabled @click="go">Go</button>';
+    expect(readComponent(text).markup.map((one) => one.action)).toEqual(['@click="go"']);
+  });
+
+  it("reads no action inside a doctype, a processing instruction or a broken end tag", () => {
+    const text = "<?php {pi} ?>\n<!doctype {html}>\n<p>{x}</p>";
+    expect(readComponent(text).markup.map((one) => one.text)).toEqual(["x"]);
+    expect(readComponent("</p@ {y}>").markup.map((one) => one.text)).toEqual(["y"]);
+    expect(readComponent("<!doctype html {>}").markup).toEqual([]);
+  });
+
+  it("reads no action inside a raw-text element, closed or not", () => {
+    expect(readComponent("<script>{</script>\n<p>}</p>").markup).toEqual([]);
+    const unclosed = '<script>\nconst a = "{x}";';
+    expect(readComponent(unclosed).markup).toEqual([]);
+    expect(blocksOf(unclosed)).toEqual(['\nconst a = "{x}";']);
   });
 
   it("finds a default export at the top level and nowhere else", () => {
@@ -219,8 +443,67 @@ describe("component files", () => {
     expect(exportsDefault("const o = { default: 1 }; export { o };")).toBe(false);
   });
 
+  it("finds no default export in a word that only follows export or names default", () => {
+    expect(exportsDefault("const value = config.default;")).toBe(false);
+    expect(exportsDefault("export const a = 1;")).toBe(false);
+    expect(exportsDefault("api.export(config.default);")).toBe(false);
+    expect(exportsDefault("const value = api.export().default;")).toBe(false);
+    expect(exportsDefault("export { helper }; const fallback = helper.default;")).toBe(false);
+  });
+
+  it("tracks every kind of bracket, so a default export inside one is not at the top level", () => {
+    expect(exportsDefault("declare module 'm' { function f(): void; export default f; }")).toBe(
+      false,
+    );
+    expect(exportsDefault("declare module 'm' { const a: string[]; export default a; }")).toBe(
+      false,
+    );
+    expect(exportsDefault("declare module 'm' { const a = 1; export default a; }")).toBe(false);
+    expect(exportsDefault("declare module 'm' { export { x as default }; }")).toBe(false);
+    expect(exportsDefault("const options = {}; export default options;")).toBe(true);
+    expect(exportsDefault("register(app); export default app;")).toBe(true);
+    expect(exportsDefault("const list = []; export default list;")).toBe(true);
+  });
+
+  it("skips comments and strings to their own end", () => {
+    expect(exportsDefault("/*\nexport default 1;\n*/\nconst a = 1;")).toBe(false);
+    expect(exportsDefault("/*/ export default 1 */")).toBe(false);
+    expect(exportsDefault("/* note */ export default 1;")).toBe(true);
+    expect(exportsDefault("/* export default 1")).toBe(false);
+    expect(exportsDefault("const a = 1; // trailing note")).toBe(false);
+    expect(exportsDefault('const s = "export default";')).toBe(false);
+    expect(exportsDefault("const s = 'it\\'s'; export default s;")).toBe(true);
+    expect(exportsDefault("const s = 'open")).toBe(false);
+  });
+
+  it("skips a template literal and its substitutions to the closing backtick", () => {
+    expect(exportsDefault("const t = `a`; export default t;")).toBe(true);
+    expect(exportsDefault("const t = `it\\`s`; export default t;")).toBe(true);
+    expect(exportsDefault('const t = `${"`"}`; export default t;')).toBe(true);
+    expect(exportsDefault("const t = `cost: $5`; export default t;")).toBe(true);
+    expect(exportsDefault("const t = `a{`; export default t;")).toBe(true);
+    expect(exportsDefault("// ${\nconst t = `${a;")).toBe(false);
+  });
+
+  it("reads a slash as a regular expression only where one may start", () => {
+    expect(exportsDefault("const share = domain / 2; export default share;")).toBe(true);
+    expect(exportsDefault("const half = count++ / 2;\nexport default half; // done")).toBe(true);
+    expect(exportsDefault("const half = count++ / 2")).toBe(false);
+    expect(exportsDefault("/export default/u.test(name);")).toBe(false);
+  });
+
+  it("skips a regular expression to its closing slash, outside a class and unescaped", () => {
+    expect(exportsDefault("const spaces = /\\s+/gu; export default spaces;")).toBe(true);
+    expect(exportsDefault("const r = /(export default)/u;")).toBe(false);
+    expect(exportsDefault("const r = /\\[/u; export default r;")).toBe(true);
+    expect(exportsDefault("const r = /[/(/]/u; export default r;")).toBe(true);
+    expect(exportsDefault("const r = /[a]/u; export default r;")).toBe(true);
+  });
+
   it("counts lines as the compiler does", () => {
     expect(lineOf("a\r\nb\rc\u2028d\ne", 9)).toBe(5);
     expect(lineOf("a\r\nb", 3)).toBe(2);
+    expect(lineOf("a\nb", 1)).toBe(1);
+    expect(lineOf("a\u2029b", 2)).toBe(2);
   });
 });

@@ -106,4 +106,12 @@ describe("the findings a gap or a component file's markup withholds", () => {
       onlyTested({ ...input, swept: { ...input.swept, componentFiles: ["b/catalog.ts"] } }),
     ).toEqual(["DS1004 a/catalog.ts"]);
   });
+
+  it("include every one about a top-level declaration of a live component file", () => {
+    const input = twin();
+
+    expect(
+      onlyTested({ ...input, swept: { ...input.swept, componentFiles: ["a/catalog.ts"] } }),
+    ).toEqual([]);
+  });
 });

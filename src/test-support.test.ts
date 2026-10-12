@@ -2,7 +2,11 @@ import { rmSync } from "node:fs";
 import { afterAll, describe, expect, it } from "vitest";
 import { emitterInputOf, findingsOf } from "../__test-helpers__/emitter-input.ts";
 import { writeProject } from "../__test-helpers__/projects.ts";
+import type { InventorySymbol } from "./inventory.ts";
+import type { Reference } from "./references.ts";
 import { resolve } from "./resolve.ts";
+import type { Root } from "./roots.ts";
+import { testSupportFiles } from "./test-support.ts";
 
 /**
  * An application whose test reaches two helper files that import each other, a setup file
@@ -167,5 +171,84 @@ describe("a file the test runner's configuration names as a setup file", () => {
         "test/registry-setup.ts",
       ),
     ).toEqual(["DS1004 record certain"]);
+  });
+});
+
+function fileAt(path: string): InventorySymbol {
+  return {
+    id: `${path}:1:1`,
+    ref: `ts://@example/app/${path}#`,
+    name: path,
+    kind: "file",
+    position: { path, line: 1, column: 1 },
+    endLine: 1,
+    parent: "",
+    exported: false,
+    visibility: "public",
+    static: false,
+  };
+}
+
+function imports(from: string, to: string, consumer?: string): Reference {
+  return {
+    from: `${from}:1:1`,
+    to: `${to}:1:1`,
+    position: { path: from, line: 1, column: 1 },
+    use: "read",
+    resolution: "batch",
+    test: from.endsWith(".test.ts"),
+    ...(consumer === undefined ? {} : { consumer }),
+  };
+}
+
+function supportOf(
+  paths: readonly string[],
+  references: readonly Reference[],
+  roots: readonly Root[] = [],
+): string[] {
+  const tests = paths.filter((path) => path.endsWith(".test.ts"));
+  return [...testSupportFiles(paths.map(fileAt), references, roots, tests)];
+}
+
+describe("the test-support files of a run", () => {
+  it("are the files a test reaches, and no other", () => {
+    expect(
+      supportOf(["a.test.ts", "helper.ts", "main.ts"], [imports("a.test.ts", "helper.ts")]),
+    ).toEqual(["helper.ts"]);
+  });
+
+  it("keep a file a loaded consumer also imports", () => {
+    expect(
+      supportOf(
+        ["a.test.ts", "helper.ts"],
+        [imports("a.test.ts", "helper.ts"), imports("consumer/use.ts", "helper.ts", "consumer")],
+      ),
+    ).toEqual(["helper.ts"]);
+  });
+
+  it("keep a file whose declaration only a type-error skip roots, and drop one another root names", () => {
+    const paths = ["a.test.ts", "skipped.ts", "configured.ts"];
+    const references = [imports("a.test.ts", "skipped.ts"), imports("a.test.ts", "configured.ts")];
+
+    expect(
+      supportOf(paths, references, [
+        { id: "skipped.ts:1:1", kind: "type-error", source: "" },
+        { id: "configured.ts:1:1", kind: "configured", source: "configured.ts" },
+      ]),
+    ).toEqual(["skipped.ts"]);
+  });
+
+  it("drop a file whose only users beside the tests are files dropped before it", () => {
+    expect(
+      supportOf(
+        ["a.test.ts", "inner.ts", "outer.ts", "main.ts"],
+        [
+          imports("a.test.ts", "inner.ts"),
+          imports("a.test.ts", "outer.ts"),
+          imports("outer.ts", "inner.ts"),
+          imports("main.ts", "outer.ts"),
+        ],
+      ),
+    ).toEqual([]);
   });
 });

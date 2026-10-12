@@ -42,8 +42,9 @@ describe("readManifest", () => {
     ]);
   });
 
-  it("reads a bin written as one path or as a command map", () => {
+  it("reads a bin written as one path, with or without a leading dot, or as a command map", () => {
     expect(entries({ bin: "./cli.js" })).toEqual(["bin /pkg/cli.js run false"]);
+    expect(entries({ bin: "cli.js" })).toEqual(["bin /pkg/cli.js run false"]);
     expect(entries({ bin: { a: "./a.js", b: "b.js" } })).toEqual([
       'bin["a"] /pkg/a.js run false',
       'bin["b"] /pkg/b.js run false',

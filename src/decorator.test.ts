@@ -1,8 +1,9 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
 import { fixture } from "../__test-helpers__/fixtures.ts";
+import { writeProject } from "../__test-helpers__/projects.ts";
 import { runSweep, type RunSweep } from "./analysis.ts";
 import { resolve } from "./resolve.ts";
 import { run, type Writer } from "./run.ts";
@@ -92,6 +93,34 @@ describe("decorator", () => {
 });
 
 describe("print-retained over a project whose classes carry decorators", () => {
+  it("holds back the members of a decorated generic class, not its type parameters", () => {
+    const root = writeProject({
+      "package.json": '{ "name": "@example/boxes", "type": "module", "main": "./src/main.ts" }\n',
+      "deadset.json": '{ "target": { "kind": "application" } }\n',
+      "src/main.ts": [
+        "function component<T>(value: T, _context: ClassDecoratorContext): T {",
+        "  return value;",
+        "}",
+        "@component",
+        "export class Box<Item> {",
+        "  held?: Item;",
+        "}",
+        "console.log(Box);",
+        "",
+      ].join("\n"),
+    });
+    onTestFinished(() => {
+      rmSync(root, { recursive: true, force: true });
+    });
+    const out = new MemoryWriter();
+
+    expect(run(["print-retained", `--target=${root}`], out, new MemoryWriter(), nodeHost())).toBe(
+      0,
+    );
+    expect(out.text.split("\n").filter((line) => line.includes("\tdecorator\t"))).toEqual([
+      "ts://@example/boxes/src/main.ts#Box.held\tdecorator\tsrc/main.ts:4:1\tdecorated by @component",
+    ]);
+  });
   it("prints each decorated member with the decorator that holds it back, and exits 0", async () => {
     const out = new MemoryWriter();
     const err = new MemoryWriter();

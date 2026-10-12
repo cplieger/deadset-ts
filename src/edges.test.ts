@@ -110,13 +110,66 @@ describe("the edges document", () => {
     ["an edge that is not an object", `{"edges": ["a"]}`],
     ["a second value after the document", `{"edges": []} {"edges": []}`],
     ["a document that is not an object", `["edges"]`],
+    ["a description that is not a string", `{"description": 1, "edges": []}`],
+    [
+      "a wildcard after a quoted component",
+      `{"edges": [${edge("a", "ts://@example/app/src/a.ts#Headers.'ab'.*", TS_A)}]}`,
+    ],
+    [
+      "a wildcard after a quoted component holding an escaped quote",
+      `{"edges": [${edge("a", "ts://@example/app/src/a.ts#Headers.'a\\'b'.*", TS_A)}]}`,
+    ],
+    [
+      "a wildcard after a computed key",
+      `{"edges": [${edge("a", "ts://@example/app/src/a.ts#Sizes.[k].*", TS_A)}]}`,
+    ],
   ])("is refused with the usage code when it holds %s", (_name, document) => {
     expect(refusal(document)).toMatch(/^deadset-edges\.json(?::[0-9]+:[0-9]+)?: .+: want .+$/u);
   });
 
   it.each([
+    ["no edges member", `{"description": "nothing declared"}`, "deadset-edges.json"],
+    ["an undeclared top-level key", `{"edges": [], "pairs": []}`, 'the member "pairs"'],
+    ["an array", `["edges"]`, '["edges"]'],
+    ["null", "null", "null"],
+    ["a string", '"edges"', '"edges"'],
+  ])("names what it refuses at the document's level when it holds %s", (_name, document, text) => {
+    expect(refusal(document)).toBe(
+      `deadset-edges.json: ${text}: want an object carrying the edges array, and an optional description`,
+    );
+  });
+
+  it("names the parser's own reason when it is not JSON", () => {
+    const document = `{"edges": []} {"edges": []}`;
+    let reason = "";
+    try {
+      JSON.parse(document);
+    } catch (error: unknown) {
+      reason = (error as Error).message;
+    }
+
+    expect(refusal(document)).toBe(
+      `deadset-edges.json: ${reason}: want an object carrying the edges array, and an optional description`,
+    );
+  });
+
+  it.each([
+    ["a string", '"a"'],
+    ["null", "null"],
+    ["an array", '["a"]'],
+  ])("names an edge that is %s as it is written", (_name, value) => {
+    expect(refusal(`{"edges": [${value}]}`)).toBe(
+      `deadset-edges.json: ${value}: want an edge naming id, provides and used_by, each a string, and an optional because`,
+    );
+  });
+
+  it.each([
     ["a wildcard inside a quoted component", "ts://@example/app/src/a.ts#Headers.'a*b'"],
     ["a wildcard inside a computed key", "ts://@example/app/src/a.ts#Sizes.[k*2]"],
+    [
+      "a wildcard inside a quoted component past an escaped quote",
+      "ts://@example/app/src/a.ts#Headers.'a\\'*b'",
+    ],
     ["a question mark in a quoted name", "ts://@example/app/src/a.ts#Flags.'active?'"],
     ["a question mark outside the grammar", "ts://@example/app/src/a.ts#Serve?"],
     ["a form feed in the scope", "ts://@example/a\fpp/src/a.ts#A"],

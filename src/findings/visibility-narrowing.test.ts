@@ -1,8 +1,9 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { emitterInputOf, sweepOnly, findingsOf } from "../../__test-helpers__/emitter-input.ts";
 import { fixture } from "../../__test-helpers__/fixtures.ts";
+import { writeProject } from "../../__test-helpers__/projects.ts";
 import type { Finding } from "../finding.ts";
 import type { InventorySymbol } from "../inventory.ts";
 import { matrixOf, sweepMatrix } from "../matrix.ts";
@@ -115,13 +116,10 @@ const COMPLETE = JSON.stringify({
 });
 
 describe("the visibility-narrowing family with the consumer set not declared complete", () => {
-  const findings = emitted(inputOf(NARROWING));
-
   it("reports an export used only inside its own file that no manifest export reaches, and nothing in a published or an entry file", () => {
-    expect(named(findings).filter((entry) => entry.startsWith("DS1104"))).toEqual([
-      "DS1104 Labels",
-      "DS1104 helperLocal",
-    ]);
+    expect(
+      named(emitted(inputOf(NARROWING))).filter((entry) => entry.startsWith("DS1104")),
+    ).toEqual(["DS1104 Labels", "DS1104 helperLocal"]);
   });
 
   it.each([
@@ -130,14 +128,20 @@ describe("the visibility-narrowing family with the consumer set not declared com
     ["a root the configuration names", "configuredLocal"],
     ["a member of a namespace", "Labels.label"],
   ])("reports nothing about an export used only in its own file that is %s", (_what, name) => {
-    expect(findings.filter((finding) => finding.symbol.name === name)).toEqual([]);
+    expect(emitted(inputOf(NARROWING)).filter((finding) => finding.symbol.name === name)).toEqual(
+      [],
+    );
   });
 
   it("reports no unnecessary export, because no published declaration is in a closed world", () => {
-    expect(named(findings).filter((entry) => entry.startsWith("DS1101"))).toEqual([]);
+    expect(
+      named(emitted(inputOf(NARROWING))).filter((entry) => entry.startsWith("DS1101")),
+    ).toEqual([]);
   });
 
   it("reports each unused export of a file outside code cannot import, by the relation that found it", async () => {
+    const findings = emitted(inputOf(NARROWING));
+
     expect(named(findings).filter((entry) => entry.startsWith("DS1103"))).toEqual([
       "DS1103 forgotten",
       "DS1103 behindForgotten",
@@ -151,15 +155,15 @@ describe("the visibility-narrowing family with the consumer set not declared com
 });
 
 describe("an unused export the family leaves to another kind", () => {
-  const findings = emitted(inputOf(NARROWING));
-
   it.each([
     ["an interface", "Unused"],
     ["a declaration only a test file references", "testedOnly"],
     ["a declaration a published re-export carries", "surfacedUnused"],
     ["a test whose every subject is dead", "checksTestedOnly"],
   ])("is not reported when it is %s", (_what, name) => {
-    expect(findings.filter((finding) => finding.symbol.name === name)).toEqual([]);
+    expect(emitted(inputOf(NARROWING)).filter((finding) => finding.symbol.name === name)).toEqual(
+      [],
+    );
   });
 });
 
@@ -287,6 +291,16 @@ describe("the references a narrowing reads", () => {
       [],
     );
   });
+
+  it("reach outside the package from a declaration the target does not hold beside a test's, every one counted", () => {
+    expect(
+      over([
+        use(caller.id, "a.ts"),
+        { ...use("a.test.ts:1:1", "a.test.ts"), test: true },
+        use("consumer/main.ts:1:1", "consumer/main.ts"),
+      ]),
+    ).toEqual([]);
+  });
 });
 
 describe("a declared cross-language edge", () => {
@@ -379,5 +393,66 @@ describe("the TypeScript rendering of the corpus case redundant-export-keyword",
 
   it("reports nothing in the file the manifest names with the consumer set not declared complete", () => {
     expect(emitted(inputOf(REDUNDANT_KEYWORD, { document: library({}) }))).toEqual([]);
+  });
+});
+
+describe("an export of a project written for the case", () => {
+  function reported(files: Readonly<Record<string, string>>, document: object): string[] {
+    const root = writeProject(files);
+    try {
+      return named(emitted(inputOf(root, { document: JSON.stringify(document) })));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  it("is not narrowed where a test file references it beside its own file", () => {
+    expect(
+      reported(
+        {
+          "package.json": '{ "name": "@example/app", "type": "module", "main": "./src/main.ts" }\n',
+          "src/main.ts": 'import { local } from "./lib.js";\n\nconsole.log(local());\n',
+          "src/lib.ts":
+            "export function shared(): number {\n  return 1;\n}\n\nexport function local(): number {\n  return shared() + shared();\n}\n",
+          "src/lib.test.ts": 'import { shared } from "./lib.js";\n\nconsole.log(shared());\n',
+        },
+        { target: { kind: "application" } },
+      ),
+    ).toEqual([]);
+  });
+
+  it("is unreachable where only dead code references it, deprecated or tested", () => {
+    expect(
+      reported(
+        {
+          "package.json":
+            '{ "name": "@example/lib", "type": "module", "exports": { ".": "./src/index.ts" } }\n',
+          "src/index.ts":
+            'import { live } from "./internal.js";\n\nexport function api(): number {\n  return live();\n}\n',
+          "src/internal.ts": [
+            "export function live(): number {",
+            "  return 1;",
+            "}",
+            "",
+            "export function helper(): number {",
+            "  return 2;",
+            "}",
+            "",
+            "/** @deprecated */",
+            "export function retired(): number {",
+            "  return 3;",
+            "}",
+            "",
+            "export function deadCaller(): number {",
+            "  return helper() + retired();",
+            "}",
+            "",
+          ].join("\n"),
+          "src/internal.test.ts":
+            'import { helper } from "./internal.js";\n\nconsole.log(helper());\n',
+        },
+        { target: { kind: "library" } },
+      ),
+    ).toEqual(["DS1103 helper", "DS1103 retired", "DS1103 deadCaller"]);
   });
 });

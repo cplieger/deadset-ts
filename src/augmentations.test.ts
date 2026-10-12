@@ -5,6 +5,9 @@ import { describe, expect, it } from "vitest";
 import { emitterInputOf, findingsOf } from "../__test-helpers__/emitter-input.ts";
 import { fixture } from "../__test-helpers__/fixtures.ts";
 import { writeProject } from "../__test-helpers__/projects.ts";
+import { augmentationReferences } from "./augmentations.ts";
+import type { Inventory, InventorySymbol, SymbolKind } from "./inventory.ts";
+import type { Reference } from "./references.ts";
 import { resolve } from "./resolve.ts";
 
 /**
@@ -268,5 +271,112 @@ describe("a module augmentation in test-support code", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+/** One declaration of `path` at its own line, its reference spelling the chain `name`. */
+function declared(
+  path: string,
+  line: number,
+  kind: SymbolKind,
+  name: string,
+  parent: string,
+): InventorySymbol {
+  return {
+    id: `${path}:${String(line)}:1`,
+    ref: `ts://./${path}#${kind === "file" ? "" : name}`,
+    name: kind === "file" ? path : name,
+    kind,
+    position: { path, line, column: 1 },
+    endLine: line,
+    parent,
+    exported: false,
+    visibility: "public",
+    static: false,
+  };
+}
+
+const MAIN = declared("main.ts", 1, "file", "", "");
+const LIB = declared("main.ts", 2, "namespace", "lib", MAIN.id);
+const PLUGINS = declared("main.ts", 3, "interface", "lib.P", LIB.id);
+const SEARCH = declared("main.ts", 4, "type-member", "lib.P.search", PLUGINS.id);
+const GLOBAL = declared("main.ts", 5, "namespace", "global", MAIN.id);
+const SPACE = declared("main.ts", 6, "namespace", "global.NS", GLOBAL.id);
+const DEEP = declared("main.ts", 7, "interface", "global.NS.Deep", SPACE.id);
+const READ = declared("main.ts", 8, "type-member", "global.NS.Deep.read", DEEP.id);
+const BOX = declared("main.ts", 9, "class", "global.Box", GLOBAL.id);
+const SIZE = declared("main.ts", 10, "class-member", "global.Box.size", BOX.id);
+const OUTER = declared("main.ts", 11, "namespace", "Outer", MAIN.id);
+const NESTED = declared("main.ts", 12, "namespace", "Outer.global", OUTER.id);
+const VALUE = declared("main.ts", 13, "variable", "Outer.global.value", NESTED.id);
+const NAMED = declared("main.ts", 14, "interface", "global", MAIN.id);
+const FIELD = declared("main.ts", 15, "type-member", "global.field", NAMED.id);
+const SCRIPT = declared("script.ts", 1, "file", "", "");
+const SHAPE = declared("script.ts", 2, "interface", "Shape", SCRIPT.id);
+const AREA = declared("script.ts", 3, "type-member", "Shape.area", SHAPE.id);
+
+/** The inventory of a module holding a module augmentation, a `declare global` block and look-alikes, and a script. */
+const HELD: Inventory = {
+  symbols: [MAIN, LIB, PLUGINS, SEARCH, GLOBAL, SPACE, DEEP, READ, BOX, SIZE].concat([
+    OUTER,
+    NESTED,
+    VALUE,
+    NAMED,
+    FIELD,
+    SCRIPT,
+    SHAPE,
+    AREA,
+  ]),
+  declarations: new Map(),
+  cost: { batches: 0, exportTables: 0, memberTables: 0 },
+  unanswered: [],
+  byName: new Map(),
+  modules: new Map([[LIB.id, "lib"]]),
+  dependents: new Map(),
+};
+
+/** A write from the file to one declaration, made by a test file at a line of its own. */
+function written(to: InventorySymbol): Reference {
+  return {
+    from: MAIN.id,
+    to: to.id,
+    position: { path: "main.ts", line: 20, column: 3 },
+    use: "write",
+    resolution: "contextual",
+    test: true,
+  };
+}
+
+/** What each reference reads through, by the name of the declaration read. */
+function readThrough(to: InventorySymbol, scripts?: ReadonlySet<string>): string[] {
+  const byId = new Map(HELD.symbols.map((symbol) => [symbol.id, symbol.name]));
+  return augmentationReferences(HELD, [written(to)], scripts).map(
+    (reference) => byId.get(reference.to) ?? reference.to,
+  );
+}
+
+describe("a use of a declaration an augmentation holds", () => {
+  it("reads every interface and namespace between it and a declare global block, and the block, where the use is", () => {
+    expect(augmentationReferences(HELD, [written(READ)])).toEqual(
+      [DEEP, SPACE, GLOBAL].map((to) => ({ ...written(to), use: "read" })),
+    );
+  });
+
+  it("reads no other container between it and the block", () => {
+    expect(readThrough(SIZE)).toEqual(["global"]);
+  });
+
+  it("reads the interfaces of a module declaration, and the declaration", () => {
+    expect(readThrough(SEARCH)).toEqual(["lib.P", "lib"]);
+  });
+
+  it("reads the interfaces a script's global scope holds, and not the script", () => {
+    expect(readThrough(AREA, new Set([SCRIPT.id]))).toEqual(["Shape"]);
+    expect(readThrough(AREA)).toEqual([]);
+  });
+
+  it("reads nothing where no augmentation holds the declaration, a namespace or interface named global included", () => {
+    expect(readThrough(VALUE)).toEqual([]);
+    expect(readThrough(FIELD)).toEqual([]);
   });
 });

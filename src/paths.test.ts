@@ -89,6 +89,7 @@ describe("relativePath", () => {
     { root: "/work/./", path: "/work/src/a.ts", want: "src/a.ts" },
     { root: "/work", path: "/work/a.ts", want: "a.ts" },
     { root: "/", path: "/a.ts", want: "a.ts" },
+    { root: "/", path: "/", want: undefined },
     { root: "/work", path: "/work", want: undefined },
     { root: "/work", path: "/worktree/a.ts", want: undefined },
     { root: "/work", path: "/other/a.ts", want: undefined },

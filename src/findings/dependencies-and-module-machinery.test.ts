@@ -44,8 +44,6 @@ function sweepFixture(
   return { input, findings: emit === undefined ? [] : [...emit(input)] };
 }
 
-const FIXTURE = sweepFixture(TARGET);
-
 function names(findings: readonly Finding[]): string[] {
   return findings.map((finding) => finding.symbol.name);
 }
@@ -59,14 +57,16 @@ class MemoryWriter implements Writer {
 
 describe("the dependencies-and-module-machinery emitter", () => {
   it("reports each declared dependency the target does not need, at its key in the manifest", async () => {
-    await expect(`${JSON.stringify(FIXTURE.findings, null, 2)}\n`).toMatchFileSnapshot(
+    const swept = sweepFixture(TARGET);
+    await expect(`${JSON.stringify(swept.findings, null, 2)}\n`).toMatchFileSnapshot(
       fixture("golden", "dependencies.findings.json"),
     );
   });
 
   it("reports one dependency, development dependency and peer dependency, and passes over a used one of each", () => {
+    const swept = sweepFixture(TARGET);
     expect(
-      FIXTURE.findings.map(
+      swept.findings.map(
         (finding) =>
           `${finding.symbol.name} ${(finding as { details?: { dependencyClass?: string } }).details?.dependencyClass ?? ""}`,
       ),
@@ -77,31 +77,35 @@ describe("the dependencies-and-module-machinery emitter", () => {
       "peer-unused peer-dependency",
     ]);
     for (const used of ["used-runtime", "test-helper", "peer-used"]) {
-      expect(names(FIXTURE.findings)).not.toContain(used);
+      expect(names(swept.findings)).not.toContain(used);
     }
   });
 
   it("counts a type package the compiler resolves an import to, or the configuration names, and not one it never reads", () => {
-    expect(names(FIXTURE.findings)).not.toContain("@types/typed-only");
-    expect(names(FIXTURE.findings)).not.toContain("@types/globals");
-    expect(names(FIXTURE.findings)).toContain("@types/bundled");
+    const swept = sweepFixture(TARGET);
+    expect(names(swept.findings)).not.toContain("@types/typed-only");
+    expect(names(swept.findings)).not.toContain("@types/globals");
+    expect(names(swept.findings)).toContain("@types/bundled");
   });
 
   it("holds a dependency whose command a script runs needed, and each peer a needed one names, optional or not", () => {
-    expect(names(FIXTURE.findings)).not.toContain("dev-tool");
-    expect(names(FIXTURE.findings)).not.toContain("host-peer");
-    expect(names(FIXTURE.findings)).not.toContain("optional-peer");
+    const swept = sweepFixture(TARGET);
+    expect(names(swept.findings)).not.toContain("dev-tool");
+    expect(names(swept.findings)).not.toContain("host-peer");
+    expect(names(swept.findings)).not.toContain("optional-peer");
   });
 
   it("never reports the manifest's bin entry, whose target no import reaches, and counts what that target imports", () => {
-    for (const finding of FIXTURE.findings) {
+    const swept = sweepFixture(TARGET);
+    for (const finding of swept.findings) {
       expect(finding.position.path).toBe("package.json");
       expect(finding.symbol.name).not.toBe("dependencies-cli");
     }
-    expect(names(FIXTURE.findings)).not.toContain("cli-only");
+    expect(names(swept.findings)).not.toContain("cli-only");
   });
 
   it("states each finding in the finding schema's vocabulary", () => {
+    const swept = sweepFixture(TARGET);
     const schema = contractDocument("finding.schema.json") as {
       properties: {
         message: { pattern: string };
@@ -110,7 +114,7 @@ describe("the dependencies-and-module-machinery emitter", () => {
     };
     const message = new RegExp(schema.properties.message.pattern, "u");
     const classes = schema.properties.details.properties.dependency_class.enum;
-    for (const finding of FIXTURE.findings) {
+    for (const finding of swept.findings) {
       expect(finding.code).toBe("DS1601");
       expect(finding.symbol.kind).toBe("dependency");
       expect(isRef(finding.symbol.ref), finding.symbol.ref).toBe(true);
@@ -122,8 +126,9 @@ describe("the dependencies-and-module-machinery emitter", () => {
   });
 
   it("names, per deletion candidate, each declared dependency it holds the last use of, and none two declarations share", () => {
+    const swept = sweepFixture(TARGET);
     // `start` is a candidate of the production sweep, which counts no test reference.
-    expect(FIXTURE.input.dependencies.lastUses).toEqual(
+    expect(swept.input.dependencies.lastUses).toEqual(
       new Map([
         [
           "src/main.ts:8:17",
@@ -135,7 +140,8 @@ describe("the dependencies-and-module-machinery emitter", () => {
   });
 
   it("names on a deletable finding each dependency whose last use deleting its subject removes", () => {
-    const padded = findingsOf(FIXTURE.input).find(
+    const swept = sweepFixture(TARGET);
+    const padded = findingsOf(swept.input).find(
       (finding) => finding.position.path === "src/main.ts" && finding.position.line === 12,
     );
 
@@ -144,6 +150,7 @@ describe("the dependencies-and-module-machinery emitter", () => {
   });
 
   it("withholds every finding when the severity map sets the kind or its family to allow", () => {
+    const swept = sweepFixture(TARGET);
     const allow = (severity: Record<string, string>): readonly Finding[] =>
       findingsOf(
         sweepFixture(TARGET, JSON.stringify({ target: { kind: "application" }, severity })).input,
@@ -151,7 +158,7 @@ describe("the dependencies-and-module-machinery emitter", () => {
 
     expect(allow({ DS1601: "allow" })).toEqual([]);
     expect(allow({ DS16: "allow" })).toEqual([]);
-    expect(names(allow({ DS16: "allow", DS1601: "warn" }))).toEqual(names(FIXTURE.findings));
+    expect(names(allow({ DS16: "allow", DS1601: "warn" }))).toEqual(names(swept.findings));
   });
 });
 

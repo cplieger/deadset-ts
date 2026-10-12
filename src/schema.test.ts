@@ -6,6 +6,7 @@ import {
   declaredKeys,
   declaresSetting,
   nearestKey,
+  nestFlags,
   SCHEMA_ROOT,
   settingPaths,
   type KeyNode,
@@ -100,6 +101,14 @@ describe("the closed key list", () => {
     expect(paths).not.toContain("analysis.template_delimiters.left");
     expect(paths).not.toContain("severity");
   });
+
+  it("lists the settings in ascending order, each one a key the list declares", () => {
+    const paths = settingPaths();
+    const declared = new Set(declaredKeys());
+
+    expect(paths).toEqual([...paths].sort());
+    expect(paths.filter((path) => !declared.has(path))).toEqual([]);
+  });
 });
 
 describe("declaresSetting", () => {
@@ -112,6 +121,8 @@ describe("declaresSetting", () => {
     { path: "severity.DS9999", declared: true },
     { path: "severity", declared: false },
     { path: "severity.DS11.extra", declared: false },
+    { path: "severity.", declared: false },
+    { path: "severitys", declared: false },
     { path: "nope", declared: false },
   ])("answers $declared for $path", ({ path, declared }) => {
     expect(declaresSetting(path)).toBe(declared);
@@ -123,6 +134,9 @@ describe("nearestKey", () => {
     { key: "reporters.fail_under", nearest: "reporters.fail_on" },
     { key: "analysis.min_confidences", nearest: "analysis.min_confidence" },
     { key: "targets", nearest: "target" },
+    { key: "ts.formats", nearest: "ts" },
+    { key: "zz.matrix", nearest: "analysis" },
+    { key: "gx", nearest: "go" },
   ])("answers $nearest for $key", ({ key, nearest }) => {
     expect(nearestKey(key)).toBe(nearest);
   });
@@ -185,6 +199,39 @@ describe("the document walk", () => {
     ).not.toThrow();
   });
 
+  it("names the entry of a list a repeated member is in, past space before a comma", () => {
+    const got = refuse('{"analysis":{"configurations":[{"id":"a"} , {"id":"b","id":"c"}]}}');
+
+    expect(got.key).toBe("analysis.configurations[1].id");
+  });
+
+  it("names an undeclared member of a list written as an object", () => {
+    const got = refuse('{"analysis":{"configurations":{"nope":1}}}');
+
+    expect(got.kind).toBe("unimplemented-key");
+    expect(got.key).toBe("analysis.configurations.nope");
+  });
+
+  it("names an undeclared member of a setting written as an object", () => {
+    const got = refuse(
+      '{"analysis":{"template_delimiters":{"left":"[","right":"]","middle":"|"}}}',
+    );
+
+    expect(got.kind).toBe("unimplemented-key");
+    expect(got.key).toBe("analysis.template_delimiters.middle");
+  });
+
+  it.each([
+    { name: "space before a colon", text: '{"target" : {"kind":"library"}}' },
+    {
+      name: "a fraction where no integer is declared",
+      text: '{"analysis":{"min_confidence":1.5}}',
+    },
+    { name: "an object inside an array setting", text: '{"roots":{"patterns":[{"any":1}]}}' },
+  ])("leaves the value's type to the decoder and accepts $name", ({ text }) => {
+    expect(() => checkDocument(text, SCHEMA_ROOT, "document.json")).not.toThrow();
+  });
+
   it("accepts a document whose strings hold braces and escaped quotes", () => {
     expect(() =>
       checkDocument(
@@ -193,5 +240,26 @@ describe("the document walk", () => {
         "document.json",
       ),
     ).not.toThrow();
+  });
+});
+
+describe("the flag document", () => {
+  it("nests each dotted path as the objects the key list declares", () => {
+    expect(
+      nestFlags({ "analysis.matrix.complete": true, "reporters.sort": "size" }, "flags"),
+    ).toEqual({ analysis: { matrix: { complete: true } }, reporters: { sort: "size" } });
+  });
+
+  it("refuses the first path in ascending order that names no setting", () => {
+    expect(() => nestFlags({ "zeta.one": 1, "alpha.two": 1 }, "flags")).toThrow(
+      'flags: key "alpha.two" is not implemented',
+    );
+  });
+
+  it("refuses a declared key that holds no value of its own, saying it is written as nested objects", () => {
+    expect(() => nestFlags({ "analysis.template_delimiters.left": "[" }, "flags")).toThrow(
+      'flags: key "analysis.template_delimiters.left" is not implemented. ' +
+        '"analysis.template_delimiters.left" is one setting written as nested objects, not as one key',
+    );
   });
 });

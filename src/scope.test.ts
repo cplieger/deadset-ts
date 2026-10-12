@@ -41,6 +41,11 @@ describe("a scope document", () => {
 
   it.each([
     { name: "a document that is not JSON", text: "{", detail: "scope.json" },
+    {
+      name: "a target that is not an object",
+      text: '{"target":"app"}',
+      detail: "target is not an object",
+    },
     { name: "an undeclared key", text: '{"targets":{}}', detail: "targets is not a declared key" },
     { name: "no target", text: "{}", detail: "names no target" },
     {
@@ -104,6 +109,35 @@ describe("a scope document", () => {
 
     expect(() => readScope(HOST, file)).toThrow(ScopeError);
     expect(() => readScope(HOST, file)).toThrow(detail);
+  });
+
+  it("is refused when it is not JSON, naming the file and the parse error", () => {
+    const file = join(scratch(), "scope.json");
+    writeFileSync(file, "{");
+    let parseError = "";
+    try {
+      JSON.parse("{");
+    } catch (error: unknown) {
+      parseError = error instanceof Error ? error.message : "";
+    }
+
+    expect(() => readScope(HOST, file)).toThrow(new ScopeError(`scope: ${file}: ${parseError}`));
+  });
+
+  it("is read at the longest length it admits and refused one character past it", () => {
+    const dir = scratch();
+    const file = join(dir, "scope.json");
+    const text = '{"target":{"path":"."}}';
+    const longest = 1 << 20;
+    writeFileSync(file, text.padEnd(longest));
+
+    expect(readScope(HOST, file).target.path).toBe(dir);
+
+    writeFileSync(file, text.padEnd(longest + 1));
+
+    expect(() => readScope(HOST, file)).toThrow(
+      new ScopeError(`scope: ${file} is longer than ${String(longest)} characters`),
+    );
   });
 
   it("is refused when the target is not a directory", () => {

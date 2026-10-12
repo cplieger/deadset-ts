@@ -81,17 +81,17 @@ class MemoryWriter implements Writer {
 }
 
 describe("the reads-and-writes emitter", () => {
-  const findings = findingsOf(TARGET, fixtureDocument());
+  const fixtureFindings = (): readonly CompletedFinding[] => findingsOf(TARGET, fixtureDocument());
 
   it("reports each write-only symbol, enum member and type parameter of the fixture, as the golden records", async () => {
     await expect(
-      `${findings.map(line).join("\n")}\n`,
+      `${fixtureFindings().map(line).join("\n")}\n`,
       "regenerate with `npx vitest --run -u src/findings/reads-and-writes.test.ts` and review the diff",
     ).toMatchFileSnapshot(fixture("golden", "reads-and-writes.findings.txt"));
   });
 
   it("names every position a write-only symbol is written at, and reports no relation for it", () => {
-    const writeOnly = findings.filter((finding) => finding.code === "DS1301");
+    const writeOnly = fixtureFindings().filter((finding) => finding.code === "DS1301");
 
     expect(
       writeOnly.map((finding) => [
@@ -110,30 +110,29 @@ describe("the reads-and-writes emitter", () => {
   });
 
   it("reports a module-level collection an element access stores into and nothing reads", () => {
-    expect(named(findings)).toContain("DS1301 slots");
+    expect(named(fixtureFindings())).toContain("DS1301 slots");
   });
 
   it("reports no state something reads, no setter and no member an exemption record names", () => {
-    expect(named(findings)).not.toContain("DS1301 counted");
-    expect(named(findings)).not.toContain("DS1301 Gauge.label");
-    expect(named(findings)).not.toContain("DS1301 Gauge.level");
-    expect(named(findings)).not.toContain("DS1301 Gauge.hidden");
+    const reported = named(fixtureFindings());
+
+    expect(reported).not.toContain("DS1301 counted");
+    expect(reported).not.toContain("DS1301 Gauge.label");
+    expect(reported).not.toContain("DS1301 Gauge.level");
+    expect(reported).not.toContain("DS1301 Gauge.hidden");
   });
 
   it("reports the enum member nothing names and none of an enum a conversion produces or a dead enum holds", () => {
-    expect(named(findings.filter((finding) => finding.code === "DS1302"))).toEqual([
+    expect(named(fixtureFindings().filter((finding) => finding.code === "DS1302"))).toEqual([
       "DS1302 Mode.Write",
     ]);
   });
 
   it("reports the type parameters of functions and methods nothing names, and none of a type declaration", () => {
-    expect(named(findings.filter((finding) => finding.code === "DS1303"))).toEqual([
-      "DS1303 first<T>",
-      "DS1303 Box.open<V>",
-    ]);
-    expect(
-      findings.filter((finding) => finding.code === "DS1303").map((finding) => finding.confidence),
-    ).toEqual(["certain", "certain"]);
+    const unused = fixtureFindings().filter((finding) => finding.code === "DS1303");
+
+    expect(named(unused)).toEqual(["DS1303 first<T>", "DS1303 Box.open<V>"]);
+    expect(unused.map((finding) => finding.confidence)).toEqual(["certain", "certain"]);
   });
 
   it("counts a read from a test file as a read outside production mode", () => {
@@ -177,37 +176,40 @@ describe("the reads-and-writes emitter", () => {
 });
 
 describe("a write-only member of a library's published API", () => {
-  const root = writeProject({
-    "package.json": `${JSON.stringify({ name: "@example/meter", version: "1.0.0", type: "module", main: "./src/index.ts" })}\n`,
-    "src/index.ts": [
-      "export class Meter {",
-      "  public count = 0;",
-      "  tick(): void {",
-      "    this.count = 1;",
-      "  }",
-      "}",
-      "",
-    ].join("\n"),
-  });
-  const library = (extra: Record<string, unknown> = {}): readonly CompletedFinding[] =>
-    findingsOf(root, JSON.stringify({ target: { kind: "library" }, ...extra }));
-  const open = library({ analysis: { min_confidence: "possible" } });
-  const certainOnly = library({ analysis: { min_confidence: "certain" } });
-  const byDefault = library();
-  rmSync(root, { recursive: true, force: true });
+  const library = (extra: Record<string, unknown> = {}): readonly CompletedFinding[] => {
+    const root = writeProject({
+      "package.json": `${JSON.stringify({ name: "@example/meter", version: "1.0.0", type: "module", main: "./src/index.ts" })}\n`,
+      "src/index.ts": [
+        "export class Meter {",
+        "  public count = 0;",
+        "  tick(): void {",
+        "    this.count = 1;",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    });
+    try {
+      return findingsOf(root, JSON.stringify({ target: { kind: "library" }, ...extra }));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  };
 
   it("is reported at the possible class, because a consumer the run did not load may read it", () => {
+    const open = library({ analysis: { min_confidence: "possible" } });
+
     expect(open.map((finding) => [finding.symbol.name, finding.reachabilityClass])).toEqual([
       ["Meter.count", "possible"],
     ]);
   });
 
   it("is withheld under a minimum confidence above its class", () => {
-    expect(certainOnly).toEqual([]);
+    expect(library({ analysis: { min_confidence: "certain" } })).toEqual([]);
   });
 
   it("is withheld under the default minimum confidence, which is probable", () => {
-    expect(byDefault).toEqual([]);
+    expect(library()).toEqual([]);
   });
 });
 
@@ -244,27 +246,39 @@ function corpusFixture(name: string): {
   return { target: join(dir, "ts", "target"), rows: expected.expect, at };
 }
 
+function corpusRun(name: string): {
+  readonly input: EmitterInput;
+  readonly findingAt: (symbol: string) => CompletedFinding | undefined;
+  readonly idAt: (symbol: string) => string | undefined;
+  readonly placed: readonly string[];
+} {
+  const { target, at } = corpusFixture(name);
+  const input = emitterInputOf(
+    target,
+    configOf(JSON.stringify({ target: { kind: "application" } })),
+  );
+  const findings = emitted(input);
+  const placeOf = (position: { readonly path: string; readonly line: number }): string =>
+    `${position.path}:${String(position.line)}`;
+  return {
+    input,
+    findingAt: (symbol) => findings.find((finding) => placeOf(finding.position) === at.get(symbol)),
+    idAt: (symbol) =>
+      input.swept.matrix.union.symbols.find((held) => placeOf(held.position) === at.get(symbol))
+        ?.id,
+    placed: findings.map((finding) => placeOf(finding.position)),
+  };
+}
+
 describe.each(["enum-group-conversion", "private-member-unread"])(
   "the corpus fixture %s",
   (name) => {
-    const { target, rows, at } = corpusFixture(name);
-    const config = configOf(JSON.stringify({ target: { kind: "application" } }));
-    const input = emitterInputOf(target, config);
-    const { swept } = input;
-    const findings = emitted(input);
-    const findingAt = (symbol: string): CompletedFinding | undefined =>
-      findings.find(
-        (finding) => `${finding.position.path}:${String(finding.position.line)}` === at.get(symbol),
-      );
-    const idAt = (symbol: string): string | undefined =>
-      swept.matrix.union.symbols.find(
-        (held) => `${held.position.path}:${String(held.position.line)}` === at.get(symbol),
-      )?.id;
+    const { rows, at } = corpusFixture(name);
 
     it.each(rows.filter((row) => row.report.startsWith("DS13")))(
       "reports $symbol under $report as the row states",
       (row) => {
-        const found = findingAt(row.symbol);
+        const found = corpusRun(name).findingAt(row.symbol);
 
         expect(found?.code).toBe(row.report);
         expect(found?.confidence).toBe(row.confidence);
@@ -279,8 +293,9 @@ describe.each(["enum-group-conversion", "private-member-unread"])(
     it.each(rows.filter((row) => row.report === "none"))(
       "reports nothing about $symbol, held back by what the row names",
       (row) => {
+        const { input, findingAt, idAt } = corpusRun(name);
         const id = idAt(row.symbol);
-        const classes = swept.retained
+        const classes = input.swept.retained
           .filter((record) => record.id === id)
           .map((record) => record.class);
 
@@ -301,11 +316,7 @@ describe.each(["enum-group-conversion", "private-member-unread"])(
         rows.filter((row) => row.report.startsWith("DS13")).map((row) => at.get(row.symbol)),
       );
 
-      expect(
-        findings
-          .map((finding) => `${finding.position.path}:${String(finding.position.line)}`)
-          .filter((place) => !rowed.has(place)),
-      ).toEqual([]);
+      expect(corpusRun(name).placed.filter((place) => !rowed.has(place))).toEqual([]);
     });
   },
 );
@@ -324,45 +335,52 @@ describe("print-retained over a project whose enums a conversion produces", () =
   });
 });
 
-describe("a store that reads its target", () => {
-  const root = writeProject({
-    "package.json": `${JSON.stringify({ name: "@example/counters", private: true, type: "module", bin: "./src/main.ts" })}\n`,
-    "src/main.ts": [
-      "class Counters {",
-      "  private postfix = 0;",
-      "  private prefix = 0;",
-      "  private cached: string | undefined;",
-      "  private flag = false;",
-      "  private added = 0;",
-      "  private discarded = 0;",
-      "  next(): number {",
-      "    this.discarded++;",
-      "    return this.postfix++;",
-      "  }",
-      "  first(): number {",
-      "    return ++this.prefix;",
-      "  }",
-      "  load(): void {",
-      '    this.cached ??= "value";',
-      "    this.flag ||= true;",
-      "  }",
-      "  add(): number {",
-      "    return (this.added += 1);",
-      "  }",
-      "}",
-      "",
-      "const counters = new Counters();",
-      "counters.next();",
-      "counters.first();",
-      "counters.load();",
-      "counters.add();",
-      "",
-    ].join("\n"),
-  });
-  const found = findingsOf(root, JSON.stringify({ target: { kind: "application" } }));
-  rmSync(root, { recursive: true, force: true });
+function applicationFindings(files: Readonly<Record<string, string>>): readonly CompletedFinding[] {
+  const root = writeProject(files);
+  try {
+    return findingsOf(root, JSON.stringify({ target: { kind: "application" } }));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
 
+describe("a store that reads its target", () => {
   it("is a read where its value is used, or where it reads to decide whether to store", () => {
+    const found = applicationFindings({
+      "package.json": `${JSON.stringify({ name: "@example/counters", private: true, type: "module", bin: "./src/main.ts" })}\n`,
+      "src/main.ts": [
+        "class Counters {",
+        "  private postfix = 0;",
+        "  private prefix = 0;",
+        "  private cached: string | undefined;",
+        "  private flag = false;",
+        "  private added = 0;",
+        "  private discarded = 0;",
+        "  next(): number {",
+        "    this.discarded++;",
+        "    return this.postfix++;",
+        "  }",
+        "  first(): number {",
+        "    return ++this.prefix;",
+        "  }",
+        "  load(): void {",
+        '    this.cached ??= "value";',
+        "    this.flag ||= true;",
+        "  }",
+        "  add(): number {",
+        "    return (this.added += 1);",
+        "  }",
+        "}",
+        "",
+        "const counters = new Counters();",
+        "counters.next();",
+        "counters.first();",
+        "counters.load();",
+        "counters.add();",
+        "",
+      ].join("\n"),
+    });
+
     expect(found.map((finding) => `${finding.code} ${finding.symbol.name}`)).toEqual([
       "DS1301 Counters.discarded",
     ]);
@@ -411,31 +429,155 @@ describe("a parameter property", () => {
 });
 
 describe("a store a for loop's incrementor makes", () => {
-  const root = writeProject({
-    "package.json": `${JSON.stringify({ name: "@example/loop", private: true, type: "module", bin: "./src/main.ts" })}\n`,
-    "src/main.ts": [
-      "class Loop {",
-      "  private steps = 0;",
-      "  run(limit: number): number {",
-      "    let done = 0;",
-      "    for (let i = 0; i < limit; this.steps++) {",
-      "      done += 1;",
-      "      i = done;",
-      "    }",
-      "    return done;",
-      "  }",
-      "}",
-      "",
-      "new Loop().run(2);",
-      "",
-    ].join("\n"),
-  });
-  const found = findingsOf(root, JSON.stringify({ target: { kind: "application" } }));
-  rmSync(root, { recursive: true, force: true });
-
   it("is a write only, so a member only it increments is written and never read", () => {
+    const found = applicationFindings({
+      "package.json": `${JSON.stringify({ name: "@example/loop", private: true, type: "module", bin: "./src/main.ts" })}\n`,
+      "src/main.ts": [
+        "class Loop {",
+        "  private steps = 0;",
+        "  run(limit: number): number {",
+        "    let done = 0;",
+        "    for (let i = 0; i < limit; this.steps++) {",
+        "      done += 1;",
+        "      i = done;",
+        "    }",
+        "    return done;",
+        "  }",
+        "}",
+        "",
+        "new Loop().run(2);",
+        "",
+      ].join("\n"),
+    });
+
     expect(found.map((finding) => `${finding.code} ${finding.symbol.name}`)).toEqual([
       "DS1301 Loop.steps",
     ]);
+  });
+});
+
+const COMMAND = `${JSON.stringify({ name: "@example/stores", private: true, type: "module", bin: "./src/main.ts" })}\n`;
+
+describe("what deleting a write-only declaration with its writes takes with it", () => {
+  it("names each type parameter of its type only it names, and none another member reads", () => {
+    const found = applicationFindings({
+      "package.json": COMMAND,
+      "src/main.ts": [
+        "class Box<T, V> {",
+        "  private held: T | undefined;",
+        "  private kept: V | undefined;",
+        "  put(): void {",
+        "    this.held = undefined;",
+        "    this.kept = undefined;",
+        "  }",
+        "  get(): V | undefined {",
+        "    return this.kept;",
+        "  }",
+        "}",
+        "",
+        "new Box<number, string>().put();",
+        "new Box<number, string>().get();",
+        "",
+      ].join("\n"),
+    });
+
+    expect(found.map((finding) => `${finding.code} ${finding.message}`)).toEqual([
+      "DS1301 member Box.held is written once and never read, and deleting it with its writes deletes type parameter Box<T> too",
+    ]);
+  });
+
+  it("names each import only its writes use, in name order", () => {
+    const found = applicationFindings({
+      "package.json": COMMAND,
+      "src/values.ts": "export const zeta = 1;\nexport const alpha = 2;\n",
+      "src/main.ts":
+        'import { alpha, zeta } from "./values.js";\n\nlet held = 0;\nheld = zeta;\nheld = alpha;\n',
+    });
+
+    expect(found.map((finding) => `${finding.code} ${finding.message}`)).toEqual([
+      "DS1301 variable held is written at 2 positions and never read, and deleting it with its writes deletes import alpha and import zeta too",
+    ]);
+  });
+});
+
+describe("a write-only declaration written over several lines", () => {
+  it("is reported from its first line to its last", () => {
+    const found = applicationFindings({
+      "package.json": COMMAND,
+      "src/main.ts": [
+        "let written:",
+        "  | number",
+        "  | undefined = 0;",
+        "written = 1;",
+        "",
+        "class Holder {",
+        "  private held:",
+        "    | number",
+        "    | undefined;",
+        "  put(): void {",
+        "    this.held = 1;",
+        "  }",
+        "}",
+        "",
+        "new Holder().put();",
+        "",
+      ].join("\n"),
+    });
+
+    expect(
+      found.map(
+        (finding) =>
+          `${finding.symbol.name} ${String(finding.position.line)}-${String(finding.position.endLine)} ${String(finding.symbol.sizeLines)}`,
+      ),
+    ).toEqual(["written 1-3 3", "Holder.held 7-9 3"]);
+  });
+});
+
+describe("a write-only declaration two configurations compile", () => {
+  it("names each position written once", () => {
+    const options = { strict: true, module: "NodeNext", noEmit: true };
+    const found = applicationFindings({
+      "package.json": COMMAND,
+      "tsconfig.json": `${JSON.stringify({ compilerOptions: options, include: ["src/**/*.ts"] })}\n`,
+      "tsconfig.other.json": `${JSON.stringify({ compilerOptions: { ...options, noUnusedLocals: false }, include: ["src/**/*.ts"] })}\n`,
+      "src/main.ts": "let written = 0;\nwritten = 1;\n",
+    });
+
+    expect(
+      found.map((finding) => [
+        finding.symbol.name,
+        finding.configurations,
+        (finding.details.writePositions ?? []).map(
+          (at) => `${String(at.line)}:${String(at.column)}`,
+        ),
+      ]),
+    ).toEqual([["written", ["tsconfig.json", "tsconfig.other.json"], ["2:1"]]]);
+  });
+});
+
+describe("a store that replaces a method", () => {
+  it("leaves the method to the kinds of code, which a store runs no part of", () => {
+    expect(
+      applicationFindings({
+        "package.json": COMMAND,
+        "src/main.ts":
+          "class Plugin {\n  start(): void {}\n}\n\nconst plugin = new Plugin();\nplugin.start = () => undefined;\n",
+      }),
+    ).toEqual([]);
+  });
+});
+
+describe("an enum member only a test file names", () => {
+  it("is no unnamed member, which only a member nothing names is", () => {
+    expect(
+      named(
+        applicationFindings({
+          "package.json": COMMAND,
+          "src/main.ts":
+            "export enum Mode {\n  Read,\n  Write,\n  Gone,\n}\n\nconsole.log(Mode.Read);\n",
+          "src/main.test.ts": 'import { Mode } from "./main.js";\n\nconsole.log(Mode.Write);\n',
+        }),
+      ),
+    ).toEqual(["DS1302 Mode.Gone"]);
   });
 });

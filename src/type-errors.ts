@@ -151,7 +151,8 @@ function declaringManifest(
         }
       }
     }
-    if (at === targetRoot || relativePath(targetRoot, at) === undefined || dirnamePath(at) === at) {
+    // The target root is not below itself, so the walk stops after reading its manifest.
+    if (relativePath(targetRoot, at) === undefined) {
       return undefined;
     }
   }

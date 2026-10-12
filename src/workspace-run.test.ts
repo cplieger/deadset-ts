@@ -9,6 +9,8 @@ import { resolve } from "./resolve.ts";
 import { run } from "./run.ts";
 import { scopeForDir } from "./scope.ts";
 import { openEngine, type Engine } from "./session.ts";
+import { writtenPath } from "./workspace-programs.ts";
+import { workspaceRun } from "./workspace-run.ts";
 
 /**
  * Workspaces written to a fresh directory per case, because a package manager's links
@@ -97,6 +99,21 @@ function found(analysis: RunAnalysis): string[] {
     .sort();
 }
 
+/** What one run reads of the workspace at `root` for the configurations named below it. */
+function workspaceOf(
+  root: string,
+  configFiles: readonly string[],
+  engine: Engine,
+): ReturnType<typeof workspaceRun> {
+  return workspaceRun(
+    engine,
+    nodeHost(),
+    root,
+    configFiles.map((configFile) => join(root, configFile)),
+    { entries: [], declaresExports: false },
+  );
+}
+
 /** Two packages: `b` uses one export of `a`, which publishes it from an unbuilt `dist/`. */
 const UNBUILT: Readonly<Record<string, string>> = {
   "package.json": manifest({ name: "root", private: true, workspaces: ["packages/*"] }),
@@ -116,6 +133,35 @@ const UNBUILT: Readonly<Record<string, string>> = {
   }),
   "packages/b/tsconfig.json": tsconfig(),
   "packages/b/src/main.ts": 'import { usedBySibling } from "a";\n\nconsole.log(usedBySibling());\n',
+};
+
+/** `b` imports `a`, whose source imports a third package `c`, read only once `a`'s source is. */
+const THIRD: Readonly<Record<string, string>> = {
+  ...UNBUILT,
+  "packages/a/package.json": manifest({
+    name: "a",
+    private: true,
+    exports: { ".": { types: "./dist/index.d.ts", default: "./dist/index.js" } },
+    dependencies: { c: "workspace:*" },
+  }),
+  "packages/a/src/index.ts":
+    'import { usedByA } from "c";\n\nexport function usedBySibling(): number {\n  return usedByA();\n}\n',
+  "packages/c/package.json": manifest({
+    name: "c",
+    private: true,
+    exports: { ".": { types: "./dist/index.d.ts", default: "./dist/index.js" } },
+  }),
+  "packages/c/tsconfig.json": tsconfig({ outDir: "dist", rootDir: "src", declaration: true }),
+  "packages/c/src/index.ts": "export function usedByA(): number {\n  return 1;\n}\n",
+};
+
+const THIRD_CONFIGURATIONS = {
+  analysis: {
+    configurations: [
+      { id: "b", project: "packages/b/tsconfig.json" },
+      { id: "c", project: "packages/c/tsconfig.json" },
+    ],
+  },
 };
 
 describe("a workspace package imported by name", () => {
@@ -194,32 +240,15 @@ describe("a workspace package imported by name", () => {
   });
 
   it("counts the uses one package's source makes of a third package it imports", () => {
-    const root = writeWorkspace({
-      ...UNBUILT,
-      "packages/a/package.json": manifest({
-        name: "a",
-        private: true,
-        exports: { ".": { types: "./dist/index.d.ts", default: "./dist/index.js" } },
-        dependencies: { c: "workspace:*" },
-      }),
-      "packages/a/src/index.ts":
-        'import { usedByA } from "c";\n\nexport function usedBySibling(): number {\n  return usedByA();\n}\n',
-      "packages/c/package.json": manifest({
-        name: "c",
-        private: true,
-        exports: { ".": { types: "./dist/index.d.ts", default: "./dist/index.js" } },
-      }),
-      "packages/c/tsconfig.json": tsconfig({ outDir: "dist", rootDir: "src", declaration: true }),
-      "packages/c/src/index.ts": "export function usedByA(): number {\n  return 1;\n}\n",
-    });
-    const analysis = analyze(root, {
-      analysis: {
-        configurations: [
-          { id: "b", project: "packages/b/tsconfig.json" },
-          { id: "c", project: "packages/c/tsconfig.json" },
-        ],
-      },
-    });
+    const root = writeWorkspace(THIRD);
+    const analysis = analyze(root, THIRD_CONFIGURATIONS);
+
+    expect(found(analysis)).toEqual([]);
+  });
+
+  it("counts the uses one package's source makes of a third package it imports, in a run that reads no component file", () => {
+    const root = writeWorkspace(THIRD);
+    const analysis = analyze(root, THIRD_CONFIGURATIONS, openEngine({ collectTiming: false }));
 
     expect(found(analysis)).toEqual([]);
   });
@@ -371,6 +400,79 @@ describe("a workspace package imported by name", () => {
 
     expect(found(analyze(join(root, "packages/b")))).toEqual([]);
   });
+
+  it.each([
+    {
+      condition: "node under nodenext",
+      exports: { node: "./src/node.ts", default: "./src/index.ts" },
+      options: {},
+      type: "module",
+      unread: "index.ts",
+    },
+    {
+      condition: "node under node16",
+      exports: { node: "./src/node.ts", default: "./src/index.ts" },
+      options: { module: "Node16", moduleResolution: "node16" },
+      type: "module",
+      unread: "index.ts",
+    },
+    {
+      condition: "default rather than node under bundler",
+      exports: { node: "./src/node.ts", default: "./src/index.ts" },
+      options: { module: "ESNext", moduleResolution: "bundler" },
+      type: "module",
+      unread: "node.ts",
+    },
+    {
+      condition: "import from an ES module",
+      exports: { require: "./src/cjs.ts", import: "./src/esm.ts" },
+      options: {},
+      type: "module",
+      unread: "cjs.ts",
+    },
+    {
+      condition: "require from a CommonJS module",
+      exports: { require: "./src/cjs.ts", import: "./src/esm.ts" },
+      options: {},
+      type: "commonjs",
+      unread: "esm.ts",
+    },
+  ])(
+    "is read from the source its $condition condition names",
+    ({ exports, options, type, unread }) => {
+      const sources = Object.fromEntries(
+        Object.values(exports).map((target) => [
+          `packages/a/${target.slice(2)}`,
+          "export const shared = 1;\n",
+        ]),
+      );
+      const root = writeWorkspace({
+        ...UNBUILT,
+        "packages/a/package.json": manifest({
+          name: "a",
+          private: true,
+          exports: { ".": exports },
+        }),
+        "packages/a/tsconfig.json": tsconfig({ noEmit: true }),
+        ...sources,
+        "packages/b/package.json": manifest({
+          name: "b",
+          private: true,
+          type,
+          bin: { b: "./src/main.ts" },
+          dependencies: { a: "workspace:*" },
+        }),
+        "packages/b/tsconfig.json": tsconfig(options),
+        "packages/b/src/main.ts": 'import { shared } from "a";\n\nconsole.log(shared);\n',
+      });
+
+      expect(
+        found(analyze(root, {}, openEngine({ collectTiming: false }))).filter((one) =>
+          one.endsWith(" shared"),
+        ),
+      ).toEqual([`DS1001 packages/a/src/${unread} shared`]);
+    },
+  );
 });
 
 /**
@@ -551,6 +653,45 @@ describe("a workspace package with no source to read", () => {
     );
   });
 
+  it("names the first import with no source and counts the others", () => {
+    const root = writeWorkspace({
+      ...BUNDLED,
+      "packages/b/src/main.ts":
+        'import { fromSource } from "c";\nimport { other } from "./sub/other.js";\n\nconsole.log(fromSource(), other);\n',
+      "packages/b/src/sub/other.ts":
+        'import { fromSource } from "c";\n\nexport const other = fromSource();\n',
+    });
+
+    expect(analyze(root).run.notBuilt[0]?.error).toMatch(
+      /imports c, a package of the workspace with no source to read: .* \(and 1 more\)$/u,
+    );
+  });
+
+  it("does not refuse a configuration for an import of it a third-party package's declarations make", () => {
+    const root = writeWorkspace(
+      {
+        ...BUNDLED,
+        "packages/b/src/main.ts": 'import { fromLib } from "lib";\n\nconsole.log(fromLib);\n',
+        "node_modules/lib/package.json": JSON.stringify({
+          name: "lib",
+          version: "1.0.0",
+          type: "module",
+          types: "./index.d.ts",
+        }),
+        "node_modules/lib/index.d.ts":
+          'import type { fromSource } from "c";\n\nexport declare const fromLib: ReturnType<typeof fromSource>;\n',
+      },
+      { "node_modules/c": "packages/c" },
+    );
+    const run = workspaceOf(
+      root,
+      ["packages/b/tsconfig.json"],
+      openEngine({ collectTiming: false }),
+    );
+
+    expect(run?.unbuildable(join(root, "packages/b/tsconfig.json"))).toBeUndefined();
+  });
+
   it("refuses the run when the configuration that imports it is a named one", () => {
     const root = writeWorkspace(BUNDLED);
 
@@ -671,5 +812,245 @@ describe("a target in no workspace", () => {
     analyze(root, {}, engine);
 
     expect({ resolvers, built }).toEqual({ resolvers: 0, built: 0 });
+  });
+});
+
+describe("a configuration that imports a workspace package, in a run that reads no component file", () => {
+  const configFile = "packages/b/tsconfig.json";
+
+  /** The program `b`'s configuration is built as, its options by name and its references. */
+  function programOf(files: Readonly<Record<string, string>>): Record<string, unknown> {
+    const root = writeWorkspace(files);
+    const program = workspaceOf(
+      root,
+      [configFile],
+      openEngine({ collectTiming: false }),
+    )?.programs.get(join(root, configFile));
+    return program?.kind === "program"
+      ? {
+          options: Object.keys(program.params.compilerOptions ?? {}).sort(),
+          declaration: program.params.compilerOptions?.declaration,
+          references: program.params.options?.projectReferences?.map((one) =>
+            one.path.slice(root.length + 1),
+          ),
+        }
+      : { kind: program?.kind };
+  }
+
+  it("is built with its own options and no references where it states none", () => {
+    expect(programOf(UNBUILT)).toEqual({
+      options: ["configFilePath", "module", "moduleResolution", "strict", "target"],
+      declaration: undefined,
+      references: undefined,
+    });
+  });
+
+  it("is built without its output layout, still emitting declarations where it is composite, and with its references", () => {
+    expect(
+      programOf({
+        ...UNBUILT,
+        [configFile]: tsconfig(
+          { composite: true, outDir: "dist", rootDir: "src" },
+          { references: [{ path: "../a" }] },
+        ),
+      }),
+    ).toEqual({
+      options: ["configFilePath", "declaration", "module", "moduleResolution", "strict", "target"],
+      declaration: true,
+      references: ["packages/a"],
+    });
+  });
+
+  it("writes no configuration for the snapshots, builds programs, and sends no round trip without a question", () => {
+    const root = writeWorkspace(UNBUILT);
+    const real = openEngine({ collectTiming: false });
+    const sent = { written: 0, built: 0, empty: 0 };
+    const engine: Engine = {
+      ...real,
+      createSnapshot: (openProjects, createPrograms, configurations) => {
+        sent.written += configurations?.size ?? 0;
+        sent.built += createPrograms?.length ?? 0;
+        return real.createSnapshot(openProjects, createPrograms, configurations);
+      },
+      batch: (questions) => {
+        sent.empty += questions.length === 0 ? 1 : 0;
+        return real.batch(questions);
+      },
+    };
+
+    workspaceOf(root, [configFile], engine);
+
+    expect(sent.built).toBeGreaterThan(0);
+    expect({ written: sent.written, empty: sent.empty }).toEqual({ written: 0, empty: 0 });
+  });
+});
+
+describe("a configuration that imports a workspace package, in a run that reads component files", () => {
+  const configFile = "packages/b/tsconfig.json";
+
+  /** The configuration written for `b`'s, at its path below the root, its JSON decoded. */
+  function writtenFor(files: Readonly<Record<string, string>>): {
+    readonly root: string;
+    readonly written: Record<string, unknown>;
+  } {
+    const root = writeWorkspace(files);
+    const program = workspaceOf(root, [configFile], componentEngine())?.programs.get(
+      join(root, configFile),
+    );
+    return {
+      root,
+      written:
+        program?.kind === "configuration"
+          ? { file: program.file.slice(root.length + 1), json: JSON.parse(program.text) as unknown }
+          : { kind: program?.kind },
+    };
+  }
+
+  it("is read through a configuration that extends it, lays out no output and maps the member to its source", () => {
+    const { root, written } = writtenFor(UNBUILT);
+
+    expect(written).toEqual({
+      file: "packages/b/tsconfig.deadset-ts.json",
+      json: {
+        extends: join(root, configFile),
+        compilerOptions: {
+          rootDir: null,
+          outDir: null,
+          declarationDir: null,
+          tsBuildInfoFile: null,
+          paths: { a: [join(root, "packages/a/src/index.ts")] },
+        },
+      },
+    });
+  });
+
+  it("is read through a configuration that keeps its paths, its declarations and its references", () => {
+    const { root, written } = writtenFor({
+      ...UNBUILT,
+      [configFile]: tsconfig(
+        { composite: true, outDir: "dist", rootDir: "src", paths: { "#lib/*": ["./src/lib/*"] } },
+        { references: [{ path: "../a" }] },
+      ),
+    });
+
+    expect(written).toEqual({
+      file: "packages/b/tsconfig.deadset-ts.json",
+      json: {
+        extends: join(root, configFile),
+        compilerOptions: {
+          rootDir: null,
+          outDir: null,
+          declarationDir: null,
+          tsBuildInfoFile: null,
+          composite: false,
+          declaration: true,
+          paths: {
+            "#lib/*": [join(root, "packages/b/src/lib/*")],
+            a: [join(root, "packages/a/src/index.ts")],
+          },
+        },
+        references: [{ path: join(root, "packages/a") }],
+      },
+    });
+  });
+
+  it("is built as a program, the reason named, where its file list cannot be restated without its output directories", () => {
+    const root = writeWorkspace({
+      ...UNBUILT,
+      [configFile]: tsconfig(
+        { outDir: "dist" },
+        { include: ["**/*.ts", "bower_components/**/*.ts"] },
+      ),
+      "packages/b/dist/stale.ts": "export const stale = 1;\n",
+      "packages/b/bower_components/x/kept.ts": "export const kept = 1;\n",
+    });
+    const run = workspaceOf(root, [configFile], componentEngine());
+
+    expect(run?.programs.get(join(root, configFile))?.kind).toBe("program");
+    expect(run?.componentsUnread).toEqual([
+      {
+        configFile: join(root, configFile),
+        reason: "its file list cannot be restated without its output directories",
+      },
+    ]);
+  });
+
+  it("names no reason its component files are unread for an import with no source to read", () => {
+    const root = writeWorkspace(
+      {
+        ...UNBUILT,
+        "packages/a2/package.json": manifest({
+          name: "a",
+          private: true,
+          exports: { ".": "./src/index.ts" },
+        }),
+        "packages/a2/tsconfig.json": tsconfig({ noEmit: true }),
+        "packages/a2/src/index.ts": "export const other = 1;\n",
+        [configFile]: tsconfig({}, { include: ["src/**/*.ts", "vendor/**/*.ts"] }),
+        "packages/b/vendor/x.ts":
+          'import { usedByNobody } from "a";\n\nconsole.log(usedByNobody);\n',
+      },
+      { "packages/b/src/node_modules/a": "packages/a" },
+    );
+    const run = workspaceOf(root, [configFile], componentEngine());
+
+    expect(run?.unbuildable(join(root, configFile))).toMatch(
+      /^packages\/b\/vendor\/x\.ts imports a, .*2 workspace packages are named a/u,
+    );
+    expect(run?.componentsUnread).toEqual([]);
+  });
+
+  it("releases every snapshot and module resolver its rounds open", () => {
+    const root = writeWorkspace(UNBUILT);
+    const real = componentEngine();
+    const snapshots: ReturnType<Engine["createSnapshot"]>[] = [];
+    const resolvers: ReturnType<Engine["createModuleResolver"]>[] = [];
+    const engine: Engine = {
+      ...real,
+      createSnapshot: (openProjects, createPrograms, configurations) => {
+        const snapshot = real.createSnapshot(openProjects, createPrograms, configurations);
+        snapshots.push(snapshot);
+        return snapshot;
+      },
+      createModuleResolver: (options, entries) => {
+        const resolver = real.createModuleResolver(options, entries);
+        resolvers.push(resolver);
+        return resolver;
+      },
+    };
+
+    workspaceOf(root, [configFile], engine);
+
+    expect(snapshots.length).toBeGreaterThan(0);
+    expect(snapshots.filter((snapshot) => !snapshot.isDisposed())).toEqual([]);
+    expect(resolvers.length).toBeGreaterThan(0);
+    expect(
+      resolvers.map((resolver) => {
+        try {
+          resolver.resolveModuleName("a", root);
+          return "answers";
+        } catch {
+          return "released";
+        }
+      }),
+    ).toEqual(resolvers.map(() => "released"));
+  });
+});
+
+describe("the path a configuration written for a snapshot takes", () => {
+  it("is beside the configuration, past every path a file has", () => {
+    const root = writeWorkspace({
+      "solo/tsconfig.json": "{}",
+      "conf.json.d/tsconfig.json": "{}",
+      "conf.json.d/tsconfig.deadset-ts.json": "{}",
+    });
+
+    expect([
+      writtenPath(nodeHost(), join(root, "solo/tsconfig.json")),
+      writtenPath(nodeHost(), join(root, "conf.json.d/tsconfig.json")),
+    ]).toEqual([
+      join(root, "solo/tsconfig.deadset-ts.json"),
+      join(root, "conf.json.d/tsconfig.deadset-ts-1.json"),
+    ]);
   });
 });

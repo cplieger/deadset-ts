@@ -1,6 +1,6 @@
-import { readFileSync, rmSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
 import { emitterInputOf } from "../__test-helpers__/emitter-input.ts";
 import { fixture } from "../__test-helpers__/fixtures.ts";
@@ -25,28 +25,48 @@ function configOf(target: string): ReturnType<typeof resolve> {
   return resolve({ repository: readFileSync(document, "utf8"), repositoryLabel: document });
 }
 
-/** Every file root of the fixture a configuration rule makes, as `path kind source`. */
-const FILE_ROOTS = ((): string[] => {
+/** The configuration of a written application, which applies no configuration rule of its own. */
+const APPLICATION = '{ "target": { "kind": "application" } }';
+
+/** Every file root of one target a configuration rule makes, as `path kind source`. */
+function fileRoots(target: string, repository?: string): string[] {
   const host = nodeHost();
-  const { config, provenance } = configOf(TARGET);
+  const { config, provenance } =
+    repository === undefined
+      ? configOf(target)
+      : resolve({ repository, repositoryLabel: "deadset.json" });
   const answer = runRoots(
     openEngine({ collectTiming: false }),
     host,
-    scopeForDir(host, TARGET),
+    scopeForDir(host, target),
     config,
     provenance,
   );
   return answer.roots
     .filter((root) => root.kind.startsWith("configuration-") && root.ref.endsWith("#"))
     .map((root) => `${root.position.path} ${root.kind} ${root.source}`);
-})();
+}
 
-/** The declared dependencies of the fixture the target does not need, by name. */
-const UNUSED = ((): string[] => {
+/** The declared dependencies of one target the target does not need, by name. */
+function unusedOf(target: string, repository?: string): string[] {
   const emit = EMITTERS.get("dependencies-and-module-machinery");
-  const input = emitterInputOf(TARGET, configOf(TARGET).config);
-  return emit === undefined ? [] : emit(input).map((finding) => finding.symbol.name);
-})();
+  const { config } =
+    repository === undefined
+      ? configOf(target)
+      : resolve({ repository, repositoryLabel: "deadset.json" });
+  return emit === undefined
+    ? []
+    : emit(emitterInputOf(target, config)).map((finding) => finding.symbol.name);
+}
+
+/** A project written for one case, removed when the case ends. */
+function written(files: Readonly<Record<string, string>>): string {
+  const root = writeProject(files);
+  onTestFinished(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+  return root;
+}
 
 describe("the names of configuration files", () => {
   it.each([
@@ -129,7 +149,7 @@ describe("a string that names a dependency", () => {
 
 describe("the configuration files of a project", () => {
   it("root each configuration module and each own file a string of a configuration file names", () => {
-    expect(FILE_ROOTS).toEqual([
+    expect(fileRoots(TARGET)).toEqual([
       ".toolrc.cjs configuration-file .<stem>rc.<ext>",
       "src/bare.ts configuration-string ./src/bare",
       "src/emitted.ts configuration-string ./src/emitted.js",
@@ -161,11 +181,11 @@ describe("the configuration files of a project", () => {
     ["src/rc-typescript.ts", "a string of an rc module with a TypeScript extension"],
     ["src/broken.ts", "a string of a JSON configuration file that does not parse"],
   ])("roots nothing for %s, %s", (path) => {
-    expect(FILE_ROOTS.filter((line) => line.startsWith(`${path} `))).toEqual([]);
+    expect(fileRoots(TARGET).filter((line) => line.startsWith(`${path} `))).toEqual([]);
   });
 
   it("uses each dependency the manifest beside a configuration file declares that one of its strings spells", () => {
-    expect(UNUSED).toEqual([
+    expect(unusedOf(TARGET)).toEqual([
       "dep-broken",
       "dep-member",
       "dep-nested",
@@ -231,6 +251,110 @@ describe("a configuration file no program holds", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe("a configuration file no program holds", () => {
+  it("is read from each directory of an own file below the target root that holds a manifest, and from no other", () => {
+    const root = written({
+      "package.json": '{ "name": "@example/app", "type": "module" }\n',
+      "src/main.ts": "export const main = 1;\n",
+      "sub/package.json": '{ "name": "@example/sub", "type": "module" }\n',
+      "sub/inner.ts": "export const inner = 1;\n",
+      "sub/.toolrc.json": '{ "entry": "./json-named.ts" }\n',
+      "sub/tool.config.mjs": 'export default { entry: "./module-named.ts" };\n',
+      "sub/json-named.ts": "export const named = 1;\n",
+      "sub/module-named.ts": "export const named = 1;\n",
+      "bare/inner.ts": "export const inner = 1;\n",
+      "bare/.toolrc.json": '{ "entry": "./json-bare.ts" }\n',
+      "bare/tool.config.mjs": 'export default { entry: "./module-bare.ts" };\n',
+      "bare/json-bare.ts": "export const bare = 1;\n",
+      "bare/module-bare.ts": "export const bare = 1;\n",
+    });
+
+    expect(fileRoots(root, APPLICATION)).toEqual([
+      "sub/json-named.ts configuration-string ./json-named.ts",
+      "sub/module-named.ts configuration-string ./module-named.ts",
+    ]);
+  });
+
+  it("is never read from a directory above the target root", () => {
+    const root = written({
+      "package.json": '{ "name": "@example/outer", "type": "module" }\n',
+      ".toolrc.json": '{ "entry": "./app/src/above-json.ts" }\n',
+      "tool.config.mjs": 'export default { entry: "./app/src/above-module.ts" };\n',
+      "app/package.json": '{ "name": "@example/app", "type": "module" }\n',
+      "app/tsconfig.json":
+        '{ "compilerOptions": { "strict": true, "module": "NodeNext", "moduleResolution": "nodenext", "noEmit": true }, "include": ["src/**/*.ts"] }\n',
+      "app/.toolrc.json": '{ "entry": "./src/beside.ts" }\n',
+      "app/src/main.ts": "export const main = 1;\n",
+      "app/src/beside.ts": "export const beside = 1;\n",
+      "app/src/above-json.ts": "export const above = 1;\n",
+      "app/src/above-module.ts": "export const above = 1;\n",
+    });
+
+    expect(fileRoots(join(root, "app"), APPLICATION)).toEqual([
+      "src/beside.ts configuration-string ./src/beside.ts",
+    ]);
+  });
+
+  it("reads each module once however its imports cycle, and never a file the program holds", () => {
+    const root = written({
+      "package.json":
+        '{ "name": "@example/app", "type": "module", "main": "./src/main.ts", "devDependencies": { "@example/cycled": "1.0.0", "@example/held": "1.0.0" } }\n',
+      "src/main.ts": "export const main = 1;\n",
+      "src/held.ts": 'export const held = "@example/held";\n',
+      "tool.config.mjs":
+        'import shared from "./tool.shared.mjs";\nimport { held } from "./src/held.ts";\nexport default [shared, held];\n',
+      "tool.shared.mjs":
+        'import config from "./tool.config.mjs";\nexport default ["@example/cycled", config];\n',
+    });
+
+    expect(unusedOf(root, APPLICATION)).toEqual(["@example/held"]);
+  });
+
+  it("follows a JavaScript extension of a relative specifier to its TypeScript counterpart", () => {
+    const root = written({
+      "package.json": '{ "name": "@example/app", "type": "module" }\n',
+      "tsconfig.json":
+        '{ "compilerOptions": { "strict": true, "module": "NodeNext", "moduleResolution": "nodenext", "noEmit": true }, "include": ["src/**/*.ts"] }\n',
+      "src/main.ts": "export const main = 1;\n",
+      "tool.config.mjs":
+        'export { rules } from "./lint/rules.js";\nexport { style } from "./lint/style.mjs";\n',
+      "lint/rules.ts": 'export const rules = { entry: "../src/by-rules.ts" };\n',
+      "lint/style.mts": 'export const style = "../src/by-mts.ts";\n',
+      "lint/style.ts": 'export const style = "../src/by-ts.ts";\n',
+      "src/by-rules.ts": "export const one = 1;\n",
+      "src/by-mts.ts": "export const one = 1;\n",
+      "src/by-ts.ts": "export const one = 1;\n",
+    });
+
+    expect(fileRoots(root, APPLICATION)).toEqual([
+      "src/by-mts.ts configuration-string ../src/by-mts.ts",
+      "src/by-rules.ts configuration-string ../src/by-rules.ts",
+    ]);
+  });
+});
+
+describe("a string of a configuration file", () => {
+  it("names no file when it is empty or absolute", () => {
+    const root = written({
+      "package.json": '{ "name": "@example/app", "type": "module" }\n',
+      "src/main.ts": "export const main = 1;\n",
+      "src/named.ts": "export const named = 1;\n",
+      "src/absolute.ts": "export const absolute = 1;\n",
+      "lib.ts": "export const lib = 1;\n",
+      "lib/package.json": '{ "name": "@example/lib", "type": "module" }\n',
+      "lib/inner.ts": "export const inner = 1;\n",
+    });
+    writeFileSync(
+      join(root, "lib", ".toolrc.json"),
+      JSON.stringify({ entries: ["", join(root, "src", "absolute.ts"), "../src/named.ts"] }),
+    );
+
+    expect(fileRoots(root, APPLICATION)).toEqual([
+      "src/named.ts configuration-string ../src/named.ts",
+    ]);
   });
 });
 

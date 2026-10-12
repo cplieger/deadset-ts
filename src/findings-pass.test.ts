@@ -392,6 +392,36 @@ describe("a stale suppression", () => {
   });
 });
 
+describe("the findings of a run", () => {
+  it("are ordered by path, then line, then column, whatever their subjects' order", () => {
+    const root = writeProject({
+      "package.json": JSON.stringify({
+        name: "@example/order",
+        private: true,
+        type: "module",
+        main: "./src/main.ts",
+      }),
+      "src/main.ts":
+        'import { used as a } from "./a.js";\nimport { used as b } from "./b.js";\na();\nb();\n',
+      "src/a.ts": "export function used(): void {}\nconst zeta = 1;\nconst alpha = 2;\n",
+      "src/b.ts": "export function used(): void {}\nlet beta = 1;\n",
+    });
+    scratch.push(root);
+    const { result } = passOver(root, JSON.stringify({ target: { kind: "application" } }));
+
+    expect(
+      result.findings.map(
+        (one) =>
+          `${one.position.path}:${String(one.position.line)}:${String(one.position.column)} ${one.code} ${one.symbol.name}`,
+      ),
+    ).toEqual([
+      "src/a.ts:2:7 DS1002 zeta",
+      "src/a.ts:3:7 DS1002 alpha",
+      "src/b.ts:2:5 DS1002 beta",
+    ]);
+  });
+});
+
 describe("a configured root that names nothing", () => {
   it("is a finding of the self-check family at the first position of the document that declared it", () => {
     const { result } = passOver(fixture("projects", "configured-roots"));

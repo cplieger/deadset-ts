@@ -4,7 +4,8 @@ import { describe, expect, it } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
 import { contractDocument, fixture } from "../__test-helpers__/fixtures.ts";
 import { runSweep, type RunSweep } from "./analysis.ts";
-import { listing, type Component } from "./components.ts";
+import { componentsOf, listing, type Component } from "./components.ts";
+import { graphOf } from "./graph.ts";
 import type { InventorySymbol } from "./inventory.ts";
 import { matrixOf, sweepMatrix } from "./matrix.ts";
 import type { Reference } from "./references.ts";
@@ -333,5 +334,88 @@ describe("the held declarations of an enum", () => {
       "Tier.Paused held=false lines=1 roots=Tier.Paused",
       "Tier.Closed held=false lines=1 roots=Tier.Closed",
     ]);
+  });
+});
+
+describe("the components of a hand-built graph", () => {
+  /** One function of `path` at its own line. */
+  const declared = (path: string, line: number, name: string): InventorySymbol => ({
+    id: `${path}:${String(line)}:1`,
+    ref: `ts://@example/memory/${path}#${name}`,
+    name,
+    kind: "function",
+    position: { path, line, column: 1 },
+    endLine: line,
+    parent: "",
+    exported: false,
+    visibility: "public",
+    static: false,
+  });
+  const read = (from: InventorySymbol, to: InventorySymbol): Reference => ({
+    from: from.id,
+    to: to.id,
+    position: from.position,
+    use: "read",
+    resolution: "batch",
+    test: from.position.path.endsWith(".test.ts"),
+  });
+
+  /**
+   * Each component of `symbols`, every one dead, as its members and its roots by name.
+   * `flags` marks a declaration a test of dead code or an unreferenced test declaration.
+   */
+  function components(
+    symbols: readonly InventorySymbol[],
+    references: readonly Reference[],
+    flags: Readonly<Record<string, "of-dead-code" | "unreferenced">> = {},
+  ): string[] {
+    const graph = graphOf(symbols, references, [], ["src/a.test.ts"]);
+    const found = componentsOf(
+      graph,
+      symbols.map(() => true),
+      symbols.map((symbol) => flags[symbol.name] === "of-dead-code"),
+      symbols.map((symbol) => flags[symbol.name] === "unreferenced"),
+    );
+    const names = new Map(symbols.map((symbol) => [symbol.id, symbol.name]));
+    const spelled = (ids: readonly string[]): string =>
+      ids.map((id) => names.get(id) ?? id).join(",");
+    return found.map((one) => `${spelled(one.members)} roots=${spelled(one.roots)}`);
+  }
+
+  it("roots every member of a ring, however long", () => {
+    const ring = ["first", "second", "third", "fourth"].map((name, index) =>
+      declared("src/a.ts", index + 1, name),
+    );
+    const references = ring.map((one, index) => read(one, ring[(index + 1) % ring.length] ?? one));
+
+    expect(components(ring, references)).toEqual([
+      "first,second,third,fourth roots=first,second,third,fourth",
+    ]);
+  });
+
+  it("keeps an unreferenced test declaration with the test declarations it references, apart from the production code it references", () => {
+    const subject = declared("src/a.ts", 1, "subject");
+    const test = declared("src/a.test.ts", 1, "test");
+    const helper = declared("src/a.test.ts", 2, "helper");
+
+    expect(
+      components([subject, test, helper], [read(test, subject), read(test, helper)], {
+        test: "unreferenced",
+        helper: "unreferenced",
+      }),
+    ).toEqual(["subject roots=subject", "test,helper roots=test"]);
+  });
+
+  it("roots a test of dead code with the production subjects it exercises, and not with a test declaration it references", () => {
+    const subject = declared("src/a.ts", 1, "subject");
+    const test = declared("src/a.test.ts", 1, "test");
+    const helper = declared("src/a.test.ts", 2, "helper");
+
+    expect(
+      components([subject, test, helper], [read(test, subject), read(test, helper)], {
+        test: "of-dead-code",
+        helper: "of-dead-code",
+      }),
+    ).toEqual(["subject,test,helper roots=subject,test"]);
   });
 });

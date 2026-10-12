@@ -2,12 +2,20 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, onTestFinished } from "vitest";
-import { DiagnosticCategory } from "@typescript/native/sync";
+import { DiagnosticCategory, type Diagnostic } from "@typescript/native/sync";
 import type { RootedFilePath } from "@typescript/native/ast";
 import { nodeHost } from "../bin/node-host.ts";
 import { fixture } from "../__test-helpers__/fixtures.ts";
 import type { BuildConfiguration } from "./config.ts";
-import { discoverProjects, DiscoveryError, renderDiagnostic } from "./discover.ts";
+import {
+  consumerProjects,
+  diagnosticErrors,
+  discoverProjects,
+  DiscoveryError,
+  projectErrors,
+  renderDiagnostic,
+  targetRelative,
+} from "./discover.ts";
 import { scopeForDir, type Scope } from "./scope.ts";
 import { openEngine, type Engine } from "./session.ts";
 
@@ -178,6 +186,67 @@ describe("project discovery", () => {
     expect(thrown).toBeInstanceOf(DiscoveryError);
     expect(thrown instanceof DiscoveryError ? thrown.message : "").toContain(missing);
   });
+
+  it("follows a reference that names a configuration file rather than a directory", () => {
+    const root = scratch();
+    write(root, {
+      "tsconfig.json": '{ "include": [], "references": [{ "path": "./other.json" }] }\n',
+      "other.json": EMPTY,
+    });
+
+    const found = discoverProjects(engine(), HOST, scopeForDir(HOST, root));
+
+    expect(found.configFiles).toEqual([join(root, "tsconfig.json"), join(root, "other.json")]);
+    expect(found.notBuilt).toEqual([]);
+  });
+
+  it.each([
+    { name: "is null", text: "null\n" },
+    {
+      name: "lists references that are no object",
+      text: '{ "include": [], "references": [null, "b", 1] }\n',
+    },
+    { name: "carries a comment", text: '// the root\n{ "include": [] }\n' },
+  ])("follows nothing from a configuration that $name", ({ text }) => {
+    const root = scratch();
+    write(root, { "tsconfig.json": text });
+
+    const found = discoverProjects(engine(), HOST, scopeForDir(HOST, root));
+
+    expect(found.configFiles).toEqual([join(root, "tsconfig.json")]);
+    expect(found.notBuilt).toEqual([]);
+  });
+
+  it("follows nothing from a configuration the host cannot read back", () => {
+    const root = scratch();
+    write(root, { "tsconfig.json": '{ "include": [], "references": [{ "path": "./b" }] }\n' });
+    const unreadable = {
+      ...HOST,
+      readFile: (path: string): string => {
+        throw new Error(`cannot read ${path}`);
+      },
+    };
+
+    const found = discoverProjects(engine(), unreadable, scopeForDir(HOST, root));
+
+    expect(found.configFiles).toEqual([join(root, "tsconfig.json")]);
+    expect(found.notBuilt).toEqual([]);
+  });
+});
+
+describe("a consumer's projects", () => {
+  it("end the run naming a consumer path that is a file", () => {
+    const root = scratch();
+    write(root, { "tsconfig.json": EMPTY });
+    const file = join(root, "tsconfig.json");
+
+    const thrown = thrownBy(() => consumerProjects(engine(), HOST, file));
+
+    expect(thrown).toBeInstanceOf(DiscoveryError);
+    expect(thrown instanceof DiscoveryError ? thrown.message : "").toBe(
+      `the consumer ${file} is not a directory`,
+    );
+  });
 });
 
 describe("a declared matrix", () => {
@@ -275,6 +344,43 @@ describe("a declared matrix", () => {
     expect(found.projects).toEqual([{ id: "first", configFile: join(root, "tsconfig.json") }]);
   });
 
+  it("leaves an empty reference path to the compiler, which refuses it in the project's own diagnostics", () => {
+    const root = scratch();
+    write(root, { "tsconfig.build.json": '{ "include": [], "references": [{ "path": "" }] }\n' });
+
+    const found = discoverProjects(engine(), HOST, scopeOf(root), [
+      { shape: "project", id: "build", project: "tsconfig.build.json" },
+    ]);
+
+    expect(found.configFiles).toEqual([join(root, "tsconfig.build.json")]);
+  });
+
+  it("ends the run naming an entry whose file the compiler cannot read", () => {
+    const root = scratch();
+    write(root, { "tsconfig.json": EMPTY });
+    const configFile = join(root, "tsconfig.json");
+    // The client's answer for a file it cannot open, which a test running as root
+    // cannot produce through permissions.
+    const unreadable: Engine = {
+      ...engine(),
+      parseConfigFile: () => {
+        throw new Error(`api: client error: could not read file "${configFile}"`);
+      },
+    };
+
+    const thrown = thrownBy(() =>
+      discoverProjects(unreadable, HOST, scopeOf(root), [
+        { shape: "project", id: "named", project: "tsconfig.json" },
+      ]),
+    );
+
+    expect(thrown).toBeInstanceOf(DiscoveryError);
+    expect(thrown instanceof DiscoveryError ? thrown.message : "").toBe(
+      `the project "named" (${configFile}) cannot be read as a compiler configuration: ` +
+        `api: client error: could not read file "${configFile}"`,
+    );
+  });
+
   it.each([
     { name: "does not exist", files: {}, says: "does not exist" },
     {
@@ -355,5 +461,87 @@ describe("a diagnostic", () => {
         },
       }),
     ).toBe("/src/tsconfig.json: TS18003: No inputs were found in config file.");
+  });
+});
+
+/** One diagnostic of `category` with code `code`, naming no file. */
+function diagnostic(code: number, category: DiagnosticCategory): Diagnostic {
+  return { pos: 0, end: 0, code, category, text: `diagnostic ${String(code)}` };
+}
+
+describe("a project's errors", () => {
+  const warning = diagnostic(6385, DiagnosticCategory.Warning);
+  const suggestion = diagnostic(80001, DiagnosticCategory.Suggestion);
+
+  it("are its error diagnostics alone, configuration first, then syntax, then types", () => {
+    const errors = diagnosticErrors({
+      configParsing: [warning, diagnostic(5023, DiagnosticCategory.Error)],
+      syntactic: [diagnostic(1005, DiagnosticCategory.Error), suggestion],
+      semantic: [warning, diagnostic(2322, DiagnosticCategory.Error)],
+    });
+
+    expect(errors.map((one) => one.code)).toEqual([5023, 1005, 2322]);
+  });
+
+  it("leave a project whose configuration carries only a warning loaded, and check its files", () => {
+    const errors = projectErrors({
+      configParsing: [warning],
+      syntactic: [],
+      semantic: [diagnostic(2322, DiagnosticCategory.Error)],
+      locate: () => undefined,
+    });
+
+    expect(errors.load).toEqual([]);
+    expect(errors.check.map((one) => one.diagnostic.code)).toEqual([2322]);
+  });
+
+  it("are the configuration's alone where it did not load, whatever its files carry", () => {
+    const errors = projectErrors({
+      configParsing: [diagnostic(18003, DiagnosticCategory.Error)],
+      syntactic: [],
+      semantic: [diagnostic(2322, DiagnosticCategory.Error)],
+      locate: () => undefined,
+    });
+
+    expect(errors.load.map((one) => one.diagnostic.code)).toEqual([18003]);
+    expect(errors.check).toEqual([]);
+  });
+});
+
+describe("an error about the target", () => {
+  it.each([
+    {
+      name: "a path below the root, the root spelled with a trailing slash",
+      text: "cannot read /work/app/a/tsconfig.json",
+      root: "/work/app/",
+      says: "cannot read a/tsconfig.json",
+    },
+    {
+      name: "the root itself",
+      text: "cannot read /work/app",
+      root: "/work/app",
+      says: "cannot read .",
+    },
+    {
+      name: "its first line alone",
+      text: "first line /work/app/a.json\nsecond line",
+      root: "/work/app",
+      says: "first line a.json",
+    },
+    {
+      name: "a first line ended by a carriage return too",
+      text: "first line\r\nsecond line",
+      root: "/work/app",
+      says: "first line",
+    },
+    { name: "no surrounding space", text: "  padded  \n", root: "/work/app", says: "padded" },
+    {
+      name: "a stand-in where the first line is blank",
+      text: "\nsecond line",
+      root: "/work/app",
+      says: "the configuration could not be built",
+    },
+  ])("spells $name", ({ text, root, says }) => {
+    expect(targetRelative(text, root)).toBe(says);
   });
 });

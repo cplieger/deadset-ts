@@ -266,7 +266,7 @@ function memberDirectories(
   }
   return [...included].filter((dir) => {
     const below = relativePath(root, dir);
-    const segments = below === undefined || below === "." || below === "" ? [] : below.split("/");
+    const segments = below === undefined ? [] : below.split("/");
     return dir === root || !excluded.some((pattern) => pathMatches(pattern, segments));
   });
 }
@@ -274,7 +274,7 @@ function memberDirectories(
 /** Whether a workspace's patterns name one directory below its root, read without listing any. */
 function namesDirectory(root: string, patterns: readonly string[], dir: string): boolean {
   const below = relativePath(root, dir);
-  if (below === undefined || below === "" || below.startsWith("..")) {
+  if (below === undefined || below.startsWith("..")) {
     return false;
   }
   const path = below.split("/");
