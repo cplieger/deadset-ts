@@ -229,6 +229,7 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
   let partial: readonly string[];
   let warnings: readonly ComponentWarning[];
   let unread: readonly string[];
+  let unfound: readonly string[];
   try {
     const root = runRelative(invoked, targetRoot);
     const mode = { production: true };
@@ -255,6 +256,10 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
     unread = run.componentsUnread.map(
       ({ configFile, reason }) =>
         `${relativePath(resolvePath(invoked, targetRoot), configFile) ?? configFile}: its component files are not read: ${reason}`,
+    );
+    unfound = run.librariesUnfound.map(
+      ({ configFile, error }) =>
+        `${relativePath(resolvePath(invoked, targetRoot), configFile) ?? configFile}: ${error}: the configuration is analyzed without that library`,
     );
     partial = partialNotes({
       notBuilt: run.notBuilt,
@@ -325,7 +330,7 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
   for (const note of partial) {
     err.write(`deadset-ts: ${note}\n`);
   }
-  for (const line of unread) {
+  for (const line of [...unread, ...unfound]) {
     err.write(`deadset-ts: ${line}\n`);
   }
   for (const warning of warnings) {

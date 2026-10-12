@@ -213,6 +213,54 @@ describe("a member import's resolution", () => {
     expect(resolve("a", "packages/b/src").kind).toBe("unresolved");
   });
 
+  it("answers only `.` from an exports object mixing subpaths and conditions", () => {
+    const { root, resolve } = workspaceAt(
+      {
+        "package.json": ROOT_MANIFEST,
+        "packages/a/package.json": JSON.stringify({
+          name: "a",
+          exports: { ".": "./src/index.ts", import: "./src/other.ts", "*.js": "./src/*.ts" },
+        }),
+        "packages/a/tsconfig.json": "{}",
+        "packages/a/src/index.ts": "",
+        "packages/a/src/other.ts": "",
+        "packages/a/src/feature.ts": "",
+        "packages/b/package.json": JSON.stringify({ name: "b" }),
+      },
+      { "packages/b/node_modules/a": "packages/a" },
+      {
+        "packages/a/tsconfig.json": {
+          files: [
+            "packages/a/src/index.ts",
+            "packages/a/src/other.ts",
+            "packages/a/src/feature.ts",
+          ],
+        },
+      },
+    );
+
+    expect(resolve("a", "packages/b/src")).toEqual(source(root, "packages/a/src/index.ts", "a"));
+    expect(resolve("a/feature.js", "packages/b/src").kind).toBe("unresolved");
+  });
+
+  it("keeps the compiler's resolution for an exports target that is an existing asset, and not for a missing one", () => {
+    const { resolve } = workspaceAt(
+      {
+        ...COMPILED,
+        "packages/a/package.json": JSON.stringify({
+          name: "a",
+          exports: { "./styles.css": "./src/styles.css", "./gone.css": "./src/gone.css" },
+        }),
+        "packages/a/src/styles.css": "",
+      },
+      { "packages/b/node_modules/a": "packages/a" },
+      A_LAYOUT,
+    );
+
+    expect(resolve("a/styles.css", "packages/b/src")).toEqual({ kind: "default" });
+    expect(resolve("a/gone.css", "packages/b/src").kind).toBe("unresolved");
+  });
+
   it("reads a declaration file one of the package's configurations compiles as its source", () => {
     const { root, resolve } = workspaceAt(
       {

@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { emitterInputOf, findingsOf } from "../__test-helpers__/emitter-input.ts";
 import { fixture } from "../__test-helpers__/fixtures.ts";
 import { writeProject } from "../__test-helpers__/projects.ts";
+import { treeFindings } from "../__test-helpers__/tree-findings.ts";
 import { augmentationReferences } from "./augmentations.ts";
 import type { Inventory, InventorySymbol, SymbolKind } from "./inventory.ts";
 import type { Reference } from "./references.ts";
@@ -378,5 +379,37 @@ describe("a use of a declaration an augmentation holds", () => {
   it("reads nothing where no augmentation holds the declaration, a namespace or interface named global included", () => {
     expect(readThrough(VALUE)).toEqual([]);
     expect(readThrough(FIELD)).toEqual([]);
+  });
+});
+
+describe("a module augmentation of a dependency's class", () => {
+  const found = treeFindings({
+    "node_modules/base-pkg/package.json": '{ "name": "base-pkg", "types": "./index.d.ts" }\n',
+    "node_modules/base-pkg/index.d.ts":
+      "export declare class Base {\n  run(): void;\n  static make(): Base;\n}\n",
+    "aug.ts": [
+      "export {};",
+      'declare module "base-pkg" {',
+      "  interface Base {",
+      "    extra(): void;",
+      "  }",
+      "}",
+      "",
+    ].join("\n"),
+    "main.ts": [
+      'import "./aug.js";',
+      'import { Base } from "base-pkg";',
+      "export class C extends Base {",
+      "  run(): void {}",
+      "  extra(): void {}",
+      "  own(): void {}",
+      "}",
+      "console.log(new C());",
+      "",
+    ].join("\n"),
+  });
+
+  it("leaves the class outside the target, so a subclass's overrides are used through it", () => {
+    expect(found.filter((one) => one.includes("C."))).toEqual(["DS1003 C.own"]);
   });
 });

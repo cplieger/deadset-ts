@@ -159,7 +159,7 @@ describe("the edges document", () => {
     ["an array", '["a"]'],
   ])("names an edge that is %s as it is written", (_name, value) => {
     expect(refusal(`{"edges": [${value}]}`)).toBe(
-      `deadset-edges.json: ${value}: want an edge naming id, provides and used_by, each a string, and an optional because`,
+      `deadset-edges.json:1:12: ${value}: want an edge naming id, provides and used_by, each a string, and an optional because`,
     );
   });
 
@@ -192,6 +192,12 @@ describe("the edges document", () => {
 `;
 
     expect(refusal(document)).toMatch(/^deadset-edges\.json:5:7: "ServerEvent": want /u);
+  });
+
+  it("names an edge that is not an object by its own line and column, not the next edge's", () => {
+    const document = `{"edges": [\n  null,\n  ${edge("a", GO_A, TS_A)}\n]}`;
+
+    expect(refusal(document)).toMatch(/^deadset-edges\.json:2:3: null: want /u);
   });
 });
 

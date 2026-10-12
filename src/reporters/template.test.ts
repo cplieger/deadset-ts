@@ -87,6 +87,21 @@ describe("a template over the report document", () => {
     expect(render("{{$n := 0}}{{range .findings}}{{$n = .position.line}}{{end}}{{$n}}")).toBe("10");
   });
 
+  it("declares a variable inside a parenthesized pipeline in the enclosing scope, as Go does", () => {
+    expect(render("{{print ($x := 1)}}{{$x}}")).toBe("11");
+    expect(render("{{print ($x := 1)}}{{$x = 2}}{{$x}}")).toBe("12");
+  });
+
+  it("assigns the outer variables a range with = names, the whole value first, as Go does", () => {
+    const lists = { l: ["a", "b"], e: [] };
+    expect(render("{{$x := 0}}{{range $x = .l}}{{$x}}{{end}}{{$x}}", lists)).toBe("abb");
+    expect(render("{{$i := 9}}{{$x := 0}}{{range $i, $x = .l}}{{end}}{{$i}}{{$x}}", lists)).toBe(
+      "1b",
+    );
+    expect(render("{{$x := 0}}{{range $x = .e}}{{end}}{{$x}}", lists)).toBe("[]");
+    expect(render("{{range $i, $x := .e}}{{else}}{{$i}}{{$x}}{{end}}", lists)).toBe("[][]");
+  });
+
   it("prints a list and an object in the bracketed form and a null as no value", () => {
     expect(
       render("{{.totals.by_severity}} {{.findings | len | print}} {{.missing_is_null}}", {
@@ -447,6 +462,7 @@ describe("the published template vectors", () => {
       "unclosed-action",
       "values-print-bracketed",
       "variables-and-trim-markers",
+      "variables-in-parentheses-and-range-assignment",
     ]);
   });
 

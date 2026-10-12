@@ -108,6 +108,17 @@ describe("findWorkspace", () => {
     expect(memberDirs(root, join(root, "packages/a/examples/demo"))).toEqual([".", "packages/a"]);
   });
 
+  it("is found above a member whose directory name begins with two dots", () => {
+    const root = writeTree({
+      ".git/": "",
+      "package.json": JSON.stringify({ name: "root", workspaces: ["..pkg", "a"] }),
+      "..pkg/package.json": named("dd"),
+      "a/package.json": named("a"),
+    });
+
+    expect(memberDirs(root, join(root, "..pkg"))).toEqual([".", "..pkg", "a"]);
+  });
+
   it("is not adopted from an ancestor whose patterns do not name the target's package", () => {
     const outer = writeTree({
       "package.json": JSON.stringify({ name: "outer", workspaces: ["packages/*"] }),

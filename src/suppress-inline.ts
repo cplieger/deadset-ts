@@ -134,7 +134,9 @@ function lineComments(file: SourceFile): readonly LineComment[] {
   const spans: { readonly start: number; readonly end: number }[] = [];
   const visit = (node: Node): void => {
     if (LITERALS.has(node.kind)) {
-      spans.push({ start: tokenStart(text, node.pos), end: node.end });
+      // JSX text carries no trivia: its first code unit is at `pos`, even a `//`.
+      const start = node.kind === SyntaxKind.JsxText ? node.pos : tokenStart(text, node.pos);
+      spans.push({ start, end: node.end });
     }
     node.forEachChild(visit);
   };

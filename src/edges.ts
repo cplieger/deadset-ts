@@ -156,7 +156,7 @@ export function readEdgeSides(host: Host, targetRoot: string): readonly EdgeSide
 
   const sides: EdgeSide[] = [];
   (edges as readonly unknown[]).forEach((value, index) => {
-    const offset = walk.opened[index];
+    const offset = walk.starts[index];
     const at =
       offset === undefined ? EDGES_FILE : positionKey(positionAt(text, EDGES_FILE, offset));
     const edge = readEdge(value, at);

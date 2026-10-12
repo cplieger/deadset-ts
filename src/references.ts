@@ -196,10 +196,10 @@ export interface ReferenceCost {
   /** Per-type lookups for the contextual uses: each distinct type's constituents, properties and symbol. */
   readonly contextualLookups: number;
   /**
-   * The requests the passes that read members through the checker's types make: element
-   * accesses, key comparisons, instantiated signatures and values handed to unimplemented
-   * callees. They are
-   * counted where the caller measures the client, through `requestCount`, and are 0 otherwise.
+   * The requests the passes after the walk make: the bases overrides are read against,
+   * element accesses, key comparisons, instantiated signatures, values handed to
+   * unimplemented callees and the modules a `declare module` names. They are counted
+   * where the caller measures the client, through `requestCount`, and are 0 otherwise.
    */
   readonly typedLookups: number;
 }
@@ -1060,19 +1060,28 @@ export function references<Brand>(
   const fileIds = new Set(
     held.symbols.filter((symbol) => symbol.kind === "file").map((symbol) => symbol.id),
   );
-  let topLevel: ReadonlyMap<string, readonly InventorySymbol[]> | undefined;
-  /** The declarations one file's top level holds. */
-  const declaredIn = (fileId: string): readonly InventorySymbol[] => {
-    if (topLevel === undefined) {
-      const byParent = new Map<string, InventorySymbol[]>();
+  let moduleBodies: ReadonlyMap<string, readonly InventorySymbol[]> | undefined;
+  /**
+   * The declarations one module holds directly: a file's top level, or the body of a
+   * `declare module` whose name is a string. Any other declaration holds none here.
+   */
+  const declaredIn = (moduleId: string): readonly InventorySymbol[] => {
+    if (moduleBodies === undefined) {
+      const byModule = new Map<string, InventorySymbol[]>();
       for (const symbol of held.symbols) {
-        if (fileIds.has(symbol.parent)) {
-          byParent.set(symbol.parent, [...(byParent.get(symbol.parent) ?? []), symbol]);
+        if (!fileIds.has(symbol.parent) && !held.modules.has(symbol.parent)) {
+          continue;
+        }
+        const siblings = byModule.get(symbol.parent);
+        if (siblings === undefined) {
+          byModule.set(symbol.parent, [symbol]);
+        } else {
+          siblings.push(symbol);
         }
       }
-      topLevel = byParent;
+      moduleBodies = byModule;
     }
-    return topLevel.get(fileId) ?? [];
+    return moduleBodies.get(moduleId) ?? [];
   };
 
   const exportsCache = new Map<number, readonly ChainTarget[]>();
@@ -1431,9 +1440,12 @@ export function references<Brand>(
 
     for (const url of urls) {
       const constructor = url.constructor === undefined ? undefined : answered.get(url.constructor);
+      // An augmentation of the global `URL` merges into it, which keeps the
+      // library's declaration; a `URL` the target declares has no other.
       if (
         typeof constructor === "object" &&
-        constructor.declarations.some((handle) => ownPaths.has(handle.path))
+        constructor.declarations.length > 0 &&
+        constructor.declarations.every((handle) => ownPaths.has(handle.path))
       ) {
         continue;
       }
@@ -1604,14 +1616,14 @@ export function references<Brand>(
 
   let typedLookups = 0;
   if (consumer === undefined) {
-    found.push(...overrideReferences(project, held, chains, new Set(tests)));
     const before = options.requestCount?.() ?? 0;
+    found.push(...overrideReferences(project, held, chains, new Set(tests)));
     found.push(...indexedAccessReferences(project, held, chains, root, new Set(tests)));
     found.push(...elementAccessReferences(project, held, chains, root, new Set(tests)));
     found.push(...keyofComparisonReferences(project, held, chains, root, new Set(tests)));
     found.push(...unimplementedCalleeReads(project, held, chains, root, new Set(tests)));
-    typedLookups = (options.requestCount?.() ?? 0) - before;
     found.push(...moduleDeclarationReferences(project, held, root, new Set(tests)));
+    typedLookups = (options.requestCount?.() ?? 0) - before;
   }
   const scripts = new Set(
     walked.filter((one) => one.file.externalModuleIndicator === undefined).map((one) => one.fileId),

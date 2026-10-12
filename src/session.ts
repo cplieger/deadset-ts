@@ -419,6 +419,8 @@ export interface ProjectDiagnostics {
   readonly syntactic: readonly Diagnostic[];
   readonly semantic: readonly Diagnostic[];
   readonly configParsing: readonly Diagnostic[];
+  /** The program's diagnostics placed in no file, each once, its `fileName` undefined. */
+  readonly unplaced: readonly Diagnostic[];
   /** The line and column of one offset into one of the program's files, counted from one. */
   readonly locate: (
     fileName: string,
@@ -426,12 +428,31 @@ export interface ProjectDiagnostics {
   ) => { line: number; column: number } | undefined;
 }
 
-/** The three diagnostic sets one project carries, read before any analysis. */
+/**
+ * The program's diagnostics placed in no file. The per-file sets never carry one; the
+ * client answers its `fileName` as `null`, and the global set repeats the program set:
+ * https://github.com/microsoft/typescript-go/blob/89d5d5b2849a0db0957065889ca58536fa6d2e4a/internal/api/session.go#L3726-L3752
+ */
+function unplacedOf(program: Program): readonly Diagnostic[] {
+  const seen = new Set<string>();
+  return [...program.getGlobalDiagnostics(), ...program.getProgramDiagnostics()]
+    .filter((diagnostic) => diagnostic.fileName == null)
+    .filter((diagnostic) => {
+      const key = `${String(diagnostic.code)}\u0000${diagnostic.text}`;
+      const fresh = !seen.has(key);
+      seen.add(key);
+      return fresh;
+    })
+    .map((diagnostic) => ({ ...diagnostic, fileName: undefined }));
+}
+
+/** The diagnostic sets one project carries, read before any analysis. */
 export function diagnosticsOf<Brand>(project: ProjectView<Brand>): ProjectDiagnostics {
   return {
     syntactic: project.program.getSyntacticDiagnostics(),
     semantic: project.program.getSemanticDiagnostics(),
     configParsing: project.program.getConfigFileParsingDiagnostics(),
+    unplaced: unplacedOf(project.program),
     locate: (fileName, offset) => {
       const file = project.program.getSourceFile(fileName);
       if (file === undefined || offset < 0 || offset > file.text.length) {

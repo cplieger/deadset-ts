@@ -45,6 +45,8 @@ import {
   SignatureKind,
   SymbolFlags,
   TypeFlags,
+  type NodeHandle,
+  type Signature,
   type Symbol as TSSymbol,
   type Type,
 } from "@typescript/native/sync";
@@ -64,7 +66,7 @@ import { renderPosition } from "./position.ts";
 import { must } from "./query.ts";
 import type { ProjectView } from "./session.ts";
 import { erasedStores, type ErasedStores } from "./erased-stores.ts";
-import { checkedTypes, valueReach, type Reached } from "./value-reach.ts";
+import { checkedTypes, CONVERSION_MEMBERS, valueReach, type Reached } from "./value-reach.ts";
 
 /** The serializer every run reads, whatever the configuration names. */
 const JSON_STRINGIFY: DeclarationEntry = { shape: "global", global: "JSON.stringify" };
@@ -484,14 +486,19 @@ function destinations<Brand>(
     own.has(path) || input.consumers.some((root) => path === root || path.startsWith(`${root}/`));
   const implemented = implementedOwners(project, inAnalysis);
   /**
-   * Whether every declaration of a callee is outside the analysis or ambient. An ambient
-   * declaration has no body, so the code that runs is outside the analysis, unless it is a
-   * member of an interface or an object type a class or a typed object literal of the
-   * analysis implements; `settled` false skips that question, which asks the checker.
+   * Whether every one of `declarations`, all of the callee's by default, is outside the
+   * analysis or ambient. An ambient declaration has no body, so the code that runs is
+   * outside the analysis, unless it is a member of an interface or an object type a class
+   * or a typed object literal of the analysis implements; `settled` false skips that
+   * question, which asks the checker.
    */
-  const outside = (target: TSSymbol, settled: boolean): boolean =>
-    target.declarations.length > 0 &&
-    target.declarations.every((handle) => {
+  const outside = (
+    target: TSSymbol,
+    settled: boolean,
+    declarations: readonly NodeHandle[] = target.declarations,
+  ): boolean =>
+    declarations.length > 0 &&
+    declarations.every((handle) => {
       if (!inAnalysis(handle.path)) {
         return true;
       }
@@ -505,6 +512,13 @@ function destinations<Brand>(
       const owner = must(queries.parentOf(target));
       return owner === undefined || !implemented().has(owner.id);
     });
+  /**
+   * Whether some one declaration of a callee is outside the analysis or ambient, without
+   * asking the checker. A project's declaration merged into a library's symbol leaves the
+   * library's beside it, so a call can still resolve to the library's.
+   */
+  const mayBeOutside = (target: TSSymbol): boolean =>
+    target.declarations.some((handle) => outside(target, false, [handle]));
   const invocation = (call: CallExpression): Invocation => {
     const form = forms.get(call);
     const method = form === undefined ? undefined : callees.get(form.method);
@@ -513,7 +527,7 @@ function destinations<Brand>(
     if (
       form !== undefined &&
       method !== undefined &&
-      outside(method, false) &&
+      mayBeOutside(method) &&
       FUNCTION_INTERFACES.has(must(project.queries.parentOf(method))?.name ?? "")
     ) {
       return form.invocation;
@@ -523,6 +537,32 @@ function destinations<Brand>(
   const calleeOf = (call: CallExpression): TSSymbol | undefined => {
     const name = calleeName(invocation(call).callee);
     return name === undefined ? undefined : callees.get(name);
+  };
+  const signatures = new Map<CallExpression, Signature | undefined>();
+  const resolvedOf = (call: CallExpression): Signature | undefined => {
+    if (!signatures.has(call)) {
+      signatures.set(call, must(queries.resolvedSignature(call)));
+    }
+    return signatures.get(call);
+  };
+  /**
+   * The declarations of a callee that the declaration of a direct call's resolved
+   * signature lies in, or all of them where it lies in none: a declaration merged into
+   * the callee's symbol that the call does not resolve to does not decide where it runs.
+   */
+  const calledDeclarations = (call: CallExpression, target: TSSymbol): readonly NodeHandle[] => {
+    const declaration = invocation(call).indirect ? undefined : resolvedOf(call)?.declaration;
+    const signature =
+      declaration === undefined ? undefined : project.declarationAt(declaration)?.node;
+    if (declaration === undefined || signature === undefined) {
+      return target.declarations;
+    }
+    const containing = target.declarations.filter((handle) => {
+      const node =
+        handle.path === declaration.path ? project.declarationAt(handle)?.node : undefined;
+      return node !== undefined && node.pos <= signature.pos && signature.end <= node.end;
+    });
+    return containing.length === 0 ? target.declarations : containing;
   };
   const erasedArguments = new Map<CallExpression, ReadonlySet<number>>();
   const erasedAt = (call: CallExpression, argument: number): boolean => {
@@ -536,7 +576,7 @@ function destinations<Brand>(
         ? type === undefined
           ? []
           : must(queries.signaturesOf(type, SignatureKind.Call))
-        : [must(queries.resolvedSignature(call))].filter((one) => one !== undefined);
+        : [resolvedOf(call)].filter((one) => one !== undefined);
       indexes = new Set(
         invoked.arguments.flatMap((_unused, index) =>
           signatures.some((signature) => {
@@ -563,7 +603,7 @@ function destinations<Brand>(
     if (entry !== undefined) {
       return { reach: "properties", callee: spelledEntry(entry.entry, held) };
     }
-    if (outside(target, true)) {
+    if (outside(target, true, calledDeclarations(call, target))) {
       return erasedAt(call, argument)
         ? {
             reach: "conversions",
@@ -602,7 +642,7 @@ function destinations<Brand>(
     if (target === undefined) {
       return false;
     }
-    if (named.some((one) => names(one, target, chains)) || outside(target, false)) {
+    if (named.some((one) => names(one, target, chains)) || mayBeOutside(target)) {
       return true;
     }
     return chains
@@ -733,7 +773,7 @@ export function serializationContract<Brand>(input: DetectorInput<Brand>): reado
   // the value left the analysis.
   const holdsBack = (flags: SymbolFlags, name: string, to: Destination): boolean =>
     (flags & SymbolFlags.Property) !== 0 ||
-    ((flags & SymbolFlags.Method) !== 0 &&
+    ((flags & CONVERSION_MEMBERS) !== 0 &&
       (name === SERIALIZED_CONVERSION || (to.reach === "conversions" && CONVERSIONS.has(name))));
   const found: Evidence[] = [];
   for (const flow of flows) {

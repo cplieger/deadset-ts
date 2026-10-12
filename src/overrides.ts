@@ -26,6 +26,11 @@ import { nameComponent } from "./ref.ts";
 import type { Reference } from "./references.ts";
 import type { ProjectView } from "./session.ts";
 
+const CLASS_DECLARATIONS: ReadonlySet<SyntaxKind> = new Set([
+  SyntaxKind.ClassDeclaration,
+  SyntaxKind.ClassExpression,
+]);
+
 /** The member kinds a subclass overrides. */
 const OVERRIDABLE: ReadonlySet<string> = new Set(["method", "class-member"]);
 
@@ -111,8 +116,11 @@ export function overrideReferences<Brand>(
         inTarget.length === 0 &&
         declared !== UNANSWERED &&
         (declared.flags & SymbolFlags.Class) !== 0 &&
-        declared.declarations.length > 0 &&
-        declared.declarations.every((handle) => !own.has(handle.path))
+        // The target's augmentation of an outside class merges an interface into it,
+        // so only a class declaration says where the class is.
+        declared.declarations.some(
+          (handle) => CLASS_DECLARATIONS.has(handle.kind) && !own.has(handle.path),
+        )
       ) {
         outsideBases.set(id, declared);
       }

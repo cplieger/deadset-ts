@@ -7,6 +7,7 @@
  */
 
 import { componentModule } from "../src/component-files.ts";
+import { extensionOf } from "../src/paths.ts";
 
 /** One request or notification the compiler sends. */
 interface Message {
@@ -54,14 +55,16 @@ function answer(message: Message): object | undefined {
     case "closeProject":
       return reply(null);
     case "transform": {
-      const content: unknown =
-        typeof message.params === "object" && message.params !== null
-          ? (message.params as { content?: unknown }).content
-          : undefined;
+      const params: { content?: unknown; fileName?: unknown } =
+        typeof message.params === "object" && message.params !== null ? message.params : {};
+      const { content, fileName } = params;
       if (typeof content !== "string") {
         return fail(INVALID_PARAMS, "transform: params.content is not a string");
       }
-      const module = componentModule(content);
+      if (typeof fileName !== "string") {
+        return fail(INVALID_PARAMS, "transform: params.fileName is not a string");
+      }
+      const module = componentModule(content, extensionOf(fileName));
       return reply({ text: module.text, extension: module.extension, mappings: module.mappings });
     }
     default:

@@ -9,7 +9,9 @@ import {
   consumerPass,
   TSCONFIG,
   writeProject,
+  type Analyzed,
 } from "../__test-helpers__/projects.ts";
+import { treeFindings } from "../__test-helpers__/tree-findings.ts";
 import type { InventorySymbol } from "./inventory.ts";
 import { positionKey } from "./position.ts";
 import { DEFAULT_BATCH_CAP } from "./query.ts";
@@ -54,6 +56,24 @@ function goldenText(references: readonly Reference[]): string {
     }),
   );
   return `[\n${rows.map((row) => `  ${row}`).join(",\n")}\n]\n`;
+}
+
+/** The client requests the reference passes of one analysis account for, summed over its projects. */
+function accountedFor(analyzed: Analyzed): number {
+  return analyzed.references.reduce(
+    (total, held) =>
+      total +
+      held.cost.fileBatches +
+      held.cost.residueFallbacks +
+      held.cost.shorthandLookups +
+      held.cost.aliasSteps +
+      held.cost.patternBatches +
+      held.cost.patternLookups +
+      held.cost.contextualBatches +
+      held.cost.contextualLookups +
+      held.cost.typedLookups,
+    0,
+  );
 }
 
 /** The declaration one display name identifies. */
@@ -170,23 +190,36 @@ describe("the reference table of every reference form", () => {
     const analyzed = analyzeRoot(fixture("projects", "two-projects"), {
       references: { testFiles: [] },
     });
-    const accounted = analyzed.references.reduce(
-      (total, held) =>
-        total +
-        held.cost.fileBatches +
-        held.cost.residueFallbacks +
-        held.cost.shorthandLookups +
-        held.cost.aliasSteps +
-        held.cost.patternBatches +
-        held.cost.patternLookups +
-        held.cost.contextualBatches +
-        held.cost.contextualLookups +
-        held.cost.typedLookups,
-      0,
-    );
 
     expect(analyzed.references.length, "one pass per compiler configuration").toBe(2);
-    expect(analyzed.referenceRequests, "and one accounting across them").toBe(accounted);
+    expect(analyzed.referenceRequests, "and one accounting across them").toBe(
+      accountedFor(analyzed),
+    );
+  });
+
+  it.each([
+    ["a class extending a library class", { "unit.ts": "export class Failure extends Error {}\n" }],
+    [
+      "a class extending one the project declares",
+      {
+        "unit.ts":
+          "class Base {}\nclass Failure extends Base {}\nexport const failure = new Failure();\n",
+      },
+    ],
+    [
+      "an import of a module a declaration declares",
+      {
+        "shims.d.ts": 'declare module "config" {\n  export const mode: string;\n}\n',
+        "main.ts": 'import { mode } from "config";\nexport const x = mode;\n',
+      },
+    ],
+  ])("accounts for every request of %s", (_, files) => {
+    const analyzed = analyzeProject(files, { references: { testFiles: [] } });
+
+    expect(analyzed.referenceRequests, "the pass asks the client something").toBeGreaterThan(0);
+    expect(analyzed.referenceRequests, "and accounts for each request").toBe(
+      accountedFor(analyzed),
+    );
   });
 
   it("names the declaration a re-export chain carries, and every link of the chain", () => {
@@ -329,6 +362,48 @@ describe("the reference table of every reference form", () => {
       "one file of the fixture matches the pattern",
     ).toEqual(["src/unit.test.ts"]);
     expect(RESOLVED?.testFilePaths).toEqual(["src/unit.test.ts"]);
+  });
+});
+
+describe("a namespace import of a module a `declare module` declares, handed on whole", () => {
+  const files = {
+    "package.json": '{ "name": "@example/modules", "type": "module" }\n',
+    "ambient.d.ts": 'declare module "foo" {\n  export const x: number;\n  const y: number;\n}\n',
+    "main.ts": 'import * as foo from "foo";\nconsole.log(foo);\n',
+  };
+
+  /** The declarations the references at the use name, by display name and resolution. */
+  function readAtUse(analyzed: Analyzed): string[] {
+    const held = analyzed.inventories[0]?.symbols ?? [];
+    return (analyzed.references[0]?.references ?? [])
+      .filter((reference) => positionKey(reference.position) === "main.ts:2:13")
+      .map(
+        (reference) =>
+          `${held.find((symbol) => symbol.id === reference.to)?.name ?? reference.to} ${reference.resolution}`,
+      )
+      .sort();
+  }
+
+  it("reads the module's exports by name where the checker leaves its export table unanswered", () => {
+    const answered = readAtUse(analyzeProject(files, { references: { testFiles: [] } }));
+    const unanswered = readAtUse(
+      analyzeProject(files, {
+        references: { testFiles: [] },
+        panicsOn: (accessor) => accessor === "getExportsOfModule",
+      }),
+    );
+
+    expect(answered, "an answered table names each export of the module's body").toEqual([
+      "foo alias",
+      "foo batch",
+      "foo batch",
+      "foo.x batch",
+      "foo.y batch",
+    ]);
+    expect(
+      unanswered,
+      "and an unanswered one reads the same declarations, each guessed by name",
+    ).toEqual(["foo alias", "foo by-name", "foo by-name", "foo.x by-name", "foo.y by-name"]);
   });
 });
 
@@ -746,5 +821,25 @@ describe("a module URL", () => {
       `DS1001 ${name}Value`,
       `DS1502 ${name}.ts`,
     ]);
+  });
+});
+
+describe("a module URL where the project augments the global URL interface", () => {
+  const found = treeFindings({
+    "main.ts": [
+      "declare global {",
+      "  interface URL {",
+      "    readonly extra?: number;",
+      "  }",
+      "}",
+      "",
+      'console.log(new URL("./worker.ts", import.meta.url));',
+      "",
+    ].join("\n"),
+    "worker.ts": "export const workerValue = 1;\n",
+  });
+
+  it("imports the file the global URL names", () => {
+    expect(found.filter((line) => line.includes("worker"))).toEqual(["DS1001 workerValue"]);
   });
 });

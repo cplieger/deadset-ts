@@ -68,6 +68,37 @@ describe("the component mapper", () => {
     ]);
   });
 
+  it("reads each file by the parser of its extension's framework", () => {
+    const written: Uint8Array[] = [];
+    const connection = mapperConnection((bytes) => written.push(bytes));
+    const content = "<!-->\n<script>x</script>";
+    for (const [id, fileName] of [
+      [1, "/a/B.vue"],
+      [2, "/a/B.svelte"],
+    ] as const) {
+      connection.receive(
+        framed({ jsonrpc: "2.0", id, method: "transform", params: { fileName, content } }),
+      );
+    }
+    expect(
+      answers(written).map((one) => (one as { result: { mappings: unknown } }).result.mappings),
+    ).toEqual([[[14, 1, 14, 1, 0]], []]);
+  });
+
+  it("refuses a transform that names no file, whose extension decides how the file reads", () => {
+    const written: Uint8Array[] = [];
+    mapperConnection((bytes) => written.push(bytes)).receive(
+      framed({ jsonrpc: "2.0", id: 8, method: "transform", params: { content: "<p></p>" } }),
+    );
+    expect(answers(written)).toEqual([
+      {
+        jsonrpc: "2.0",
+        id: 8,
+        error: { code: -32602, message: "transform: params.fileName is not a string" },
+      },
+    ]);
+  });
+
   it("refuses a transform that carries no content", () => {
     const written: Uint8Array[] = [];
     mapperConnection((bytes) => written.push(bytes)).receive(

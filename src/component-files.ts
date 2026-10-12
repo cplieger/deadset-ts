@@ -188,18 +188,25 @@ function scriptTagAt(text: string, offset: number): boolean {
   );
 }
 
+/** Where the braces opening at one offset end, and whether a `}` matched them. */
+interface Braces {
+  /** Past the matching `}`, or where the scan stopped: a line-start `<script` or the end. */
+  readonly end: number;
+  readonly closed: boolean;
+}
+
 /**
- * The offset past the `}` matching the `{` at `from`, quoted strings skipped, or -1 where
- * none matches before the end or before a `<script` start tag that begins a line, so a
- * stray brace in markup never hides a block.
+ * The braces opening at `from`, quoted strings skipped. The scan stops unclosed at the
+ * end, or before a `<script` start tag that begins a line, so a stray brace in markup
+ * never hides a block.
  */
-function pastBraces(text: string, from: number): number {
+function scanBraces(text: string, from: number): Braces {
   let depth = 0;
   let at = from;
   while (at < text.length) {
     const code = text.charCodeAt(at);
     if (scriptTagAt(text, at)) {
-      return -1;
+      return { end: at, closed: false };
     }
     if (code === 0x22 || code === 0x27 || code === 0x60) {
       at = pastQuoted(text, at);
@@ -210,12 +217,59 @@ function pastBraces(text: string, from: number): number {
     } else if (code === 0x7d) {
       depth -= 1;
       if (depth === 0) {
-        return at + 1;
+        return { end: at + 1, closed: true };
       }
     }
     at += 1;
   }
-  return -1;
+  return { end: text.length, closed: false };
+}
+
+/** The offset past the `}` matching the `{` at `from`, or -1 where {@link scanBraces} finds none. */
+function pastBraces(text: string, from: number): number {
+  const braces = scanBraces(text, from);
+  return braces.closed ? braces.end : -1;
+}
+
+/** How one framework's parser reads the forms the frameworks disagree on. */
+interface Dialect {
+  /** Whether `<!-->`, `<!--->` and `--!>` end a comment, the opening dashes counted. */
+  readonly shortComments: boolean;
+  /** Whether a start tag's unmatched `{` is a character of an attribute name or value. */
+  readonly braceIsText: boolean;
+}
+
+/**
+ * The dialect each framework's parser reads: Vue's tokenizer, Svelte's parser and Astro's
+ * tokenizer, the last for any other extension too. `.vue` also closes `--!>`, which Vue
+ * does not, so a block Vue drops there is still read.
+ * https://github.com/vuejs/core/blob/main/packages/compiler-core/src/tokenizer.ts
+ * https://github.com/sveltejs/svelte/blob/main/packages/svelte/src/compiler/phases/1-parse/state/element.js
+ * https://github.com/withastro/compiler/blob/main/internal/token.go
+ */
+function dialectOf(extension: string): Dialect {
+  switch (extension.toLowerCase()) {
+    case ".svelte":
+      return { shortComments: false, braceIsText: false };
+    case ".vue":
+      return { shortComments: true, braceIsText: true };
+    default:
+      return { shortComments: true, braceIsText: false };
+  }
+}
+
+/** The offset past the comment whose `<!--` is at `lt`, or the text's length where none ends it. */
+function pastComment(text: string, lt: number, dialect: Dialect): number {
+  if (!dialect.shortComments) {
+    const close = text.indexOf("-->", lt + 4);
+    return close < 0 ? text.length : close + 3;
+  }
+  const dashes = text.indexOf("-->", lt + 2);
+  const bang = text.indexOf("--!>", lt + 2);
+  if (bang >= 0 && (dashes < 0 || bang < dashes)) {
+    return bang + 4;
+  }
+  return dashes < 0 ? text.length : dashes + 3;
 }
 
 interface Attribute {
@@ -234,16 +288,42 @@ interface StartTag {
   readonly attributes: readonly Attribute[];
 }
 
-/** The start tag whose `<` is at `from`, to its `>`. A quoted or braced value may hold `>`. */
-function readStartTag(text: string, from: number, nameStop: number): StartTag {
+/**
+ * Where an unmatched `{` of a start tag ends its braced value: at the first `>`, or where
+ * the brace scan stopped where that comes first.
+ */
+function unmatchedBraceEnd(text: string, from: number, braces: Braces): number {
+  const close = text.indexOf(">", from);
+  return close >= 0 && close < braces.end ? close : braces.end;
+}
+
+/**
+ * The start tag whose `<` is at `from`, to its `>`. A quoted or braced value may hold `>`.
+ * Past an unmatched `{`, the tag also ends before a `<script` start tag that begins a line.
+ */
+function readStartTag(text: string, from: number, nameStop: number, dialect: Dialect): StartTag {
   const name = text.slice(from + 1, nameStop).toLowerCase();
   const attributes: Attribute[] = [];
   let at = nameStop;
   let selfClosing = false;
+  let unmatched = false;
+  /** The braces opening at `at`, and whether they make a braced value rather than text. */
+  const bracesAt = (): { readonly braces: Braces; readonly value: boolean } | undefined => {
+    if (text.charCodeAt(at) !== 0x7b) {
+      return undefined;
+    }
+    const braces = scanBraces(text, at);
+    return { braces, value: braces.closed || !dialect.braceIsText };
+  };
+  const bracedEnd = (braces: Braces): number =>
+    braces.closed ? braces.end : unmatchedBraceEnd(text, at, braces);
   while (at < text.length) {
     const code = text.charCodeAt(at);
     if (code === 0x3e) {
       return { name, end: at + 1, selfClosing, attributes };
+    }
+    if (unmatched && scriptTagAt(text, at)) {
+      return { name, end: at, selfClosing, attributes };
     }
     if (isSpace(code)) {
       at += 1;
@@ -256,12 +336,13 @@ function readStartTag(text: string, from: number, nameStop: number): StartTag {
     }
     selfClosing = false;
     const start = at;
-    if (code === 0x7b) {
-      const past = pastBraces(text, at);
-      at = past < 0 ? text.length : past;
+    const bare = bracesAt();
+    unmatched ||= bare?.braces.closed === false;
+    if (bare?.value === true) {
+      at = bracedEnd(bare.braces);
       attributes.push({
         name: "",
-        value: text.slice(start + 1, at - 1),
+        value: text.slice(start + 1, bare.braces.closed ? at - 1 : at),
         start,
         end: at,
         valueStart: start + 1,
@@ -287,16 +368,18 @@ function readStartTag(text: string, from: number, nameStop: number): StartTag {
         at += 1;
       }
       const opening = text.charCodeAt(at);
+      const braced = bracesAt();
+      unmatched ||= braced?.braces.closed === false;
       if (opening === 0x22 || opening === 0x27) {
-        const past = pastQuoted(text, at);
+        // An attribute value has no escapes: a backslash before its quote is text.
+        const close = text.indexOf(text.charAt(at), at + 1);
         valueStart = at + 1;
-        value = text.slice(at + 1, Math.max(past - 1, at + 1));
-        at = past;
-      } else if (opening === 0x7b) {
-        const past = pastBraces(text, at);
-        const stop = past < 0 ? text.length : past;
+        value = text.slice(at + 1, close < 0 ? text.length : close);
+        at = close < 0 ? text.length : close + 1;
+      } else if (braced?.value === true) {
+        const stop = bracedEnd(braced.braces);
         valueStart = at + 1;
-        value = text.slice(at + 1, Math.max(stop - 1, at + 1));
+        value = text.slice(at + 1, braced.braces.closed ? stop - 1 : stop);
         at = stop;
       } else {
         valueStart = at;
@@ -410,9 +493,11 @@ function scriptsInside(text: string, from: number, to: number): number[] {
  * The scan keeps a stack of open elements. A comment, a doctype or processing instruction and
  * an expression in braces are text, and an end tag closes back to the nearest open element of
  * its name. A raw-text element at the top level runs to its own end tag, and only a `script`
- * element whose start tag begins a line at the top level is a block.
+ * element whose start tag begins a line at the top level is a block. The file's extension
+ * names the framework whose reading of a comment and of a stray brace applies.
  */
-export function readComponent(text: string): ComponentFile {
+export function readComponent(text: string, extension: string): ComponentFile {
+  const dialect = dialectOf(extension);
   const blocks: Block[] = [];
   const imports: SourceImport[] = [];
   const warnings: ComponentWarning[] = [];
@@ -442,8 +527,7 @@ export function readComponent(text: string): ComponentFile {
     }
     const lt = at;
     if (text.startsWith("<!--", lt)) {
-      const close = text.indexOf("-->", lt + 4);
-      at = close < 0 ? text.length : close + 3;
+      at = pastComment(text, lt, dialect);
       continue;
     }
     const next = text.charCodeAt(lt + 1);
@@ -467,7 +551,7 @@ export function readComponent(text: string): ComponentFile {
       at = lt + 1;
       continue;
     }
-    const tag = readStartTag(text, lt, nameStop);
+    const tag = readStartTag(text, lt, nameStop, dialect);
     const rawText = open.length === 0 && RAW_TEXT.has(tag.name);
     for (const attribute of rawText ? [] : tag.attributes) {
       if (attribute.value !== "") {
@@ -542,9 +626,9 @@ export function readComponent(text: string): ComponentFile {
 }
 
 /**
- * Whether the module's text exports a default at its top level: an `export default`
- * or an export clause naming `default`, outside every comment, string, template and
- * regular expression, and outside every bracket.
+ * Whether the module's text exports a default at its top level: an `export default`, an
+ * `export * as default`, or an export clause naming `default`, outside every comment,
+ * string, template and regular expression, and outside every bracket.
  */
 export function exportsDefault(text: string): boolean {
   const words: string[] = [];
@@ -633,7 +717,8 @@ export function exportsDefault(text: string): boolean {
     const matched = word.exec(text);
     if (matched !== null) {
       const name = matched[0];
-      if (depth === 0 && words.at(-1) === "export" && name === "default") {
+      const starAs = words.at(-3) === "export" && words.at(-2) === "*" && words.at(-1) === "as";
+      if (depth === 0 && (words.at(-1) === "export" || starAs) && name === "default") {
         return true;
       }
       if (clause && name === "default") {
@@ -662,8 +747,8 @@ export function exportsDefault(text: string): boolean {
 }
 
 /** The module one component file's text is read as, and the span map back to the file. */
-export function componentModule(text: string): ComponentModule {
-  const { blocks, imports } = readComponent(text);
+export function componentModule(text: string, fileExtension: string): ComponentModule {
+  const { blocks, imports } = readComponent(text, fileExtension);
   const out: string[] = [];
   let at = 0;
   let language: BlockLanguage | undefined;

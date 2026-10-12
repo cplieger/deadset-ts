@@ -274,7 +274,7 @@ function memberDirectories(
 /** Whether a workspace's patterns name one directory below its root, read without listing any. */
 function namesDirectory(root: string, patterns: readonly string[], dir: string): boolean {
   const below = relativePath(root, dir);
-  if (below === undefined || below.startsWith("..")) {
+  if (below === undefined) {
     return false;
   }
   const path = below.split("/");

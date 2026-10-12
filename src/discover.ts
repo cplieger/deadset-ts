@@ -2,7 +2,7 @@ import { DiagnosticCategory } from "@typescript/native/sync";
 import type { Diagnostic } from "@typescript/native/sync";
 import type { BuildConfiguration, ProjectConfiguration } from "./config.ts";
 import type { Host } from "./host.ts";
-import { dirnamePath, isAbsolutePath, joinPath, relativePath, resolvePath } from "./paths.ts";
+import { dirnamePath, joinPath, relativePath, resolvePath } from "./paths.ts";
 import type { Scope } from "./scope.ts";
 import { SetupError } from "./setup-failure.ts";
 import type { Engine, ProjectDiagnostics } from "./session.ts";
@@ -95,20 +95,46 @@ export function diagnosticErrors(sets: {
 /** Why one open project cannot be analyzed, split by whether it loaded at all. */
 interface ProjectErrors {
   /**
-   * The errors in the configuration itself: no input matched, an option that does not
-   * parse. A project carrying one did not load, whatever its files say.
+   * The errors in the configuration itself, and the errors the compiler places in no file
+   * that leave its checker without a type it needs: no input matched, an option that
+   * does not parse, a missing global type. A project carrying one did not load, whatever
+   * its files say.
    */
   readonly load: readonly LocatedDiagnostic[];
   /** The errors in the files of a project that loaded: their syntax and their types. */
   readonly check: readonly LocatedDiagnostic[];
+  /**
+   * The libraries the configuration names that the compiler cannot find, which leave it
+   * loaded: a use of a name only such a library declares is an error in its file.
+   */
+  readonly unfound: readonly LocatedDiagnostic[];
 }
+
+/**
+ * The codes of a type library and a lib the configuration names that the compiler
+ * cannot find, which it reports while it gathers the program's files:
+ * https://github.com/microsoft/typescript-go/blob/89d5d5b2849a0db0957065889ca58536fa6d2e4a/internal/compiler/processingDiagnostic.go
+ */
+const UNFOUND_LIBRARY: ReadonlySet<number> = new Set([2688, 2726, 2727]);
 
 /** The errors one open project carries, each located in the file it names. */
 export function projectErrors(sets: ProjectDiagnostics): ProjectErrors {
-  const load = sets.configParsing.filter(isError);
+  // The compiler numbers its semantic messages from 2000 and its option messages from
+  // 5000. A file-less option error, a removed option or an output layout, leaves the
+  // program whole, and the compiler checks it all the same:
+  // https://github.com/microsoft/TypeScript/wiki/Coding-guidelines#diagnostic-message-codes
+  const semantic = sets.unplaced.filter(
+    (diagnostic) => isError(diagnostic) && diagnostic.code >= 2000 && diagnostic.code < 3000,
+  );
+  const unfound = semantic.filter(({ code }) => UNFOUND_LIBRARY.has(code));
+  const load = [
+    ...sets.configParsing.filter(isError),
+    ...semantic.filter(({ code }) => !UNFOUND_LIBRARY.has(code)),
+  ];
   return {
     load: locatedIn(load, sets.locate),
     check: load.length > 0 ? [] : locatedIn(diagnosticErrors(sets), sets.locate),
+    unfound: load.length > 0 ? [] : locatedIn(unfound, sets.locate),
   };
 }
 
@@ -182,10 +208,6 @@ interface Discovery {
   readonly fromScope: readonly string[];
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 /**
  * The configuration files below `root`, in ascending path order, skipping an
  * ignored directory. A directory that cannot be read is skipped: a tree the
@@ -222,45 +244,6 @@ function configFilesUnder(host: Host, root: string): string[] {
 }
 
 /**
- * The configuration files one configuration's `references` name, resolved against
- * that configuration's own directory. A reference naming a directory names the
- * `tsconfig.json` in it, which is the compiler's own rule.
- */
-function referencesOf(host: Host, configFile: string): string[] {
-  let text: string;
-  try {
-    text = host.readFile(configFile);
-  } catch {
-    return [];
-  }
-  let value: unknown;
-  try {
-    value = JSON.parse(text);
-  } catch {
-    // What a configuration's contents say is refused by the compiler's own
-    // diagnostics, which name the position; nothing is inferred from it here.
-    return [];
-  }
-  if (!isRecord(value) || !Array.isArray(value["references"])) {
-    return [];
-  }
-  const dir = dirnamePath(configFile);
-  const found: string[] = [];
-  for (const entry of value["references"] as unknown[]) {
-    if (!isRecord(entry)) {
-      continue;
-    }
-    const path = entry["path"];
-    if (typeof path !== "string" || path === "") {
-      continue;
-    }
-    const resolved = isAbsolutePath(path) ? path : joinPath(dir, path);
-    found.push(resolved.endsWith(".json") ? resolved : joinPath(resolved, "tsconfig.json"));
-  }
-  return found;
-}
-
-/**
  * The configuration file the scope names for the target directly, where its path
  * names one rather than a directory. A target naming a directory is reached by the
  * walk over that directory instead. A consumer's projects are a consumer's, never the
@@ -274,15 +257,16 @@ function scopeConfigFiles(host: Host, scope: Scope): string[] {
 
 /**
  * Every configuration file reached from `pending`, in the order discovery reads them:
- * each once, each followed by the configurations it references, transitively. A
- * configuration the compiler cannot read ends the run naming it, unless `unreadable`
- * is given, which is then told the configuration and why, and the walk goes on
- * without it.
+ * each once, each followed by the configurations it references that `follows` admits,
+ * transitively. A configuration the compiler cannot read ends the run naming it, unless
+ * `unreadable` is given, which is then told the configuration and why, and the walk
+ * goes on without it.
  */
 function derivedFrom(
   engine: Engine,
   host: Host,
   pending: string[],
+  follows: (reference: string) => boolean,
   unreadable?: (configFile: string, reason: string) => void,
 ): string[] {
   const seen = new Set<string>();
@@ -297,19 +281,19 @@ function derivedFrom(
       continue;
     }
     seen.add(path);
-    const reason = unreadableReason(engine, path);
-    if (reason !== undefined) {
+    const read = readConfiguration(engine, path);
+    if ("reason" in read) {
       if (unreadable === undefined) {
         throw new DiscoveryError(
-          `${path} cannot be read as a compiler configuration: ${reason}`,
+          `${path} cannot be read as a compiler configuration: ${read.reason}`,
           [],
         );
       }
-      unreadable(path, reason);
+      unreadable(path, read.reason);
       continue;
     }
     found.push(path);
-    pending.push(...referencesOf(host, path));
+    pending.push(...read.references.filter(follows));
   }
   return found;
 }
@@ -335,7 +319,7 @@ export function consumerProjects(engine: Engine, host: Host, root: string): read
   if (kind !== "directory") {
     throw new DiscoveryError(`the consumer ${root} is not a directory`, []);
   }
-  const found = derivedFrom(engine, host, configFilesUnder(host, root));
+  const found = derivedFrom(engine, host, configFilesUnder(host, root), () => true);
   if (found.length === 0) {
     throw new DiscoveryError(
       `the consumer ${root} holds no compiler configuration, so none of its references can be read`,
@@ -353,39 +337,52 @@ function derivedId(targetRoot: string, configFile: string): string {
   return relativePath(targetRoot, configFile) ?? configFile;
 }
 
-/** Why the compiler cannot read one configuration file, or undefined where it can. */
-function unreadableReason(engine: Engine, configFile: string): string | undefined {
-  try {
-    engine.parseConfigFile(configFile);
-    return undefined;
-  } catch (error: unknown) {
-    return error instanceof Error ? error.message : String(error);
-  }
-}
-
 /**
- * Resolves one compiler configuration file, or ends the run naming it: a project
- * opened from a configuration the compiler cannot read would be analyzed with no
- * type information.
+ * The configuration files one configuration's `references` name, or why the compiler
+ * cannot read the configuration.
  */
-function parseOrRefuse(engine: Engine, configFile: string, named: string): void {
-  const reason = unreadableReason(engine, configFile);
-  if (reason !== undefined) {
-    throw new DiscoveryError(`${named} cannot be read as a compiler configuration: ${reason}`, []);
+function readConfiguration(
+  engine: Engine,
+  configFile: string,
+): { readonly references: readonly string[] } | { readonly reason: string } {
+  try {
+    const parsed = engine.parseConfigFile(configFile);
+    // The parse answers a directory reference as the directory; the compiler reads a
+    // path not ending `.json` as its `tsconfig.json`:
+    // https://github.com/microsoft/typescript-go/blob/89d5d5b2849a0db0957065889ca58536fa6d2e4a/internal/core/projectreference.go#L18
+    return {
+      references: (parsed.projectReferences ?? []).map(({ path }) =>
+        path.endsWith(".json") ? path : joinPath(path, "tsconfig.json"),
+      ),
+    };
+  } catch (error: unknown) {
+    return { reason: error instanceof Error ? error.message : String(error) };
   }
 }
 
 /**
- * The projects a build matrix declares, in the order it lists them. Each entry
- * names a file below the target root, and an entry naming a file that is absent,
- * that is a directory, or that the compiler cannot read ends the run naming it.
- *
- * A declared project's `references` are not followed, because the entries are the
- * matrix, and a reference to a configuration the matrix does not name ends the run
- * naming both: the compiler builds a referenced project's sources into the program
- * that references it without reporting their diagnostics, so the project the matrix
- * left out would be analyzed with its errors unread. An entry naming a file an
- * earlier entry named adds nothing, so the earlier identifier stands.
+ * The references of one compiler configuration file, or ends the run naming it: a
+ * project opened from a configuration the compiler cannot read would be analyzed with
+ * no type information.
+ */
+function parseOrRefuse(engine: Engine, configFile: string, named: string): readonly string[] {
+  const read = readConfiguration(engine, configFile);
+  if ("reason" in read) {
+    throw new DiscoveryError(
+      `${named} cannot be read as a compiler configuration: ${read.reason}`,
+      [],
+    );
+  }
+  return read.references;
+}
+
+/**
+ * The projects a build matrix declares, in its order, each entry a file below the target
+ * root: an entry naming an absent file, a directory or a file the compiler cannot read
+ * ends the run naming it, and one naming an earlier entry's file adds nothing. A
+ * reference below the root the matrix does not name ends the run naming both, because the
+ * compiler builds a referenced project's sources into the referencing program without
+ * reporting their diagnostics. A reference outside the root is an outside project.
  */
 function declaredProjects(
   engine: Engine,
@@ -395,6 +392,7 @@ function declaredProjects(
 ): Discovery {
   const seen = new Set<string>();
   const projects: DiscoveredProject[] = [];
+  const references = new Map<string, readonly string[]>();
   for (const entry of entries) {
     const configFile = joinPath(targetRoot, entry.project);
     const named = `the project ${JSON.stringify(entry.id)} (${configFile})`;
@@ -411,11 +409,13 @@ function declaredProjects(
       continue;
     }
     seen.add(configFile);
-    parseOrRefuse(engine, configFile, named);
+    references.set(configFile, parseOrRefuse(engine, configFile, named));
     projects.push({ id: entry.id, configFile });
   }
   for (const project of projects) {
-    const unnamed = referencesOf(host, project.configFile).find((path) => !seen.has(path));
+    const unnamed = references
+      .get(project.configFile)
+      ?.find((path) => !seen.has(path) && relativePath(targetRoot, path) !== undefined);
     if (unnamed !== undefined) {
       throw new DiscoveryError(
         `the project ${JSON.stringify(project.id)} (${project.configFile}) references ` +
@@ -435,21 +435,26 @@ function declaredProjects(
 }
 
 /**
- * The projects a run derives where the matrix declares none, in the order discovery
- * reads them: the paths the scope names, then every compiler configuration under
- * the target root that is not inside an ignored directory, then the configurations
- * each of those references, transitively. Each configuration appears once. A
- * configuration the scope names directly is the caller's own and ends the run where
- * it cannot be read; one the walk found is dropped and named.
+ * The projects a run derives where the matrix declares none, in discovery order: the
+ * paths the scope names, every compiler configuration under the target root outside an
+ * ignored directory, then each configuration below the root those reference,
+ * transitively, each once. A reference outside the root is an outside project, whose
+ * sources the compiler builds into the referencing program. A configuration the scope
+ * names ends the run where it cannot be read; one the walk found is dropped and named.
  */
 function derivedProjects(engine: Engine, host: Host, scope: Scope): Discovery {
   const targetRoot = scope.target.path;
   const fromScope = scopeConfigFiles(host, scope);
   const notBuilt: NotBuilt[] = [];
+  const rootDir = resolvePath(
+    host.workingDirectory(),
+    fromScope.length > 0 ? dirnamePath(targetRoot) : targetRoot,
+  );
   const configFiles = derivedFrom(
     engine,
     host,
     [...fromScope, ...configFilesUnder(host, targetRoot)],
+    (reference) => relativePath(rootDir, reference) !== undefined,
     (configFile, reason) => {
       if (fromScope.includes(configFile)) {
         throw new DiscoveryError(

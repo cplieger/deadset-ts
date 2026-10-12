@@ -24,7 +24,12 @@ import {
   type BinaryExpression,
   type Node,
 } from "@typescript/native/ast";
-import { TypeFlags, type Symbol as TSSymbol, type Type } from "@typescript/native/sync";
+import {
+  SignatureKind,
+  TypeFlags,
+  type Symbol as TSSymbol,
+  type Type,
+} from "@typescript/native/sync";
 import {
   isAnswered,
   propertyTables,
@@ -33,6 +38,10 @@ import {
   type PropertyTables,
 } from "./query.ts";
 import type { ProjectView } from "./session.ts";
+
+/** The types of an iteration result's `value` that carry no element of the iterable. */
+const NO_ELEMENT =
+  TypeFlags.AnyOrUnknown | TypeFlags.Undefined | TypeFlags.Void | TypeFlags.Null | TypeFlags.Never;
 
 /** One property one object pattern reads. */
 export interface PropertyRead {
@@ -298,10 +307,92 @@ export function destructuring<Brand>(
     return isAnswered(elements) ? elements[0] : UNANSWERED;
   };
 
+  /** The type of the one property of a type that `matches` accepts, unanswered where two do. */
+  const propertyTypeOf = (owner: Type, matches: (property: TSSymbol) => boolean): Found => {
+    const table = tableOf(owner);
+    if (!isAnswered(table)) {
+      return UNANSWERED;
+    }
+    const [property, ...more] = [...table.values()].filter(matches);
+    if (property === undefined) {
+      return undefined;
+    }
+    if (more.length > 0) {
+      return UNANSWERED;
+    }
+    patternLookups += 1;
+    return queries.typeOfSymbol(property);
+  };
+
+  const resultOf = (callee: Found): Found => {
+    if (callee === undefined || callee === UNANSWERED) {
+      return callee;
+    }
+    patternLookups += 1;
+    const signatures = queries.signaturesOf(callee, SignatureKind.Call);
+    if (!isAnswered(signatures)) {
+      return UNANSWERED;
+    }
+    const [signature] = signatures;
+    if (signature === undefined) {
+      return undefined;
+    }
+    patternLookups += 1;
+    return queries.returnTypeOf(signature);
+  };
+
+  const iterations = new Map<number, Found>();
+  /**
+   * The type a `for…of` takes from one iterable that is no array, read through the
+   * iteration protocol: the `value` of what the `next()` of its `[Symbol.iterator]()`
+   * answers. A constituent of that answer whose value is {@link NO_ELEMENT} carries no
+   * element; where more than one carries one, the element is left unanswered, so a read
+   * through it is resolved by name.
+   */
+  const iteratedOf = (type: Type): Found => {
+    if (iterations.has(type.id)) {
+      return iterations.get(type.id);
+    }
+    // The checker keys a member a unique symbol names `__@<name>@<symbol id>`, and escapes
+    // a written key that starts with `__` with one more `_`, so no string key matches; a
+    // unique symbol of the program's own named `iterator` does, which leaves two matches:
+    // https://github.com/microsoft/typescript-go/blob/89d5d5b2849a0db0957065889ca58536fa6d2e4a/internal/checker/checker.go#L23096-L23108
+    // https://github.com/microsoft/typescript-go/blob/89d5d5b2849a0db0957065889ca58536fa6d2e4a/internal/ast/symbol.go#L91-L103
+    const iterator = resultOf(
+      propertyTypeOf(type, (one) => one.escapedName.startsWith("__@iterator@")),
+    );
+    const result =
+      iterator === undefined || iterator === UNANSWERED
+        ? iterator
+        : resultOf(propertyTypeOf(iterator, (one) => one.name === "next"));
+    let found: Found = result;
+    if (result !== undefined && result !== UNANSWERED) {
+      let parts: Answer<readonly Type[]> = [result];
+      if (result.isUnionType()) {
+        patternLookups += 1;
+        parts = queries.constituents(result);
+      }
+      const values: readonly Found[] = isAnswered(parts)
+        ? parts.map((part) => propertyTypeOf(part, (one) => one.name === "value"))
+        : [UNANSWERED];
+      const carried = values.filter(
+        (value): value is Answer<Type> =>
+          value === UNANSWERED || (value !== undefined && (value.flags & NO_ELEMENT) === 0),
+      );
+      const [only, ...more] = carried;
+      found = more.length > 0 ? UNANSWERED : only;
+    }
+    iterations.set(type.id, found);
+    return found;
+  };
+
   const step = (type: Type, next: Step): Found => {
     const defined = definedOf(type);
     if (defined === undefined || defined === UNANSWERED) {
       return defined;
+    }
+    if (next.kind === "iterated") {
+      return elementOf(defined, undefined) ?? iteratedOf(defined);
     }
     if (next.kind === "property") {
       const table = tableOf(defined);
@@ -315,7 +406,7 @@ export function destructuring<Brand>(
       patternLookups += 1;
       return queries.typeOfSymbol(property);
     }
-    return elementOf(defined, next.kind === "element" ? next.index : undefined);
+    return elementOf(defined, next.index);
   };
 
   const resolve = (reads: readonly PropertyRead[]): readonly Answer<TSSymbol | undefined>[] => {

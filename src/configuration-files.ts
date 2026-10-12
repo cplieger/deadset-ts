@@ -278,8 +278,15 @@ function readDocument(host: Host, path: string): unknown {
 
 /** The configuration files one project holds and sits beside. */
 interface ConfigurationFiles {
-  /** Every own file that is a configuration module, with the form its name has. */
-  readonly modules: readonly { readonly file: SourceFile; readonly form: string }[];
+  /**
+   * Every own file that is a configuration module, with the form its name has and the
+   * directory of the manifest whose dependencies its strings are read against.
+   */
+  readonly modules: readonly {
+    readonly file: SourceFile;
+    readonly form: string;
+    readonly manifestDir: string;
+  }[];
   /**
    * Every configuration module in a directory of the project that the program does not
    * hold, and every file such a file imports or re-exports by a relative specifier that
@@ -345,12 +352,13 @@ export function configurationFiles(
     return held;
   };
 
-  const modules: { file: SourceFile; form: string }[] = [];
+  const modules: { file: SourceFile; form: string; manifestDir: string }[] = [];
   const dirs = new Set<string>([root]);
   for (const file of files.byPath.values()) {
     const form = configurationModuleForm(basename(file.fileName));
-    if (form !== undefined && holdsManifest(dirnamePath(file.fileName))) {
-      modules.push({ file, form });
+    const fileDir = dirnamePath(file.fileName);
+    if (form !== undefined && holdsManifest(fileDir)) {
+      modules.push({ file, form, manifestDir: fileDir });
     }
     for (
       let dir = dirnamePath(file.fileName);
@@ -383,7 +391,7 @@ export function configurationFiles(
       if (path.endsWith(".json")) {
         pending.push({ path, manifestDir: dir });
       } else if (held !== undefined) {
-        modules.push({ file: held, form: "a script's configuration flag" });
+        modules.push({ file: held, form: "a script's configuration flag", manifestDir: dir });
       } else {
         named.push({ path, manifestDir: dir });
       }

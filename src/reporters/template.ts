@@ -912,7 +912,7 @@ class Execution {
       case "lit":
         return arg.value;
       case "pipe":
-        return this.pipeline(arg.pipe, dot, false);
+        return this.pipeline(arg.pipe, dot);
       case "field":
         return this.field(arg.recv === undefined ? dot : this.arg(arg.recv, dot), arg.names);
       case "func":
@@ -958,18 +958,17 @@ class Execution {
     return call(head.name, operands());
   }
 
-  private pipeline(pipe: Pipeline, dot: Value, declares: boolean): Value {
+  private pipeline(pipe: Pipeline, dot: Value): Value {
     let value: Value | undefined;
     for (const command of pipe.commands) {
       value = this.command(command, dot, value);
     }
     const result = value ?? null;
-    const [only] = pipe.vars;
-    if (only !== undefined && (declares || pipe.assign)) {
+    for (const name of pipe.vars) {
       if (pipe.assign) {
-        this.assign(only, result);
+        this.assign(name, result);
       } else {
-        this.scopes.at(-1)?.set(only, result);
+        this.scopes.at(-1)?.set(name, result);
       }
     }
     return result;
@@ -982,7 +981,7 @@ class Execution {
           this.write(node.text);
           break;
         case "action": {
-          const value = this.pipeline(node.pipe, dot, true);
+          const value = this.pipeline(node.pipe, dot);
           if (node.pipe.vars.length === 0) {
             this.write(formatted(value, false));
           }
@@ -995,7 +994,7 @@ class Execution {
         case "with": {
           this.scopes.push(new Map());
           try {
-            const value = this.pipeline(node.pipe, dot, true);
+            const value = this.pipeline(node.pipe, dot);
             const taken = truthy(value);
             this.run(taken ? node.list : node.otherwise, taken && node.k === "with" ? value : dot);
           } finally {
@@ -1013,7 +1012,9 @@ class Execution {
   private range(node: Control, dot: Value): void {
     this.scopes.push(new Map());
     try {
-      const value = this.pipeline({ ...node.pipe, vars: [] }, dot, false);
+      // Go's `evalPipeline` gives every variable the range declares or assigns the whole value first:
+      // https://github.com/golang/go/blob/go1.27.2/src/text/template/exec.go#L525
+      const value = this.pipeline(node.pipe, dot);
       let entries: [Value, Value][];
       if (value === null) {
         entries = [];
@@ -1031,13 +1032,20 @@ class Execution {
         return;
       }
       const [first, second] = node.pipe.vars;
+      const scope = this.scopes.at(-1);
+      const bind = (name: string, held: Value): void => {
+        if (node.pipe.assign) {
+          this.assign(name, held);
+        } else {
+          scope?.set(name, held);
+        }
+      };
       for (const [key, element] of entries) {
-        const scope = this.scopes.at(-1);
         if (second !== undefined && first !== undefined) {
-          scope?.set(first, key);
-          scope?.set(second, element);
+          bind(first, key);
+          bind(second, element);
         } else if (first !== undefined) {
-          scope?.set(first, element);
+          bind(first, element);
         }
         try {
           this.run(node.list, element);

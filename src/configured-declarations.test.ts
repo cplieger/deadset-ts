@@ -93,6 +93,10 @@ function written(): string {
       "declare global {",
       "  function provideGlobally(value: unknown): void;",
       "}",
+      "export class Bag {",
+      "  *[Symbol.iterator](): Iterator<number> {}",
+      '  ["c.d"](): void {}',
+      "}",
       'export const label = String("@example/lazy");',
       "",
     ].join("\n"),
@@ -101,7 +105,7 @@ function written(): string {
       "void import(later);",
       'import { late } from "later";',
       'import setup, { Container, Tokens, provide as give } from "@example/container";',
-      'import { Registry, wrap } from "./local.ts";',
+      'import { Bag, Registry, wrap } from "./local.ts";',
       "new Container<string>().bind(1);",
       "Container.create();",
       "Tokens.named('a');",
@@ -118,6 +122,7 @@ function written(): string {
       'declare const routes: Record<"go", () => void>;',
       "routes.go();",
       'void import("@example/lazy");',
+      "void [...new Bag()];",
       "",
     ].join("\n"),
   });
@@ -159,6 +164,14 @@ const ENTRIES: readonly (readonly [string, DeclarationEntry])[] = [
   ["unimported", { shape: "module", module: "@example/other", name: "bind" }],
   ["absent-member", { shape: "global", global: "JSON.serialize" }],
   ["absent-symbol", { shape: "symbol", symbol: "ts://@example/app/src/local.ts#unwrap" }],
+  ["iterate", { shape: "module", module: "./local.ts", name: "Bag.[Symbol.iterator]" }],
+  ["computed-literal", { shape: "module", module: "./local.ts", name: 'Bag.["c.d"]' }],
+  ["quoted-key", { shape: "module", module: "./local.ts", name: "Bag.'c.d'" }],
+  ["array-iterate", { shape: "global", global: "Array.[Symbol.iterator]" }],
+  [
+    "absent-computed",
+    { shape: "module", module: "./local.ts", name: "Bag.[Symbol.asyncIterator]" },
+  ],
 ];
 
 /** The result of `visit` over the one project of the written project, read through `engine`. */
@@ -277,6 +290,7 @@ describe("the declarations a configuration names", () => {
       "unimported",
       "absent-member",
       "absent-symbol",
+      "absent-computed",
     ]);
   });
 
@@ -356,7 +370,9 @@ describe("the declarations a configuration names", () => {
       const resolved = resolveEntries(
         project,
         held,
-        ENTRIES.slice(-3).map(([, entry]) => entry),
+        ENTRIES.filter(([label]) => label.startsWith("absent-") || label === "unimported").map(
+          ([, entry]) => entry,
+        ),
       );
       const nodes = callsOf(project).flatMap((call) => calleeName(call.expression) ?? []);
       const chains = aliasChains(project, held);

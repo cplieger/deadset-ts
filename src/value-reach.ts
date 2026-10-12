@@ -26,8 +26,12 @@ import type { Inventory } from "./inventory.ts";
 import { must } from "./query.ts";
 import type { ProjectView } from "./session.ts";
 
-/** The object types whose members the walk reads whatever declares them. */
-const WRITTEN = ObjectFlags.ObjectLiteral | ObjectFlags.Mapped;
+/**
+ * The object types whose members the walk reads whatever declares them. A reverse-mapped
+ * type has no symbol: it is the shape the checker infers from an argument the target
+ * writes against a homomorphic mapped type.
+ */
+const WRITTEN = ObjectFlags.ObjectLiteral | ObjectFlags.Mapped | ObjectFlags.ReverseMapped;
 
 /** The symbols of an anonymous object type the target writes as a type. */
 const LITERAL_SYMBOLS = SymbolFlags.TypeLiteral | SymbolFlags.ObjectLiteral;
@@ -38,7 +42,7 @@ export interface Reached {
   readonly classes: ReadonlySet<string>;
   /**
    * The members of the interfaces and object types the target writes, other than its
-   * classes: each data member, and each method named `toJSON` or `toString`.
+   * classes: each data member, and each method or getter named `toJSON` or `toString`.
    */
   readonly members: readonly TSSymbol[];
 }
@@ -50,6 +54,13 @@ interface ValueReach {
 
 /** The two conversion methods a serializer or a formatter resolves on a value's own shape. */
 const CONVERSION_NAMES: ReadonlySet<string> = new Set(["toJSON", "toString"]);
+
+/**
+ * The members that can answer a conversion: a serializer reads the name with `[[Get]]`
+ * and calls what it answers, so a getter answers it as a method does:
+ * https://tc39.es/ecma262/#sec-serializejsonproperty (step 2).
+ */
+export const CONVERSION_MEMBERS = SymbolFlags.Method | SymbolFlags.GetAccessor;
 
 /**
  * The types each value is checked against by the `satisfies` expressions and type assertions
@@ -147,8 +158,10 @@ export function valueReach<Brand>(
     if ((type.objectFlags & ObjectFlags.Anonymous) !== 0) {
       return (symbol.flags & LITERAL_SYMBOLS) !== 0;
     }
+    // A class the inventory holds is read as a class before this, so an own class
+    // here is one it does not hold, such as a class declared in a function.
     return (
-      (symbol.flags & SymbolFlags.Interface) !== 0 &&
+      (symbol.flags & (SymbolFlags.Interface | SymbolFlags.Class)) !== 0 &&
       symbol.declarations.every((handle) => own.has(handle.path))
     );
   };
@@ -178,12 +191,12 @@ export function valueReach<Brand>(
     return !isList && isWritten(type);
   };
 
-  /** The data members and conversion methods of one written object type. */
+  /** The data members and conversion members of one written object type. */
   const carried = (type: Type): readonly TSSymbol[] =>
     must(queries.propertiesOf(type)).filter(
       (property) =>
         (property.flags & SymbolFlags.Property) !== 0 ||
-        ((property.flags & SymbolFlags.Method) !== 0 && CONVERSION_NAMES.has(property.name)),
+        ((property.flags & CONVERSION_MEMBERS) !== 0 && CONVERSION_NAMES.has(property.name)),
     );
 
   /** The types a value of one type holds, read once per type. */

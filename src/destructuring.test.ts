@@ -106,27 +106,33 @@ describe("the members a destructuring reads", () => {
   });
 
   it("reads an assignment target's members off the value assigned", () => {
-    expect(readsAt(70), "a plain target").toEqual(["src/readers.ts:70:6 assign -> Row.key read"]);
-    expect(readsAt(72), "a target nested in a tuple element").toEqual([
-      "src/readers.ts:72:5 assign -> Row.pair read",
-      "src/readers.ts:72:14 assign -> Inner.deep read",
+    expect(readsAt(76), "a plain target").toEqual(["src/readers.ts:76:6 assign -> Row.key read"]);
+    expect(readsAt(78), "a target nested in a tuple element").toEqual([
+      "src/readers.ts:78:5 assign -> Row.pair read",
+      "src/readers.ts:78:14 assign -> Inner.deep read",
     ]);
     expect(
-      readsAt(74),
+      readsAt(80),
       "a defaulted nested target reads the member's type, not the default's",
     ).toEqual([
-      "src/readers.ts:74:6 assign -> Invocation.nested read",
-      "src/readers.ts:74:16 assign -> Inner.deep read",
+      "src/readers.ts:80:6 assign -> Invocation.nested read",
+      "src/readers.ts:80:16 assign -> Inner.deep read",
     ]);
-    expect(readsAt(75), "an optional member's value, without its undefined").toEqual([
-      "src/readers.ts:75:6 assign -> Invocation.extra read",
-      "src/readers.ts:75:15 assign -> Extra.note read",
+    expect(readsAt(81), "an optional member's value, without its undefined").toEqual([
+      "src/readers.ts:81:6 assign -> Invocation.extra read",
+      "src/readers.ts:81:15 assign -> Extra.note read",
     ]);
-    expect(readsAt(76), "an array literal's element").toEqual([
-      "src/readers.ts:76:6 assign -> Row.value read",
+    expect(readsAt(82), "an array literal's element").toEqual([
+      "src/readers.ts:82:6 assign -> Row.value read",
     ]);
-    expect(readsAt(77), "and an iterated array's element").toEqual([
-      "src/readers.ts:77:10 assign -> Row.key read",
+    expect(readsAt(83), "an iterated array's element").toEqual([
+      "src/readers.ts:83:10 assign -> Row.key read",
+    ]);
+    expect(readsAt(86), "an iterated set's element, which the iteration protocol answers").toEqual([
+      "src/readers.ts:86:10 assign -> Row.key read",
+    ]);
+    expect(readsAt(89), "and a target nested in the entry a map iterates").toEqual([
+      "src/readers.ts:89:13 assign -> Row.key read",
     ]);
   });
 
@@ -136,6 +142,71 @@ describe("the members a destructuring reads", () => {
     expect(ANALYZED.referenceRequests, "and the client measured no other").toBe(
       accounted(RESOLVED?.cost),
     );
+  });
+
+  it("reads an iterable's element through the iteration protocol, and by name where the protocol answers two", () => {
+    const analyzed = analyzeProject(
+      {
+        "unit.ts": [
+          "export interface Row {\n  key: string;\n}",
+          "export interface Other {\n  key: string;\n}",
+          'export class Bag {\n  *[Symbol.iterator](): Generator<Row> {\n    yield { key: "a" };\n  }\n}',
+          'export function* mixed(): Generator<Row, Other> {\n  yield { key: "a" };\n  return { key: "b" };\n}',
+          'export function read(bag: Bag): string {\n  let key = "";\n  for ({ key } of bag) {\n  }\n  for ({ key } of mixed()) {\n  }\n  return key;\n}\n',
+        ].join("\n"),
+      },
+      { references: { testFiles: [] } },
+    );
+    const held = analyzed.inventories[0]?.symbols ?? [];
+    const name = (id: string): string => held.find((symbol) => symbol.id === id)?.name ?? id;
+
+    expect(
+      (analyzed.references[0]?.references ?? [])
+        .filter((reference) => reference.position.line >= 18 && reference.position.line <= 20)
+        .filter((reference) => reference.resolution !== "batch")
+        .map(
+          (reference) =>
+            `${positionKey(reference.position)} ${name(reference.to)} ${reference.resolution}`,
+        ),
+      "a generator's yielded value, and both values a generator yields and returns",
+    ).toEqual([
+      "unit.ts:18:10 Row.key destructured",
+      "unit.ts:20:10 Row.key by-name",
+      "unit.ts:20:10 Other.key by-name",
+    ]);
+  });
+
+  it("finds an iterable's iterator by its symbol key, and reads by name where two symbols spell it", () => {
+    const analyzed = analyzeProject(
+      {
+        "unit.ts": [
+          "export interface Row {\n  key: string;\n}",
+          "export interface Other {\n  key: string;\n}",
+          'export class Forged {\n  *"__@iterator@fake"(): Generator<Other> {\n    yield { key: "b" };\n  }\n  *[Symbol.iterator](): Generator<Row> {\n    yield { key: "a" };\n  }\n}',
+          "declare const iterator: unique symbol;",
+          'export class Named {\n  *[iterator](): Generator<Other> {\n    yield { key: "b" };\n  }\n  *[Symbol.iterator](): Generator<Row> {\n    yield { key: "a" };\n  }\n}',
+          'export function read(forged: Forged, named: Named): string {\n  let key = "";\n  for ({ key } of forged) {\n  }\n  for ({ key } of named) {\n  }\n  return key;\n}\n',
+        ].join("\n"),
+      },
+      { references: { testFiles: [] } },
+    );
+    const held = analyzed.inventories[0]?.symbols ?? [];
+    const name = (id: string): string => held.find((symbol) => symbol.id === id)?.name ?? id;
+
+    expect(
+      (analyzed.references[0]?.references ?? [])
+        .filter((reference) => reference.position.line === 26 || reference.position.line === 28)
+        .filter((reference) => reference.resolution !== "batch")
+        .map(
+          (reference) =>
+            `${positionKey(reference.position)} ${name(reference.to)} ${reference.resolution}`,
+        ),
+      "a string key spelled as the checker's symbol key, and a unique symbol named iterator",
+    ).toEqual([
+      "unit.ts:26:10 Row.key destructured",
+      "unit.ts:28:10 Row.key by-name",
+      "unit.ts:28:10 Other.key by-name",
+    ]);
   });
 
   it("reads one property table per destructured type, whatever the patterns over it", () => {
@@ -249,13 +320,13 @@ describe("the members an assignment target reads", () => {
     ).toEqual(["3 Other.value by-name", "3 Row.value by-name"]);
   });
 
-  it("cost no element lookup where the iterated value is no type reference", () => {
+  it("cost only the iteration protocol's lookups where the iterated value is no type reference", () => {
     const { reads, cost } = patternReads(
       'export function count(): number {\n  let length = 0;\n  for ({ length } of "ab") {\n    console.log(length);\n  }\n  return length;\n}',
     );
 
     expect(reads).toEqual([]);
-    expect(cost).toMatchObject({ patternBatches: 1, patternLookups: 0 });
+    expect(cost).toMatchObject({ patternBatches: 1, patternLookups: 14 });
   });
 
   it("cost no non-nullable lookup where the value is no union, and one where it is", () => {

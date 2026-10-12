@@ -98,7 +98,7 @@ type ByReference = ReadonlyMap<string, readonly InventorySymbol[]>;
  */
 function readRecord(value: unknown, site: Position, byReference: ByReference, shape: Shape): Read {
   const refuse = (text: string, want: string): never => {
-    throw new SuppressionError(shape.mechanism, `${shape.file} ${siteText(site)}`, text, want);
+    throw new SuppressionError(shape.mechanism, siteText(site), text, want);
   };
   if (!isObject(value)) {
     return refuse(JSON.stringify(value), shape.recordWant);
@@ -217,7 +217,7 @@ function readDocument(
   const records: SuppressionRecord[] = [];
   const refusals: Refusal[] = [];
   (held as readonly unknown[]).forEach((value, index) => {
-    const offset = walk.opened[index];
+    const offset = walk.starts[index];
     const site = offset === undefined ? documentSite(shape) : positionAt(text, shape.file, offset);
     const read = readRecord(value, site, byReference, shape);
     records.push(...read.records);

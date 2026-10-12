@@ -31,6 +31,21 @@ describe("satisfies", () => {
     ["1.2.3-alpha.10", ">1.2.3-alpha.9"],
     ["1.0.0+build.5", "1.0.0"],
     ["1.2.3-beta.2", ">=1.2.3-alpha <1.2.3"],
+    // A wildcard major is no constraint, as node-semver reads it.
+    ["0.0.0-alpha", ">=0.0.0-alpha *"],
+    ["0.0.0-alpha", "* >=0.0.0-alpha"],
+    ["0.0.0-alpha", "x >=0.0.0-alpha"],
+    ["0.0.0-alpha", ">=0.0.0-alpha >=*"],
+    ["0.0.0-alpha", "<=* >=0.0.0-alpha"],
+    ["0.0.0-alpha", "~* >=0.0.0-alpha"],
+    ["0.0.0-alpha", "^* >=0.0.0-alpha"],
+    // node-semver drops the prerelease of a wildcard version.
+    ["1.2.5", "1.2.x-beta"],
+    ["1.2.5", "1.2.*-beta"],
+    ["1.5.0", "1.x.x-beta"],
+    ["1.2.5", "~1.2.x-beta"],
+    ["1.2.5", "^1.2.x-beta"],
+    ["1.2.5", ">=1.2.x-beta"],
   ])("%s satisfies %s", (version, range) => {
     expect(satisfies(version, range)).toBe(true);
   });
@@ -52,6 +67,13 @@ describe("satisfies", () => {
     ["1.2.3", "^1.2.3 || nonsense"],
     ["not-a-version", "*"],
     ["1.2", "1.x"],
+    ["0.0.0-alpha", "*"],
+    ["0.0.0-alpha", ">=*"],
+    ["1.2.5-beta", "1.2.x-beta"],
+    ["1.2.0-beta", "1.2.x-beta"],
+    ["1.2.0-beta", "~1.2.x-beta"],
+    ["1.2.0-beta", "^1.2.x-beta"],
+    ["1.2.0-beta", ">=1.2.x-beta"],
   ])("%s does not satisfy %s", (version, range) => {
     expect(satisfies(version, range)).toBe(false);
   });
