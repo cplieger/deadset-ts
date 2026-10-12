@@ -66,10 +66,12 @@ function partialOf(text: string): Partial | undefined {
     parts.push(Number(part));
   }
   const prerelease = prereleaseOf(match[4]);
-  if (prerelease === undefined || (prerelease.length > 0 && wild)) {
+  if (prerelease === undefined) {
     return undefined;
   }
-  return { major: parts[0], minor: parts[1], patch: parts[2], prerelease };
+  // node-semver drops the prerelease of a version with a wildcard part (`1.2.x-beta` is `1.2.x`):
+  // https://github.com/npm/node-semver/blob/v7.8.5/classes/range.js#L409-L430
+  return { major: parts[0], minor: parts[1], patch: parts[2], prerelease: wild ? [] : prerelease };
 }
 
 /** One exact version, or `undefined` where the text is not one. */
@@ -152,11 +154,14 @@ function passes(version: Version, comparator: Comparator): boolean {
   }
 }
 
-/** The comparators a version with missing parts stands for: any value of each. */
+/**
+ * The comparators a version with missing parts stands for: any value of each. A wildcard
+ * major is no comparator, so it never refuses a 0.0.0 prerelease another comparator admits.
+ */
 function anyOf(partial: Partial): Comparator[] {
   const { major, minor } = partial;
   if (major === undefined) {
-    return [{ operator: ">=", version: exact(0, 0, 0) }];
+    return [];
   }
   if (minor === undefined) {
     return [
@@ -210,7 +215,7 @@ function primitive(operator: "<" | "<=" | ">" | ">=", partial: Partial): Compara
   if (major === undefined) {
     return operator === "<" || operator === ">"
       ? [{ operator: "<", version: floorOf(0, 0, 0) }]
-      : [{ operator: ">=", version: exact(0, 0, 0) }];
+      : [];
   }
   if (minor !== undefined && patch !== undefined) {
     return [{ operator, version: lowest(partial) }];

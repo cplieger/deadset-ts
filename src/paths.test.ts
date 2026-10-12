@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   dirnamePath,
+  extensionOf,
   isAbsolutePath,
   joinPath,
   normalizePath,
@@ -67,6 +68,18 @@ describe("dirnamePath", () => {
     { path: "/", want: "/" },
   ])("answers $want for $path", ({ path, want }) => {
     expect(dirnamePath(path)).toBe(want);
+  });
+});
+
+describe("extensionOf", () => {
+  it.each([
+    { path: "/a/src/App.vue", want: ".vue" },
+    { path: "App.test.svelte", want: ".svelte" },
+    { path: "/a.b/Card", want: "" },
+    { path: "/a/.astro", want: "" },
+    { path: "", want: "" },
+  ])("answers $want for $path", ({ path, want }) => {
+    expect(extensionOf(path)).toBe(want);
   });
 });
 

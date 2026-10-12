@@ -27,6 +27,14 @@ const PROJECT: Readonly<Record<string, string>> = {
   ...module("queried"),
   ...module("idle"),
   ...module("loaded"),
+  ...module("spelled"),
+  ...module("letted"),
+  ...module("scoped"),
+  ...module("reassigned"),
+  ...module("hoisted"),
+  ...module("looped"),
+  ...module("exported"),
+  ...module("paramed"),
   "main.ts": [
     'import * as named from "./named.js";',
     'import * as indexed from "./indexed.js";',
@@ -34,6 +42,14 @@ const PROJECT: Readonly<Record<string, string>> = {
     'import * as passed from "./passed.js";',
     'import * as idle from "./idle.js";',
     'import * as queried from "./queried.js";',
+    'import * as spelled from "./spelled.js";',
+    'import * as lettedOriginal from "./letted.js";',
+    'import * as scopedOriginal from "./scoped.js";',
+    'import * as reassignedOriginal from "./reassigned.js";',
+    'import * as hoistedOriginal from "./hoisted.js";',
+    'import * as loopedOriginal from "./looped.js";',
+    'import * as exported from "./exported.js";',
+    'import * as paramed from "./paramed.js";',
     "",
     "function hold(value: unknown): void {",
     "  console.log(value);",
@@ -61,6 +77,40 @@ const PROJECT: Readonly<Record<string, string>> = {
     "const shape: Queried | undefined = undefined;",
     "hold(shape);",
     'await import("./loaded.js");',
+    "hold(spelled.spelledUsed);",
+    "hold({ spelled: 1 });",
+    "spelled: for (;;) {",
+    "  break spelled;",
+    "}",
+    "class Spelling {",
+    "  spelled = 1;",
+    "}",
+    "hold(new Spelling().spelled);",
+    "let letted = lettedOriginal;",
+    "hold(letted.lettedUsed);",
+    "{",
+    "  var scoped = scopedOriginal;",
+    "}",
+    "hold(scoped.scopedUsed);",
+    "let reassigned = reassignedOriginal;",
+    "hold(reassigned.reassignedUsed);",
+    "reassigned = reassignedOriginal;",
+    "{",
+    "  var hoisted = hoistedOriginal;",
+    "}",
+    "hold(hoisted);",
+    "for (let looped = loopedOriginal, once = true; once; once = false) {",
+    "  hold(looped.loopedUsed);",
+    "}",
+    "const looped = 1;",
+    "hold(looped);",
+    "hold(exported.exportedUsed);",
+    "export { hold as exported };",
+    "hold(paramed.paramedUsed);",
+    "function shadow(paramed?: number): number {",
+    "  return 0;",
+    "}",
+    "hold(shadow());",
     "",
   ].join("\n"),
 };
@@ -90,6 +140,14 @@ describe("a module namespace object", () => {
     ["aliased", "a const binding of a namespace object"],
     ["then", "the first parameter of a then callback"],
     ["destructured", "a property an object binding pattern destructures"],
+    [
+      "spelled",
+      "a property read by name, beside a property, a member and a label spelled as the binding",
+    ],
+    ["letted", "a let binding of a namespace object"],
+    ["scoped", "a var binding of a namespace object, read outside the block that declares it"],
+    ["looped", "a let binding a loop head declares, beside a later binding of its name"],
+    ["exported", "a property read by name, beside an export renamed to the binding's name"],
   ])("references only the export %s reads, through %s", (name) => {
     expect(reported().filter((line) => line.includes(` ${name}`))).toEqual([`DS1001 ${name}Spare`]);
   });
@@ -99,9 +157,21 @@ describe("a module namespace object", () => {
     ["passed", "the object passed as an argument"],
     ["handed", "a const binding of the object passed as an argument"],
     ["rested", "a rest element of a binding pattern"],
+    ["reassigned", "a let binding of a namespace object that is reassigned"],
+    [
+      "hoisted",
+      "a var binding of the object passed as an argument outside the block that declares it",
+    ],
     ["queried", "a typeof query of the object"],
   ])("references every export of %s, through %s", (name) => {
     expect(reported().filter((line) => line.includes(` ${name}`))).toEqual([]);
+  });
+
+  it("references only the export paramed reads, beside a parameter of its name", () => {
+    expect(found.filter((line) => line.includes(" paramed"))).toEqual([
+      "DS1001 paramedSpare",
+      "DS1801 paramed",
+    ]);
   });
 
   it.each([

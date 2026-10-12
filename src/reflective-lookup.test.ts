@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
 import { fixture } from "../__test-helpers__/fixtures.ts";
 import { writeProject } from "../__test-helpers__/projects.ts";
+import { treeFindings } from "../__test-helpers__/tree-findings.ts";
 import { runSweep, type RunSweep } from "./analysis.ts";
 import { resolve } from "./resolve.ts";
 import { run, type Writer } from "./run.ts";
@@ -187,5 +188,30 @@ describe("print-retained over a project whose templates and keys name members", 
       out.text,
       "regenerate with `npx vitest --run -u src/reflective-lookup.test.ts` and review the diff",
     ).toMatchFileSnapshot(fixture("golden", "named-members.retained.txt"));
+  });
+});
+
+describe("a Reflect call where the project augments the global Reflect", () => {
+  const found = treeFindings({
+    "main.ts": [
+      "class Server {",
+      "  restart(): void {}",
+      "}",
+      'Reflect.has(new Server(), "restart");',
+      "",
+    ].join("\n"),
+    "reflect.d.ts": [
+      "export {};",
+      "declare global {",
+      "  namespace Reflect {",
+      "    function trace(): void;",
+      "  }",
+      "}",
+      "",
+    ].join("\n"),
+  });
+
+  it("still reads the global Reflect, so the member its key spells is retained", () => {
+    expect(found.filter((one) => one.includes("Server."))).toEqual([]);
   });
 });

@@ -29,6 +29,7 @@ import {
   isExpressionStatement,
   isFunctionDeclaration,
   isFunctionExpression,
+  isFunctionLikeDeclaration,
   isHeritageClause,
   isIdentifier,
   isIfStatement,
@@ -49,6 +50,7 @@ import {
   isQualifiedName,
   isReturnStatement,
   isShorthandPropertyAssignment,
+  isSourceFile,
   isStringLiteral,
   isSwitchStatement,
   isThrowStatement,
@@ -77,6 +79,7 @@ import { isAnswered, UNANSWERED, type Answer } from "./query.ts";
 import type { Reference } from "./references.ts";
 import type { ProjectView } from "./session.ts";
 import { signatureOf, type SignatureNode } from "./signatures.ts";
+import { spellsNoBinding } from "./spelled-names.ts";
 
 /** The subject kind of each part this module reads. */
 type PartKind = "parameter" | "result" | "statement" | "store" | "case";
@@ -268,13 +271,12 @@ function caseKey(expression: Node): string | undefined {
   return undefined;
 }
 
-/** Every identifier below one node whose text one of the names spells, a member's name aside. */
+/** Every identifier below one node whose text one of the names spells as a reference. */
 function identifiersNaming(node: Node, names: ReadonlySet<string>): Identifier[] {
   const found: Identifier[] = [];
   const visit = (at: Node): void => {
     if (isIdentifier(at)) {
-      const parent = at.parent;
-      if (names.has(at.text) && !(isPropertyAccessExpression(parent) && parent.name === at)) {
+      if (names.has(at.text) && !spellsNoBinding(at)) {
         found.push(at);
       }
       return;
@@ -308,6 +310,16 @@ function inNestedFunction(node: Node, outer: Node): boolean {
     }
   }
   return false;
+}
+
+/** The nearest function around one node whose `arguments` object it names: an arrow has none. */
+function ownArgumentsOf(node: Node): Node | undefined {
+  for (let at = node.parent; !isSourceFile(at); at = at.parent) {
+    if (isFunctionLikeDeclaration(at) && !isArrowFunction(at)) {
+      return at;
+    }
+  }
+  return undefined;
 }
 
 /** Whether a body is a stub: it holds no statement, or nothing but `throw` statements. */
@@ -876,9 +888,13 @@ function parameterParts(
   ids: ReadonlyMap<Node, Answer<number>>,
   inValue: boolean,
 ): { readonly parts: PartFact[]; readonly contextual: ContextualParameter[] } {
-  // A function that reads `arguments` reads every parameter by position.
+  // A function that reads its `arguments` reads every parameter by position. A nested
+  // function other than an arrow has an `arguments` object of its own.
   const readsArguments =
-    !isArrowFunction(signature) && identifiersNaming(signature, new Set(["arguments"])).length > 0;
+    !isArrowFunction(signature) &&
+    identifiersNaming(signature, new Set(["arguments"])).some(
+      (use) => ownArgumentsOf(use) === signature,
+    );
   const read = reader.names.map(
     ({ name }) =>
       readsArguments ||

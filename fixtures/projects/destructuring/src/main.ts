@@ -22,7 +22,7 @@ const read = [
   ...keysOf([row]),
   String(total([row])),
   failure(() => undefined),
-  assign(row, [row], invocation),
+  assign(row, [row], invocation, new Set([row]), new Map([["a", row]])),
   String(reader(invocation)),
 ];
 if (read.length === 0) {

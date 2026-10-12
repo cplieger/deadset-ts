@@ -357,6 +357,51 @@ describe("a trailing directive", () => {
   });
 });
 
+describe("JSX text that begins with //", () => {
+  const root = writeProject({
+    "package.json": JSON.stringify({
+      name: "app",
+      private: true,
+      type: "module",
+      main: "./main.tsx",
+    }),
+    "tsconfig.json": JSON.stringify({
+      compilerOptions: {
+        strict: true,
+        target: "ESNext",
+        module: "NodeNext",
+        moduleResolution: "nodenext",
+        jsx: "preserve",
+        noEmit: true,
+      },
+      include: ["**/*.tsx"],
+    }),
+    "main.tsx": [
+      "declare global {",
+      "  namespace JSX {",
+      "    interface IntrinsicElements {",
+      "      [name: string]: unknown;",
+      "    }",
+      "  }",
+      "}",
+      "",
+      "export const page = <p>",
+      "  // deadset:ignore DS1001 -- JSX text, not a comment",
+      "</p>; function unused(): void {}",
+      "export const note = <b>// deadset:ignore junk</b>;",
+      "console.log(page, note);",
+      "",
+    ].join("\n"),
+  });
+  scratch.push(root);
+
+  it("is rendered text, so it is no directive, binds nothing and refuses nothing", () => {
+    const { result } = passOver(root, JSON.stringify({ target: { kind: "application" } }));
+    expect(named(result).filter((one) => one.endsWith(" unused"))).toEqual(["DS1002 unused"]);
+    expect(stale(result)).toEqual([]);
+  });
+});
+
 describe("a stale suppression", () => {
   it("has no severity a configuration may set", () => {
     expect(() =>

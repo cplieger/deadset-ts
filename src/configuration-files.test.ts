@@ -402,6 +402,21 @@ describe("a configuration file a script names by its configuration flag", () => 
     ).toEqual(["@example/unused"]);
   });
 
+  it("is a module the program holds read against the manifest whose script names it, wherever it sits", () => {
+    expect(
+      unusedIn(
+        {
+          "package.json":
+            '{ "name": "@example/app", "type": "module", "scripts": { "lint": "lint -c config/lint.ts", "top": "lint -c top.ts" }, "devDependencies": { "@example/plugin": "1.0.0", "@example/top": "1.0.0", "@example/unused": "1.0.0" } }\n',
+          "tsconfig.json": TSCONFIG.replace("src/**/*.ts", "**/*.ts"),
+          "config/lint.ts": 'export default { plugin: "@example/plugin" };\n',
+          "top.ts": 'export default { plugin: "@example/top" };\n',
+        },
+        ".",
+      ),
+    ).toEqual(["@example/unused"]);
+  });
+
   it("is one shell word however it is quoted, and is a JSON file or a module below the target root", () => {
     expect(
       unusedIn(

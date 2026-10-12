@@ -108,18 +108,37 @@ describe("project discovery", () => {
     expect(found.configFiles).toEqual([core]);
   });
 
-  it("names each configuration once however many paths reach it", () => {
-    const root = fixture("projects", "two-projects");
-
-    const found = discoverProjects(engine(), HOST, {
-      target: { id: "", path: join(root, "app", "tsconfig.json") },
-      consumers: [{ id: "", path: join(root, "core", "tsconfig.json") }],
+  it("follows no reference to a configuration outside the target root, which is an outside project", () => {
+    const root = scratch();
+    write(root, {
+      "dom/tsconfig.json":
+        '{ "include": [], "references": [{ "path": "../utils/tsconfig.lib.json" }, { "path": "./lib" }] }\n',
+      "dom/lib/tsconfig.json": EMPTY,
+      "utils/tsconfig.lib.json": EMPTY,
     });
 
+    const found = discoverProjects(engine(), HOST, scopeForDir(HOST, join(root, "dom")));
+
     expect(found.configFiles).toEqual([
-      join(root, "app", "tsconfig.json"),
-      join(root, "core", "tsconfig.json"),
+      join(root, "dom", "lib", "tsconfig.json"),
+      join(root, "dom", "tsconfig.json"),
     ]);
+    expect(found.notBuilt).toEqual([]);
+  });
+
+  it("follows the references of a target configuration file only below its directory", () => {
+    const root = scratch();
+    write(root, {
+      "app/tsconfig.json":
+        '{ "include": [], "references": [{ "path": "./lib" }, { "path": "../core" }] }\n',
+      "app/lib/tsconfig.json": EMPTY,
+      "core/tsconfig.json": EMPTY,
+    });
+    const target = join(root, "app", "tsconfig.json");
+
+    const found = discoverProjects(engine(), HOST, scopeOf(target));
+
+    expect(found.configFiles).toEqual([target, join(root, "app", "lib", "tsconfig.json")]);
   });
 
   it("reads no configuration a consumer's path names, which is the consumer's own", () => {
@@ -155,6 +174,22 @@ describe("project discovery", () => {
     expect(found.configFiles).toEqual([
       join(root, "tsconfig.build.json"),
       join(root, "tsconfig.json"),
+    ]);
+  });
+
+  it("follows the references of a configuration with a comment and a trailing comma", () => {
+    const root = scratch();
+    write(root, {
+      "app/tsconfig.json":
+        '// note\n{ "include": [], "references": [{ "path": "../other.json" },], }\n',
+      "other.json": '{ "include": [], "compilerOptions": { "composite": true } }\n',
+    });
+
+    const found = discoverProjects(engine(), HOST, scopeForDir(HOST, root));
+
+    expect(found.configFiles).toEqual([
+      join(root, "app", "tsconfig.json"),
+      join(root, "other.json"),
     ]);
   });
 
@@ -292,6 +327,40 @@ describe("a declared matrix", () => {
     const message = thrown instanceof DiscoveryError ? thrown.message : "";
     expect(message).toContain(`the project "a" (${join(root, "a", "tsconfig.json")}) references`);
     expect(message).toContain(
+      `${join(root, "b", "tsconfig.json")}, which the build matrix does not name`,
+    );
+  });
+
+  it("names no configuration a declared project references outside the target root", () => {
+    const root = scratch();
+    write(root, {
+      "dom/tsconfig.json": '{ "include": [], "references": [{ "path": "../utils" }] }\n',
+      "utils/tsconfig.json": EMPTY,
+    });
+
+    const found = discoverProjects(engine(), HOST, scopeOf(join(root, "dom")), [
+      { shape: "project", id: "dom", project: "tsconfig.json" },
+    ]);
+
+    expect(found.configFiles).toEqual([join(root, "dom", "tsconfig.json")]);
+  });
+
+  it("reads the references of a commented declared configuration", () => {
+    const root = scratch();
+    write(root, {
+      "a/tsconfig.json":
+        '{\n  // note\n  "include": [],\n  "references": [{ "path": "../b" }],\n}\n',
+      "b/tsconfig.json": EMPTY,
+    });
+
+    const thrown = thrownBy(() =>
+      discoverProjects(engine(), HOST, scopeOf(root), [
+        { shape: "project", id: "a", project: "a/tsconfig.json" },
+      ]),
+    );
+
+    expect(thrown).toBeInstanceOf(DiscoveryError);
+    expect(thrown instanceof DiscoveryError ? thrown.message : "").toContain(
       `${join(root, "b", "tsconfig.json")}, which the build matrix does not name`,
     );
   });

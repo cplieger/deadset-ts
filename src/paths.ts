@@ -67,6 +67,16 @@ export function dirnamePath(path: string): string {
   return cut === 0 ? SEPARATOR : normalized.slice(0, cut);
 }
 
+/**
+ * The extension of one path's last segment, from its last full stop, or the empty string
+ * where it has none. A segment that only starts with a full stop has none.
+ */
+export function extensionOf(path: string): string {
+  const name = path.slice(path.lastIndexOf(SEPARATOR) + 1);
+  const dot = name.lastIndexOf(".");
+  return dot <= 0 ? "" : name.slice(dot);
+}
+
 /** One path resolved against a directory, absolute where that directory is. */
 export function resolvePath(against: string, path: string): string {
   return isAbsolutePath(path) ? normalizePath(path) : joinPath(against, path);

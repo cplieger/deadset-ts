@@ -18,7 +18,7 @@ import type { DetectorInput, Evidence } from "./exempt.ts";
 import type { Host } from "./host.ts";
 import type { SymbolKind } from "./inventory.ts";
 import { memberNames } from "./member-names.ts";
-import { isAbsolutePath, joinPath, normalizePath, relativePath } from "./paths.ts";
+import { extensionOf, isAbsolutePath, joinPath, normalizePath, relativePath } from "./paths.ts";
 import { isComponentFile, type Position } from "./position.ts";
 
 /** One template, by its path below the target root. */
@@ -125,7 +125,10 @@ function stringEnd(text: string, from: number): number {
   return at + 1;
 }
 
-/** The end of the `${` substitution whose expression starts at `from`, past its closing brace. */
+/**
+ * The end of the `${` substitution whose expression starts at `from`: past its closing brace,
+ * or one past the text's end where none closes it, so the expression is the text to its end.
+ */
 function substitutionEnd(text: string, from: number): number {
   let depth = 1;
   let at = from;
@@ -149,7 +152,7 @@ function substitutionEnd(text: string, from: number): number {
     }
     at += 1;
   }
-  return at;
+  return text.length + 1;
 }
 
 /** The end of the template literal at `from`; each `${…}` expression goes to `substitution`. */
@@ -243,8 +246,8 @@ function namesOf(text: string, delimiters: TemplateDelimiters): readonly Named[]
 }
 
 /** Every identifier the markup of one component file writes in an action. */
-function markupNamesOf(text: string): readonly Named[] {
-  return readComponent(text).markup.flatMap((one) =>
+function markupNamesOf(file: TemplateFile): readonly Named[] {
+  return readComponent(file.text, extensionOf(file.path)).markup.flatMap((one) =>
     identifiersOf(one.text, true).map(({ name, offset }) => ({
       name,
       offset: one.start + offset,
@@ -287,7 +290,7 @@ export function templateField<Brand>(input: DetectorInput<Brand>): readonly Evid
       names: namesOf(file.text, templates.delimiters),
       markup: false,
     })),
-    ...components.map((file) => ({ file, names: markupNamesOf(file.text), markup: true })),
+    ...components.map((file) => ({ file, names: markupNamesOf(file), markup: true })),
   ];
   for (const { file, names, markup } of scanned) {
     for (const named of names) {

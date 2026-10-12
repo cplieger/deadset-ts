@@ -20,7 +20,7 @@ import { SymbolFlags, type NodeHandle, type Symbol as TSSymbol } from "@typescri
 import type { AliasChains } from "./alias-chain.ts";
 import { resolvedTargets } from "./calls.ts";
 import type { Config, DeclarationEntry } from "./config.ts";
-import type { Inventory } from "./inventory.ts";
+import { declaredComponent, type Inventory } from "./inventory.ts";
 import { must, Unanswerable } from "./query.ts";
 import { nameComponent } from "./ref.ts";
 import type { ProjectView } from "./session.ts";
@@ -118,15 +118,44 @@ function candidatesOf<Brand>(
   ];
 }
 
-/** The member of one container a path component spells, followed through any alias. */
+/**
+ * The properties of the type one container declares, or of its constructor's type for a
+ * static member. A member a symbol keys is bound to that type later than the container's
+ * symbol table is built, so the table does not hold it.
+ */
+function typeMembersOf<Brand>(
+  project: ProjectView<Brand>,
+  container: TSSymbol,
+  isStatic: boolean,
+): readonly TSSymbol[] {
+  const queries = project.queries;
+  const type = must(isStatic ? queries.typeOfSymbol(container) : queries.declaredTypeOf(container));
+  return type === undefined ? [] : must(queries.propertiesOf(type));
+}
+
+/**
+ * The member of one container a path component spells, followed through any alias. A
+ * component in brackets is a computed key, compared with the key each declaration of a
+ * candidate writes: the checker names a member a symbol keys by no spelling of its own.
+ */
 function memberOf<Brand>(
   project: ProjectView<Brand>,
   container: TSSymbol,
   component: string,
   isStatic: boolean,
 ): TSSymbol | undefined {
-  const member = candidatesOf(project, container, isStatic).find(
-    (candidate) => nameComponent(candidate.name) === component,
+  const computed = component.startsWith("[");
+  const candidates = candidatesOf(project, container, isStatic);
+  const member = (
+    computed ? [...candidates, ...typeMembersOf(project, container, isStatic)] : candidates
+  ).find(
+    (candidate) =>
+      nameComponent(candidate.name) === component ||
+      (computed &&
+        candidate.declarations.some((handle) => {
+          const node = project.declarationAt(handle)?.node;
+          return node !== undefined && declaredComponent(node) === component;
+        })),
   );
   return member === undefined ? undefined : unaliased(project, member);
 }

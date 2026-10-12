@@ -376,8 +376,8 @@ export function projectNeeds<Brand>(
     sourceFilesOf(project, targetRoot),
     parse,
   );
-  for (const { file } of configuration.modules) {
-    const names = declaredAt(file.fileName);
+  for (const { file, manifestDir } of configuration.modules) {
+    const names = declaredAt(joinPath(manifestDir, MANIFEST));
     for (const { node, text } of moduleStrings(file)) {
       use(ownersOf(file, held, node), dependenciesNamed(text, names), file.fileName);
     }

@@ -319,14 +319,15 @@ export function contextualUses<Brand>(
     return found;
   };
 
-  const calls = new Map<number, Called | undefined>();
+  const calls = new Map<number, readonly Called[]>();
   /**
-   * The parameter and return types of a type's one call signature, or of its one construct
-   * signature where it has no call signature, read once per type.
+   * The parameter and return types of each of a type's call signatures, or of each of its
+   * construct signatures where it has no call signature, read once per type.
    */
-  const callOf = (type: Type): Called | undefined => {
-    if (calls.has(type.id)) {
-      return calls.get(type.id);
+  const callsOf = (type: Type): readonly Called[] => {
+    const known = calls.get(type.id);
+    if (known !== undefined) {
+      return known;
     }
     lookups += 1;
     let kind = SignatureKind.Call;
@@ -336,31 +337,29 @@ export function contextualUses<Brand>(
       kind = SignatureKind.Construct;
       signatures = queries.signaturesOf(type, kind);
     }
-    let called: Called | undefined;
-    const [signature, ...more] = isAnswered(signatures) ? signatures : [];
-    if (signature !== undefined && more.length === 0) {
+    const called = (isAnswered(signatures) ? signatures : []).map((signature): Called => {
       const parameters = signature.parameters.map((_parameter, index) =>
         queries.parameterType(signature, index),
       );
       const result = queries.returnTypeOf(signature);
       lookups += parameters.length + 1;
-      called = {
+      return {
         kind,
         parameters: parameters.map((one) => (isAnswered(one) ? one : undefined)),
         result: isAnswered(result) ? result : undefined,
       };
-    }
+    });
     calls.set(type.id, called);
     return called;
   };
 
   /**
    * Each object type a value of `source` is checked as against the object types of
-   * `target`: the value's own, and through array elements, a function's parameters,
-   * checked the other way, and result, and the type arguments two instantiations share
-   * by place, an array among them, as an array reaches `Iterable<T>`.
-   * A source that is one of the target's own object types matches it as it stands. Each
-   * pair is compared once, which ends the walk over a recursive type.
+   * `target`: the value's own, and through array elements, every pair of signatures
+   * (parameters checked the other way, then results), which reads more than the overload
+   * the checker picks, and the type arguments of two instantiations by place, as an array
+   * reaches `Iterable<T>`. A source that is one of the target's own object types matches
+   * it as it stands. Each pair is compared once, which ends the walk over a recursive type.
    */
   const compared = (
     source: Type | undefined,
@@ -385,7 +384,7 @@ export function contextualUses<Brand>(
         into.push({ source: one, targets, outside: true });
       }
       const element = elementOf(one);
-      const called = element === undefined ? callOf(one) : undefined;
+      const called = element === undefined ? callsOf(one) : [];
       const sourceArguments = typeArgumentsOf(one);
       for (const part of targets) {
         const partElement = elementOf(part);
@@ -399,17 +398,17 @@ export function contextualUses<Brand>(
         sourceArguments.slice(0, targetArguments.length).forEach((argument, index) => {
           compared(argument, targetArguments[index], into, seen);
         });
-        if (element !== undefined) {
+        if (element !== undefined || called.length === 0) {
           continue;
         }
-        const other = called === undefined ? undefined : callOf(part);
-        if (called === undefined || other?.kind !== called.kind) {
-          continue;
+        for (const other of callsOf(part)) {
+          for (const signature of called.filter((one) => one.kind === other.kind)) {
+            other.parameters.forEach((parameter, index) => {
+              compared(parameter, signature.parameters[index], into, seen);
+            });
+            compared(signature.result, other.result, into, seen);
+          }
         }
-        other.parameters.forEach((parameter, index) => {
-          compared(parameter, called.parameters[index], into, seen);
-        });
-        compared(called.result, other.result, into, seen);
       }
     }
   };
@@ -431,7 +430,7 @@ export function contextualUses<Brand>(
       if (element !== undefined) {
         return mayCarry(element, seen);
       }
-      return callOf(part) !== undefined || typeArgumentsOf(part).some((one) => mayCarry(one, seen));
+      return callsOf(part).length > 0 || typeArgumentsOf(part).some((one) => mayCarry(one, seen));
     });
   };
 
@@ -467,11 +466,12 @@ export function contextualUses<Brand>(
         continue;
       }
       for (const [name, member] of sourceMembers) {
+        // A member the position shares with the source is no read of it. A member with no
+        // declaration, as a mapped type over literal keys has, is never one it shares.
         const read = tables.some((table) => {
           const declared = table.get(name);
           return (
             declared !== undefined &&
-            declared.handles.size > 0 &&
             ![...declared.handles].some((handle) => member.handles.has(handle))
           );
         });

@@ -212,6 +212,30 @@ describe("a component file's import binding of a module namespace", () => {
     },
     60_000,
   );
+
+  it("keeps every export of a module a declare module declaration holds, and not every member of a namespace", () => {
+    const root = writeProject({
+      "package.json": '{ "name": "@example/ns", "private": true, "type": "module" }\n',
+      "src/main.ts": 'import Widget from "./Widget.vue";\nconsole.log(Widget);\n',
+      "src/Widget.vue":
+        '<template>\n  <p>{{ amb.shown }} {{ N.shown }}</p>\n</template>\n\n<script setup lang="ts">\nimport * as amb from "ambient";\nimport { N } from "./n.js";\n</script>\n',
+      "src/ambient.ts":
+        'declare module "ambient" {\n  export const shown: number;\n  export const hidden: number;\n}\n',
+      "src/n.ts":
+        "export namespace N {\n  export const shown = 1;\n  export const hidden = 2;\n}\n",
+    });
+    const into = mkdtempSync(join(tmpdir(), "deadset-ts-component-namespace-"));
+    const got = analyze(
+      '{"target":{"kind":"application"},"ts":{"entry_files":["src/main.ts"]}}\n',
+      root,
+      into,
+    );
+    rmSync(root, { recursive: true, force: true });
+    rmSync(into, { recursive: true, force: true });
+
+    expect(got.findings.filter((line) => line.includes(" src/ambient.ts:"))).toEqual([]);
+    expect(got.findings).toContain("DS1001 src/n.ts:3:16-3 N.hidden");
+  }, 60_000);
 });
 
 describe("content mappers a configuration declares", () => {
@@ -310,5 +334,60 @@ describe("content mappers a configuration declares", () => {
     expect(analyzed.code).toBe(0);
     expect(analyzed.findings).toEqual([]);
     expect(analyzed.skips).toHaveLength(1);
+  });
+});
+
+describe("component files read by their own framework's parser", () => {
+  let written: string;
+  let into: string;
+  let got: Analyzed;
+  let retained: string[];
+
+  beforeAll(() => {
+    written = writeProject({
+      "package.json": '{ "name": "app", "private": true, "type": "module" }\n',
+      "src/main.ts":
+        'import View from "./View.vue";\nimport Card from "./Card.svelte";\nexport const all = [View, Card];\n',
+      "src/View.vue":
+        '<template><p :title="`${row.note"></p><p :alt="`${row.not"></p></template>\n<script lang="ts">\ninterface Row {\n  note: string;\n  not: string;\n}\nconst row: Row = { note: "", not: "" };\n</script>\n',
+      "src/Card.svelte":
+        '<script lang="ts">\ninterface Item {\n  shown: string;\n  hidden: string;\n}\nconst item: Item = { shown: "", hidden: "" };\n</script>\n<!-->{item.hidden}\n<div>\n<script>const inside = 1;</script>\n</div>\n<!-- -->\n<p>{item.shown}</p>\n',
+    });
+    into = mkdtempSync(join(tmpdir(), "deadset-ts-component-dialect-"));
+    const config = '{"target":{"kind":"application"},"ts":{"entry_files":["src/main.ts"]}}\n';
+    got = analyze(config, written, into);
+    const out = new MemoryWriter();
+    run(
+      ["print-retained", "--target=.", `--config=${join(into, "deadset.json")}`],
+      out,
+      new MemoryWriter(),
+      {
+        ...nodeHost(),
+        workingDirectory: () => written,
+      },
+    );
+    retained = out.text.split("\n").filter((line) => line.includes("template-field"));
+  }, 60_000);
+
+  afterAll(() => {
+    rmSync(written, { recursive: true, force: true });
+    rmSync(into, { recursive: true, force: true });
+  });
+
+  it("reads a markup substitution left open to the end of its value", () => {
+    expect(retained.filter((line) => line.includes("View.vue"))).toEqual([
+      'ts://app/src/View.vue#Row.note\ttemplate-field\tsrc/View.vue:1:29\tnamed by :title="`${row.note"',
+      'ts://app/src/View.vue#Row.not\ttemplate-field\tsrc/View.vue:1:55\tnamed by :alt="`${row.not"',
+    ]);
+  });
+
+  it("reads a .svelte comment as Svelte does, holding back nothing it hides and warning on no script in it", () => {
+    expect(retained.filter((line) => line.includes("Card.svelte"))).toEqual([
+      "ts://app/src/Card.svelte#Item.shown\ttemplate-field\tsrc/Card.svelte:13:10\tnamed by {item.shown}",
+    ]);
+    expect(got.findings.filter((line) => line.includes("Card.svelte"))).toEqual([
+      "DS1301 src/Card.svelte:4:3-4 Item.hidden",
+    ]);
+    expect(got.err).not.toContain("Card.svelte");
   });
 });

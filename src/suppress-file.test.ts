@@ -174,6 +174,24 @@ describe("an ignore entry", () => {
     ]);
   });
 
+  it("that is refused is named once, at its own line and column, whatever its value", () => {
+    const refused = (text: string): string => {
+      try {
+        readIgnoreFile(hostWith({ [IGNORE_FILE]: text }), ROOT, []);
+        return "read";
+      } catch (error: unknown) {
+        return error instanceof ConfigError ? error.message : String(error);
+      }
+    };
+
+    expect(refused(`{"ignore": [\n  null,\n  ${JSON.stringify(ENTRY)}\n]}`)).toBe(
+      "ignore deadset-ignore.json:2:3: null: want an entry naming code, symbol, path and reason, each a string",
+    );
+    expect(refused(`{"ignore": [{"scope": "x"}]}`)).toMatch(
+      /^ignore deadset-ignore\.json:1:13: the member "scope" is not one the grammar declares: want /u,
+    );
+  });
+
   it("binds only the declaration whose reference and file both equal the ones it names", () => {
     const named = declaration(ENTRY.symbol, ENTRY.path);
     const held = readIgnoreFile(

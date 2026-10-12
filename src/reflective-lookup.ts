@@ -120,8 +120,9 @@ export function reflectiveLookup<Brand>(input: DetectorInput<Brand>): readonly E
     return [];
   }
 
-  // Whether each written `Reflect` is the global one, asked in one batch: a
-  // declaration of that name in one of the project's own files shadows it.
+  // Whether each written `Reflect` is the global one, asked in one batch: a name
+  // declared only in the project's own files shadows it, and an augmentation of the
+  // global merges into it, which keeps the library's declaration.
   const ownFiles = project.ownPaths();
   const reflects = lookups.flatMap((lookup) =>
     lookup.reflect === undefined ? [] : [lookup.reflect],
@@ -131,11 +132,12 @@ export function reflectiveLookup<Brand>(input: DetectorInput<Brand>): readonly E
     project.symbolsAt(reflects.map((node) => project.handle(node))).forEach((symbol, index) => {
       const node = reflects[index];
       // A name the checker did not answer for is read as the global, which retains.
-      const declaredHere =
-        symbol === UNANSWERED
-          ? false
-          : symbol?.declarations.some((declaration) => ownFiles.has(declaration.path));
-      if (node !== undefined && declaredHere === false) {
+      const isGlobal =
+        symbol === UNANSWERED ||
+        (symbol !== undefined &&
+          (symbol.declarations.length === 0 ||
+            symbol.declarations.some((declaration) => !ownFiles.has(declaration.path))));
+      if (node !== undefined && isGlobal) {
         global.add(node);
       }
     });

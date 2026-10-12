@@ -5,6 +5,7 @@ import { nodeHost } from "../bin/node-host.ts";
 import { emitterInputOf, findingsOf } from "../__test-helpers__/emitter-input.ts";
 import { fixture } from "../__test-helpers__/fixtures.ts";
 import { writeProject } from "../__test-helpers__/projects.ts";
+import { treeFindings } from "../__test-helpers__/tree-findings.ts";
 import { runSweep, type RunSweep } from "./analysis.ts";
 import { resolve } from "./resolve.ts";
 import { run, type Writer } from "./run.ts";
@@ -257,6 +258,157 @@ describe("serialization-contract over checked values and ambient callees", () =>
       "DS1301 src/main.ts:122 HiddenT.viaExtends",
       "DS1301 src/main.ts:158 HiddenS.viaSatisfies",
     ]);
+  });
+});
+
+describe("serialization-contract over conversions declared as accessors", () => {
+  const found = treeFindings({
+    "main.ts": [
+      "export class Odd {",
+      "  id = 1;",
+      "  get toJSON(): () => number {",
+      "    return () => this.id;",
+      "  }",
+      "  get label(): string {",
+      '    return "odd";',
+      "  }",
+      "}",
+      "console.log(JSON.stringify(new Odd()));",
+      "export interface Shape {",
+      "  id: number;",
+      "  get toJSON(): () => number;",
+      "}",
+      "export const shape: Shape = {",
+      "  id: 1,",
+      "  get toJSON() {",
+      "    return () => 2;",
+      "  },",
+      "};",
+      "console.log(JSON.stringify(shape));",
+      "",
+    ].join("\n"),
+  });
+
+  it("holds back a class's toJSON getter, which JSON.stringify reads and calls", () => {
+    expect(found.filter((one) => one.includes("Odd."))).toEqual(["DS1003 Odd.label"]);
+  });
+
+  it("holds back the toJSON getter of an interface a serialized value carries", () => {
+    expect(found.filter((one) => one.includes("Shape."))).toEqual([]);
+  });
+});
+
+/** The calls whose arguments reach a serializer through a callee the tree merges into. */
+const MERGED_CALLS = [
+  "class Mark {",
+  "  id = 1;",
+  "}",
+  "console.log(new Mark());",
+  "class Sent {",
+  "  id = 1;",
+  "}",
+  "function send(value: unknown): string {",
+  "  return JSON.stringify(value);",
+  "}",
+  "console.log(send.call(undefined, new Sent()));",
+  "",
+].join("\n");
+
+/** The members `merged.ts` merges into the global `Console` and `CallableFunction`. */
+const MERGED_INTERFACES = [
+  "interface Console {",
+  '  log(value: { id: number }, tag: "typed"): void;',
+  "}",
+  "interface CallableFunction {",
+  '  call(this: Function, thisArg: unknown, tag: "x"): void;',
+  "}",
+];
+
+describe.each([
+  [
+    "a declare global block of a module",
+    {
+      "merged.ts": [
+        "export {};",
+        "declare global {",
+        ...MERGED_INTERFACES.map((line) => `  ${line}`),
+        "}",
+        "",
+      ].join("\n"),
+    },
+  ],
+  [
+    "a script file's interfaces",
+    {
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: {
+          strict: true,
+          target: "ESNext",
+          module: "NodeNext",
+          moduleResolution: "nodenext",
+          moduleDetection: "legacy",
+          noEmit: true,
+        },
+        include: ["**/*.ts"],
+      }),
+      "merged.ts": [...MERGED_INTERFACES, ""].join("\n"),
+    },
+  ],
+])("serialization-contract where %s merge into standard-library callees", (_form, merged) => {
+  const found = treeFindings({ ...merged, "main.ts": MERGED_CALLS });
+
+  it("reads console.log, which the call resolves to the library's signature of, as outside the analysis", () => {
+    expect(found.filter((one) => one.includes("Mark."))).toEqual([]);
+  });
+
+  it("reads Function.prototype.call as a call of the function", () => {
+    expect(found.filter((one) => one.includes("Sent."))).toEqual([]);
+  });
+});
+
+describe("serialization-contract through the types a serialized value's walk meets", () => {
+  const found = treeFindings({
+    "main.ts": [
+      "class Mapped {",
+      "  id = 1;",
+      "}",
+      "function unbox<T>(boxes: { [K in keyof T]: { v: T[K] } }): T {",
+      "  return Object.fromEntries(",
+      "    Object.entries(boxes).map(([k, b]) => [k, (b as { v: unknown }).v]),",
+      "  ) as T;",
+      "}",
+      "const unboxed = unbox({ held: { v: new Mapped() } });",
+      "console.log(JSON.stringify(unboxed));",
+      "class InFunction {",
+      "  id = 1;",
+      "}",
+      "function local() {",
+      "  class Local {",
+      "    held = new InFunction();",
+      "  }",
+      "  return new Local();",
+      "}",
+      "console.log(JSON.stringify(local()));",
+      "class InExpression {",
+      "  id = 1;",
+      "}",
+      "const Anonymous = class {",
+      "  held = new InExpression();",
+      "};",
+      "console.log(JSON.stringify(new Anonymous()));",
+      "",
+    ].join("\n"),
+  });
+
+  it("walks a type the checker infers through a homomorphic mapped type", () => {
+    expect(found.filter((one) => one.includes("Mapped."))).toEqual([]);
+  });
+
+  it.each([
+    ["a class declared in a function", "InFunction"],
+    ["an anonymous class expression", "InExpression"],
+  ])("walks the fields of %s, which the inventory does not hold", (_name, held) => {
+    expect(found.filter((one) => one.includes(`${held}.`))).toEqual([]);
   });
 });
 

@@ -80,7 +80,14 @@ import {
   type Matrix,
   type SweepResult,
 } from "./matrix.ts";
-import { dirnamePath, joinPath, normalizePath, relativePath, resolvePath } from "./paths.ts";
+import {
+  dirnamePath,
+  extensionOf,
+  joinPath,
+  normalizePath,
+  relativePath,
+  resolvePath,
+} from "./paths.ts";
 import type { UnansweredQuestion } from "./query.ts";
 import { byPosition, isComponentFile, type Position } from "./position.ts";
 import { LANGUAGE, type TypeErrorSkip, type UnansweredCount } from "./report.ts";
@@ -232,6 +239,8 @@ interface ReadProjects<Answer> {
   readonly unanswered: readonly UnansweredQuestion[];
   /** Per configuration whose component files the run cannot read, the reason. */
   readonly componentsUnread: readonly ComponentsUnread[];
+  /** Per analyzed configuration, each library it names that the compiler cannot find. */
+  readonly librariesUnfound: readonly LibraryUnfound[];
   /** The convention rows the run applied. */
   readonly conventionsApplied: readonly AppliedConvention[];
   /** The dependencies the applied rows' short names use. */
@@ -394,6 +403,7 @@ function readProjects<Answer>(
   const failures: LocatedDiagnostic[] = [];
   const unbuildable: SetupFailure[] = [];
   const setupDropped: SetupFailure[] = [];
+  const librariesUnfound: LibraryUnfound[] = [];
   const consumed = new Map<string, Reference>();
   const heldFiles = new Set<string>();
   let outsideTests: readonly OutsideTest[] = [];
@@ -458,10 +468,6 @@ function readProjects<Answer>(
             : resolvePath(host.workingDirectory(), consumer.path),
         paths: pathsOf(engine, project.configFile),
       });
-      if (reading.failing.length > 0) {
-        failures.push(...reading.failing);
-        return undefined;
-      }
       if (consumer !== undefined && reading.missing.length > 0) {
         unbuildable.push(
           ...reading.missing.map((one) => ({
@@ -502,6 +508,12 @@ function readProjects<Answer>(
         }
         return undefined;
       }
+      librariesUnfound.push(
+        ...raw.unfound.map((one) => ({
+          configFile: project.configFile,
+          error: renderDiagnostic(one, (path) => relativePath(absoluteRoot, path) ?? path),
+        })),
+      );
       const configuration = ids.get(project.configFile) ?? project.configFile;
       const read = (): ProjectRead => {
         const held = inventory(project, host, targetRoot);
@@ -589,6 +601,7 @@ function readProjects<Answer>(
     notBuilt,
     unanswered: session.unanswered,
     componentsUnread: workspace?.componentsUnread ?? [],
+    librariesUnfound,
     conventionsApplied: conventions.applied,
     conventionUses: conventions.uses,
     memberDirs,
@@ -775,6 +788,8 @@ interface ReadRun<Extra> {
   readonly unanswered: readonly UnansweredQuestion[];
   /** Per configuration whose component files the run cannot read, the reason. */
   readonly componentsUnread: readonly ComponentsUnread[];
+  /** Per analyzed configuration, each library it names that the compiler cannot find. */
+  readonly librariesUnfound: readonly LibraryUnfound[];
   /** The convention rows the run applied. */
   readonly conventionsApplied: readonly AppliedConvention[];
   /** The dependencies the applied rows' short names use. */
@@ -842,7 +857,7 @@ function readRun<Extra>(
       evidence,
       componentFiles: components.map(pathOf),
       componentWarnings: components.flatMap((file) =>
-        readComponent(file.originalText).warnings.map((warning) => ({
+        readComponent(file.originalText, extensionOf(file.fileName)).warnings.map((warning) => ({
           path: pathOf(file),
           line: lineOf(file.originalText, warning.offset),
           reason: warning.reason,
@@ -942,6 +957,7 @@ function readRun<Extra>(
     notBuilt: read.notBuilt,
     unanswered: read.unanswered,
     componentsUnread: read.componentsUnread,
+    librariesUnfound: read.librariesUnfound,
     conventionsApplied: read.conventionsApplied,
     conventionUses: read.conventionUses,
     memberDirs: read.memberDirs,
@@ -1341,6 +1357,7 @@ function readAnalysis(
       notBuilt: read.notBuilt,
       unanswered: read.unanswered,
       componentsUnread: read.componentsUnread,
+      librariesUnfound: read.librariesUnfound,
       conventionsApplied: read.conventionsApplied,
     },
     configured: read.projects.map((one) => one.configured),
@@ -1418,6 +1435,8 @@ interface RunFacts {
   readonly componentWarnings: readonly ComponentWarning[];
   /** Per configuration whose component files the run cannot read, the reason. */
   readonly componentsUnread: readonly ComponentsUnread[];
+  /** Per analyzed configuration, each library it names that the compiler cannot find. */
+  readonly librariesUnfound: readonly LibraryUnfound[];
   /** The convention rows the run applied. */
   readonly conventionsApplied: readonly AppliedConvention[];
 }
@@ -1426,6 +1445,13 @@ interface RunFacts {
 interface ComponentsUnread {
   readonly configFile: string;
   readonly reason: string;
+}
+
+/** One library an analyzed configuration names that the compiler cannot find. */
+interface LibraryUnfound {
+  readonly configFile: string;
+  /** The compiler's error, rendered as a dropped configuration's is. */
+  readonly error: string;
 }
 
 /** The findings of one run, beside what a report states about the run itself. */

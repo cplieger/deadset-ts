@@ -149,6 +149,32 @@ describe("the uses a contextual type makes", () => {
     ).toEqual(["DS1301 Tab.title 6: type member Tab.title is written once and never read"]);
   });
 
+  it.each([
+    ["a Record<K, V>", 'Record<"id", number>'],
+    ["a mapped type", '{ [K in "id"]: number }'],
+  ])(
+    "reads each member of a value that %s over literal keys at its position names",
+    (_, target) => {
+      expect(
+        findings({
+          "src/main.ts": `interface Source {\n  id: number;\n  extra: number;\n}\nfunction take(target: ${target}): number {\n  return target.id;\n}\nconst source: Source = { id: 1, extra: 2 };\nconsole.log(take(source));\n`,
+        }),
+      ).toEqual(["DS1301 Source.extra 3: type member Source.extra is written once and never read"]);
+    },
+  );
+
+  it("reads the members any overload's parameter declares from the values the position passes it", () => {
+    expect(
+      findings({
+        "src/main.ts":
+          'interface Key {\n  order: number;\n}\ninterface Tab {\n  order: number;\n  title: string;\n}\nfunction byOrder(a: Key, b: Key): number;\nfunction byOrder(a: string, b: string): number;\nfunction byOrder(a: any, b: any): number {\n  return a.order - b.order;\n}\nconst tabs: Tab[] = [{ order: 2, title: "b" }];\nconsole.log([...tabs].sort(byOrder).length);\n',
+      }),
+    ).toEqual([
+      "DS1003 Key.order 2: type member has no reference in the target",
+      "DS1301 Tab.title 6: type member Tab.title is written once and never read",
+    ]);
+  });
+
   it("reads no member of a value a type assertion names another object type", () => {
     expect(
       findings({

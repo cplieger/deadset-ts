@@ -460,6 +460,18 @@ function nameNodeOf(node: Node): Node | undefined {
 }
 
 /**
+ * The fragment component one declaration's name spells in a reference, as the inventory
+ * spells it, or undefined for a name the grammar does not represent.
+ */
+export function declaredComponent(node: Node): string | undefined {
+  const component = componentOf(nameNodeOf(node));
+  if (component === undefined) {
+    return undefined;
+  }
+  return component.computed ? computedComponent(component.text) : nameComponent(component.text);
+}
+
+/**
  * One node's identity inside one program, which is how two readings of that program
  * name one declaration.
  *

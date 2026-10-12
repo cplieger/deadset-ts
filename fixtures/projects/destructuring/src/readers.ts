@@ -61,7 +61,13 @@ export function failure(run: () => void): string {
 }
 
 /** Assignment targets: plain, nested through a tuple, defaulted, from an array, and iterated. */
-export function assign(row: Row, rows: readonly Row[], invocation: Invocation): string {
+export function assign(
+  row: Row,
+  rows: readonly Row[],
+  invocation: Invocation,
+  set: ReadonlySet<Row>,
+  map: ReadonlyMap<string, Row>,
+): string {
   let key = "";
   let deep = "";
   let first = "";
@@ -75,6 +81,12 @@ export function assign(row: Row, rows: readonly Row[], invocation: Invocation): 
   ({ extra: { note } = { note: "" } } = invocation);
   [{ value }] = [row];
   for ({ key } of rows) {
+    value += key.length;
+  }
+  for ({ key } of set) {
+    value += key.length;
+  }
+  for ([, { key }] of map) {
     value += key.length;
   }
   return `${key} ${deep} ${first} ${note} ${String(value)}`;

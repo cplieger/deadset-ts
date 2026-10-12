@@ -77,10 +77,17 @@ function exportsEntry(
   exportsField: unknown,
   subpath: string,
 ): { readonly value: unknown; readonly match?: string } | undefined {
-  const map =
-    isRecord(exportsField) && Object.keys(exportsField).some((key) => key.startsWith("."))
-      ? exportsField
-      : { ".": exportsField };
+  const keys = isRecord(exportsField) ? Object.keys(exportsField) : [];
+  const dotted = keys.filter((key) => key.startsWith(".")).length;
+  // An object mixing subpath keys with others is invalid to Node; the compiler still
+  // answers `.` from its `"."` key and no other subpath:
+  // https://github.com/microsoft/typescript-go/blob/89d5d5b2849a0db0957065889ca58536fa6d2e4a/internal/module/resolver.go#L673-L695
+  if (isRecord(exportsField) && dotted > 0 && dotted < keys.length) {
+    return subpath === "." && Object.hasOwn(exportsField, ".")
+      ? { value: exportsField["."] }
+      : undefined;
+  }
+  const map = isRecord(exportsField) && dotted > 0 ? exportsField : { ".": exportsField };
   if (Object.hasOwn(map, subpath)) {
     return { value: map[subpath] };
   }
@@ -369,6 +376,18 @@ export function workspaceResolver(host: Host, workspace: Workspace): WorkspaceRe
       // A file the member's configurations neither compile nor write, a hand-written
       // declaration file or a bundler's output, is read as the package manager installed it.
       if (answered !== undefined) {
+        return { kind: "default" };
+      }
+      // A stylesheet or another asset is no module with a source, so the import of one
+      // keeps the compiler's resolution.
+      if (
+        targets.some(
+          (target) =>
+            !SOURCE.test(target) &&
+            !OUTPUT.test(target) &&
+            host.kindOf(joinPath(member.dir, target)) === "file",
+        )
+      ) {
         return { kind: "default" };
       }
       const named = targets.length === 0 ? "no target" : targets.join(", ");

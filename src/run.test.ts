@@ -420,6 +420,95 @@ describe("print-projects", () => {
     ]);
   });
 
+  it("drops a derived project carrying an error the compiler places in no file, naming it", () => {
+    const target = matrixTree({
+      "fixtures/broken/tsconfig.json":
+        '{ "compilerOptions": { "noLib": true, "noEmit": true }, "include": ["*.ts"] }\n',
+      "fixtures/broken/broken.ts": "export const broken = [1];\n",
+    });
+
+    const got = invoke(["print-projects", `--target=${target}`]);
+
+    expect(got.code, got.err).toBe(0);
+    expect(got.out).toBe("packages/app/tsconfig.json\ntsconfig.json\n");
+    expect(got.err).toContain(
+      "deadset-ts: the derived configuration fixtures/broken/tsconfig.json was not built and is not analyzed: TS2318: Cannot find global type 'Array'.",
+    );
+  });
+
+  it.each([
+    [
+      "a removed option of the configuration its test files join",
+      {
+        "package.json":
+          '{ "name": "app", "private": true, "devDependencies": { "jest": "29.0.0" } }\n',
+        "tsconfig.json":
+          '{ "compilerOptions": { "strict": true, "noEmit": true, "esModuleInterop": false }, "include": ["src/*.ts"], "exclude": ["**/*.test.ts"] }\n',
+        "src/main.test.ts": 'import { main } from "./main";\nconsole.log(main);\n',
+      },
+      "tsconfig.json",
+    ],
+    [
+      "the output layout of the configuration the run writes for a workspace member",
+      {
+        "package.json": '{ "private": true, "workspaces": ["web"] }\n',
+        "web/package.json":
+          '{ "name": "web", "private": true, "devDependencies": { "jest": "29.0.0" } }\n',
+        "web/tsconfig.json":
+          '{ "compilerOptions": { "strict": true, "outDir": "./dist/" }, "include": ["./src/**/*"], "exclude": ["**/*.test.ts"] }\n',
+        "web/src/a.ts": "export const a = 1;\n",
+        "web/src/a.test.ts": 'import { a } from "./a";\nconsole.log(a);\n',
+      },
+      "web/tsconfig.json",
+    ],
+  ])("builds a derived project whose only error in no file is about %s", (_form, extra, built) => {
+    const target = matrixTree(extra);
+
+    const got = invoke(["print-projects", `--target=${target}`]);
+
+    expect(got.code, got.err).toBe(0);
+    expect(got.out.split("\n")).toContain(built);
+    expect(got.err).not.toMatch(/TS5\d{3}/u);
+  });
+
+  it("exits 3 naming the missing global type a declared project carries in no file", () => {
+    const target = matrixTree({
+      "deadset.json":
+        '{"analysis":{"configurations":[{"id":"app","project":"packages/app/tsconfig.json"}]}}\n',
+      "packages/app/tsconfig.json":
+        '{ "compilerOptions": { "noLib": true, "noEmit": true }, "include": ["*.ts"] }\n',
+      "packages/app/app.ts": "export const app = [1];\n",
+    });
+
+    const got = invoke(["print-projects", `--target=${target}`]);
+
+    expect(got.code).toBe(3);
+    expect(got.out).toBe("");
+    expect(got.err).toContain("TS2318: Cannot find global type 'Array'.");
+  });
+
+  it("analyzes a project naming a type library the compiler cannot find, noting it once", () => {
+    const target = matrixTree({
+      "deadset.json":
+        '{"target":{"kind":"application"},"analysis":{"configurations":[{"id":"app","project":"packages/app/tsconfig.json"}]}}\n',
+      "packages/app/tsconfig.json":
+        '{ "compilerOptions": { "strict": true, "types": ["no-such"], "noEmit": true }, "include": ["*.ts"] }\n',
+    });
+
+    const got = invoke(["analyze", "--target=.", `--report=${join(target, "report.json")}`], {
+      ...nodeHost(),
+      workingDirectory: () => target,
+    });
+
+    expect(got.code, got.err).toBe(1);
+    expect(
+      got.err.split("\n").filter((line) => line.includes("TS2688")),
+      "one note, though two diagnostic sets carry the error",
+    ).toEqual([
+      "deadset-ts: packages/app/tsconfig.json: TS2688: Cannot find type definition file for 'no-such'.: the configuration is analyzed without that library",
+    ]);
+  });
+
   it("names on the error stream the derived project print-roots dropped", () => {
     const target = matrixTree({
       "deadset.json": '{ "target": { "kind": "application" } }\n',
@@ -461,6 +550,127 @@ describe("print-projects", () => {
     expect(got.code).toBe(3);
     expect(got.out).toBe("");
     expect(got.err).toMatch(/^setup failure: missing-module: src\/main\.ts:1: /mu);
+  });
+
+  it.each([
+    ["an import type", '/** @type {import("./missing.js").T} */\nexport let v;\n'],
+    [
+      "an @import tag",
+      '/** @import { T } from "./missing.js" */\n/** @type {T} */\nexport let v;\n',
+    ],
+  ])(
+    "exits 3 with the setup failure for a checked JavaScript file whose doc comment holds %s of a file nothing generated",
+    (_form, text) => {
+      const target = matrixTree({
+        "deadset.json":
+          '{"analysis":{"configurations":[{"id":"js","project":"fixtures/broken/tsconfig.json"}]}}\n',
+        "fixtures/broken/tsconfig.json":
+          '{ "compilerOptions": { "strict": true, "noEmit": true, "allowJs": true, "checkJs": true }, "include": ["*.js"] }\n',
+        "fixtures/broken/main.js": text,
+      });
+
+      const got = invoke(["print-projects", `--target=${target}`]);
+
+      expect(got.code, got.err).toBe(3);
+      expect(got.err).toMatch(
+        /^setup failure: missing-module: fixtures\/broken\/main\.js:1: fixtures\/broken\/main\.js imports "\.\/missing\.js", which names no file of the target/mu,
+      );
+    },
+  );
+
+  it("reads an import a paths alias maps to an existing asset as a type error, and one it maps to no file as a setup failure", () => {
+    const tree = (asset: string): string =>
+      matrixTree({
+        "app/tsconfig.json":
+          '{ "compilerOptions": { "strict": true, "noEmit": true, "module": "esnext", "moduleResolution": "bundler", "paths": { "@/*": ["./*"] } }, "include": ["*.ts"] }\n',
+        "app/public/logo.png": "",
+        "app/main.ts": `import logo from "@/public/${asset}";\nexport const shown = logo;\n`,
+      });
+
+    const present = invoke(["print-projects", `--target=${join(tree("logo.png"), "app")}`]);
+    const absent = invoke(["print-projects", `--target=${join(tree("gone.png"), "app")}`]);
+
+    expect(present.code, present.err).toBe(0);
+    expect(present.out).toBe("tsconfig.json\n");
+    expect(absent.code).toBe(3);
+    expect(absent.err).toContain(
+      `imports "@/public/gone.png", which the compiler configuration's paths map to no file`,
+    );
+  });
+
+  it("reads an import a paths alias maps to a directory, rather than a file, as a setup failure", () => {
+    const target = matrixTree({
+      "app/tsconfig.json":
+        '{ "compilerOptions": { "strict": true, "noEmit": true, "module": "esnext", "moduleResolution": "bundler", "paths": { "@/*": ["./*"] } }, "include": ["*.ts"] }\n',
+      "app/assets/readme.txt": "",
+      "app/main.ts": 'import assets from "@/assets";\nexport const shown = assets;\n',
+    });
+
+    const got = invoke(["print-projects", `--target=${join(target, "app")}`]);
+
+    expect(got.code).toBe(3);
+    expect(got.err).toContain(
+      `imports "@/assets", which the compiler configuration's paths map to no file`,
+    );
+  });
+
+  it("reads the targets of a paths alias an extended configuration writes against that configuration's directory", () => {
+    const target = matrixTree({
+      "paths.json": '{ "compilerOptions": { "paths": { "@/*": ["./app/*"] } } }\n',
+      "app/tsconfig.json":
+        '{ "extends": "../paths.json", "compilerOptions": { "strict": true, "noEmit": true, "module": "esnext", "moduleResolution": "bundler" }, "include": ["*.ts"] }\n',
+      "app/public/logo.png": "",
+      "app/main.ts": 'import logo from "@/public/logo.png";\nexport const shown = logo;\n',
+    });
+
+    const got = invoke(["print-projects", `--target=${join(target, "app")}`]);
+
+    expect(got.code, got.err).toBe(0);
+    expect(got.out).toBe("tsconfig.json\n");
+  });
+
+  it("reads an import of an installed package that a paths alias maps to no file as a type error", () => {
+    const target = matrixTree({
+      "app/tsconfig.json":
+        '{ "compilerOptions": { "strict": true, "noEmit": true, "module": "nodenext", "moduleResolution": "nodenext", "paths": { "@scope/*": ["./packages/*/src/index.ts"] } }, "include": ["*.ts"] }\n',
+      "app/node_modules/@scope/pm/package.json":
+        '{ "name": "@scope/pm", "exports": { "./other": "./other.js" } }\n',
+      "app/main.ts": 'export type { View } from "@scope/pm/view";\n',
+    });
+
+    const got = invoke(["print-projects", `--target=${join(target, "app")}`]);
+
+    expect(got.code, got.err).toBe(0);
+    expect(got.out).toBe("tsconfig.json\n");
+  });
+
+  it("reads an import of a package installed above the target that the compiler cannot resolve as a type error", () => {
+    const tree = (installed: "package" | "file" | "absent"): string =>
+      matrixTree({
+        "package.json": '{ "name": "root", "private": true }\n',
+        ...(installed === "package"
+          ? {
+              "node_modules/pkg/package.json":
+                '{ "name": "pkg", "exports": { "./providers/*": "./providers/*.js" } }\n',
+            }
+          : {}),
+        ...(installed === "file" ? { "node_modules/pkg": "" } : {}),
+        "apps/web/package.json": '{ "name": "web", "dependencies": { "pkg": "1.0.0" } }\n',
+        "apps/web/tsconfig.json":
+          '{ "compilerOptions": { "strict": true, "noEmit": true, "module": "nodenext", "moduleResolution": "nodenext" }, "include": ["*.ts"] }\n',
+        "apps/web/main.ts": 'export type { Provider } from "pkg/providers";\n',
+      });
+
+    const hoisted = invoke(["print-projects", `--target=${join(tree("package"), "apps", "web")}`]);
+    const missing = invoke(["print-projects", `--target=${join(tree("absent"), "apps", "web")}`]);
+    const file = invoke(["print-projects", `--target=${join(tree("file"), "apps", "web")}`]);
+
+    expect(hoisted.code, hoisted.err).toBe(0);
+    expect(hoisted.out).toBe("tsconfig.json\n");
+    expect(missing.code).toBe(3);
+    expect(missing.err).toContain("a dependency package.json declares that is not installed");
+    expect(file.code, "a file where the package's directory would be").toBe(3);
+    expect(file.err).toContain("a dependency package.json declares that is not installed");
   });
 
   it("exits 3 with the setup failure for a declared project that imports a file nothing generated", () => {

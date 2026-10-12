@@ -7,7 +7,7 @@ import type { Position } from "./position.ts";
 
 /** The token walk over a document `JSON.parse` accepted, so every token is well formed. */
 class Walk {
-  readonly opened: number[] = [];
+  readonly starts: number[] = [];
   /** The member written twice, where one is, as the offset of its name. */
   twice: { readonly name: string; readonly offset: number } | undefined;
   private readonly text: string;
@@ -41,11 +41,11 @@ class Walk {
 
   private value(role: "document" | "array" | "record" | "other"): void {
     this.skip();
+    if (role === "record") {
+      this.starts.push(this.at);
+    }
     const char = this.text[this.at];
     if (char === "{") {
-      if (role === "record") {
-        this.opened.push(this.at);
-      }
       this.object(role);
     } else if (char === "[") {
       this.list(role === "array" ? "record" : "other");
@@ -101,8 +101,8 @@ class Walk {
 
 /** What a walk of one document found. */
 interface DocumentWalk {
-  /** The offset of the brace opening each object of the document's array member, in order. */
-  readonly opened: readonly number[];
+  /** The offset of each element of the document's array member, in order: an object's `{`. */
+  readonly starts: readonly number[];
   /** The first member one object writes twice, at any depth, as the offset of its name. */
   readonly twice: { readonly name: string; readonly offset: number } | undefined;
 }
@@ -116,7 +116,7 @@ interface DocumentWalk {
 export function walkDocument(text: string, array: string): DocumentWalk {
   const walk = new Walk(text, array);
   walk.run();
-  return { opened: walk.opened, twice: walk.twice };
+  return { starts: walk.starts, twice: walk.twice };
 }
 
 /**

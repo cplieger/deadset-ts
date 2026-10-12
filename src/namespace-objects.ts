@@ -1,7 +1,7 @@
 /**
  * Module namespace objects: the binding of a namespace import, the value an `await` of a
  * dynamic `import()` produces, the first parameter of the first callback passed to `then`
- * on one, and a `const` binding initialized with one of these. A use reads the exports it
+ * on one, and a variable binding initialized with one of these. A use reads the exports it
  * names and no other: a property access by name or by a literal index, or a destructured
  * property, names one export, and any other use may read every export.
  */
@@ -9,22 +9,26 @@
 import {
   isArrowFunction,
   isAwaitExpression,
-  isBindingElement,
   isCallExpression,
+  isClassStaticBlockDeclaration,
   isElementAccessExpression,
   isExpressionStatement,
   isFunctionExpression,
+  isFunctionLikeDeclaration,
   isIdentifier,
   isImportDeclaration,
+  isModuleBlock,
   isNamespaceImport,
   isNoSubstitutionTemplateLiteral,
   isObjectBindingPattern,
   isParenthesizedExpression,
   isPropertyAccessExpression,
   isQualifiedName,
+  isSourceFile,
   isStringLiteral,
   isVariableDeclaration,
   isVariableDeclarationList,
+  isVariableStatement,
   isVoidExpression,
   NodeFlags,
   SyntaxKind,
@@ -32,6 +36,7 @@ import {
   type Node,
   type SourceFile,
 } from "@typescript/native/ast";
+import { spellsNoBinding } from "./spelled-names.ts";
 
 /** What one use of a namespace object reads beyond the names the checker resolves. */
 type NamespaceUse =
@@ -62,23 +67,33 @@ function isLiteralImport(node: Node): boolean {
   return argument !== undefined && isLiteralText(argument);
 }
 
-/** The node a `const` binding's name is visible below: the block or file its statement is in. */
-function scopeOf(declaration: Node): Node {
-  const statement = declaration.parent.parent;
-  return statement.parent;
+/**
+ * The node the binding one declaration list declares is visible below: for `let` and
+ * `const`, the loop whose head declares it, or else the block or file its statement is
+ * in; for `var`, the function, namespace body, static block or file that holds it.
+ */
+function scopeOf(list: Node): Node {
+  if ((list.flags & (NodeFlags.Let | NodeFlags.Const | NodeFlags.Using)) !== 0) {
+    return isVariableStatement(list.parent) ? list.parent.parent : list.parent;
+  }
+  let at = list.parent;
+  while (
+    !isSourceFile(at) &&
+    !isFunctionLikeDeclaration(at) &&
+    !isModuleBlock(at) &&
+    !isClassStaticBlockDeclaration(at)
+  ) {
+    at = at.parent;
+  }
+  return at;
 }
 
-/** Every identifier below `scope` that spells `name`, other than `declared` and a member's name. */
+/** Every identifier below `scope` that spells `name` as a reference, other than `declared`. */
 function occurrences(scope: Node, name: string, declared: Node): readonly Identifier[] {
   const found: Identifier[] = [];
   const visit = (node: Node): void => {
     if (isIdentifier(node)) {
-      const parent = node.parent;
-      const member =
-        (isPropertyAccessExpression(parent) && parent.name === node) ||
-        (isQualifiedName(parent) && parent.right === node) ||
-        (isBindingElement(parent) && parent.propertyName === node);
-      if (node !== declared && node.text === name && !member) {
+      if (node !== declared && node.text === name && !spellsNoBinding(node)) {
         found.push(node);
       }
       return;
@@ -92,8 +107,8 @@ function occurrences(scope: Node, name: string, declared: Node): readonly Identi
 /**
  * Every use of the namespace objects one file holds, keyed by the node the use is written
  * at, that reads more than a name the checker resolves: an indexed read by a literal, and
- * any use that may read every export. A shadowing declaration of a binding's name inside
- * its scope is read as the binding, which can only keep an export live.
+ * any use that may read every export. A use of a shadowing declaration of a binding's
+ * name inside its scope is read as a use of the binding, which can only keep an export live.
  */
 export function namespaceUses(file: SourceFile): ReadonlyMap<Node, NamespaceUse> {
   const uses = new Map<Node, NamespaceUse>();
@@ -142,13 +157,11 @@ export function namespaceUses(file: SourceFile): ReadonlyMap<Node, NamespaceUse>
         }
         return;
       }
+      // A binding that is not `const` is followed too: each assignment to it is an
+      // occurrence `value` cannot narrow, so a reassigned binding still reads every export.
       const list = parent.parent;
-      if (
-        isIdentifier(pattern) &&
-        isVariableDeclarationList(list) &&
-        (list.flags & NodeFlags.Const) !== 0
-      ) {
-        binding(pattern, scopeOf(parent), specifier, seen);
+      if (isIdentifier(pattern) && isVariableDeclarationList(list)) {
+        binding(pattern, scopeOf(list), specifier, seen);
         return;
       }
     }

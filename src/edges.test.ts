@@ -193,6 +193,12 @@ describe("the edges document", () => {
 
     expect(refusal(document)).toMatch(/^deadset-edges\.json:5:7: "ServerEvent": want /u);
   });
+
+  it("names an edge that is not an object by its own line and column, not the next edge's", () => {
+    const document = `{"edges": [\n  null,\n  ${edge("a", GO_A, TS_A)}\n]}`;
+
+    expect(refusal(document)).toMatch(/^deadset-edges\.json:2:3: null: want /u);
+  });
 });
 
 /** A declaration of the run, enumerated under its reference. */
