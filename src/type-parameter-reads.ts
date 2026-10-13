@@ -38,9 +38,8 @@ interface Read {
   readonly access: PropertyAccessExpression;
 }
 
-/** A node that declares type parameters and parameters, as a generic function does. */
+/** A node that declares parameters, as a generic function does. */
 type Generic = Node & {
-  readonly typeParameters?: readonly Node[];
   readonly parameters?: readonly Node[];
 };
 
