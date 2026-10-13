@@ -6,6 +6,8 @@ import {
   readFileSync,
   renameSync,
   rmSync,
+  symlinkSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -65,7 +67,7 @@ describe("the finding schema's validator", () => {
   });
 });
 
-/** The bound on one case, which loads one whole target, the repository among them. */
+/** The bound on one case, which loads one whole target. */
 const LOAD_TIMEOUT = 60_000;
 
 /** Whether a corpus fixture's run ends with a setup failure, which leaves no finding to check. */
@@ -77,8 +79,8 @@ function endsInSetupFailure(name: string): boolean {
 }
 
 /**
- * Every target the suite analyzes: the repository, every project fixture, and every corpus
- * fixture with a TypeScript rendering that a run analyzes to the end.
+ * Every fixture the suite analyzes: every project fixture, and every corpus fixture with a
+ * TypeScript rendering that a run analyzes to the end.
  */
 function targets(): [string, string][] {
   const projects = readdirSync(fixture("projects")).map((name): [string, string] => [
@@ -88,7 +90,7 @@ function targets(): [string, string][] {
   const corpus = readdirSync(fixture("corpus"))
     .filter((name) => !endsInSetupFailure(name))
     .map((name): [string, string] => [`corpus/${name}`, fixture("corpus", name, "ts", "target")]);
-  return [["the repository", ROOT], ...projects, ...corpus];
+  return [...projects, ...corpus];
 }
 
 describe("every finding the table reports", () => {
@@ -116,26 +118,51 @@ describe("every finding the table reports", () => {
     return holder === target ? copy : join(copy, basename(target));
   };
 
+  const violations = (root: string): string[] => {
+    const path = join(root, "deadset.json");
+    const document = existsSync(path)
+      ? readFileSync(path, "utf8")
+      : JSON.stringify({ target: { kind: "application" } });
+    const findings: readonly CompletedFinding[] = findingsOf(
+      emitterInputOf(root, resolve({ repository: document, repositoryLabel: path }).config),
+    );
+    return findings.flatMap((finding) =>
+      validate(wireFinding(finding)).map(
+        (error) => `${finding.code} ${finding.symbol.name} ${error}`,
+      ),
+    );
+  };
+
   it.each(targets())(
     "over %s meets the finding schema",
     { timeout: LOAD_TIMEOUT },
     (_label, target) => {
-      const root = readable(target);
-      const path = join(root, "deadset.json");
-      const document = existsSync(path)
-        ? readFileSync(path, "utf8")
-        : JSON.stringify({ target: { kind: "application" } });
-      const findings: readonly CompletedFinding[] = findingsOf(
-        emitterInputOf(root, resolve({ repository: document, repositoryLabel: path }).config),
-      );
+      expect(violations(readable(target))).toEqual([]);
+    },
+  );
 
-      expect(
-        findings.flatMap((finding) =>
-          validate(wireFinding(finding)).map(
-            (error) => `${finding.code} ${finding.symbol.name} ${error}`,
-          ),
-        ),
-      ).toEqual([]);
+  // The whole repository reports nothing, so its own source is read without the tests and
+  // the entry files that keep it live, which leaves findings of several codes to check.
+  it(
+    "over the repository's source without its tests meets the finding schema",
+    { timeout: LOAD_TIMEOUT },
+    () => {
+      const copy = mkdtempSync(join(tmpdir(), "deadset-ts-schema-"));
+      copies.push(copy);
+      cpSync(join(ROOT, "src"), join(copy, "src"), {
+        recursive: true,
+        filter: (from) => !from.endsWith(".test.ts"),
+      });
+      cpSync(join(ROOT, "package.json"), join(copy, "package.json"));
+      const tsconfig = JSON.parse(readFileSync(join(ROOT, "tsconfig.json"), "utf8")) as object;
+      writeFileSync(
+        join(copy, "tsconfig.json"),
+        JSON.stringify({ ...tsconfig, include: ["src/**/*.ts"], exclude: [] }),
+      );
+      writeFileSync(join(copy, "deadset.json"), JSON.stringify({ target: { kind: "library" } }));
+      symlinkSync(join(ROOT, "node_modules"), join(copy, "node_modules"), "dir");
+
+      expect(violations(copy)).toEqual([]);
     },
   );
 });
