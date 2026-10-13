@@ -1,6 +1,6 @@
 {
-  "schema_version": "8.2.0",
-  "contract_version": "7.2.0",
+  "schema_version": "9.0.0",
+  "contract_version": "8.0.0",
   "analyzer": {
     "name": "deadset-ts",
     "version": "0.0.0",
@@ -8,12 +8,12 @@
       "ts"
     ],
     "schema_versions_accepted": [
-      "8.2.0"
+      "9.0.0"
     ],
     "conformance": {
-      "corpus_version": "5.2.0",
+      "corpus_version": "6.0.0",
       "result": "pass",
-      "digest": "sha256:012872542679539ec105f49b5ee502b0a9fa35c6bbd9ef3983b5f6e53af83d8e"
+      "digest": "sha256:76c07ac14bda6e302444918d832b01844bac6f29b6f22a742d538804480c0769"
     }
   },
   "target": {
@@ -51,7 +51,7 @@
         "size_lines": 3
       },
       "reachability_class": "certain",
-      "confidence": "certain",
+      "confidence": "probable",
       "liveness_relation": "reachability",
       "test_only": false,
       "generated": false,
@@ -88,7 +88,7 @@
         "size_lines": 1
       },
       "reachability_class": "certain",
-      "confidence": "certain",
+      "confidence": "probable",
       "liveness_relation": "reachability",
       "test_only": false,
       "generated": false,
@@ -125,7 +125,7 @@
         "size_lines": 1
       },
       "reachability_class": "certain",
-      "confidence": "certain",
+      "confidence": "probable",
       "liveness_relation": "reachability",
       "test_only": false,
       "generated": false,
@@ -162,7 +162,7 @@
         "size_lines": 1
       },
       "reachability_class": "certain",
-      "confidence": "certain",
+      "confidence": "probable",
       "liveness_relation": "reachability",
       "test_only": false,
       "generated": false,
@@ -249,7 +249,7 @@
         "size_lines": 3
       },
       "reachability_class": "certain",
-      "confidence": "certain",
+      "confidence": "probable",
       "liveness_relation": "reachability",
       "test_only": false,
       "generated": false,
@@ -544,6 +544,45 @@
       "details": {}
     },
     {
+      "code": "DS1201",
+      "kind": "unused-interface",
+      "language": "ts",
+      "position": {
+        "path": "src/probe.test.ts",
+        "line": 6,
+        "column": 18,
+        "end_line": 8
+      },
+      "symbol": {
+        "ref": "ts://@example/interfaces/src/probe.test.ts#TestDouble",
+        "kind": "interface",
+        "name": "TestDouble",
+        "size_lines": 3
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0012",
+        "root": true,
+        "symbol_count": 2,
+        "deletable_lines": 3
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "nothing in the target names the interface as a type",
+      "details": {
+        "implementations": []
+      }
+    },
+    {
       "code": "DS1005",
       "kind": "test-of-dead-code",
       "language": "ts",
@@ -620,13 +659,13 @@
   "unanswered_questions": [],
   "conventions_applied": [],
   "totals": {
-    "findings": 13,
+    "findings": 14,
     "by_severity": {
       "allow": 0,
       "warn": 3,
-      "deny": 10
+      "deny": 11
     },
-    "deletable_lines": 31,
+    "deletable_lines": 34,
     "suppressions_in_effect": 0,
     "reasons_recorded": 0,
     "stale_suppressions": 0,

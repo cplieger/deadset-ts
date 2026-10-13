@@ -1,6 +1,5 @@
 import type { Config } from "../config.ts";
 import type { Finding } from "../finding.ts";
-import type { Graph } from "../graph.ts";
 import type { Emitter, EmitterInput } from "./emitter.ts";
 
 const FILE_NEVER_BUILT = "DS1501";
@@ -61,43 +60,34 @@ function fileNeverBuilt({ config, swept, files }: EmitterInput): readonly Findin
     .map((file) => fileFinding(FILE_NEVER_BUILT, file, message));
 }
 
-/**
- * The paths of every file a reference written in another file reaches, naming the
- * file or a declaration in it, a loaded consumer's file included. An import is such a
- * reference, so an import from any file reaches what it names, whatever reaches the
- * importing file.
- */
-function reachedFromOutside(union: Graph): ReadonlySet<string> {
-  const reached = new Set<string>();
-  for (const edge of union.consumed) {
-    const to = union.symbols[edge.to];
-    if (to !== undefined) {
-      reached.add(to.position.path);
-    }
-  }
-  union.out.forEach((edges, from) => {
-    const fromPath = union.symbols[from]?.position.path;
-    for (const edge of edges) {
-      const to = union.symbols[edge.to];
-      if (to !== undefined && to.position.path !== fromPath) {
-        reached.add(to.position.path);
-      }
-    }
-  });
-  return reached;
+/** The files of the run, each with whether a reference written in another file reaches it. */
+interface KeptFiles {
+  /** The files kept: reached from a live file, or named by a root, an edge or a program. */
+  readonly kept: ReadonlySet<string>;
+  /** The files a reference written in another file reaches, whatever holds that file. */
+  readonly referenced: ReadonlySet<string>;
 }
 
 /**
- * The paths of the files an import reaches, a root names, or a declared edge names a
- * declaration in. A file holding a declaration the sweep judged live is kept whatever
- * held it live, and so is a file a program holds by inclusion, which acts on every
- * file of the program without an import naming it.
+ * The paths of the files a reference from a live declaration of another file reaches, a
+ * loaded consumer's file included, a root names, or a declared edge names a declaration in,
+ * and of every file a reference written anywhere reaches. A file holding a declaration the
+ * sweep judged live is kept whatever held it live, and so is a file a program holds by
+ * inclusion, which acts on every file of the program without an import naming it. A
+ * reference from a file's top level counts once the file is kept.
  */
-function keptFiles({ swept, files, boundary }: EmitterInput): ReadonlySet<string> {
+function keptFiles({ swept, files, boundary }: EmitterInput): KeptFiles {
   const union = swept.matrix.union;
   const edgeNamed = new Set(boundary.edges.map((side) => side.symbol));
   const dead = new Set(swept.sweep.candidates.map((candidate) => candidate.id));
-  const kept = new Set([...reachedFromOutside(union), ...files.heldByInclusion]);
+  const kept = new Set(files.heldByInclusion);
+  const referenced = new Set<string>();
+  for (const edge of union.consumed) {
+    const to = union.symbols[edge.to];
+    if (to !== undefined) {
+      kept.add(to.position.path);
+    }
+  }
   for (const root of union.rooted) {
     const named = union.symbols[root.at];
     if (named !== undefined) {
@@ -109,21 +99,71 @@ function keptFiles({ swept, files, boundary }: EmitterInput): ReadonlySet<string
       kept.add(symbol.position.path);
     }
   }
-  return kept;
+  const fromTopLevel = new Map<string, string[]>();
+  const pending: string[] = [];
+  const keep = (path: string): void => {
+    if (!kept.has(path)) {
+      kept.add(path);
+      pending.push(path);
+    }
+  };
+  union.out.forEach((edges, from) => {
+    const source = union.symbols[from];
+    if (source === undefined) {
+      return;
+    }
+    for (const edge of edges) {
+      const to = union.symbols[edge.to]?.position.path;
+      if (to === undefined || to === source.position.path) {
+        continue;
+      }
+      referenced.add(to);
+      if (source.kind === FILE_SUBJECT) {
+        fromTopLevel.set(source.position.path, [
+          ...(fromTopLevel.get(source.position.path) ?? []),
+          to,
+        ]);
+      } else if (!dead.has(source.id)) {
+        pending.push(to);
+      }
+    }
+  });
+  pending.push(...kept);
+  for (let path = pending.pop(); path !== undefined; path = pending.pop()) {
+    kept.add(path);
+    for (const to of fromTopLevel.get(path) ?? []) {
+      keep(to);
+    }
+    fromTopLevel.delete(path);
+  }
+  return { kept, referenced };
 }
 
-/** Every file of the run that no import reaches and no root or edge names. */
+/**
+ * Every file of the run that no reference from live code reaches and no root or edge
+ * names. A file only dead code imports is found dead under reachability alone.
+ */
 function fileNeverImported(input: EmitterInput): readonly Finding[] {
-  const kept = keptFiles(input);
+  const { kept, referenced } = keptFiles(input);
   return input.swept.matrix.union.symbols
     .filter((symbol) => symbol.kind === FILE_SUBJECT && !kept.has(symbol.position.path))
-    .map((symbol) =>
-      fileFinding(
-        FILE_NEVER_IMPORTED,
-        { path: symbol.position.path, ref: symbol.ref, endLine: symbol.endLine },
-        "no import reaches this file and no root names it or a declaration in it",
-      ),
-    );
+    .map((symbol) => {
+      const file = { path: symbol.position.path, ref: symbol.ref, endLine: symbol.endLine };
+      return referenced.has(symbol.position.path)
+        ? {
+            ...fileFinding(
+              FILE_NEVER_IMPORTED,
+              file,
+              "only code that is itself dead imports this file, and no root names it or a declaration in it",
+            ),
+            unreachableOnly: true as const,
+          }
+        : fileFinding(
+            FILE_NEVER_IMPORTED,
+            file,
+            "no import reaches this file and no root names it or a declaration in it",
+          );
+    });
 }
 
 /** The findings of the non-code-artifacts family, `DS1500` to `DS1599`. */

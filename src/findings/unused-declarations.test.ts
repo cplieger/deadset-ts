@@ -14,6 +14,18 @@ import { EMITTERS } from "./emitters.ts";
 /** The codes of this family. */
 const FAMILY = /^DS10[0-9]{2}$/u;
 
+/** An installed test runner, whose import is the test evidence a test-support file carries. */
+const RUNNER: Readonly<Record<string, string>> = {
+  "node_modules/vitest/package.json":
+    '{ "name": "vitest", "version": "1.0.0", "types": "./index.d.ts" }\n',
+  "node_modules/vitest/index.d.ts": "export {};\n",
+};
+
+/** One file's text with the test runner import that makes it test-support code. */
+function supporting(text: string): string {
+  return `import "vitest";\n${text}`;
+}
+
 /** One configuration document, resolved. */
 function configOf(document: string): Config {
   return resolve({ repository: document, repositoryLabel: "deadset.json" }).config;
@@ -327,12 +339,18 @@ function answer(name: string): Answered {
   const expected = JSON.parse(readFileSync(join(dir, "expect.json"), "utf8")) as {
     readonly target_kind: string;
     readonly consumers?: readonly string[];
+    readonly closed_world?: readonly string[];
     readonly expect: readonly ExpectRow[];
   };
   const manifest = JSON.parse(readFileSync(join(dir, "ts", "fixture.json"), "utf8")) as {
     readonly symbols: Readonly<Record<string, { readonly file: string; readonly line: number }>>;
   };
-  const config = configOf(`{ "target": { "kind": "${expected.target_kind}" } }`);
+  const config = configOf(
+    JSON.stringify({
+      target: { kind: expected.target_kind },
+      ...((expected.closed_world ?? []).includes("roots") ? { ts: { roots_complete: true } } : {}),
+    }),
+  );
   const input = emitterInputOf(join(dir, "ts", "target"), config, {
     consumers: (expected.consumers ?? []).map((consumer) => join(dir, "ts", consumer)),
   });
@@ -522,9 +540,11 @@ describe("test-support code a configuration holding no test file compiles too", 
       })}\n`,
       "tsconfig.test.json": `${JSON.stringify({ extends: "./tsconfig.json", exclude: [] })}\n`,
       "src/main.ts": "console.log(1);\n",
-      "src/fakes/outer.ts":
+      ...RUNNER,
+      "src/fakes/outer.ts": supporting(
         'import { inner } from "./inner.js";\n\nexport function outer(): number {\n  return inner();\n}\n',
-      "src/fakes/inner.ts": "export function inner(): number {\n  return 2;\n}\n",
+      ),
+      "src/fakes/inner.ts": supporting("export function inner(): number {\n  return 2;\n}\n"),
       "src/main.test.ts": 'import { outer } from "./fakes/outer.js";\n\nconsole.log(outer());\n',
     });
     roots.push(root);
@@ -550,8 +570,11 @@ describe("a file only a test reaches through a module specifier with a query", (
       "src/main.ts": "console.log(1);\n",
       "src/env.d.ts":
         'declare module "*?worker&url" {\n  const url: string;\n  export default url;\n}\n',
-      "src/fakes/worker.ts": 'import { inner } from "./inner.js";\n\nconsole.log(inner());\n',
-      "src/fakes/inner.ts": "export function inner(): number {\n  return 2;\n}\n",
+      ...RUNNER,
+      "src/fakes/worker.ts": supporting(
+        'import { inner } from "./inner.js";\n\nconsole.log(inner());\n',
+      ),
+      "src/fakes/inner.ts": supporting("export function inner(): number {\n  return 2;\n}\n"),
       "src/main.test.ts":
         'import workerUrl from "./fakes/worker.ts?worker&url";\n\nconsole.log(workerUrl);\n',
     });
@@ -578,7 +601,7 @@ describe("a file only a test reaches through a module specifier with a query", (
       findingsOf(emitterInputOf(root, configOf('{ "target": { "kind": "application" } }')))
         .filter((finding) => ["src/page.ts", "src/inner.ts"].includes(finding.position.path))
         .map((finding) => `${finding.code} ${finding.symbol.name}`),
-    ).toEqual(["DS1001 inner", "DS1001 page", "DS1502 src/page.ts"]);
+    ).toEqual(["DS1001 inner", "DS1001 page", "DS1502 src/inner.ts", "DS1502 src/page.ts"]);
   });
 });
 
@@ -608,9 +631,11 @@ describe("a test file no configuration of a declared matrix holds", () => {
         exclude: ["src/**/*.test.ts"],
       })}\n`,
       "src/main.ts": "console.log(1);\n",
-      "src/hooks.ts": "export function forTests(): number {\n  return 1;\n}\n",
-      "src/fakes/fake.ts":
+      ...RUNNER,
+      "src/hooks.ts": supporting("export function forTests(): number {\n  return 1;\n}\n"),
+      "src/fakes/fake.ts": supporting(
         "function inner(): number {\n  return 2;\n}\n\nexport function fake(): number {\n  return inner();\n}\n\nexport function unusedFake(): number {\n  return 3;\n}\n",
+      ),
       "src/main.test.ts":
         'import { fake } from "./fakes/fake.js";\nimport { forTests } from "./hooks.js";\n\nconsole.log(fake(), forTests());\n',
     });
@@ -651,7 +676,8 @@ describe("a test file no configuration of a declared matrix holds", () => {
         exclude: ["src/**/*.test.ts"],
       })}\n`,
       "src/main.ts": "console.log(1);\n",
-      "src/page.ts": "export default function page(): number {\n  return 1;\n}\n",
+      ...RUNNER,
+      "src/page.ts": supporting("export default function page(): number {\n  return 1;\n}\n"),
       "src/main.test.ts": 'import page from "./page.js";\n\nconsole.log(page());\n',
     });
     roots.push(root);
@@ -672,6 +698,7 @@ describe("a test file no configuration of a declared matrix holds", () => {
         exclude: ["src/**/*.test.ts"],
       })}\n`,
       "src/main.ts": "console.log(1);\n",
+      ...RUNNER,
       ...files,
     });
     roots.push(root);
@@ -694,7 +721,7 @@ describe("a test file no configuration of a declared matrix holds", () => {
   it("references what its re-exports name", () => {
     expect(
       findingsBeside({
-        "src/hooks.ts": "export function forTests(): number {\n  return 1;\n}\n",
+        "src/hooks.ts": supporting("export function forTests(): number {\n  return 1;\n}\n"),
         "src/main.test.ts": 'export { forTests } from "./hooks.js";\n',
       }),
     ).toEqual([]);
@@ -703,8 +730,10 @@ describe("a test file no configuration of a declared matrix holds", () => {
   it("evaluates the file an import() call of literal text names", () => {
     expect(
       findingsBeside({
-        "src/fakes/setup.ts": 'import { inner } from "./inner.js";\n\nconsole.log(inner());\n',
-        "src/fakes/inner.ts": "export function inner(): number {\n  return 2;\n}\n",
+        "src/fakes/setup.ts": supporting(
+          'import { inner } from "./inner.js";\n\nconsole.log(inner());\n',
+        ),
+        "src/fakes/inner.ts": supporting("export function inner(): number {\n  return 2;\n}\n"),
         "src/main.test.ts": 'it("boots", async () => {\n  await import("./fakes/setup.js");\n});\n',
       }),
     ).toEqual([]);
@@ -713,8 +742,8 @@ describe("a test file no configuration of a declared matrix holds", () => {
   it("names a JavaScript source and a directory's index the way the module resolution does", () => {
     expect(
       findingsBeside({
-        "src/legacy.js": "export function legacy() {\n  return 1;\n}\n",
-        "src/lib/index.mts": "export function fromIndex(): number {\n  return 2;\n}\n",
+        "src/legacy.js": supporting("export function legacy() {\n  return 1;\n}\n"),
+        "src/lib/index.mts": supporting("export function fromIndex(): number {\n  return 2;\n}\n"),
         "src/main.test.ts":
           'import { legacy } from "./legacy";\nimport { fromIndex } from "./lib";\n\nconsole.log(legacy(), fromIndex());\n',
       }),
@@ -921,19 +950,21 @@ describe("the code a dead declaration is reported under", () => {
     ).toEqual(["DS1003 Probe.unused"]);
   });
 
-  it("is the test-only code for test-support code the tests use, deprecated or not", () => {
+  it("is none for test-support code the tests use, which is test code, deprecated or not", () => {
     expect(
       reported(
         {
           "src/main.ts": "console.log(1);\n",
-          "src/fakes/fake.ts":
+          ...RUNNER,
+          "src/fakes/fake.ts": supporting(
             "/** @deprecated */\nexport function oldFake(): number {\n  return 1;\n}\n",
+          ),
           "src/main.test.ts":
             'import { oldFake } from "./fakes/fake.js";\n\nconsole.log(oldFake());\n',
         },
         ', "analysis": { "min_confidence": "possible" }',
       ),
-    ).toEqual(["DS1004 oldFake"]);
+    ).toEqual([]);
   });
 
   it("is no deprecated code for a deprecated declaration only dead code references", () => {

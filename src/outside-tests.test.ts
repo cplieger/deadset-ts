@@ -38,6 +38,9 @@ const HOOKS = "export function forTests(): number {\n  return 1;\n}\n";
 
 const UNREFERENCED = ["DS1001 forTests", "DS1502 src/hooks.ts"];
 
+/** What a test's reference leaves of HOOKS, which carries no test evidence and so is production code. */
+const TEST_ONLY = ["DS1004 forTests"];
+
 describe("a test file no configuration of the run holds", () => {
   it.each([
     [
@@ -56,7 +59,7 @@ describe("a test file no configuration of the run holds", () => {
         "src/hooks.ts": HOOKS,
         [path]: `import { forTests } from "${specifier}";\n\nconsole.log(forTests());\n`,
       }),
-    ).toEqual([]);
+    ).toEqual(TEST_ONLY);
   });
 
   it("references no own file through a bare specifier spelled as its name", () => {
@@ -103,7 +106,7 @@ describe("a test file no configuration of the run holds", () => {
         "src/hooks.ts": `${HOOKS}\nexport default function page(): number {\n  return 2;\n}\n`,
         "src/main.test.ts": 'import { forTests } from "./hooks.js";\n\nconsole.log(forTests());\n',
       }),
-    ).toEqual(["DS1001 page"]);
+    ).toEqual([...TEST_ONLY, "DS1001 page"]);
   });
 
   it("references nothing through a named import of an unexported declaration", () => {
@@ -123,7 +126,7 @@ describe("a test file no configuration of the run holds", () => {
         "src/main.test.ts":
           'import { "a:aliased" as value } from "./hooks.js";\n\nconsole.log(value);\n',
       }),
-    ).toEqual([]);
+    ).toEqual(["DS1002 value", "DS1004 'a:aliased'"]);
   });
 
   it("makes an export production code also imports used only by tests, with what only it calls", () => {

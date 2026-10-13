@@ -104,6 +104,8 @@ function namesModule(specifier: string, name: string): boolean {
 interface Named {
   readonly id: string;
   readonly members: readonly string[];
+  /** Whether the declaration's name is a pattern, which a specifier names by matching it. */
+  readonly wildcard: boolean;
 }
 
 /**
@@ -140,7 +142,7 @@ function namedBy(
         ]),
       );
       const members = (children.get(id) ?? []).filter((child) => wanted.has(child.ref));
-      return [{ id, members: members.map((child) => child.id) }];
+      return [{ id, members: members.map((child) => child.id), wildcard: name.includes("*") }];
     });
 }
 
@@ -208,28 +210,24 @@ export function moduleDeclarationReferences<Brand>(
   imports.forEach((one, index) => {
     const resolved = moduleOf(declared.length + index);
     const position = renderPosition(one.file, root, one.specifier.getStart());
-    const read = (to: string, resolution: Reference["resolution"]): void => {
-      found.push({
-        from: one.from,
-        to,
-        position,
-        use: "read",
-        resolution,
-        test: testFiles.has(position.path),
-      });
+    const read = (to: string, resolution: Reference["resolution"], test: boolean): void => {
+      found.push({ from: one.from, to, position, use: "read", resolution, test });
     };
+    const test = testFiles.has(position.path);
     const same = new Set(
       declared
         .filter((_, at) => resolved !== undefined && resolved === moduleOf(at))
         .map((declaration) => declaration.id),
     );
     for (const id of same) {
-      read(id, "batch");
+      read(id, "batch", test);
     }
     for (const declaration of named(one.specifier.text, one.names)) {
-      if (!same.has(declaration.id)) {
+      // A wildcard declaration is how the compiler types the file a matching specifier
+      // names, so the import uses it whoever writes it, a test included.
+      if (declaration.wildcard || !same.has(declaration.id)) {
         for (const to of [declaration.id, ...declaration.members]) {
-          read(to, "syntax");
+          read(to, "syntax", test && !declaration.wildcard);
         }
       }
     }

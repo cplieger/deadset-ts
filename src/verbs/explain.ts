@@ -315,12 +315,15 @@ function reported(found: CompletedFinding): string {
 /**
  * Every finding of the run that names the declaration by its reference and reports at
  * another position: a part of it, or a suppression record naming it. Each is published under
- * the reference asked about, so an explanation leaving it out would disagree with the report.
+ * the reference asked about, or a parameter's under one it starts, so an explanation leaving
+ * it out would disagree with the report.
  */
 function namedElsewhere(findings: readonly CompletedFinding[], subject: InventorySymbol): string {
   return findings
     .filter(
-      (found) => found.symbol.ref === subject.ref && positionKey(found.position) !== subject.id,
+      (found) =>
+        (found.symbol.holder ?? found.symbol.ref) === subject.ref &&
+        positionKey(found.position) !== subject.id,
     )
     .map(
       (found) =>

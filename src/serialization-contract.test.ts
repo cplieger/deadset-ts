@@ -807,3 +807,31 @@ describe("serialization-contract over a target and a consumer it imports", () =>
     LOAD_TIMEOUT,
   );
 });
+
+describe("a value a declaration holds, passed by name to a function outside the analysis", () => {
+  it("has its type's data members read where a type parameter nothing constrains types the parameter, and not where a constraint names the type or the result hands the value back", () => {
+    expect(
+      treeFindings({
+        "lib.d.ts": [
+          "export declare function send<D>(url: string, data?: D): Promise<void>;",
+          "export declare function keyed<D extends { id: string }>(data: D): void;",
+          "export declare function echo<D>(data: D): Promise<Awaited<D>>;",
+          "",
+        ].join("\n"),
+        "main.ts": [
+          'import { echo, keyed, send } from "./lib.js";',
+          "type Payload = { title: string; body: string };",
+          "type Keyed = { id: string; note: string };",
+          'const payload: Payload = { title: "t", body: "b" };',
+          'const record: Keyed = { id: "i", note: "n" };',
+          'await send("u", payload);',
+          "keyed(record);",
+          "type Echoed = { kept: string; dropped: string };",
+          'const echoed: Echoed = { kept: "k", dropped: "d" };',
+          "console.log((await echo(echoed)).kept);",
+          "",
+        ].join("\n"),
+      }).filter((one) => one.startsWith("DS1301")),
+    ).toEqual(["DS1301 Keyed.id", "DS1301 Keyed.note", "DS1301 Echoed.dropped"]);
+  });
+});

@@ -1,5 +1,7 @@
+import type { Confidence } from "../config.ts";
 import type { Finding } from "../finding.ts";
 import { KINDS } from "../kinds.ts";
+import { parameterRef } from "../ref.ts";
 import { UNUSED_PARAMETER, UNUSED_RESULT, type PartFact } from "../intra-function-parts.ts";
 import { reachedWithTheTests } from "../sweep.ts";
 import type { Emitter, EmitterInput } from "./emitter.ts";
@@ -12,29 +14,56 @@ function spelled(rules: readonly string[]): string {
   return `${rules.slice(0, -1).join(", ")} and ${rules.at(-1) ?? ""}`;
 }
 
-/** The clause a message ends with: the other rules that report the kind, or that none is known. */
-function overlapClause(overlap: readonly string[]): string {
-  return overlap.length === 1 && overlap[0] === "none known"
-    ? "no other rule is known to report it"
-    : `also reported by ${spelled(overlap)}`;
-}
+/** The compiler's rule of the parameter kind's overlap list, which reports only in a file it checks. */
+const COMPILER_PARAMETER_RULE = "tsc --noUnusedParameters";
 
 /**
- * Whether one parameter's name is reported: every unread one of a function whose
- * signature is free, and of a function used as a value only one no read parameter follows,
- * because a caller may pass such a function more arguments than it declares.
+ * The clause a message ends with: the other rules that report the part, or that none is
+ * known. A parameter of a file the compiler does not check is no report of the compiler's.
  */
-function parameterReported(
+function overlapClause(overlap: readonly string[], part: PartFact): string {
+  const rules =
+    part.parameter?.checked === false
+      ? overlap.filter((rule) => rule !== COMPILER_PARAMETER_RULE)
+      : overlap;
+  return rules.length === 1 && rules[0] === "none known"
+    ? "no other rule is known to report it"
+    : `also reported by ${spelled(rules)}`;
+}
+
+/** What a parameter's finding asks: its deletion, or, where a read parameter follows it, its rename. */
+type ParameterVerdict =
+  | { readonly fix: "delete"; readonly confidence: Confidence }
+  | { readonly fix: "rename" }
+  | undefined;
+
+/**
+ * Whether one unread parameter is reported, and how. Of a free signature it is deleted. A
+ * caller may pass a function used as a value more arguments than it declares, so there one
+ * a read parameter follows is renamed to an underscore name, which the compilers read as
+ * declared unread, and one no read parameter follows is deleted: kept where the call's
+ * inference may read its annotation, at `probable` where nothing reads the annotation.
+ */
+function parameterVerdict(
   part: PartFact,
   free: ReadonlySet<string>,
   freeButValued: ReadonlySet<string>,
-): boolean {
+): ParameterVerdict {
   const place = part.parameter;
   if (place?.inValue !== true && free.has(part.declaration)) {
-    return true;
+    return place?.annotated === undefined ? { fix: "delete", confidence: "certain" } : undefined;
   }
   const valued = place?.inValue === true || freeButValued.has(part.declaration);
-  return valued && place?.beforeARead !== true;
+  if (!valued) {
+    return undefined;
+  }
+  if (place?.beforeARead === true) {
+    return { fix: "rename" };
+  }
+  if (place?.annotated === "steers") {
+    return undefined;
+  }
+  return { fix: "delete", confidence: place?.annotated === "free" ? "probable" : "certain" };
 }
 
 /**
@@ -55,7 +84,7 @@ function reported(
   const { free, freeButValued, discardedEverywhere } = input.intraFunction;
   switch (part.code) {
     case UNUSED_PARAMETER:
-      return parameterReported(part, free, freeButValued);
+      return parameterVerdict(part, free, freeButValued) !== undefined;
     case UNUSED_RESULT:
       return (
         free.has(part.declaration) &&
@@ -119,20 +148,33 @@ export const intraFunction: Emitter = (input) => {
     if (declaration === undefined || !judged(declaration.id) || !reported(input, part, unknown)) {
       continue;
     }
+    const verdict =
+      part.code === UNUSED_PARAMETER
+        ? parameterVerdict(part, input.intraFunction.free, input.intraFunction.freeButValued)
+        : undefined;
+    const message =
+      verdict?.fix === "rename"
+        ? `${part.message}, and a read parameter follows it, so rename it to _${part.name}`
+        : part.message;
     found.push({
       code: part.code,
       position: part.position,
       symbol: {
-        ref: declaration.ref,
+        ...(part.code === UNUSED_PARAMETER
+          ? { ref: parameterRef(declaration.ref, part.name), holder: declaration.ref }
+          : { ref: declaration.ref }),
         kind: part.kind,
         name: part.name,
         sizeLines: part.position.endLine - part.position.line + 1,
       },
-      message: `${part.message}; ${overlapClause(overlap)}`,
+      message: `${message}; ${overlapClause(overlap, part)}`,
       details: {
         ...(part.kind === "store" ? { writePositions: [part.position] } : {}),
         overlap,
       },
+      ...(verdict?.fix === "delete" && verdict.confidence !== "certain"
+        ? { reachabilityClass: verdict.confidence }
+        : {}),
     });
   }
   return found;

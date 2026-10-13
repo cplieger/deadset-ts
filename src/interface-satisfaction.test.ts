@@ -452,6 +452,60 @@ describe("a class value reaching an interface through a typed position", () => {
     });
   });
 
+  it("reaches an object type a type alias names, and an intersection of one with an interface, and no mapped type an alias names", () => {
+    expect(
+      sweepWritten({
+        "main.ts": [
+          "type Shape = { kind: string; area(): number };",
+          "interface Tagged { tag(): string }",
+          "type TaggedShape = Tagged & { name: string };",
+          "class Square implements Shape {",
+          '  kind = "square";',
+          "  area(): number { return 1; }",
+          "  spare(): number { return 0; }",
+          "}",
+          "class Label {",
+          '  tag(): string { return "t"; }',
+          '  name = "n";',
+          "  idle(): number { return 0; }",
+          "}",
+          "const shapes = (): Shape[] => [new Square()];",
+          "const frozen: Readonly<Square> = new Square();",
+          "const tagged: TaggedShape = new Label();",
+          "console.log(shapes().map((s) => s.kind), tagged.tag(), [frozen].length);",
+          "",
+        ].join("\n"),
+      }),
+    ).toEqual({
+      retained: [
+        "Square.kind satisfies Shape 4",
+        "Square.area satisfies Shape 4",
+        "Label.tag satisfies Tagged 16",
+        "Label.name satisfies TaggedShape 16",
+      ],
+      dead: ["Shape.area", "TaggedShape.name", "Square.spare", "Label.idle"],
+    });
+  });
+
+  it("retains what a constraint requires of a class a generic function reads through its type parameter", () => {
+    expect(
+      sweepWritten({
+        "main.ts": [
+          "interface Sizer { size(): number }",
+          "class Box {",
+          "  size(): number { return 2; }",
+          "  spare(): number { return 0; }",
+          "}",
+          "function total<S extends Sizer>(...values: S[]): number {",
+          "  return values.reduce((sum, value) => sum + value.size(), 0);",
+          "}",
+          "console.log(total(new Box()));",
+          "",
+        ].join("\n"),
+      }),
+    ).toEqual({ retained: ["Box.size satisfies Sizer 9"], dead: ["Box.spare"] });
+  });
+
   it("reaches the constraint of a generic call's parameter at the argument's own place", () => {
     expect(
       sweepWritten(

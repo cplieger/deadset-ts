@@ -61,6 +61,8 @@ Some rows read a directory that the framework's configuration file moves, such a
 
 Any other value is the setup failure `convention-not-literal`. So is an object on the way to the property that is not written out, that spreads another object in, or that computes a key from anything but a literal. Write the value as a literal, or name the row in `ts.disabled_conventions` and its files in `ts.entry_files`.
 
+A row's glob, and a path a `package.json` key gives the `oclif` and `parcel` rows, may name the build output of a configuration with an `outDir`. It then roots the source file that output is compiled from.
+
 The `angular` and `angular-devkit` rows also read `angular.json`. A package that a `builder`, `polyfills`, `styles` or `scripts` string there names counts as used.
 
 | Row | Package | Versions | What it roots |
@@ -69,10 +71,15 @@ The `angular` and `angular-devkit` rows also read `angular.json`. A package that
 | `angular-devkit` | `@angular-devkit/build-angular` | `>=12.0.0 <22.0.0` | The same files as `angular` |
 | `astro` | `astro` | `>=5.0.0 <8.0.0` | Pages other than `_`-prefixed files and directories, middleware, actions and the content configuration below `src`, which `srcDir` moves |
 | `babel` | `@babel/core` | `>=7.0.0 <9.0.0` | Nothing. `@babel/runtime` counts as used where a Babel configuration file lists `@babel/plugin-transform-runtime` in `plugins` |
+| `docusaurus` | `@docusaurus/core` | `>=2.0.0 <4.0.0` | Every module below `src/pages` and `src/theme` |
+| `eslint` | `eslint` | `>=4.0.0 <10.0.0` | Nothing. A plugin or shareable configuration that `plugins` or `extends` of `.eslintrc`, `.eslintrc.json`, `.eslintrc.js` or `.eslintrc.cjs` names by its short name, such as `plugin:react/recommended` or `airbnb`, counts as used |
 | `eslint` | `eslint` | `>=10.0.0 <11.0.0` | Every `eslint.config.*` file |
+| `expo` | `expo` | `>=44.0.0 <60.0.0` | The `index` and `App` modules beside the manifest |
 | `expo-router` | `expo-router` | `>=3.0.0 <58.0.0` | Every module below `app` or `src/app` |
 | `next` | `next` | `>=13.4.0 <17.0.0` | The App Router's special and metadata files, `pages`, and `proxy`, `middleware`, `instrumentation` and `mdx-components`, at the root or below `src` |
 | `nuxt` | `nuxt` | `>=3.0.0 <5.0.0` | The app, error, app configuration and router options files, pages, layouts, middleware, plugins, modules and server routes, which `srcDir`, `serverDir` and `dir` move |
+| `oclif` | `@oclif/core` | `>=1.0.0 <5.0.0` | Every module below `src/commands` and `src/hooks`, every module below the directory `oclif.commands` in `package.json` names, and each file `oclif.hooks` names |
+| `parcel` | `parcel` | `>=2.0.0 <3.0.0` | Each file `source` or `targets.*.source` in `package.json` names |
 | `qwik-city` | `@builder.io/qwik-city` | `>=1.0.0 <2.0.0` | `root`, the `entry.*` files and the routes, which `srcDir` and `routesDir` move |
 | `react-router` | `@react-router/dev` | `>=7.0.0 <9.0.0` | `root`, `routes`, `entry.client`, `entry.server` and the `routes` directory below `app`, which `appDirectory` moves |
 | `remix` | `@remix-run/dev` | `>=2.0.0 <3.0.0` | The same files as `react-router`, which `appDirectory` moves |
@@ -83,6 +90,7 @@ The `angular` and `angular-devkit` rows also read `angular.json`. A package that
 | `stryker` | `@stryker-mutator/core` | `>=7.0.0 <11.0.0` | Every `stryker.conf.*` and `stryker.config.*` module, with or without a leading dot. The runner and checker packages `testRunner` and `checkers` name count as used |
 | `sveltekit` | `@sveltejs/kit` | `>=2.0.0 <4.0.0` | Route files, hooks, params, the service worker and `instrumentation.server` below `src`, which the `files` options move |
 | `swc` | `@swc/core` | `>=1.0.0 <2.0.0` | Nothing. `@swc/helpers` counts as used where `.swcrc` sets `jsc.externalHelpers` to `true` |
+| `tanstack-router` | `@tanstack/router-plugin` | `>=1.0.0 <2.0.0` | Every module below `src/routes`, which `routesDirectory` moves |
 | `vite` | `vite` | `>=8.0.0 <9.0.0` | Nothing. `@oxc-project/runtime` counts as used where `vite.config.*` sets `oxc.helpers.mode` to `Runtime` |
 | `vitepress` | `vitepress` | `>=1.0.0 <2.0.0-0 \|\| >=2.0.0-alpha.0 <3.0.0` | The `.vitepress` configuration and theme entry, every `*.data.*` loader and every `.vue` component, which Markdown pages load |
 | `vitest` | `vitest` | `>=3.2.0 <6.0.0` | Every `vitest.config.*` and `vite.config.*` file, with or without a qualifier |
@@ -99,7 +107,7 @@ An exemption holds a declaration back from the report when something the compile
 | `injection-container` | A decorated property, and every parameter property, of a class a dependency-injection container constructs: one passed to a call `ts.injection_registrations` names, or one with a decorated constructor parameter |
 | `framework-lifecycle` | A member a `ts.lifecycle_contracts` entry lists, on a class the entry's decorator, call or base class makes a component |
 | `serialization-contract` | The properties of a class whose values reach `JSON.stringify` or a `ts.serializers` declaration, and its `toJSON` and `toString` when a value reaches an `unknown` or `any` parameter outside the analysis |
-| `generated-file` | Every declaration in a file marked `@generated` or `Code generated ... DO NOT EDIT.`, or below a directory an applied convention row names as generated |
+| `generated-file` | Every declaration in a file whose leading comments mark it generated: `@generated`, `Code generated ... DO NOT EDIT.`, a notice that says it is generated and not to edit it, or a first line `// Generated by <tool>`. Also every declaration below a directory an applied convention row names as generated |
 | `template-field` | A member that an action of a template under `analysis.template_dirs`, or a live component file's markup, names |
 | `reflective-lookup` | A member that a literal key of an element access, or of `Reflect.get`, `Reflect.set` or `Reflect.has`, names |
 
@@ -109,7 +117,7 @@ An exemption holds a declaration back from the report when something the compile
 
 A library's published API has callers outside the target. A scope document passed with `--scope` names the consumers loaded beside it, each a directory whose compiler configurations open in the same session. A reference from a consumer keeps a target declaration live, and the report names every consumer it loaded. A consumer that is absent or does not load ends the run with exit code 3.
 
-The published API is reported at confidence `certain` once every declared consumer loads, and `possible` when the scope declares none. In that second case the default `analysis.min_confidence`, `probable`, withholds those findings, and the visibility-narrowing kinds report only in files no manifest export reaches. Every other declaration is `certain`, unless it is dead in a group with a published member, as the next section says, or only tests reach it. A declaration only tests reach, such as a test helper, is `possible` while a test references it, and `certain` when nothing does. So is a member whose name a production file tests with `in`, as in `"uploaded" in value`, because the value is read back by that name where no type links the read to the member. The default withholds those `possible` findings too.
+The published API is reported at confidence `certain` once every declared consumer loads, and `possible` when the scope declares none. In that second case the default `analysis.min_confidence`, `probable`, withholds those findings, and the visibility-narrowing kinds report only in files no manifest export reaches. Every other declaration is `certain`, unless it is dead in a group with a published member, as the next section says. A file only tests reach is test-support code when it imports a test runner or a test library, or imports only devDependencies that only tests and the files only tests reach import. Test-support code is test code, which a test reference keeps live. A file only tests reach with no such import is production code, so a declaration of it that only tests reference is reported under `DS1004`. A member whose name a production file tests with `in`, as in `"uploaded" in value`, is `possible`, because the value is read back by that name where no type links the read to the member. The default withholds those `possible` findings too.
 
 ## Groups that keep each other alive
 

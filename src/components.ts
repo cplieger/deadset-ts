@@ -208,12 +208,12 @@ function linesSpanned(symbols: readonly (InventorySymbol | undefined)[]): number
 }
 
 /**
- * The dead declarations by subgraph place (`at`, and `position` per graph declaration),
- * a test file's only where it tests dead code or nothing the tests reach. `adjacent` holds
- * each reference one makes to another, except an unreferenced test-file declaration's to
- * production code, which decides nothing of its target; an edge each way between a dead
- * member and its dead container; and one back from each production target of an admitted
- * test, which puts the test in its subject's component. `references` holds the first alone.
+ * The dead declarations by subgraph place (`at`, and `position` per graph declaration), a
+ * test file's only where it tests dead code or nothing the tests reach. `adjacent` holds each
+ * reference one makes to another, but an unreferenced test-file declaration's to production
+ * code, which decides nothing; an edge each way between a dead member and its dead container;
+ * and one back from each non-ambient production target of an admitted test, which puts the
+ * test in its subject's component. `references` holds the first alone.
  */
 function deadSubgraph(
   graph: Graph,
@@ -248,6 +248,7 @@ function deadSubgraph(
       if (
         testOfDeadCode[index] === true &&
         graph.test[edge.to] !== true &&
+        graph.ambient[edge.to] !== true &&
         graph.subject[edge.to] === true
       ) {
         adjacent[to]?.push(from);

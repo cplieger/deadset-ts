@@ -8,7 +8,7 @@ import type { Engine } from "../src/session.ts";
 export const LOAD_TIMEOUT = 60_000;
 
 /** What one application is written and swept with beside its entry file. */
-export interface PartsOptions {
+interface PartsOptions {
   /** More files, by path below the root; a `tsconfig*.json` entry adds or replaces a project. */
   readonly files?: Readonly<Record<string, string>>;
   /** More top-level keys of `deadset.json`. */

@@ -22,19 +22,24 @@ import {
   type SourceFile,
 } from "@typescript/native/ast";
 import { aliasChains } from "./alias-chain.ts";
-import type { ParseFile } from "./configuration-files.ts";
+import {
+  filesNamedBy,
+  outsideChain,
+  relativeSpecifiers,
+  type ParseFile,
+} from "./configuration-files.ts";
 import { conventionEntries, type Conventions } from "./conventions.ts";
 import { entryPoints, type EntryRule } from "./entry-points.ts";
 import { globExpression } from "./glob.ts";
 import type { Host } from "./host.ts";
 import { nodeKey, type Inventory, type InventorySymbol } from "./inventory.ts";
 import type { Manifest, ManifestEntry } from "./manifest.ts";
-import { relativePath, resolvePath } from "./paths.ts";
+import { dirnamePath, joinPath, relativePath, resolvePath } from "./paths.ts";
 import { byPosition } from "./position.ts";
 import { UNANSWERED } from "./query.ts";
 import type { ProjectView } from "./session.ts";
 import type { Symbol as TSSymbol, Type } from "@typescript/native/sync";
-import { sourceFilesOf } from "./source-files.ts";
+import { sourceFilesOf, type SourceFiles } from "./source-files.ts";
 import { typeQueryAliases } from "./type-query-alias.ts";
 
 /** Why one declaration is a root. */
@@ -104,6 +109,8 @@ export interface Roots {
    * unknown; otherwise each one an unanswered published type name may name.
    */
   readonly unanswered: readonly string[];
+  /** Every manifest entry naming a file to import or run that reads back to no file of this project. */
+  readonly unmappedEntries: readonly ManifestEntry[];
 }
 
 /** What decides the roots beside the declarations themselves. */
@@ -134,6 +141,8 @@ export interface RootOptions {
    * inside the target whose entries are published API whatever the target's kind.
    */
   readonly publishedMembers?: ReadonlySet<string> | undefined;
+  /** Every file a program of the run holds, so a file another configuration compiles is no outside file. */
+  readonly runFiles?: ReadonlySet<string> | undefined;
 }
 
 /** Whether one declaration is written below the directory of a published workspace member. */
@@ -171,11 +180,25 @@ const OUTPUT_EXTENSION = /\.(?:d\.ts|d\.mts|d\.cts|js|mjs|cjs|jsx)$/u;
 /** The extension a source file's name drops. */
 const SOURCE_EXTENSION = /\.(?:d\.)?[cm]?[jt]sx?$/u;
 
+/** Whether no `package.json` sits between one file and the manifest's directory, which holds it. */
+function ofPackage(host: Host, dir: string, file: string): boolean {
+  for (let at = dirnamePath(file); at !== dir; at = dirnamePath(at)) {
+    if (
+      relativePath(dir, at) === undefined ||
+      host.kindOf(joinPath(at, "package.json")) === "file"
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /**
  * The rooted files one manifest target reads back to by name: its path below the
  * manifest's directory, past its first directory where it names one, without its output
- * extension, is the name, and a rooted file is one whose path below the same directory,
- * without its source extension, ends with that name at a directory boundary.
+ * extension, is the name, and a rooted file of the manifest's own package is one whose
+ * path below the same directory, without its source extension, ends with that name at a
+ * directory boundary.
  */
 function readBackByName(
   host: Host,
@@ -195,8 +218,47 @@ function readBackByName(
   const found = new Map<string, SourceFile>();
   for (const file of rooted) {
     const path = relativePath(dir, file.fileName)?.replace(SOURCE_EXTENSION, "");
-    if (path !== undefined && (path === name || path.endsWith(`/${name}`))) {
+    if (
+      path !== undefined &&
+      (path === name || path.endsWith(`/${name}`)) &&
+      ofPackage(host, dir, file.fileName)
+    ) {
       found.set(file.fileName, file);
+    }
+  }
+  return [...found.values()];
+}
+
+/**
+ * The program files a manifest target no program holds reaches: the target is a file
+ * read as a configuration file outside the program is, and each file of the chain it
+ * starts loads the program files its relative specifiers name, read through the emit
+ * mapping, as a command's shim loads the compiled entry it runs.
+ */
+function throughOutside(
+  options: RootOptions,
+  targetRoot: string,
+  files: SourceFiles,
+  entry: ManifestEntry,
+): readonly SourceFile[] {
+  const cwd = options.host.workingDirectory();
+  const path = resolvePath(cwd, entry.path);
+  if (
+    options.parse === undefined ||
+    options.runFiles?.has(path) === true ||
+    options.host.kindOf(path) !== "file"
+  ) {
+    return [];
+  }
+  const chain = outsideChain(options.host, targetRoot, files, options.parse, [
+    { path, manifestDir: resolvePath(cwd, entry.dir) },
+  ]);
+  const found = new Map<string, SourceFile>();
+  for (const { file } of chain) {
+    for (const specifier of relativeSpecifiers(file)) {
+      for (const named of filesNamedBy(files, dirnamePath(file.fileName), specifier)) {
+        found.set(named.fileName, named);
+      }
     }
   }
   return [...found.values()];
@@ -307,9 +369,21 @@ export function roots<Brand>(
     found.set([id, kind, source].join("\u0000"), { id, kind, source });
   };
 
-  const entered: { file: SourceFile; kind: RootKind; source: string; exports: boolean }[] = [];
-  const enter = (file: SourceFile, kind: RootKind, source: string, exports: boolean): void => {
-    entered.push({ file, kind, source, exports });
+  const entered: {
+    file: SourceFile;
+    kind: RootKind;
+    source: string;
+    exports: boolean;
+    names?: readonly string[];
+  }[] = [];
+  const enter = (
+    file: SourceFile,
+    kind: RootKind,
+    source: string,
+    exports: boolean,
+    names?: readonly string[],
+  ): void => {
+    entered.push({ file, kind, source, exports, ...(names === undefined ? {} : { names }) });
   };
 
   const points = entryPoints(
@@ -344,11 +418,28 @@ export function roots<Brand>(
     ...scripted,
     ...points.filter((point) => READ_BACK_RULES.has(point.rule)).map((point) => point.file),
   ];
+  const entryFilesOf = new Map<ManifestEntry, readonly SourceFile[]>();
   const entryFiles = (entry: ManifestEntry): readonly SourceFile[] => {
+    const known = entryFilesOf.get(entry);
+    if (known !== undefined) {
+      return known;
+    }
+    const found = readEntryFiles(entry);
+    entryFilesOf.set(entry, found);
+    return found;
+  };
+  const readEntryFiles = (entry: ManifestEntry): readonly SourceFile[] => {
     const named = files.named(entry.path);
-    return named.length > 0 || entry.role === "script"
-      ? named
-      : readBackByName(options.host, entry, readBackTo);
+    if (named.length > 0 || entry.role === "script") {
+      return named;
+    }
+    const cwd = options.host.workingDirectory();
+    const shipped = files.namedAsOutput(resolvePath(cwd, entry.dir), resolvePath(cwd, entry.path));
+    if (shipped.length > 0) {
+      return shipped;
+    }
+    const byName = readBackByName(options.host, entry, readBackTo);
+    return byName.length > 0 ? byName : throughOutside(options, targetRoot, files, entry);
   };
   for (const { entry, publishes } of entries) {
     if (publishes) {
@@ -356,19 +447,33 @@ export function roots<Brand>(
     }
   }
   const publishedNames = new Set(published.map((file) => file.fileName));
-  for (const { entry } of entries) {
-    for (const file of entryFiles(entry)) {
-      const kind = ENTRY_KINDS[entry.role];
-      enter(file, kind, entry.member, !publishedNames.has(file.fileName));
-    }
-  }
+  const patterned: { file: SourceFile; pattern: string }[] = [];
   for (const pattern of options.entryFiles) {
     const expression = globExpression(pattern);
     for (const [path, file] of files.byPath) {
       if (expression.test(path)) {
-        enter(file, "entry-file", pattern, true);
+        patterned.push({ file, pattern });
       }
     }
+  }
+  const unmapped: ManifestEntry[] = [];
+  const mapped = patterned.map(({ file }) => file);
+  for (const { entry } of entries) {
+    const named = entryFiles(entry);
+    if (named.length === 0 && entry.role !== "script") {
+      unmapped.push(entry);
+    }
+    mapped.push(...named);
+    for (const file of named) {
+      const kind = ENTRY_KINDS[entry.role];
+      enter(file, kind, entry.member, !publishedNames.has(file.fileName));
+    }
+  }
+  const unmappedEntries = unmapped.filter(
+    (entry) => readBackByName(options.host, entry, mapped).length === 0,
+  );
+  for (const { file, pattern } of patterned) {
+    enter(file, "entry-file", pattern, true);
   }
   for (const { file, row } of options.conventions === undefined
     ? []
@@ -376,7 +481,7 @@ export function roots<Brand>(
     enter(file, "convention", row, true);
   }
   for (const point of points) {
-    enter(point.file, point.rule, point.source, point.exports);
+    enter(point.file, point.rule, point.source, point.exports, point.names);
   }
   for (const file of files.byPath.values()) {
     for (const alias of typeQueryAliases(file)) {
@@ -390,7 +495,11 @@ export function roots<Brand>(
     }
   }
 
-  const { tables: exportsOf, answered } = exportTables(project, held, [
+  const {
+    tables: exportsOf,
+    named,
+    answered,
+  } = exportTables(project, held, [
     ...entered.filter((entry) => entry.exports).map((entry) => entry.file),
     ...published,
   ]);
@@ -401,8 +510,13 @@ export function roots<Brand>(
     }
     add(id, entry.kind, entry.source);
     if (entry.exports) {
-      for (const exported of exportsOf.get(entry.file.fileName) ?? []) {
-        add(exported, entry.kind, entry.source);
+      const byName = named.get(entry.file.fileName);
+      const exported =
+        entry.names === undefined || byName === undefined
+          ? (exportsOf.get(entry.file.fileName) ?? [])
+          : entry.names.flatMap((name) => byName.get(name) ?? []);
+      for (const one of exported) {
+        add(one, entry.kind, entry.source);
       }
     }
   }
@@ -433,6 +547,7 @@ export function roots<Brand>(
     liveUnderReachability: ordered,
     unmatched,
     unanswered: answered ? api.guessed : held.symbols.map((symbol) => symbol.id),
+    unmappedEntries,
   };
 }
 
@@ -448,12 +563,18 @@ function exportTables<Brand>(
   project: ProjectView<Brand>,
   held: Inventory,
   wanted: readonly SourceFile[],
-): { readonly tables: ReadonlyMap<string, readonly string[]>; readonly answered: boolean } {
+): {
+  readonly tables: ReadonlyMap<string, readonly string[]>;
+  /** Per file whose table the checker answered, the declarations each export name reaches. */
+  readonly named: ReadonlyMap<string, ReadonlyMap<string, readonly string[]>>;
+  readonly answered: boolean;
+} {
   const unique = [...new Map(wanted.map((file) => [file.fileName, file])).values()];
   const tables = new Map<string, readonly string[]>();
+  const named = new Map<string, Map<string, string[]>>();
   let answered = true;
   if (unique.length === 0) {
-    return { tables, answered };
+    return { tables, named, answered };
   }
   const modules = project.symbolsAt(unique.map((file) => project.handle(file)));
   const chains = aliasChains(project, held);
@@ -475,15 +596,18 @@ function exportTables<Brand>(
       return;
     }
     const ids = new Set<string>();
+    const byName = new Map<string, string[]>();
     for (const exported of table) {
       for (const target of chains.chainOf(exported)) {
         answered &&= !target.guessed;
         ids.add(target.id);
+        byName.set(exported.name, [...(byName.get(exported.name) ?? []), target.id]);
       }
     }
     tables.set(file.fileName, [...ids]);
+    named.set(file.fileName, byName);
   });
-  return { tables, answered };
+  return { tables, named, answered };
 }
 
 /** A release tag of a documentation comment: `@` and its name, between white space or the ends. */
@@ -553,11 +677,13 @@ function publishedAPI<Brand>(
   const nodes = declarationNodes(held, byPath);
   const chains = aliasChains(project, held);
   const reached = new Set<string>();
+  const entered = new Set<string>();
   const guessed = new Set<string>();
   const pending: string[] = [];
   const reach = (id: string): void => {
-    if (!reached.has(id) && byId.get(id)?.kind !== "file") {
-      reached.add(id);
+    const file = byId.get(id)?.kind === "file";
+    if (!(file ? entered : reached).has(id)) {
+      (file ? entered : reached).add(id);
       pending.push(id);
     }
   };
@@ -566,11 +692,7 @@ function publishedAPI<Brand>(
   }
   for (const file of published) {
     for (const id of exportsOf.get(file.fileName) ?? []) {
-      if (byId.get(id)?.kind === "file") {
-        pending.push(id);
-      } else {
-        reach(id);
-      }
+      reach(id);
     }
   }
   while (pending.length > 0) {
@@ -595,8 +717,7 @@ function publishedAPI<Brand>(
       project,
       round.flatMap((id) => {
         const symbol = byId.get(id);
-        const node = symbol === undefined ? undefined : nodes.nodeOf(symbol);
-        return node === undefined ? [] : [node];
+        return symbol === undefined ? [] : nodes.nodesOf(symbol);
       }),
     )) {
       for (const target of chains.chainOf(symbol)) {
@@ -625,24 +746,22 @@ function declarationNodes(
   byPath: ReadonlyMap<string, SourceFile>,
 ): {
   typeNamesOf(symbol: InventorySymbol): readonly Node[];
-  nodeOf(symbol: InventorySymbol): Node | undefined;
+  nodesOf(symbol: InventorySymbol): readonly Node[];
 } {
-  const walked = new Map<string, { byId: Map<string, Node>; nodes: Set<Node> }>();
-  const nodesIn = (path: string): { byId: Map<string, Node>; nodes: Set<Node> } => {
+  const walked = new Map<string, { byId: Map<string, Node[]>; nodes: Set<Node> }>();
+  const nodesIn = (path: string): { byId: Map<string, Node[]>; nodes: Set<Node> } => {
     const known = walked.get(path);
     if (known !== undefined) {
       return known;
     }
-    const found = { byId: new Map<string, Node>(), nodes: new Set<Node>() };
+    const found = { byId: new Map<string, Node[]>(), nodes: new Set<Node>() };
     const file = byPath.get(path);
     if (file !== undefined) {
       const visit = (node: Node): void => {
         const id = held.declarations.get(nodeKey(file, node));
         if (id !== undefined) {
           found.nodes.add(node);
-          if (!found.byId.has(id)) {
-            found.byId.set(id, node);
-          }
+          found.byId.set(id, [...(found.byId.get(id) ?? []), node]);
         }
         node.forEachChild(visit);
       };
@@ -654,10 +773,9 @@ function declarationNodes(
   return {
     typeNamesOf: (symbol) => {
       const { byId, nodes } = nodesIn(symbol.position.path);
-      const declaration = byId.get(symbol.id);
-      return declaration === undefined ? [] : typeNamesOf(declaration, nodes);
+      return (byId.get(symbol.id) ?? []).flatMap((declaration) => typeNamesOf(declaration, nodes));
     },
-    nodeOf: (symbol) => nodesIn(symbol.position.path).byId.get(symbol.id),
+    nodesOf: (symbol) => nodesIn(symbol.position.path).byId.get(symbol.id) ?? [],
   };
 }
 

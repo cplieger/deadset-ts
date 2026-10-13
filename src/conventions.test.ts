@@ -1133,6 +1133,122 @@ describe("the rows of a documentation site and an Angular CLI project", () => {
     };
   };
 
+  it.each([
+    [
+      "docusaurus",
+      "@docusaurus/core",
+      "3.5.0",
+      ["src/pages/index.tsx", "src/theme/Footer/index.js"],
+      ["src/components/Card.tsx"],
+    ],
+    ["expo", "expo", "52.0.0", ["index.js", "App.tsx"], ["src/App.tsx"]],
+    [
+      "oclif",
+      "@oclif/core",
+      "4.0.0",
+      ["src/commands/run.ts", "src/hooks/init.ts"],
+      ["src/index.ts"],
+    ],
+    [
+      "tanstack-router",
+      "@tanstack/router-plugin",
+      "1.100.0",
+      ["src/routes/__root.tsx", "src/routes/posts/$id.tsx"],
+      ["src/main.tsx"],
+    ],
+  ])("applies the %s row and roots its entries", (name, tool, version, entries, others) => {
+    expect(rooted(name, tool, version, [...entries, ...others])).toEqual({
+      applied: [`${name} ${version}`],
+      rooted: entries,
+    });
+  });
+
+  it("uses the plugins and shareable configurations a legacy ESLint configuration names by short name", () => {
+    const uses = (files: Readonly<Record<string, string>>): readonly string[] =>
+      decide(
+        {
+          "/repo/package.json": JSON.stringify({
+            devDependencies: {
+              eslint: "8.57.0",
+              "eslint-plugin-react": "7.0.0",
+              "eslint-plugin-import": "2.0.0",
+              "@typescript-eslint/eslint-plugin": "8.0.0",
+              "@scope/eslint-plugin-rules": "1.0.0",
+              "eslint-config-airbnb": "19.0.0",
+              "eslint-config-prettier": "9.0.0",
+              "@scope/eslint-config": "1.0.0",
+              "eslint-plugin-unused": "1.0.0",
+            },
+          }),
+          "/repo/node_modules/eslint/package.json": JSON.stringify({ version: "8.57.0" }),
+          ...files,
+        },
+        [],
+        CONVENTION_ROWS.filter((one) => one.name === "eslint"),
+      ).uses;
+
+    expect(
+      uses({
+        "/repo/.eslintrc.json": JSON.stringify({
+          extends: [
+            "eslint:recommended",
+            "plugin:react/recommended",
+            "plugin:@typescript-eslint/recommended",
+            "airbnb/hooks",
+            "prettier",
+            "@scope",
+            "./local.js",
+          ],
+          plugins: ["import", "@scope/rules"],
+        }),
+      }),
+    ).toEqual([
+      "@scope/eslint-config",
+      "@scope/eslint-plugin-rules",
+      "@typescript-eslint/eslint-plugin",
+      "eslint-config-airbnb",
+      "eslint-config-prettier",
+      "eslint-plugin-import",
+      "eslint-plugin-react",
+    ]);
+    expect(uses({ "/repo/.eslintrc.cjs": 'module.exports = { plugins: ["react"] };' })).toEqual([
+      "eslint-plugin-react",
+    ]);
+  });
+
+  it("reads the tanstack-router routes directory its Vite plugin call or tsr.config.json moves", () => {
+    const routes = (files: Readonly<Record<string, string>>): readonly string[] => {
+      const version = "1.100.0";
+      const decided = decide(
+        {
+          "/repo/package.json": JSON.stringify({
+            devDependencies: { "@tanstack/router-plugin": version },
+          }),
+          "/repo/node_modules/@tanstack/router-plugin/package.json": JSON.stringify({ version }),
+          ...files,
+        },
+        [],
+        CONVENTION_ROWS.filter((one) => one.name === "tanstack-router"),
+      );
+      return ["src/routes/a.tsx", "app/pages/b.tsx", "web/c.tsx"].filter(
+        (path) => matches(decided, path).length > 0,
+      );
+    };
+
+    expect(
+      routes({
+        "/repo/vite.config.ts": [
+          'import { tanstackRouter } from "@tanstack/router-plugin/vite";',
+          'export default { plugins: [tanstackRouter({ routesDirectory: "app/pages" })] };',
+        ].join("\n"),
+      }),
+    ).toEqual(["app/pages/b.tsx"]);
+    expect(routes({ "/repo/tsr.config.json": '{ "routesDirectory": "./web" }' })).toEqual([
+      "web/c.tsx",
+    ]);
+    expect(routes({})).toEqual(["src/routes/a.tsx"]);
+  });
+
   it("applies the VitePress row to a prerelease of its next major and roots its configuration, theme, loaders and components", () => {
     expect(
       rooted("vitepress", "vitepress", "2.0.0-alpha.20", [

@@ -1,10 +1,10 @@
 /**
  * The serialization-contract class: the data members and `toJSON` of every type a value's
  * static type reaches, where the value reaches `JSON.stringify` or a call `ts.serializers`
- * names, and `toString` too where it reaches an `unknown` or `any` parameter of a function
- * outside the analysis or an erased property of a type the program does not declare. A
- * function of the project handing such a parameter to a destination is one, to a fixpoint,
- * and a function invoked through `call`, `apply` or `bind` is the callee.
+ * names, and `toString` too where it reaches an erased parameter of a function outside the
+ * analysis, or an erased property of a type the program does not declare. A function of
+ * the project handing such a parameter to a destination is one, to a fixpoint, and a
+ * function invoked through `call`, `apply` or `bind` is the callee.
  */
 
 import {
@@ -79,6 +79,9 @@ const SERIALIZED_CONVERSION = "toJSON";
 
 /** The parameter types that keep nothing of the value they are given. */
 const ERASED = TypeFlags.Any | TypeFlags.Unknown;
+
+/** How deep a callee's result is searched for a type parameter: `Promise<Box<T>>` is two levels. */
+const MENTION_DEPTH = 3;
 
 /**
  * What a destination holds back of a class: its properties, or its properties and its
@@ -564,6 +567,30 @@ function destinations<Brand>(
     });
     return containing.length === 0 ? target.declarations : containing;
   };
+  /** Whether a type names a type parameter, through constituents, type arguments and call signatures. */
+  const mentions = (type: Type, parameter: Type, depth: number): boolean => {
+    // A conditional type an alias names, `Awaited<T>` among them, carries its arguments
+    // only on the alias the client's type object reports.
+    const aliased = (type as { readonly aliasTypeArguments?: readonly number[] })
+      .aliasTypeArguments;
+    if (type.id === parameter.id || aliased?.includes(parameter.id) === true) {
+      return true;
+    }
+    if (depth >= MENTION_DEPTH) {
+      return false;
+    }
+    const inner = [
+      ...(type.isUnionType() || type.isIntersectionType() ? must(queries.constituents(type)) : []),
+      ...must(queries.typeArguments(type)),
+      ...must(queries.signaturesOf(type, SignatureKind.Call)).flatMap((signature) => [
+        ...signature.parameters.map((_parameter, at) =>
+          must(queries.typeAtPosition(signature, at)),
+        ),
+        ...[must(queries.returnTypeOf(signature))].filter((one) => one !== undefined),
+      ]),
+    ];
+    return inner.some((one) => mentions(one, parameter, depth + 1));
+  };
   const erasedArguments = new Map<CallExpression, ReadonlySet<number>>();
   const erasedAt = (call: CallExpression, argument: number): boolean => {
     let indexes = erasedArguments.get(call);
@@ -577,8 +604,32 @@ function destinations<Brand>(
           ? []
           : must(queries.signaturesOf(type, SignatureKind.Call))
         : [resolvedOf(call)].filter((one) => one !== undefined);
+      // A type parameter of the callee that nothing constrains and its result does not name
+      // keeps nothing of the value either: the instantiated signature names the value's own
+      // type there instead, and a result that names it hands the value back.
+      const generic = invoked.indirect ? undefined : resolvedOf(call);
+      const declared = generic === undefined ? undefined : must(queries.genericOf(generic));
+      const unconstrained = (index: number): boolean => {
+        const parameter =
+          declared === undefined ? undefined : must(queries.parameterType(declared, index));
+        const parts =
+          parameter === undefined
+            ? []
+            : parameter.isUnionType()
+              ? must(queries.constituents(parameter))
+              : [parameter];
+        const result = declared === undefined ? undefined : must(queries.returnTypeOf(declared));
+        return parts.some((part) => {
+          if (!part.isTypeParameter() || (result !== undefined && mentions(result, part, 0))) {
+            return false;
+          }
+          const constraint = must(queries.constraintOf(part));
+          return constraint === undefined || (constraint.flags & ERASED) !== 0;
+        });
+      };
       indexes = new Set(
         invoked.arguments.flatMap((_unused, index) =>
+          unconstrained(index) ||
           signatures.some((signature) => {
             const parameter = must(queries.parameterType(signature, index));
             return parameter !== undefined && (parameter.flags & ERASED) !== 0;

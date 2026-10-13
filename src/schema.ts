@@ -106,6 +106,7 @@ export const SCHEMA_ROOT: KeyNode = {
           members: { components: declarations, bases: declarations, members: leaf },
         },
         serializers: declarations,
+        roots_complete: leaf,
       },
     },
     provenance: { kind: "map" },

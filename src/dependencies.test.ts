@@ -33,6 +33,19 @@ function hostWith(files: Readonly<Record<string, string>>): Host {
   };
 }
 
+/** Per file, the packages its uses name, each held by the one declaration `owner`. */
+function usesAt(
+  byFile: Readonly<Record<string, readonly string[]>>,
+  owner = "x.ts:1:1",
+): ProjectNeeds["at"] {
+  return new Map(
+    Object.entries(byFile).map(([path, named]) => [
+      path,
+      new Map(named.map((one) => [one, new Set([owner])])),
+    ]),
+  );
+}
+
 /** Each declared dependency of the manifest at `/repo/pkg`, as `name section line:column`. */
 function declared(manifest: string): string[] {
   return dependenciesOf(
@@ -139,7 +152,7 @@ describe("dependenciesOf", () => {
     };
     const plugin: ProjectNeeds = {
       uses: new Map([["x.ts:1:1", new Set(["plugin"])]]),
-      at: new Map([["/repo/x.ts", new Set(["plugin"])]]),
+      at: usesAt({ "/repo/x.ts": ["plugin"] }),
       unanswered: [],
     };
 
@@ -189,7 +202,7 @@ describe("dependenciesOf", () => {
     });
     const plugin: ProjectNeeds = {
       uses: new Map([["x.ts:1:1", new Set(["plugin"])]]),
-      at: new Map([["/repo/x.ts", new Set(["plugin"])]]),
+      at: usesAt({ "/repo/x.ts": ["plugin"] }),
       unanswered: [],
     };
 
@@ -251,10 +264,10 @@ describe("dependenciesOf", () => {
     });
     const project: ProjectNeeds = {
       uses: new Map([["x.ts:1:1", new Set(["shared", "plugin", "own", "nplugin"])]]),
-      at: new Map([
-        ["/repo/main.ts", new Set(["shared", "plugin"])],
-        ["/repo/nested/src/a.ts", new Set(["own", "nplugin"])],
-      ]),
+      at: usesAt({
+        "/repo/main.ts": ["shared", "plugin"],
+        "/repo/nested/src/a.ts": ["own", "nplugin"],
+      }),
       unanswered: [],
     };
 
@@ -265,6 +278,26 @@ describe("dependenciesOf", () => {
       "package.json host",
       "package.json plugin",
       "package.json shared",
+    ]);
+  });
+
+  it("needs, for a use below a nested manifest declaring the same name, that manifest's declaration alone", () => {
+    const host = hostWith({
+      "/repo/package.json": '{ "dependencies": { "charts": "1", "rooted": "1" } }',
+      "/repo/node_modules/charts/package.json": "{}",
+      "/repo/node_modules/rooted/package.json": "{}",
+      "/repo/nested/package.json": '{ "dependencies": { "charts": "1" } }',
+      "/repo/nested/node_modules/charts/package.json": "{}",
+    });
+    const project: ProjectNeeds = {
+      uses: new Map([["x.ts:1:1", new Set(["charts", "rooted"])]]),
+      at: usesAt({ "/repo/nested/src/a.ts": ["charts", "rooted"] }),
+      unanswered: [],
+    };
+
+    expect(used(dependenciesOf(host, "/repo", [project], [], [], [], ["/repo/nested"]))).toEqual([
+      "nested/package.json charts",
+      "package.json rooted",
     ]);
   });
 
@@ -286,7 +319,7 @@ describe("dependenciesOf", () => {
     });
     const project = (uses: Record<string, string[]>): ProjectNeeds => ({
       uses: new Map(Object.entries(uses).map(([id, named]) => [id, new Set(named)])),
-      at: new Map([["", new Set(Object.values(uses).flat())]]),
+      at: usesAt({ "": Object.values(uses).flat() }),
       unanswered: [],
     });
     const perProject = [

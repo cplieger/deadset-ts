@@ -71,6 +71,7 @@ describe("the dependencies-and-module-machinery emitter", () => {
           `${finding.symbol.name} ${(finding as { details?: { dependencyClass?: string } }).details?.dependencyClass ?? ""}`,
       ),
     ).toEqual([
+      "left-pad dependency",
       "unused-runtime dependency",
       "@types/bundled dev-dependency",
       "unused-dev dev-dependency",
@@ -126,17 +127,48 @@ describe("the dependencies-and-module-machinery emitter", () => {
   });
 
   it("names, per deletion candidate, each declared dependency it holds the last use of, and none two declarations share", () => {
-    const swept = sweepFixture(TARGET);
-    // `start` is a candidate of the production sweep, which counts no test reference.
-    expect(swept.input.dependencies.lastUses).toEqual(
-      new Map([
-        [
-          "src/main.ts:8:17",
-          ["@types/typed-only", "bundled", "host-plugin", "peer-used", "typed-only"],
-        ],
-        ["src/main.ts:12:10", ["left-pad"]],
-      ]),
-    );
+    const installedPackage = (name: string): Record<string, string> => ({
+      [`node_modules/${name}/package.json`]: JSON.stringify({ name, types: "index.d.ts" }),
+      [`node_modules/${name}/index.d.ts`]: "export declare const value: number;\n",
+    });
+    const root = writeProject({
+      "package.json": JSON.stringify({
+        name: "@example/app",
+        type: "module",
+        main: "./src/main.ts",
+        dependencies: { alpha: "1", beta: "1", shared: "1" },
+      }),
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: { strict: true, module: "NodeNext", types: [], noEmit: true },
+        include: ["src"],
+      }),
+      ...installedPackage("alpha"),
+      ...installedPackage("beta"),
+      ...installedPackage("shared"),
+      "src/main.ts": 'import "./dead.js";\n',
+      "src/dead.ts": [
+        'import { value as a } from "alpha";',
+        'import { value as b } from "beta";',
+        'import { value as s } from "shared";',
+        "export function first(): number { return a + s; }",
+        "export function second(): number { return b + s; }",
+        "",
+      ].join("\n"),
+    });
+    const { config } = resolve({
+      repository: JSON.stringify({ target: { kind: "application" } }),
+      repositoryLabel: "deadset.json",
+    });
+    try {
+      expect(emitterInputOf(root, config).dependencies.lastUses).toEqual(
+        new Map([
+          ["src/dead.ts:4:17", ["alpha"]],
+          ["src/dead.ts:5:17", ["beta"]],
+        ]),
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("names on a deletable finding each dependency whose last use deleting its subject removes", () => {
@@ -195,7 +227,9 @@ describe("a workspace whose members declare dependencies", () => {
       ),
     ).toEqual([
       "ts://@example/root/package.json#root-unused:dev-dependency package.json:8",
+      "ts://@example/root/package.json#root-used:dev-dependency package.json:9",
       "ts://@example/app/package.json#member-unused:dev-dependency packages/app/package.json:7",
+      "ts://@example/app/package.json#member-used:dev-dependency packages/app/package.json:8",
       "ts://@example/web/package.json#member-web:dev-dependency packages/web/package.json:7",
     ]);
   });
@@ -216,6 +250,170 @@ describe("a workspace whose members declare dependencies", () => {
         .map((finding) => `${finding.symbol.name} ${finding.reachabilityClass ?? "certain"}`),
       "packages/web/tsconfig.json matches no input, and the root configuration holds packages/web/src",
     ).toEqual(["member-web certain"]);
+  });
+});
+
+describe("a dependency only dead code uses", () => {
+  const installed = (name: string): Record<string, string> => ({
+    [`node_modules/${name}/package.json`]: JSON.stringify({ name, types: "index.d.ts" }),
+    [`node_modules/${name}/index.d.ts`]: "export declare const value: number;\n",
+  });
+
+  it("is reported at the class its users' deadness carries, a dead file's top level among them, and kept where a test or an unread import uses one", () => {
+    const root = writeProject({
+      "package.json": JSON.stringify({
+        name: "@example/app",
+        type: "module",
+        main: "./src/main.ts",
+        dependencies: {
+          bound: "1",
+          "dead-only": "1",
+          "file-level": "1",
+          reached: "1",
+          tested: "1",
+          live: "1",
+        },
+        devDependencies: { vitest: "1" },
+      }),
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: { strict: true, module: "NodeNext", types: [], noEmit: true },
+        include: ["src"],
+      }),
+      ...installed("bound"),
+      ...installed("dead-only"),
+      ...installed("file-level"),
+      ...installed("reached"),
+      ...installed("tested"),
+      ...installed("live"),
+      "src/main.ts": [
+        'import { value } from "live";',
+        'import { value as unread } from "bound";',
+        "console.log(value);",
+        "",
+      ].join("\n"),
+      "src/dead.ts": [
+        'import { value as one } from "dead-only";',
+        'import { value as two } from "reached";',
+        'import { value as four } from "live";',
+        'import { value as five } from "file-level";',
+        "void five;",
+        "export function first(): number { return one + four + inner(); }",
+        "export function second(): number { return one; }",
+        "function inner(): number { return two; }",
+        "",
+      ].join("\n"),
+      "node_modules/vitest/package.json": '{ "name": "vitest", "types": "./index.d.ts" }\n',
+      "node_modules/vitest/index.d.ts": "export {};\n",
+      "src/helped.ts":
+        'import "vitest";\nimport { value } from "tested";\nexport function helper(): number { return value; }\n',
+      "src/helped.test.ts": 'import { helper } from "./helped.ts";\nconsole.log(helper());\n',
+    });
+    const { config } = resolve({
+      repository: JSON.stringify({ target: { kind: "application" } }),
+      repositoryLabel: "deadset.json",
+    });
+    const emit = EMITTERS.get("dependencies-and-module-machinery");
+    try {
+      expect(
+        (emit === undefined ? [] : [...emit(emitterInputOf(root, config))]).map(
+          (finding) =>
+            `${finding.symbol.name} ${finding.unreachableOnly === true ? "reached" : "unreferenced"}: ${finding.message}`,
+        ),
+      ).toEqual([
+        "dead-only unreferenced: only code that is itself dead uses the declared dependency",
+        "file-level unreferenced: only code that is itself dead uses the declared dependency",
+        "reached reached: only code that is itself dead uses the declared dependency",
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("a nested package whose configurations the run could not build", () => {
+  it("has its unneeded dependencies reported at possible, as an unbuilt member's are", () => {
+    const root = writeProject({
+      "package.json": JSON.stringify({
+        name: "@example/app",
+        private: true,
+        type: "module",
+        main: "./src/main.ts",
+      }),
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: { strict: true, module: "NodeNext", types: [], noEmit: true },
+        include: ["src"],
+      }),
+      "src/main.ts": "console.log(1);\n",
+      "sample/package.json": JSON.stringify({
+        name: "sample",
+        private: true,
+        devDependencies: { typescript: "5.0.0" },
+      }),
+      "sample/tsconfig.json": JSON.stringify({ extends: "./absent.json", include: ["src"] }),
+      "sample/src/app.ts": "export const app = 1;\n",
+      "node_modules/typescript/package.json": JSON.stringify({
+        name: "typescript",
+        version: "5.0.0",
+      }),
+    });
+    const { config } = resolve({
+      repository: JSON.stringify({
+        target: { kind: "application" },
+        analysis: { min_confidence: "possible" },
+      }),
+      repositoryLabel: "deadset.json",
+    });
+    try {
+      expect(
+        findingsOf(emitterInputOf(root, config))
+          .filter((finding) => finding.code === "DS1601")
+          .map((finding) => `${finding.symbol.name} ${finding.reachabilityClass}`),
+      ).toEqual(["typescript possible"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("a file no import reaches", () => {
+  it("names the dependencies whose every use it writes as the last uses its deletion removes", () => {
+    const root = writeProject({
+      "package.json": JSON.stringify({
+        name: "@example/app",
+        type: "module",
+        main: "./src/main.ts",
+        dependencies: { live: "1", solo: "1" },
+      }),
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: { strict: true, module: "NodeNext", types: [], noEmit: true },
+        include: ["src"],
+      }),
+      "node_modules/live/package.json": JSON.stringify({ name: "live", types: "index.d.ts" }),
+      "node_modules/live/index.d.ts": "export declare const value: number;\n",
+      "node_modules/solo/package.json": JSON.stringify({ name: "solo", types: "index.d.ts" }),
+      "node_modules/solo/index.d.ts": "export declare const value: number;\n",
+      "src/main.ts": 'import { value } from "live";\nconsole.log(value);\n',
+      "src/orphan.ts": [
+        'import { value } from "solo";',
+        'import { value as other } from "live";',
+        "console.log(value, other);",
+        "export function also(): number { return value; }",
+        "",
+      ].join("\n"),
+    });
+    const { config } = resolve({
+      repository: JSON.stringify({ target: { kind: "application" } }),
+      repositoryLabel: "deadset.json",
+    });
+    try {
+      expect(
+        findingsOf(emitterInputOf(root, config))
+          .filter((finding) => finding.code === "DS1502")
+          .map((finding) => `${finding.symbol.name} ${JSON.stringify(finding.details)}`),
+      ).toEqual(['src/orphan.ts {"removesLastUseOf":["solo"]}']);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

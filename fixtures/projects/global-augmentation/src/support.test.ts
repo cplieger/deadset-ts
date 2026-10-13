@@ -1,3 +1,5 @@
 import { fixtureDir } from "./support.js";
 
-export const loaded = import.meta.fixtures(fixtureDir);
+export function testLoaded(): Record<string, string> {
+  return import.meta.fixtures(fixtureDir);
+}

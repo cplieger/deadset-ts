@@ -243,10 +243,11 @@ function claimKey(finding: Finding): string {
 
 /**
  * Whether one record names one finding. A record reaches a finding in two ways: it bound
- * the declaration at the finding's position, or it names the finding's reference and the
- * file the finding is reported in, each exactly. The second is how an entry copied from a
- * finding about a part of a declaration reaches the part, and the only way any record
- * reaches a dependency row.
+ * the declaration at the finding's position, or it names the finding's reference, or the
+ * reference of the declaration holding a part that has one of its own, and the file the
+ * finding is reported in, each exactly. The second is how an entry copied from a finding
+ * about a part of a declaration reaches the part, and the only way any record reaches a
+ * dependency row.
  */
 export function pairs(record: SuppressionRecord, finding: Finding): boolean {
   if (record.code !== finding.code) {
@@ -265,7 +266,10 @@ export function pairs(record: SuppressionRecord, finding: Finding): boolean {
   if (record.bound !== "" && record.bound === positionKey(finding.position)) {
     return true;
   }
-  return record.symbol === finding.symbol.ref && record.path === finding.position.path;
+  return (
+    (record.symbol === finding.symbol.ref || record.symbol === finding.symbol.holder) &&
+    record.path === finding.position.path
+  );
 }
 
 /**

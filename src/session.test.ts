@@ -159,6 +159,25 @@ describe("the compiler client", () => {
     }
   });
 
+  it("parses one file outside every program once per text, however often it is asked", () => {
+    const engine = openEngine({ collectTiming: true });
+    try {
+      const requests = (): number => engine.getTimingInfo().totals.requestCount;
+      const first = engine.parseSourceFile("/a.ts", "export const a = 1;\n");
+      const before = requests();
+      const again = engine.parseSourceFile("/a.ts", "export const a = 1;\n");
+      const cost = requests() - before;
+      const changed = engine.parseSourceFile("/a.ts", "export const b = 1;\n");
+
+      expect(again, "the second answer is the first").toBe(first);
+      expect(cost, "and it cost no request").toBe(0);
+      expect(changed, "a changed text is parsed again").not.toBe(first);
+      expect(changed.text).toBe("export const b = 1;\n");
+    } finally {
+      engine.close();
+    }
+  });
+
   it("releases the client and removes the mapper's directory once, however often it is closed", () => {
     const { host, removed } = countingHost();
     const engine = openEngine({ collectTiming: false, components: { extensions: [".vue"], host } });

@@ -11,6 +11,7 @@ import {
   dependenciesNamed,
   documentStrings,
   isConfigurationDocumentName,
+  relativeSpecifiers,
 } from "./configuration-files.ts";
 import { EMITTERS } from "./findings/emitters.ts";
 import { resolve } from "./resolve.ts";
@@ -512,5 +513,35 @@ describe("a configuration file a script names by its configuration flag", () => 
         "app",
       ).sort(),
     ).toEqual(["@example/boundary", "@example/commented", "@example/home", "@example/tilde"]);
+  });
+});
+
+describe("the relative specifiers of one parsed file", () => {
+  it("are read from its tree once, however many projects ask", () => {
+    const engine = openEngine({ collectTiming: false });
+    try {
+      const parsed = engine.parseSourceFile(
+        "/a.ts",
+        'import { b } from "./b.js";\nexport const c = require("./c.js");\nexport * from "pkg";\n',
+      );
+      let walks = 0;
+      const counted = new Proxy(parsed, {
+        get: (target, key) => {
+          if (key === "statements") {
+            walks += 1;
+          }
+          return Reflect.get(target, key) as unknown;
+        },
+      });
+
+      const first = relativeSpecifiers(counted);
+      const again = relativeSpecifiers(counted);
+
+      expect(first).toEqual(["./b.js", "./c.js"]);
+      expect(again, "the second answer is the first").toBe(first);
+      expect(walks, "and its tree is walked once").toBe(1);
+    } finally {
+      engine.close();
+    }
   });
 });

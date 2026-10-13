@@ -87,6 +87,8 @@ function filesAt(paths: readonly string[]): SourceFiles {
     byName: new Map([...byPath.values()].map((file) => [file.fileName, file])),
     named: () => [],
     outputDirs: [],
+    writtenAs: () => [],
+    namedAsOutput: () => [],
   };
 }
 

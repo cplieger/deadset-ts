@@ -21,7 +21,7 @@ const NO_SELF_CHECK: SelfCheckFacts = {
  * How one target is swept: by which client, in which mode, production by default, under
  * which marks, and beside which consumer directories, none by default.
  */
-export interface SweptBy {
+interface SweptBy {
   readonly engine?: Engine;
   readonly mode?: Mode;
   readonly marked?: readonly string[];
@@ -72,6 +72,8 @@ export function sweepOnly(config: Config, swept: RunSweep): EmitterInput {
       ran: new Set(),
       unbuilt: new Set(),
       lastUses: new Map(),
+      fileLastUses: new Map(),
+      heldBy: new Map(),
     },
     implementations: { classes: new Map(), bodies: new Map(), unknown: new Set() },
     files: { tree: [], heldByInclusion: new Set() },
@@ -79,6 +81,7 @@ export function sweepOnly(config: Config, swept: RunSweep): EmitterInput {
     selfCheck: NO_SELF_CHECK,
     intraFunction: {
       parts: [],
+      imports: [],
       free: new Set(),
       freeButValued: new Set(),
       discardedEverywhere: new Set(),

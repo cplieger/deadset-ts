@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 import { contractDocument, fixture } from "../__test-helpers__/fixtures.ts";
 import {
   computedComponent,
+  importRef,
   isRef,
   nameComponent,
+  parameterRef,
   REF_EXPRESSIONS,
   renderRef,
   type Component,
@@ -76,6 +78,28 @@ const MANIFEST: Module = { package: "@example/app", path: "package.json" };
  * parts must reproduce the token byte for byte, which is what makes a reference
  * written by hand into an ignore entry match one this analyzer emits.
  */
+/** The one accepted import-binding token of the corpus, which `importRef` renders. */
+const IMPORT_BINDING = "ts://@example/app/src/main.ts#basename:import";
+
+/** The accepted parameter tokens of the corpus, each with the holder `parameterRef` renders it from. */
+const PARAMETERS: readonly { holder: string; name: string; input: string }[] = [
+  {
+    holder: "ts://@example/app/src/main.ts#partial",
+    name: "unread",
+    input: "ts://@example/app/src/main.ts#partial(unread)",
+  },
+  {
+    holder: "ts://@example/app/src/wire.ts#Codec.of:static",
+    name: "raw",
+    input: "ts://@example/app/src/wire.ts#Codec.of:static(raw)",
+  },
+  {
+    holder: "ts://@example/app/src/main.ts#",
+    name: "first",
+    input: "ts://@example/app/src/main.ts#(first)",
+  },
+];
+
 const RENDERED: readonly { module: Module; fragment: Fragment; input: string }[] = [
   { module: APP, fragment: { of: "module" }, input: "ts://@example/app/src/wire.ts#" },
   {
@@ -327,8 +351,22 @@ describe("the canonical spelling of one reference", () => {
     expect(renderRef(module, fragment)).toBe(input);
   });
 
+  it("renders an import binding as the corpus spells it", () => {
+    const main = renderRef({ package: "@example/app", path: "src/main.ts" }, { of: "module" });
+
+    expect(importRef(main, "basename")).toBe(IMPORT_BINDING);
+  });
+
+  it.each(PARAMETERS)("renders the parameter $input", ({ holder, name, input }) => {
+    expect(parameterRef(holder, name)).toBe(input);
+  });
+
   it("renders every accepted token of the corpus, each once", () => {
-    const rendered = new Set(RENDERED.map((row) => row.input));
+    const rendered = new Set([
+      ...RENDERED.map((row) => row.input),
+      IMPORT_BINDING,
+      ...PARAMETERS.map((row) => row.input),
+    ]);
     const accepted = corpus()
       .filter((token) => token.language === "ts" && token.accepted)
       .map((token) => token.input);

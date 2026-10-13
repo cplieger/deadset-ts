@@ -78,6 +78,7 @@ describe("the interfaces emitter", () => {
       "DS1203 Signal.raise [Flag, Arrowed]",
       "DS1203 Listener.notify []",
       "DS1201 Probe []",
+      "DS1201 TestDouble []",
     ]);
   });
 
@@ -103,6 +104,7 @@ describe("the interfaces emitter", () => {
       "Unused: nothing in the target names the interface as a type",
       "OnlyDead: the interface is named as a type only from declarations that are themselves dead",
       "Probe: the interface is named as a type only from test files",
+      "TestDouble: nothing in the target names the interface as a type",
     ]);
   });
 
@@ -151,8 +153,8 @@ describe("the interfaces emitter", () => {
     expect(namesReported(family(emitterInput()))).not.toContain(name);
   });
 
-  it("reports no declaration of a test file", () => {
-    expect(namesReported(family(emitterInput()))).not.toContain("TestDouble");
+  it("reports an interface a test file exports and nothing names, which no test runner reads", () => {
+    expect(namesReported(family(emitterInput()))).toContain("TestDouble");
   });
 });
 

@@ -174,26 +174,44 @@ describe("an import of a bare specifier nothing provides", () => {
   );
 
   it(
-    "is a missing module naming the nearest manifest at or above the importer that declares it",
+    "is a missing module naming the nearest manifest at or above the importer that declares it, a workspace member's among them",
     () => {
       expect(
         setupFailures({
           "package.json": JSON.stringify({
             name: "@example/app",
+            workspaces: ["src/member"],
             dependencies: { "dep-pkg": "1" },
           }),
           "src/main.ts": 'export * from "dep-pkg";\n',
+          "src/member/package.json": JSON.stringify({
+            name: "@example/member",
+            devDependencies: { "member-pkg": "1" },
+          }),
+          "src/member/inner.ts": 'export * from "member-pkg";\nexport * from "dep-pkg";\n',
+        }),
+      ).toEqual([
+        `setup failure: missing-module: src/main.ts:1: src/main.ts imports "dep-pkg", a dependency package.json declares ${INSTALL}`,
+        `setup failure: missing-module: src/member/inner.ts:1: src/member/inner.ts imports "member-pkg", a dependency src/member/package.json declares ${INSTALL}`,
+        `setup failure: missing-module: src/member/inner.ts:2: src/member/inner.ts imports "dep-pkg", a dependency package.json declares ${INSTALL}`,
+      ]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "is a type error where the nearest manifest declaring it is a nested package's that no workspace names",
+    () => {
+      expect(
+        setupFailures({
+          "src/main.ts": 'export * from "./nested/inner.js";\n',
           "src/nested/package.json": JSON.stringify({
             name: "@example/nested",
             devDependencies: { "nested-pkg": "1" },
           }),
-          "src/nested/inner.ts": 'export * from "nested-pkg";\nexport * from "dep-pkg";\n',
+          "src/nested/inner.ts": 'export * from "nested-pkg";\n',
         }),
-      ).toEqual([
-        `setup failure: missing-module: src/main.ts:1: src/main.ts imports "dep-pkg", a dependency package.json declares ${INSTALL}`,
-        `setup failure: missing-module: src/nested/inner.ts:1: src/nested/inner.ts imports "nested-pkg", a dependency src/nested/package.json declares ${INSTALL}`,
-        `setup failure: missing-module: src/nested/inner.ts:2: src/nested/inner.ts imports "dep-pkg", a dependency package.json declares ${INSTALL}`,
-      ]);
+      ).toEqual([]);
     },
     LOAD_TIMEOUT,
   );

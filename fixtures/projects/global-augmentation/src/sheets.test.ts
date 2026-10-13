@@ -4,4 +4,6 @@ declare global {
   }
 }
 
-export const sheets = import.meta.sheets("./*.css");
+export function sheets(): Record<string, string> {
+  return import.meta.sheets("./*.css");
+}

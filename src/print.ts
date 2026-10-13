@@ -84,6 +84,7 @@ export function printConfig(config: Config, provenance: Provenance): string {
         members: entry.members,
       })),
       serializers: config.ts.serializers.map(declarationOf),
+      roots_complete: config.ts.rootsComplete,
     },
     provenance: Object.fromEntries(
       [...provenance]

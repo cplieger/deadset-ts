@@ -373,10 +373,7 @@ describe("the members a value reaching a position reads", () => {
           'console.log(size("abc"));',
         ),
       }),
-    ).toEqual([
-      "DS1003 Sized.length 2: type member has no reference in the target",
-      "DS1801 _sized 4: parameter _sized is never read in the body; also reported by tsc --noUnusedParameters and @typescript-eslint/no-unused-vars",
-    ]);
+    ).toEqual(["DS1003 Sized.length 2: type member has no reference in the target"]);
   });
 
   it("are a value's type members, though its type inherits a class's too", () => {
@@ -484,10 +481,7 @@ describe("the members a value reaching a position reads", () => {
           "console.log(size(wide));",
         ),
       }),
-    ).toEqual([
-      "DS1301 Wide.shared 2: type member Wide.shared is written once and never read",
-      "DS1801 _options 4: parameter _options is never read in the body; also reported by tsc --noUnusedParameters and @typescript-eslint/no-unused-vars",
-    ]);
+    ).toEqual(["DS1301 Wide.shared 2: type member Wide.shared is written once and never read"]);
   });
 
   it("are none where one of the position member's declarations is the value's own", () => {

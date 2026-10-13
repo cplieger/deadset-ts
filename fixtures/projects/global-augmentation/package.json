@@ -3,5 +3,8 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "main": "./src/main.ts"
+  "main": "./src/main.ts",
+  "devDependencies": {
+    "vitest": "1.0.0"
+  }
 }

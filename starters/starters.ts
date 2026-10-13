@@ -10,7 +10,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** One starter, generated into the directory `<project>` names in `create`. */
-export interface Starter {
+interface Starter {
   /** The convention row the starter checks. */
   readonly row: string;
   /** The enabling package the row names. */

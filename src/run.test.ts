@@ -420,19 +420,32 @@ describe("print-projects", () => {
     ]);
   });
 
-  it("drops a derived project carrying an error the compiler places in no file, naming it", () => {
+  it("builds a derived project missing a global type, skipping each of its files whole", () => {
     const target = matrixTree({
       "fixtures/broken/tsconfig.json":
         '{ "compilerOptions": { "noLib": true, "noEmit": true }, "include": ["*.ts"] }\n',
-      "fixtures/broken/broken.ts": "export const broken = [1];\n",
+      "fixtures/broken/broken.ts": "export const broken = [1];\nfunction unread(): void {}\n",
+      "deadset.json": '{"target":{"kind":"application"}}\n',
     });
 
-    const got = invoke(["print-projects", `--target=${target}`]);
+    const got = invoke(["analyze", "--target=.", `--report=${join(target, "report.json")}`], {
+      ...nodeHost(),
+      workingDirectory: () => target,
+    });
+    const report = JSON.parse(readFileSync(join(target, "report.json"), "utf8")) as {
+      configurations_not_built: unknown[];
+      findings: { position: { path: string } }[];
+    };
 
-    expect(got.code, got.err).toBe(0);
-    expect(got.out).toBe("packages/app/tsconfig.json\ntsconfig.json\n");
     expect(got.err).toContain(
-      "deadset-ts: the derived configuration fixtures/broken/tsconfig.json was not built and is not analyzed: TS2318: Cannot find global type 'Array'.",
+      "deadset-ts: fixtures/broken/tsconfig.json: TS2318: Cannot find global type 'Array'.: the configuration is analyzed without that library",
+    );
+    expect(got.err).toContain(
+      "deadset-ts: fixtures/broken/broken.ts:1: Cannot find global type 'Array'.: the function or statement holding this type error is not evaluated",
+    );
+    expect(report.configurations_not_built).toEqual([]);
+    expect(report.findings.map((one) => one.position.path)).not.toContain(
+      "fixtures/broken/broken.ts",
     );
   });
 
@@ -471,7 +484,7 @@ describe("print-projects", () => {
     expect(got.err).not.toMatch(/TS5\d{3}/u);
   });
 
-  it("exits 3 naming the missing global type a declared project carries in no file", () => {
+  it("builds a declared project missing a global type", () => {
     const target = matrixTree({
       "deadset.json":
         '{"analysis":{"configurations":[{"id":"app","project":"packages/app/tsconfig.json"}]}}\n',
@@ -482,9 +495,8 @@ describe("print-projects", () => {
 
     const got = invoke(["print-projects", `--target=${target}`]);
 
-    expect(got.code).toBe(3);
-    expect(got.out).toBe("");
-    expect(got.err).toContain("TS2318: Cannot find global type 'Array'.");
+    expect(got.code, got.err).toBe(0);
+    expect(got.out).toBe("app\n");
   });
 
   it("analyzes a project naming a type library the compiler cannot find, noting it once", () => {

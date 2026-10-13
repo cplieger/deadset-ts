@@ -8,6 +8,7 @@
  */
 
 import type { Inventory, InventorySymbol } from "./inventory.ts";
+import { referenceKey } from "./matrix.ts";
 import type { Reference } from "./references.ts";
 
 /** Whether one declaration is a `declare global` block: a module-level namespace named `global`. */
@@ -62,14 +63,24 @@ export function augmentationReferences(
     }
     return [];
   };
-  return found.flatMap((reference) =>
-    holders(reference.to).map((to) => ({
-      from: reference.from,
-      to,
-      position: reference.position,
-      use: "read" as const,
-      resolution: reference.resolution,
-      test: reference.test,
-    })),
-  );
+  // Two uses at one place of declarations one block holds read the block once there.
+  const made = new Set(found.map(referenceKey));
+  const reads = new Map<string, Reference>();
+  for (const reference of found) {
+    for (const to of holders(reference.to)) {
+      const read: Reference = {
+        from: reference.from,
+        to,
+        position: reference.position,
+        use: "read",
+        resolution: reference.resolution,
+        test: reference.test,
+      };
+      const key = referenceKey(read);
+      if (!made.has(key) && !reads.has(key)) {
+        reads.set(key, read);
+      }
+    }
+  }
+  return [...reads.values()];
 }

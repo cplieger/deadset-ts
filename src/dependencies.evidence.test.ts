@@ -34,7 +34,16 @@ function needs(
 ): ProjectNeeds {
   return {
     uses: new Map(Object.entries(uses).map(([id, named]) => [id, new Set(named)])),
-    at: new Map([["", new Set(Object.values(uses).flat())]]),
+    at: new Map([
+      [
+        "",
+        new Map(
+          Object.values(uses)
+            .flat()
+            .map((one) => [one, new Set([""])]),
+        ),
+      ],
+    ]),
     unanswered,
   };
 }

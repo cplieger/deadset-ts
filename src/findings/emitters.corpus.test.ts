@@ -70,6 +70,7 @@ function answer(name: string): Answered {
     ...((expected.closed_world ?? []).includes("consumers")
       ? { consumers: { complete: true } }
       : {}),
+    ...((expected.closed_world ?? []).includes("roots") ? { ts: { roots_complete: true } } : {}),
   };
   const { config } = resolve({ repository: JSON.stringify(document), repositoryLabel: name });
   const input = emitterInputOf(join(dir, "ts", "target"), config, {

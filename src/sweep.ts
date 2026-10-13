@@ -8,6 +8,7 @@
 
 import type { TSExemptionClass } from "./exempt-classes.ts";
 import { namesACaller, OUTSIDE, type Edge, type Graph } from "./graph.ts";
+import type { InventorySymbol } from "./inventory.ts";
 import type { Position } from "./position.ts";
 
 /** The liveness relation that decided a declaration, as a finding spells it. */
@@ -179,16 +180,31 @@ export function sweep(graph: Graph, input: SweepInput): Liveness {
 }
 
 /**
+ * The directory a test runner reads a manual mock from, whose exports it puts in place of
+ * the module's: https://jestjs.io/docs/manual-mocks
+ */
+const MANUAL_MOCKS = "__mocks__";
+
+/** Whether a test runner calls or reads one export of a test file: a function, or any export of a manual mock. */
+export function runnerCalls(symbol: InventorySymbol): boolean {
+  return symbol.kind === "function" || symbol.position.path.split("/").includes(MANUAL_MOCKS);
+}
+
+/**
  * Per declaration of the graph, whether the run that counts test references reaches it.
- * That run's roots are the graph's own and each test file, being the file's top level
- * and every declaration it exports, which a test runner may call; `held` seeds it as a
- * mark or an exemption seeds a sweep.
+ * That run's roots are the graph's own and, of each test file, its top level and every
+ * function it exports, which a test runner may call, and every export of a manual mock,
+ * which the runner reads; any other export of a test file, and test-support code, which
+ * runs where a test imports it, are judged as any file's are.
+ * `held` seeds it as a mark or an exemption seeds a sweep.
  */
 export function reachedWithTheTests(graph: Graph, held: readonly string[]): readonly boolean[] {
   const tests = graph.symbols.flatMap((symbol, at) => {
-    const top =
-      symbol.kind === "file" || graph.symbols[graph.parent[at] ?? OUTSIDE]?.kind === "file";
-    return graph.test[at] === true && top && (symbol.kind === "file" || symbol.exported)
+    const exported = symbol.exported && graph.symbols[graph.parent[at] ?? OUTSIDE]?.kind === "file";
+    const called = exported && runnerCalls(symbol);
+    return graph.test[at] === true &&
+      graph.support[at] !== true &&
+      (symbol.kind === "file" || called)
       ? [{ at, kind: "test-runner" as const }]
       : [];
   });
@@ -277,10 +293,11 @@ function reachable(graph: Graph, held: readonly boolean[], mode: Mode): readonly
 
 /**
  * Admits every test declaration whose set of referenced production declarations is
- * non-empty and wholly dead, and returns which it admitted. The set is read from every
- * reference the test makes, which a production sweep does not count. A test-support
- * declaration that a test referencing a live target also references is a live target of
- * every test referencing it. A marked or exempt test is never admitted.
+ * non-empty and wholly dead, and returns which it admitted. An ambient declaration describes
+ * code the target does not implement, so it is no production declaration here. The set is
+ * read from every reference the test makes, which a production sweep does not count. A
+ * test-support declaration a test referencing a live target also references is a live
+ * target of every test referencing it. A marked or exempt test is never admitted.
  */
 function admitTestsOfDeadCode(
   graph: Graph,
@@ -293,7 +310,11 @@ function admitTestsOfDeadCode(
     let live = 0;
     if (testCode(at) && graph.subject[at] === true && held[at] !== true) {
       for (const edge of graph.out[at] ?? []) {
-        if (testCode(edge.to) || graph.subject[edge.to] !== true) {
+        if (
+          testCode(edge.to) ||
+          graph.subject[edge.to] !== true ||
+          graph.ambient[edge.to] === true
+        ) {
           continue;
         }
         targets += 1;

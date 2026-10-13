@@ -1,13 +1,13 @@
 /**
- * Which file an import of a workspace package's name is read from. The package is the
- * one `node_modules` links the importer to or, with no link, the one the importer's
- * manifest depends on. A source file the compiler reaches stands; any other file is read
- * back to the source it is compiled from or to a manifest target that is source, a file
- * the package's configurations neither compile nor write is read as installed, and an
- * import nothing answers for is unresolved.
+ * Which file an import of a workspace package's name is read from: the package
+ * `node_modules` links the importer to or, with no link, the one its manifest depends on.
+ * A source file the compiler reaches stands; any other file reads back to its source or to
+ * a manifest target that is source, an ignored file to the source its path mirrors, a file
+ * the package neither compiles nor writes is read as installed, and the rest is unresolved.
  */
 
 import { emittedFrom } from "./emit-map.ts";
+import { gitIgnored } from "./git-ignore.ts";
 import type { Host } from "./host.ts";
 import { dirnamePath, isAbsolutePath, joinPath, relativePath, resolvePath } from "./paths.ts";
 import { satisfies } from "./version-range.ts";
@@ -232,6 +232,32 @@ export function workspaceResolver(host: Host, workspace: Workspace): WorkspaceRe
     return found;
   };
 
+  const root = workspace.members[0]?.dir;
+  const ignored = root === undefined ? () => false : gitIgnored(host, root);
+  const manifests = new Map<
+    string,
+    { dir: string; manifest: Record<string, unknown> } | undefined
+  >();
+  /** The nearest manifest at or above one directory, up to the workspace's root. */
+  const nearestManifest = (
+    dir: string,
+  ): { dir: string; manifest: Record<string, unknown> } | undefined => {
+    if (manifests.has(dir)) {
+      return manifests.get(dir);
+    }
+    let found: { dir: string; manifest: Record<string, unknown> } | undefined;
+    try {
+      const value: unknown = JSON.parse(host.readFile(joinPath(dir, "package.json")));
+      found = isRecord(value) ? { dir, manifest: value } : undefined;
+    } catch {
+      const up = dirnamePath(dir);
+      found =
+        up === dir || root === undefined || !inside(root, up) ? undefined : nearestManifest(up);
+    }
+    manifests.set(dir, found);
+    return found;
+  };
+
   const linkOf = (candidates: readonly WorkspaceMember[], fromDir: string): Linked => {
     const name = candidates[0]?.name ?? "";
     const linked = linkedFrom(name, fromDir);
@@ -243,14 +269,16 @@ export function workspaceResolver(host: Host, workspace: Workspace): WorkspaceRe
     if (scope?.name === name) {
       return { kind: "member", member: scope };
     }
-    const manifest = scope?.manifest;
+    // A package below the root that no workspace lists depends on a member as a member does.
+    const owner = scope ?? nearestManifest(fromDir);
+    const manifest = owner?.manifest;
     const declared = DEPENDENCY_MEMBERS.flatMap((field) => {
       const held = manifest?.[field];
       const specifier = isRecord(held) ? held[name] : undefined;
       return typeof specifier === "string" ? [specifier] : [];
     });
     const matched = candidates.filter((member) =>
-      declared.some((specifier) => dependsOn(specifier, member, scope?.dir ?? fromDir)),
+      declared.some((specifier) => dependsOn(specifier, member, owner?.dir ?? fromDir)),
     );
     const [one, two] = matched;
     if (one === undefined) {
@@ -264,6 +292,25 @@ export function workspaceResolver(host: Host, workspace: Workspace): WorkspaceRe
   /** The files a member's configurations compile, which is what makes a file there source. */
   const compiled = (member: WorkspaceMember, path: string): boolean =>
     member.configurations.some((configuration) => configuration.fileNames.has(path));
+
+  /**
+   * The member's source an ignored output path mirrors: the path below one of its
+   * directories, the deepest first, read below the member's own directory as an output
+   * directory's tree mirrors its root directory's, which a build leaves in an ignored
+   * directory however its configuration writes it.
+   */
+  const mirrored = (member: WorkspaceMember, path: string): string | undefined => {
+    for (let dir = dirnamePath(path); inside(member.dir, dir); dir = dirnamePath(dir)) {
+      const found = emittedFrom(path, { outDir: dir, sourceDirs: [member.dir] }).find(
+        (candidate) =>
+          SOURCE.test(candidate) && !ignored(candidate) && host.kindOf(candidate) === "file",
+      );
+      if (found !== undefined) {
+        return found;
+      }
+    }
+    return undefined;
+  };
 
   /**
    * The member's source one of its paths is, or is compiled from: a TypeScript source
@@ -285,6 +332,9 @@ export function workspaceResolver(host: Host, workspace: Workspace): WorkspaceRe
     const found = beside.find((candidate) => host.kindOf(candidate) === "file");
     if (found !== undefined) {
       return found;
+    }
+    if (ignored(path)) {
+      return mirrored(member, path);
     }
     return compiled(member, path) && host.kindOf(path) === "file" ? path : undefined;
   };
@@ -352,10 +402,12 @@ export function workspaceResolver(host: Host, workspace: Workspace): WorkspaceRe
       }
       const { member } = linked;
       // A member no compiler configuration builds is read as the package manager
-      // installed it, wherever the compiler's resolution found it.
+      // installed it, wherever the compiler's resolution found it, unless what it found is
+      // a file the tree ignores, which no install wrote.
       if (
         answered !== undefined &&
-        (member.configurations.length === 0 || !inside(member.dir, answered.resolvedFileName))
+        ((member.configurations.length === 0 && !ignored(answered.resolvedFileName)) ||
+          !inside(member.dir, answered.resolvedFileName))
       ) {
         return { kind: "default" };
       }

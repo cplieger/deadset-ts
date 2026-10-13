@@ -12,6 +12,7 @@ import { moduleIdentity } from "../consumers.ts";
 import { analyzerProvenance, verdictOf } from "../findings-pass.ts";
 import { joinPath, normalizePath, relativePath, resolvePath } from "../paths.ts";
 import type { Host } from "../host.ts";
+import type { ManifestEntry } from "../manifest.ts";
 import type { NotBuilt } from "../discover.ts";
 import { partialNotes } from "../partial.ts";
 import {
@@ -22,6 +23,7 @@ import {
   type Report,
   type ReportConfiguration,
   type ReportNotBuilt,
+  type ReportNote,
 } from "../report.ts";
 import { json } from "../reporters/json.ts";
 import { RENDERINGS } from "../reporters/reporters.ts";
@@ -90,6 +92,25 @@ function runRelative(invoked: string, path: string): string {
     );
   }
   return below;
+}
+
+/**
+ * One note per manifest entry the run reads back to no source file: what the entry names
+ * reaches nothing, so the findings its file would have rooted are reported.
+ */
+function unmappedNotes(
+  entries: readonly ManifestEntry[],
+  targetRoot: string,
+): readonly ReportNote[] {
+  return entries.map((entry) => {
+    const named = relativePath(targetRoot, entry.path) ?? entry.path;
+    return {
+      kind: "unmapped-entry",
+      path: relativePath(targetRoot, entry.dir) ?? ".",
+      key: "ts.entry_files",
+      message: `the manifest's ${entry.member} names ${named}, which reads back to no source file of the target: name the file it is built from in ts.entry_files`,
+    };
+  });
 }
 
 /** Each project the run dropped as a report names it, by its configuration file below the target. */
@@ -288,6 +309,7 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
       typeErrorSkips: run.typeErrorSkips,
       unanswered: unansweredCounts(analysis),
       conventionsApplied: run.conventionsApplied,
+      notes: unmappedNotes(run.unmappedEntries, resolvePath(invoked, targetRoot)),
     });
     report = capFindings(sortFindings(built, config.reporters.sort), config.reporters.maxFindings);
     verdict = verdictOf(result, config);

@@ -60,8 +60,15 @@ import { dirnamePath, queriedModulePath, relativePath, resolvePath } from "./pat
 import { byPosition, isComponentFile, renderPosition, type Position } from "./position.ts";
 import { DEFAULT_BATCH_CAP, propertyTables, UNANSWERED, type Answer } from "./query.ts";
 import type { ProjectView } from "./session.ts";
+import { typeParameterReads } from "./type-parameter-reads.ts";
 import { typeQueryAliases } from "./type-query-alias.ts";
-import { computedKeyNames, keyNameOf, keyedUses, type KeyedAccess } from "./symbol-keys.ts";
+import {
+  computedKeyNames,
+  iterationReferences,
+  keyNameOf,
+  keyedUses,
+  type KeyedAccess,
+} from "./symbol-keys.ts";
 import { handedOn, valuesOf } from "./value-flow.ts";
 
 /**
@@ -1621,6 +1628,8 @@ export function references<Brand>(
     found.push(...indexedAccessReferences(project, held, chains, root, new Set(tests)));
     found.push(...elementAccessReferences(project, held, chains, root, new Set(tests)));
     found.push(...keyofComparisonReferences(project, held, chains, root, new Set(tests)));
+    found.push(...iterationReferences(project, held, chains, root, new Set(tests)));
+    found.push(...typeParameterReads(project, held, chains, root, new Set(tests)));
     found.push(...unimplementedCalleeReads(project, held, chains, root, new Set(tests)));
     found.push(...moduleDeclarationReferences(project, held, root, new Set(tests)));
     typedLookups = (options.requestCount?.() ?? 0) - before;

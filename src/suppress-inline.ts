@@ -10,8 +10,10 @@ import {
   type Node,
   type SourceFile,
 } from "@typescript/native/ast";
+import { importBindings } from "./import-bindings.ts";
 import { isParameterProperty, nodeKey, type Inventory } from "./inventory.ts";
 import { byPosition, positionKey, renderPosition, type Position } from "./position.ts";
+import { importRef } from "./ref.ts";
 import type { ProjectView } from "./session.ts";
 import { signatureOf } from "./signatures.ts";
 import {
@@ -200,6 +202,7 @@ function declarationLines(
   file: SourceFile,
   held: Inventory,
   symbols: ReadonlyMap<string, Declared>,
+  targetRoot: string,
 ): ReadonlyMap<number, readonly Binding[]> {
   const below = new Map<number, Binding[]>();
   const add = (offset: number, one: Binding): void => {
@@ -245,6 +248,20 @@ function declarationLines(
     node.forEachChild(visit);
   };
   file.forEachChild(visit);
+  // An import binding is a subject of its own, bound on its line as a declaration is.
+  const fileId = held.declarations.get(nodeKey(file, file));
+  const moduleRef = held.symbols.find((symbol) => symbol.id === fileId)?.ref ?? "";
+  for (const name of moduleRef === "" ? [] : importBindings(file)) {
+    const position = renderPosition(file, targetRoot, name.getStart());
+    const one = { id: positionKey(position), ref: importRef(moduleRef, name.text), position };
+    let statement: Node = name;
+    while (statement.parent.kind !== SyntaxKind.SourceFile) {
+      statement = statement.parent;
+    }
+    for (const at of [statement.pos, name.getStart()]) {
+      add(at, { declared: one, part: one });
+    }
+  }
   return below;
 }
 
@@ -285,7 +302,7 @@ export function inlineDirectives<Brand>(
     if (comments.length === 0) {
       continue;
     }
-    const below = declarationLines(file, held, symbols);
+    const below = declarationLines(file, held, symbols, targetRoot);
     for (const comment of comments) {
       const site = renderPosition(file, targetRoot, comment.offset);
       const target = trails(file, comment.offset) ? site.line : site.line + 1;

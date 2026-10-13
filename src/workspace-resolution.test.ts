@@ -200,6 +200,58 @@ describe("a member import's resolution", () => {
     ).toEqual({ kind: "default" });
   });
 
+  it("reads a declaration file the tree ignores back to the source its path mirrors, configured or not", () => {
+    const ignored = {
+      ...COMPILED,
+      ".gitignore": "dist/\n",
+      "packages/a/package.json": JSON.stringify({
+        name: "a",
+        types: "./dist/declarations/src/index.d.ts",
+      }),
+      "packages/a/dist/declarations/src/index.d.ts": "",
+    };
+    const answer = (root: string) => ({
+      resolvedFileName: join(root, "packages/a/dist/declarations/src/index.d.ts"),
+      isExternalLibraryImport: true,
+    });
+    const configured = workspaceAt(
+      ignored,
+      { "packages/b/node_modules/a": "packages/a" },
+      { "packages/a/tsconfig.json": { files: ["packages/a/src/index.ts"] } },
+    );
+    const unconfigured = Object.fromEntries(
+      Object.entries(ignored).filter(([path]) => path !== "packages/a/tsconfig.json"),
+    );
+    const bare = workspaceAt(unconfigured, { "packages/b/node_modules/a": "packages/a" });
+
+    expect(configured.resolve("a", "packages/b/src", answer(configured.root))).toEqual(
+      source(configured.root, "packages/a/src/index.ts", "a"),
+    );
+    expect(bare.resolve("a", "packages/b/src", answer(bare.root))).toEqual(
+      source(bare.root, "packages/a/src/index.ts", "a"),
+    );
+  });
+
+  it("keeps the compiler's answer for an ignored declaration file whose path mirrors no source", () => {
+    const { root, resolve } = workspaceAt(
+      {
+        ...COMPILED,
+        ".gitignore": "/packages/*/dist\n",
+        "packages/a/package.json": JSON.stringify({ name: "a", types: "./dist/bundle.d.ts" }),
+        "packages/a/dist/bundle.d.ts": "",
+      },
+      { "packages/b/node_modules/a": "packages/a" },
+      { "packages/a/tsconfig.json": { files: ["packages/a/src/index.ts"] } },
+    );
+
+    expect(
+      resolve("a", "packages/b/src", {
+        resolvedFileName: join(root, "packages/a/dist/bundle.d.ts"),
+        isExternalLibraryImport: true,
+      }),
+    ).toEqual({ kind: "default" });
+  });
+
   it("is unresolved where the manifest's target does not exist and maps to no source", () => {
     const { resolve } = workspaceAt(
       {

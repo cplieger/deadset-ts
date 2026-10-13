@@ -16,6 +16,7 @@ import type {
 } from "@typescript/native/sync";
 import { isStringLiteralLikeNode } from "@typescript/native/ast";
 import type { StringLiteralLikeNode } from "@typescript/native/ast";
+import { baseUrlPaths } from "./base-url.ts";
 import type { Host } from "./host.ts";
 import { dirnamePath, resolvePath } from "./paths.ts";
 import type { Engine } from "./session.ts";
@@ -62,7 +63,8 @@ const BATCH = 2048;
 
 /**
  * The options a configuration's program is built with: its own, less the ones that
- * lay out an emitted program's inputs and outputs. The analysis emits nothing, and a
+ * lay out an emitted program's inputs and outputs, and with `paths` read against the
+ * effective `baseUrl` as {@link baseUrlPaths} states. The analysis emits nothing, and a
  * member's source is outside the importer's root directory by construction, which
  * the compiler refuses under such a layout.
  */
@@ -75,7 +77,9 @@ function analysisOptions(parsed: Parsed): CreateSnapshotProgramParams["compilerO
     tsBuildInfoFile: _tsBuildInfoFile,
     ...kept
   } = parsed.options;
-  return composite === true ? { ...kept, declaration: true } : kept;
+  const paths = baseUrlPaths(parsed.options);
+  const options = paths === undefined ? kept : { ...kept, paths };
+  return composite === true ? { ...options, declaration: true } : options;
 }
 
 /** The conditions an `exports` lookup under one configuration and one resolution mode reads. */
@@ -152,7 +156,7 @@ function configurationOf(
   const raw: unknown = (options as Record<string, unknown>)["pathsBasePath"];
   const base = typeof raw === "string" ? raw : dirnamePath(reading.configFile);
   const paths: Record<string, string[]> = {};
-  for (const [key, targets] of Object.entries(options.paths ?? {})) {
+  for (const [key, targets] of Object.entries(baseUrlPaths(options) ?? options.paths ?? {})) {
     paths[key] = targets.map((target) => resolvePath(base, target));
   }
   for (const entry of reading.entries) {

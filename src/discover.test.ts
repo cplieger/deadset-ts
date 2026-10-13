@@ -208,6 +208,58 @@ describe("project discovery", () => {
     );
   });
 
+  it("drops a configuration whose extends chain is circular, or that references one, naming the chain", () => {
+    const root = scratch();
+    write(root, {
+      "tsconfig.json": '{ "include": ["*.ts"] }\n',
+      "main.ts": "export const one = 1;\n",
+      "cycle/tsconfig.json": '{ "extends": "./a.json", "include": ["*.ts"] }\n',
+      "cycle/a.json": '{ "extends": "./tsconfig.json" }\n',
+      "cycle/main.ts": "export const two = 2;\n",
+      "outer/tsconfig.json": '{ "extends": "../cycle/a.json", "include": ["*.ts"] }\n',
+      "outer/main.ts": "export const three = 3;\n",
+      "user/tsconfig.json": '{ "include": ["*.ts"], "references": [{ "path": "../cycle" }] }\n',
+      "user/main.ts": "export const four = 4;\n",
+    });
+
+    const found = discoverProjects(engine(), HOST, scopeForDir(HOST, root));
+
+    expect(found.configFiles).toEqual([join(root, "tsconfig.json")]);
+    expect(found.notBuilt.map((one) => [one.id, one.error])).toEqual([
+      [
+        "cycle/tsconfig.json",
+        "TS18000: Circularity detected while resolving configuration: cycle/tsconfig.json -> cycle/a.json -> cycle/tsconfig.json",
+      ],
+      [
+        "outer/tsconfig.json",
+        "TS18000: Circularity detected while resolving configuration: outer/tsconfig.json -> cycle/a.json -> cycle/tsconfig.json -> cycle/a.json",
+      ],
+      [
+        "user/tsconfig.json",
+        "TS18000: Circularity detected while resolving configuration: cycle/tsconfig.json -> cycle/a.json -> cycle/tsconfig.json",
+      ],
+    ]);
+  });
+
+  it("ends the run naming a declared configuration whose extends chain is circular", () => {
+    const root = scratch();
+    write(root, {
+      "tsconfig.json": '{ "extends": "./tsconfig.json", "include": ["*.ts"] }\n',
+      "main.ts": "export const one = 1;\n",
+    });
+
+    const thrown = thrownBy(() =>
+      discoverProjects(engine(), HOST, scopeOf(root), [
+        { shape: "project", id: "named", project: "tsconfig.json" },
+      ]),
+    );
+
+    expect(thrown).toBeInstanceOf(DiscoveryError);
+    expect(thrown instanceof DiscoveryError ? thrown.message : "").toContain(
+      `TS18000: Circularity detected while resolving configuration: ${join(root, "tsconfig.json")} -> ${join(root, "tsconfig.json")}`,
+    );
+  });
+
   it("ends the run naming a configuration file the compiler cannot read", () => {
     const missing = join(scratch(), "tsconfig.json");
 

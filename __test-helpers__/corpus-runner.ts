@@ -408,6 +408,7 @@ function configOf(file: ExpectationFile): string {
     .sort(compare)
     .map((name) => file.configured_roots?.[name] ?? "");
   const ts = {
+    ...(world.includes("roots") ? { roots_complete: true } : {}),
     ...tsSectionOf(file.configured_declarations ?? {}),
     ...(file.entry_files === undefined ? {} : { entry_files: file.entry_files }),
     ...(file.disabled_conventions === undefined

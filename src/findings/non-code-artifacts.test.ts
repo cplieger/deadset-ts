@@ -196,14 +196,20 @@ describe("DS1501 under the build matrix", () => {
 });
 
 describe("DS1502 over the import graph", () => {
-  it("reports each file no import reaches and no root names, and keeps every file a program holds by inclusion", async () => {
+  it("reports each file no import from live code reaches and no root names, and keeps every file a program holds by inclusion", async () => {
     const findings = emit(inputFor(IMPORTS, configOf(IMPORTS)));
 
     expect(reported(findings)).toEqual([
       "DS1502 src/dead-importer.ts",
+      "DS1502 src/imported-by-dead.ts",
       "DS1502 src/lone.ts",
       "DS1502 src/orphan.ts",
     ]);
+    expect(
+      findings
+        .filter((finding) => finding.unreachableOnly === true)
+        .map((one) => one.position.path),
+    ).toEqual(["src/imported-by-dead.ts"]);
     await expect(
       goldenText(findings),
       "regenerate with `npx vitest --run -u src/findings/non-code-artifacts.test.ts` and review the diff",
@@ -213,7 +219,11 @@ describe("DS1502 over the import graph", () => {
   it("keeps a file whose declaration a suppression holds live", () => {
     const findings = emit(inputFor(IMPORTS, configOf(IMPORTS), { marked: ["src/orphan.ts:1:17"] }));
 
-    expect(reported(findings)).toEqual(["DS1502 src/dead-importer.ts", "DS1502 src/lone.ts"]);
+    expect(reported(findings)).toEqual([
+      "DS1502 src/dead-importer.ts",
+      "DS1502 src/imported-by-dead.ts",
+      "DS1502 src/lone.ts",
+    ]);
   });
 
   it("keeps a file in which a declared cross-language edge names a declaration", () => {
@@ -223,7 +233,11 @@ describe("DS1502 over the import graph", () => {
       }),
     );
 
-    expect(reported(findings)).toEqual(["DS1502 src/dead-importer.ts", "DS1502 src/lone.ts"]);
+    expect(reported(findings)).toEqual([
+      "DS1502 src/dead-importer.ts",
+      "DS1502 src/imported-by-dead.ts",
+      "DS1502 src/lone.ts",
+    ]);
   });
 
   it("keeps a file a configured root names a declaration in", () => {

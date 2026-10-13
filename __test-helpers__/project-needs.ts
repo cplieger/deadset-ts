@@ -46,7 +46,9 @@ export function needsOf(
       const sorted = (named: ReadonlySet<string>): string[] => [...named].sort();
       found.push({
         uses: Object.fromEntries([...needs.uses].map(([id, named]) => [id, sorted(named)])),
-        at: Object.fromEntries([...needs.at].map(([path, named]) => [below(path), sorted(named)])),
+        at: Object.fromEntries(
+          [...needs.at].map(([path, named]) => [below(path), sorted(new Set(named.keys()))]),
+        ),
         unanswered: needs.unanswered.map(below),
       });
       return held;

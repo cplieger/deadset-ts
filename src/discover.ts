@@ -1,11 +1,13 @@
 import { DiagnosticCategory } from "@typescript/native/sync";
 import type { Diagnostic } from "@typescript/native/sync";
+import { baseUrlPaths } from "./base-url.ts";
 import type { BuildConfiguration, ProjectConfiguration } from "./config.ts";
 import type { Host } from "./host.ts";
-import { dirnamePath, joinPath, relativePath, resolvePath } from "./paths.ts";
+import { dirnamePath, isAbsolutePath, joinPath, relativePath, resolvePath } from "./paths.ts";
 import type { Scope } from "./scope.ts";
 import { SetupError } from "./setup-failure.ts";
 import type { Engine, ProjectDiagnostics } from "./session.ts";
+import { writtenPath, type WorkspaceProgram } from "./workspace-programs.ts";
 
 /** Directory names discovery does not descend into. */
 export const IGNORED_DIRECTORIES: ReadonlySet<string> = new Set(["node_modules", ".git"]);
@@ -112,10 +114,18 @@ interface ProjectErrors {
 
 /**
  * The codes of a type library and a lib the configuration names that the compiler
- * cannot find, which it reports while it gathers the program's files:
- * https://github.com/microsoft/typescript-go/blob/89d5d5b2849a0db0957065889ca58536fa6d2e4a/internal/compiler/processingDiagnostic.go
+ * cannot find, which it reports while it gathers the program's files,
+ * https://github.com/microsoft/typescript-go/blob/89d5d5b2849a0db0957065889ca58536fa6d2e4a/internal/compiler/processingDiagnostic.go,
+ * and {@link MISSING_GLOBAL_TYPE}, which the checker reports.
  */
-const UNFOUND_LIBRARY: ReadonlySet<number> = new Set([2688, 2726, 2727]);
+const UNFOUND_LIBRARY: ReadonlySet<number> = new Set([2318, 2688, 2726, 2727]);
+
+/**
+ * The code of a global type the checker finds in no library the program holds. The checker
+ * types every use of one against nothing and places no error in the file, so the analysis
+ * skips each file of such a project whole.
+ */
+export const MISSING_GLOBAL_TYPE = 2318;
 
 /** The errors one open project carries, each located in the file it names. */
 export function projectErrors(sets: ProjectDiagnostics): ProjectErrors {
@@ -338,8 +348,109 @@ function derivedId(targetRoot: string, configFile: string): string {
 }
 
 /**
+ * The code of a configuration whose `extends` chain returns to a configuration it already
+ * passed. The parse reports it and returns, and a snapshot opened from it never answers:
+ * https://github.com/microsoft/TypeScript/issues/64754
+ */
+const CIRCULAR_EXTENDS = 18000;
+
+type Parsed = ReturnType<Engine["parseConfigFile"]>;
+
+/** The configuration files one parsed configuration's own `extends` names by path. */
+function extendedPaths(parsed: Parsed, configFile: string): readonly string[] {
+  const { raw } = parsed as { readonly raw?: unknown };
+  const named: unknown = typeof raw === "object" && raw !== null ? Reflect.get(raw, "extends") : [];
+  return (Array.isArray(named) ? named : [named])
+    .filter((one): one is string => typeof one === "string")
+    .filter((one) => one.startsWith("./") || one.startsWith("../") || isAbsolutePath(one))
+    .map((one) => resolvePath(dirnamePath(configFile), one));
+}
+
+/**
+ * The `extends` chain from `configFile` to the first configuration it reaches twice, each
+ * link by path, or undefined where no chain written by path returns.
+ */
+function extendsCycle(
+  engine: Engine,
+  configFile: string,
+  parsed: Parsed,
+): readonly string[] | undefined {
+  const walk = (chain: readonly string[], at: Parsed): readonly string[] | undefined => {
+    for (const next of extendedPaths(at, chain.at(-1) ?? configFile)) {
+      if (chain.includes(next)) {
+        return [...chain, next];
+      }
+      let read: Parsed;
+      try {
+        read = engine.parseConfigFile(next);
+      } catch {
+        continue;
+      }
+      const cycle = walk([...chain, next], read);
+      if (cycle !== undefined) {
+        return cycle;
+      }
+    }
+    return undefined;
+  };
+  return walk([configFile], parsed);
+}
+
+/** The configuration files one parsed configuration's `references` name. */
+function referencesOf(parsed: Parsed): readonly string[] {
+  // The parse answers a directory reference as the directory; the compiler reads a
+  // path not ending `.json` as its `tsconfig.json`:
+  // https://github.com/microsoft/typescript-go/blob/89d5d5b2849a0db0957065889ca58536fa6d2e4a/internal/core/projectreference.go#L18
+  return (parsed.projectReferences ?? []).map(({ path }) =>
+    path.endsWith(".json") ? path : joinPath(path, "tsconfig.json"),
+  );
+}
+
+/** Why one parsed configuration's own `extends` chain cannot be opened, where it is circular. */
+function circularity(engine: Engine, configFile: string, parsed: Parsed): string | undefined {
+  const chain = extendsCycle(engine, configFile, parsed);
+  if (chain === undefined && !parsed.errors.some(({ code }) => code === CIRCULAR_EXTENDS)) {
+    return undefined;
+  }
+  return `TS${String(CIRCULAR_EXTENDS)}: Circularity detected while resolving configuration: ${(chain ?? [configFile]).join(" -> ")}`;
+}
+
+/**
+ * Why a configuration the `references` reach, transitively, cannot be opened, where one's
+ * `extends` chain is circular: the compiler opens every referenced project with the one
+ * that references it.
+ */
+function referencedCircularity(
+  engine: Engine,
+  references: readonly string[],
+  visited: Set<string>,
+): string | undefined {
+  for (const reference of references) {
+    if (visited.has(reference)) {
+      continue;
+    }
+    visited.add(reference);
+    let parsed: Parsed;
+    try {
+      parsed = engine.parseConfigFile(reference);
+    } catch {
+      continue;
+    }
+    const reason =
+      circularity(engine, reference, parsed) ??
+      referencedCircularity(engine, referencesOf(parsed), visited);
+    if (reason !== undefined) {
+      return reason;
+    }
+  }
+  return undefined;
+}
+
+/**
  * The configuration files one configuration's `references` name, or why the compiler
- * cannot read the configuration.
+ * cannot read the configuration: it throws, or its `extends` chain or that of a
+ * configuration it references is circular, which the analysis refuses before any
+ * snapshot is asked to open it.
  */
 function readConfiguration(
   engine: Engine,
@@ -347,14 +458,11 @@ function readConfiguration(
 ): { readonly references: readonly string[] } | { readonly reason: string } {
   try {
     const parsed = engine.parseConfigFile(configFile);
-    // The parse answers a directory reference as the directory; the compiler reads a
-    // path not ending `.json` as its `tsconfig.json`:
-    // https://github.com/microsoft/typescript-go/blob/89d5d5b2849a0db0957065889ca58536fa6d2e4a/internal/core/projectreference.go#L18
-    return {
-      references: (parsed.projectReferences ?? []).map(({ path }) =>
-        path.endsWith(".json") ? path : joinPath(path, "tsconfig.json"),
-      ),
-    };
+    const references = referencesOf(parsed);
+    const reason =
+      circularity(engine, configFile, parsed) ??
+      referencedCircularity(engine, references, new Set([configFile]));
+    return reason === undefined ? { references } : { reason };
   } catch (error: unknown) {
     return { reason: error instanceof Error ? error.message : String(error) };
   }
@@ -507,4 +615,39 @@ export function discoverProjects(
     return declaredProjects(engine, host, scope.target.path, declared);
   }
   return derivedProjects(engine, host, scope);
+}
+
+/**
+ * How the snapshot reads each configuration of `configFiles` that sets `baseUrl` and
+ * `programs` does not already describe: a configuration only the snapshot holds, which
+ * extends it and states the `paths` {@link baseUrlPaths} gives, so its imports resolve as
+ * the compilers before version 7 resolve them. A configuration the compiler cannot read is
+ * left for its project to refuse.
+ */
+export function withBaseUrlPaths(
+  engine: Engine,
+  host: Host,
+  configFiles: readonly string[],
+  programs: ReadonlyMap<string, WorkspaceProgram>,
+): ReadonlyMap<string, WorkspaceProgram> {
+  const found = new Map(programs);
+  for (const configFile of configFiles) {
+    if (found.has(configFile)) {
+      continue;
+    }
+    let paths: Record<string, string[]> | undefined;
+    try {
+      paths = baseUrlPaths(engine.parseConfigFile(configFile).options);
+    } catch {
+      continue;
+    }
+    if (paths !== undefined) {
+      found.set(configFile, {
+        kind: "configuration",
+        file: writtenPath(host, configFile),
+        text: `${JSON.stringify({ extends: configFile, compilerOptions: { paths } }, null, 2)}\n`,
+      });
+    }
+  }
+  return found;
 }

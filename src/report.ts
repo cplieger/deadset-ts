@@ -19,7 +19,7 @@ import type { StaleSuppression } from "./findings/self-check.ts";
 import type { TestFileRule } from "./references.ts";
 
 /** The version of the report schema this analyzer writes a report to. */
-const SCHEMA_VERSION = "8.2.0";
+const SCHEMA_VERSION = "9.0.0";
 
 /** Every report schema version this analyzer reads: the one the Contract it implements admits. */
 export const SCHEMA_VERSIONS_ACCEPTED: readonly string[] = [SCHEMA_VERSION];
@@ -224,10 +224,19 @@ export interface Report {
   readonly excluded_by_cgo: readonly never[];
   readonly test_file_rules: readonly TestFileRule[];
   readonly type_error_skips: readonly TypeErrorSkip[];
-  readonly notes: readonly never[];
+  readonly notes: readonly ReportNote[];
   readonly unanswered_questions: readonly UnansweredCount[];
   readonly conventions_applied: readonly AppliedConvention[];
   readonly totals: WireTotals;
+}
+
+/** One hint about the run's setup, as the report schema's `notes` spells it. */
+export interface ReportNote {
+  readonly kind: "unmapped-entry";
+  /** The directory of the manifest the note is about, below the target root. */
+  readonly path: string;
+  readonly key: "ts.entry_files";
+  readonly message: string;
 }
 
 /** What one run answered, from which its report is built. */
@@ -247,6 +256,8 @@ export interface ReportInput {
   readonly unanswered: readonly UnansweredCount[];
   /** The convention rows the run applied, in the report's order. */
   readonly conventionsApplied: readonly AppliedConvention[];
+  /** The notes the run states, in any order. */
+  readonly notes?: readonly ReportNote[];
 }
 
 /** Two strings ordered bytewise. */
@@ -510,7 +521,9 @@ export function buildReport(input: ReportInput): Report {
     ]
       .sort(([a, x], [b, y]) => compare(x.path, y.path) || x.line - y.line || compare(a, b))
       .map(([, skip]) => skip),
-    notes: [],
+    notes: [...new Map((input.notes ?? []).map((one) => [JSON.stringify(one), one])).entries()]
+      .sort(([a, x], [b, y]) => compare(x.kind, y.kind) || compare(x.path, y.path) || compare(a, b))
+      .map(([, note]) => note),
     unanswered_questions: [...input.unanswered]
       .sort(
         (a, b) =>

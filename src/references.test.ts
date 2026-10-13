@@ -395,15 +395,13 @@ describe("a namespace import of a module a `declare module` declares, handed on 
 
     expect(answered, "an answered table names each export of the module's body").toEqual([
       "foo alias",
-      "foo batch",
-      "foo batch",
       "foo.x batch",
       "foo.y batch",
     ]);
     expect(
       unanswered,
       "and an unanswered one reads the same declarations, each guessed by name",
-    ).toEqual(["foo alias", "foo by-name", "foo by-name", "foo.x by-name", "foo.y by-name"]);
+    ).toEqual(["foo alias", "foo.x by-name", "foo.y by-name"]);
   });
 });
 

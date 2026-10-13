@@ -1,4 +1,6 @@
 import {
+  isArrayBindingPattern,
+  isBindingElement,
   isClassDeclaration,
   isComputedPropertyName,
   isConstructorDeclaration,
@@ -16,6 +18,7 @@ import {
   isModuleBlock,
   isModuleDeclaration,
   isNamespaceExport,
+  isObjectBindingPattern,
   isParameterDeclaration,
   isParenthesizedTypeNode,
   isPrivateIdentifier,
@@ -28,7 +31,9 @@ import {
   isUnionTypeNode,
   isVariableStatement,
   ModifierFlags,
+  type BindingElement,
   type ClassDeclaration,
+  type Identifier,
   type Node,
   type SourceFile,
 } from "@typescript/native/ast";
@@ -169,6 +174,12 @@ export interface Inventory {
   /** Each `declare module` declaration whose name is a string literal, by id, to that name. */
   readonly modules: ReadonlyMap<string, string>;
   /**
+   * The ids of the ambient declarations: those of a declaration file, and those a `declare`
+   * modifier carries or a declaration carrying one holds. They describe code the target
+   * does not implement.
+   */
+  readonly ambient: ReadonlySet<string>;
+  /**
    * Each enum member's dependents, by id: the later members of its declaration with no
    * initializer, up to the first one with an initializer, whose values its deletion moves.
    * A member with none has no entry.
@@ -294,6 +305,19 @@ function parentOf(path: string): string {
 /** The modifier flags one node carries, and zero for a node that carries none. */
 function modifiersOf(node: Node): number {
   return (node as { readonly modifierFlags?: number }).modifierFlags ?? 0;
+}
+
+/** Whether a declaration is ambient: in a declaration file, or under a `declare` modifier. */
+function isAmbient(file: SourceFile, node: Node): boolean {
+  if (file.isDeclarationFile) {
+    return true;
+  }
+  for (let at: Node | undefined = node; at !== undefined; at = at.parent as Node | undefined) {
+    if ((modifiersOf(at) & ModifierFlags.Ambient) !== 0) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /** The type parameters one node declares, and none for a node that declares none. */
@@ -452,6 +476,37 @@ function visibilityOf(node: Node, name: Node | undefined): Visibility {
     return "protected";
   }
   return "public";
+}
+
+/**
+ * The binding elements of a destructuring declaration that each declare a name of their
+ * own, at any depth, but one with a default, whose removal skips the default's
+ * evaluation, and one beside a rest element of its object pattern, whose removal
+ * changes what the rest holds.
+ */
+function patternElements(
+  name: Node,
+): readonly { readonly element: BindingElement; readonly name: Identifier }[] {
+  if (!isObjectBindingPattern(name) && !isArrayBindingPattern(name)) {
+    return [];
+  }
+  const rest =
+    isObjectBindingPattern(name) &&
+    name.elements.some((element) => element.dotDotDotToken !== undefined);
+  return name.elements.flatMap((element) => {
+    if (
+      !isBindingElement(element) ||
+      element.initializer !== undefined ||
+      (rest && element.dotDotDotToken === undefined)
+    ) {
+      return [];
+    }
+    const bound = element.name;
+    if (bound === undefined) {
+      return [];
+    }
+    return isIdentifier(bound) ? [{ element, name: bound }] : patternElements(bound);
+  });
 }
 
 /** The name node of one declaration, for the kinds that carry one. */
@@ -781,15 +836,19 @@ export function inventory<Brand>(
     if (isVariableStatement(node)) {
       for (const declaration of node.declarationList.declarations) {
         const component = componentOf(declaration.name);
-        if (component === undefined) {
-          // A destructuring pattern declares binding elements, which the reference
-          // grammar does not represent; the statement stands for them.
+        if (component !== undefined) {
+          declare(declaration, owner, "variable", declaration.name, {
+            component,
+            localName: undefined,
+          });
           continue;
         }
-        declare(declaration, owner, "variable", declaration.name, {
-          component,
-          localName: undefined,
-        });
+        for (const { element, name } of patternElements(declaration.name)) {
+          declare(element, owner, "variable", name, {
+            component: { text: name.text, computed: false },
+            localName: undefined,
+          });
+        }
       }
       return;
     }
@@ -1067,6 +1126,11 @@ export function inventory<Brand>(
       .map((symbol) => symbol.id),
     byName: namesOf(building),
     modules: new Map(modules.map(([record, name]) => [positionKey(record.position), name])),
+    ambient: new Set(
+      building
+        .filter((record) => isAmbient(record.file, record.node))
+        .map((record) => positionKey(record.position)),
+    ),
     dependents,
   };
 }

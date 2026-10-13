@@ -19,6 +19,7 @@ import {
   UNSCOPED_ENTRY,
   blankReason,
   isEntryPath,
+  isPartKind,
   isSymbolRef,
   siteText,
   type Mechanism,
@@ -155,11 +156,21 @@ function readRecord(value: unknown, site: Position, byReference: ByReference, sh
   if (refusals.length > 0) {
     return { records: [], refusals };
   }
-  const named = byReference.get(declarationKey(symbol, written.path)) ?? [];
+  const named =
+    byReference.get(declarationKey(symbol, written.path)) ??
+    (isPartKind(code)
+      ? byReference.get(declarationKey(parameterHolder(symbol), written.path))
+      : undefined) ??
+    [];
   if (named.length === 0) {
     return { records: [{ ...written, bound: "" }], refusals: [] };
   }
   return { records: named.map((one) => ({ ...written, bound: one.id })), refusals: [] };
+}
+
+/** The reference of the declaration a parameter's reference names it under, or `ref` itself. */
+function parameterHolder(ref: string): string {
+  return ref.endsWith(")") ? ref.slice(0, ref.lastIndexOf("(")) : ref;
 }
 
 function byReferenceOf(symbols: readonly InventorySymbol[]): ByReference {

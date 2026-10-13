@@ -93,6 +93,31 @@ describe("what one project's compiler configuration needs", () => {
     },
     LOAD_TIMEOUT,
   );
+
+  it(
+    "reads the extends of a configuration written with comments and trailing commas, as the compiler does",
+    () => {
+      const files = {
+        "node_modules/@tsconfig/strictest/package.json": '{ "name": "@tsconfig/strictest" }\n',
+        "node_modules/@tsconfig/strictest/tsconfig.json": '{ "compilerOptions": {} }\n',
+        "configs/base.json":
+          '{\n  // shared\n  "extends": "@tsconfig/strictest/tsconfig.json",\n}\n',
+        "tsconfig.json": [
+          "{",
+          "  /* the base */",
+          '  "extends": "./configs/base.json",',
+          `  "compilerOptions": ${JSON.stringify((JSON.parse(TSCONFIG) as { compilerOptions: unknown }).compilerOptions)},`,
+          '  "include": ["src"],',
+          "}",
+          "",
+        ].join("\n"),
+        ...MAIN,
+      };
+
+      expect(needsOf(files).uses).toEqual({ "": ["@tsconfig/strictest"] });
+    },
+    LOAD_TIMEOUT,
+  );
 });
 
 describe("what the configuration files a tool loads need", () => {
