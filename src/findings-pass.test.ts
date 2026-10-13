@@ -288,21 +288,21 @@ function libraryWith(lib: string, ignore: readonly Readonly<Record<string, strin
 describe("a suppression of a part of a published declaration", () => {
   const lib = [
     "// deadset:ignore DS1801 -- The signature is the published callback shape.",
-    "export function above(_a: number, _b: number): number {",
+    "export function above(a: number, b: number): number {",
     "  return 1;",
     "}",
     "export class Store {",
-    "  note(_committed: number): number { // deadset:ignore DS1801 -- Kept for the next minor.",
+    "  note(committed: number): number { // deadset:ignore DS1801 -- Kept for the next minor.",
     "    return 1;",
     "  }",
     "}",
     "export function wrapped(",
     "  first: number,",
-    "  _second: number, // deadset:ignore DS1801 -- Kept for the next minor.",
+    "  second: number, // deadset:ignore DS1801 -- Kept for the next minor.",
     "): number {",
     "  return first;",
     "}",
-    "export function entry(_x: number): number {",
+    "export function entry(x: number): number {",
     "  return 1;",
     "}",
     "// deadset:ignore DS1801 -- Nothing here is unused.",
@@ -658,6 +658,7 @@ describe("the published baseline vectors", () => {
       "other-scheme-row-unreadable",
       "other-scheme-rows-kept",
       "own-scheme-row-unreadable",
+      "typescript-parameters",
       "typescript-rows",
     ]);
   });
@@ -703,4 +704,41 @@ describe("the published baseline vectors", () => {
       expect(writeOf(name)).toThrow(/cannot be rewritten/u);
     },
   );
+});
+
+describe("a suppression of an unused import binding", () => {
+  it("is in effect as an inline directive above the import and as an ignore entry naming its reference", () => {
+    const root = writeProject({
+      "package.json": JSON.stringify({
+        name: "@example/imports",
+        private: true,
+        type: "module",
+        main: "./src/main.ts",
+      }),
+      "src/lib.ts": "export const a = 1;\nexport const b = 2;\nexport const c = 3;\n",
+      "src/main.ts": [
+        "// deadset:ignore DS1002 -- Loaded for the side effect review.",
+        'import { a } from "./lib.js";',
+        'import { b, c } from "./lib.js";',
+        "console.log(c);",
+        "",
+      ].join("\n"),
+      "deadset-ignore.json": JSON.stringify({
+        ignore: [
+          {
+            code: "DS1002",
+            symbol: "ts://@example/imports/src/main.ts#b:import",
+            path: "src/main.ts",
+            reason: "Kept for the next change.",
+          },
+        ],
+      }),
+    });
+    scratch.push(root);
+    const { result } = passOver(root, JSON.stringify({ target: { kind: "application" } }));
+
+    expect(named(result).filter((one) => one.startsWith("DS1002"))).toEqual([]);
+    expect(result.ledger.verdicts).toEqual(["in-effect", "in-effect"]);
+    expect(stale(result)).toEqual([]);
+  });
 });

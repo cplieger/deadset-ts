@@ -165,7 +165,7 @@ function dialledOver(
   const unanswered = heldKeys(input);
   const markup = markupKeys(input);
   const candidates = found.filter((finding) => {
-    const key = declarationKey(finding.symbol.ref, finding.position.path);
+    const key = declarationKey(finding.symbol.holder ?? finding.symbol.ref, finding.position.path);
     return (
       !ledger.withheld(finding) &&
       !unanswered.has(key) &&

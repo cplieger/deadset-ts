@@ -96,6 +96,31 @@ describe("a type error in an own file", () => {
   );
 
   it(
+    "skips the innermost function holding it, so another function of the same statement is judged",
+    () => {
+      const got = analyzed({
+        "src/main.ts": [
+          "declare function suite(name: string, body: () => void): void;",
+          "suite('s', () => {",
+          "  suite('a', () => {",
+          "    try { console.log(1); } catch (unread) { return; }",
+          "  });",
+          "  suite('b', () => {",
+          '    const n: number = "x";',
+          "    console.log(n);",
+          "  });",
+          "});",
+          "",
+        ].join("\n"),
+      });
+
+      expect(got.skipped).toEqual([{ path: "src/main.ts", fromLine: 6, toLine: 9 }]);
+      expect(got.findings).toEqual(["DS1807 ts://./src/main.ts# src/main.ts:4"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
     "is listed with the compiler's message on one line, each run of whitespace one space",
     () => {
       const got = analyzed({

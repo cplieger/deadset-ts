@@ -34,6 +34,12 @@ interface FindingSubject {
   readonly name: string;
   /** The number of source lines the subject spans. */
   readonly sizeLines: number;
+  /**
+   * Where the subject is a part whose reference is its own, a parameter's, the reference
+   * of the declaration that holds it, which a record binding that declaration matches.
+   * No report carries it.
+   */
+  readonly holder?: string;
 }
 
 /** A declaration a finding names beside the subject, with where it is written. */
@@ -87,6 +93,10 @@ export interface Finding {
   readonly details?: FindingDetails;
   /** The reachability class of a subject that is no declaration, where it is not `certain`. */
   readonly reachabilityClass?: Confidence;
+  /** Whether references to a subject that is no declaration exist, all from dead code. */
+  readonly unreachableOnly?: true;
+  /** The dead declarations and files whose component a subject that is no declaration falls with. */
+  readonly fallsWith?: readonly string[];
 }
 
 /** The dead component a finding names, as the finding schema spells its members. */

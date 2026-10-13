@@ -1,10 +1,9 @@
 /**
- * The overrides of the target's class members. A call through the base class names the
- * base's member and runs the override of whichever subclass the value is, so the base
- * member's declaration references every override. A method, an accessor or a property,
- * static or not, overriding a member of a class declared outside the target, at any depth
- * of its `extends` chain, is used by outside code holding the instance or the class
- * through that class, so its own class references it.
+ * The overrides of the target's class members. A call through the base class runs the
+ * override of whichever subclass the value is, so the base member references every
+ * override. A member, static or not, overriding one of a class declared outside the target
+ * at any depth of its `extends` chain, a library's interface-and-variable class such as
+ * `Error` included, is used by outside code holding the value, so its own class references it.
  */
 
 import {
@@ -115,12 +114,16 @@ export function overrideReferences<Brand>(
       if (
         inTarget.length === 0 &&
         declared !== UNANSWERED &&
-        (declared.flags & SymbolFlags.Class) !== 0 &&
-        // The target's augmentation of an outside class merges an interface into it,
-        // so only a class declaration says where the class is.
-        declared.declarations.some(
-          (handle) => CLASS_DECLARATIONS.has(handle.kind) && !own.has(handle.path),
-        )
+        (((declared.flags & SymbolFlags.Class) !== 0 &&
+          // The target's augmentation of an outside class merges an interface into it,
+          // so only a class declaration says where the class is.
+          declared.declarations.some(
+            (handle) => CLASS_DECLARATIONS.has(handle.kind) && !own.has(handle.path),
+          )) ||
+          ((declared.flags & SymbolFlags.Interface) !== 0 &&
+            declared.declarations.some(
+              (handle) => handle.kind === SyntaxKind.VariableDeclaration && !own.has(handle.path),
+            )))
       ) {
         outsideBases.set(id, declared);
       }
@@ -185,11 +188,13 @@ function outsideMemberNames<Brand>(
   outsideBases: ReadonlyMap<string, TSSymbol>,
 ): ReadonlyMap<string, ReadonlySet<string>> {
   const direct = new Map<string, ReadonlySet<string>>();
+  const error = errorType(project);
   for (const [classId, base] of outsideBases) {
     const instance = project.queries.declaredTypeOf(base);
     const statics = project.queries.typeOfSymbol(base);
     const components = [
       ...namesOf(project, instance === UNANSWERED ? undefined : instance).map(nameComponent),
+      ...(instance !== UNANSWERED && reaches(project, instance, error) ? ["toString"] : []),
       ...namesOf(project, statics === UNANSWERED ? undefined : statics).map(
         (name) => `${nameComponent(name)}:static`,
       ),
@@ -216,6 +221,40 @@ function outsideMemberNames<Brand>(
     }
   }
   return names;
+}
+
+/** The global `Error` instance type's identifier, where the program's library declares one. */
+function errorType<Brand>(project: ProjectView<Brand>): number | undefined {
+  const symbol = project.queries.resolveName("Error", SymbolFlags.Type, undefined, false);
+  if (symbol === UNANSWERED || symbol === undefined) {
+    return undefined;
+  }
+  const type = project.queries.declaredTypeOf(symbol);
+  return type === UNANSWERED ? undefined : type.id;
+}
+
+/**
+ * Whether one type is the `Error` instance type or extends it at any depth: the runtime
+ * prints an error through its `toString`, a member the library's `Error` interface omits.
+ */
+function reaches<Brand>(
+  project: ProjectView<Brand>,
+  type: Type,
+  target: number | undefined,
+): boolean {
+  const seen = new Set<number>();
+  const pending = [type];
+  for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+    if (next.id === target) {
+      return true;
+    }
+    if (!seen.has(next.id)) {
+      seen.add(next.id);
+      const bases = project.queries.baseTypes(next);
+      pending.push(...(bases === UNANSWERED ? [] : bases));
+    }
+  }
+  return false;
 }
 
 /** The names of a type's properties; none where the type or its properties are unanswered. */

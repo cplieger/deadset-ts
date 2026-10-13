@@ -58,7 +58,6 @@ const UNREAD_TOOLS: readonly string[] = [
   "cypress",
   "danger",
   "dependency-cruiser",
-  "docusaurus",
   "dotenv",
   "drizzle",
   "electron-vite",
@@ -112,14 +111,12 @@ const UNREAD_TOOLS: readonly string[] = [
   "nuxtjs-i18n",
   "nx",
   "nyc",
-  "oclif",
   "openapi-ts",
   "openclaw",
   "orval",
   "oxfmt",
   "oxlint",
   "panda-css",
-  "parcel",
   "payload",
   "pino",
   "playwright-ct",
@@ -164,7 +161,6 @@ const UNREAD_TOOLS: readonly string[] = [
   "swc",
   "syncpack",
   "tailwind",
-  "tanstack-router",
   "taskfile",
   "tauri",
   "temporal",
@@ -210,18 +206,19 @@ const UNREAD_TOOLS: readonly string[] = [
 /** The conventions declined for a tool some of whose conventions are entered. */
 const PARTLY_ENTERED: readonly DeclinedConvention[] = [
   {
+    tool: "docusaurus",
+    convention: "a page or theme directory a plugin's configuration moves, and the docs",
+    reason:
+      "The convention row reads src/pages and src/theme only, and a document's imports are " +
+      "read from every Markdown and MDX file, so a module only a moved directory holds is " +
+      "reported as never imported unless ts.entry_files names it.",
+  },
+  {
     tool: "eslint",
     convention: "a legacy configuration written in YAML or in JSON with comments",
     reason:
       "Only a configuration module and a strict JSON configuration file are read, so a " +
       "dependency only such a file names is reported as unused.",
-  },
-  {
-    tool: "eslint",
-    convention: "a plugin or shareable configuration named without its package's prefix",
-    reason:
-      "A string uses a dependency only where it spells the dependency's name, so a " +
-      "dependency only a shortened name loads is reported as unused.",
   },
   {
     tool: "playwright",

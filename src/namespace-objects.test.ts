@@ -149,7 +149,9 @@ describe("a module namespace object", () => {
     ["looped", "a let binding a loop head declares, beside a later binding of its name"],
     ["exported", "a property read by name, beside an export renamed to the binding's name"],
   ])("references only the export %s reads, through %s", (name) => {
-    expect(reported().filter((line) => line.includes(` ${name}`))).toEqual([`DS1001 ${name}Spare`]);
+    expect(
+      reported().filter((line) => line.startsWith("DS1001 ") && line.includes(` ${name}`)),
+    ).toEqual([`DS1001 ${name}Spare`]);
   });
 
   it.each([
@@ -164,7 +166,9 @@ describe("a module namespace object", () => {
     ],
     ["queried", "a typeof query of the object"],
   ])("references every export of %s, through %s", (name) => {
-    expect(reported().filter((line) => line.includes(` ${name}`))).toEqual([]);
+    expect(
+      reported().filter((line) => line.startsWith("DS1001 ") && line.includes(` ${name}`)),
+    ).toEqual([]);
   });
 
   it("references only the export paramed reads, beside a parameter of its name", () => {
@@ -178,10 +182,9 @@ describe("a module namespace object", () => {
     ["idle", "a namespace import nothing uses"],
     ["loaded", "a dynamic import whose value is not used"],
   ])("references no export of %s, through %s", (name) => {
-    expect(reported().filter((line) => line.includes(` ${name}`))).toEqual([
-      `DS1001 ${name}Spare`,
-      `DS1001 ${name}Used`,
-    ]);
+    expect(
+      reported().filter((line) => line.startsWith("DS1001 ") && line.includes(` ${name}`)),
+    ).toEqual([`DS1001 ${name}Spare`, `DS1001 ${name}Used`]);
   });
 });
 
@@ -226,9 +229,11 @@ describe("a module namespace object in a project of its own", () => {
       ],
     ],
   ])("references only the export %s reads, through %s", (name, _, lines) => {
-    expect(reported(beside(name, lines)).filter((line) => line.includes(` ${name}`))).toEqual([
-      `DS1001 ${name}Spare`,
-    ]);
+    expect(
+      reported(beside(name, lines)).filter(
+        (line) => line.startsWith("DS1001 ") && line.includes(` ${name}`),
+      ),
+    ).toEqual([`DS1001 ${name}Spare`]);
   });
 
   it.each([
@@ -274,7 +279,11 @@ describe("a module namespace object in a project of its own", () => {
       ],
     ],
   ])("references every export of %s, through %s", (name, _, lines) => {
-    expect(reported(beside(name, lines)).filter((line) => line.includes(` ${name}`))).toEqual([]);
+    expect(
+      reported(beside(name, lines)).filter(
+        (line) => line.startsWith("DS1001 ") && line.includes(` ${name}`),
+      ),
+    ).toEqual([]);
   });
 
   it.each([
@@ -325,10 +334,11 @@ describe("a module namespace object in a project of its own", () => {
       ],
     ],
   ])("references no export of %s, through %s", (name, _, lines) => {
-    expect(reported(beside(name, lines)).filter((line) => line.includes(` ${name}`))).toEqual([
-      `DS1001 ${name}Spare`,
-      `DS1001 ${name}Used`,
-    ]);
+    expect(
+      reported(beside(name, lines)).filter(
+        (line) => line.startsWith("DS1001 ") && line.includes(` ${name}`),
+      ),
+    ).toEqual([`DS1001 ${name}Spare`, `DS1001 ${name}Used`]);
   });
 
   it("references no export of a module, nor the file, through another call of its specifier", () => {

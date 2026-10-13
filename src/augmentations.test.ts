@@ -51,12 +51,8 @@ describe("a declare global block that augments a library interface", () => {
     ]);
   });
 
-  it("is test-only in test-support code where only a test file reads a member it declares", () => {
-    expect(FINDINGS.filter((line) => line.includes(" src/support.ts:"))).toEqual([
-      "DS1004 src/support.ts:1 global",
-      "DS1004 src/support.ts:7 fixtureDir",
-      "DS1201 src/support.ts:2 global.ImportMeta",
-    ]);
+  it("is test code a test keeps live in test-support code where only a test file reads a member it declares", () => {
+    expect(FINDINGS.filter((line) => line.includes(" src/support.ts:"))).toEqual([]);
   });
 });
 
@@ -232,17 +228,20 @@ describe("a module augmentation no import of the target names", () => {
 });
 
 describe("a module augmentation in test-support code", () => {
-  it("is test-support code test code reaches, with every declaration it holds", () => {
+  it("is test-support code test code reaches and keeps live, with every declaration it holds", () => {
     const root = writeProject({
       "deadset.json":
         '{ "target": { "kind": "application" }, "analysis": { "min_confidence": "possible" } }\n',
       "package.json":
-        '{ "name": "app", "private": true, "type": "module", "main": "./main.ts", "dependencies": { "lib": "1.0.0" } }\n',
+        '{ "name": "app", "private": true, "type": "module", "main": "./main.ts", "dependencies": { "lib": "1.0.0" }, "devDependencies": { "vitest": "1.0.0" } }\n',
       "node_modules/lib/package.json": '{ "name": "lib", "types": "./index.d.ts" }\n',
       "node_modules/lib/index.d.ts":
         "export interface Commands {}\nexport declare const commands: Commands;\n",
+      "node_modules/vitest/package.json": '{ "name": "vitest", "types": "./index.d.ts" }\n',
+      "node_modules/vitest/index.d.ts": "export {};\n",
       "main.ts": "export const ready = true;\n",
       "support.ts": [
+        'import "vitest";',
         'import { commands } from "lib";',
         "",
         'declare module "lib" {',
@@ -268,7 +267,7 @@ describe("a module augmentation in test-support code", () => {
         findingsOf(emitterInputOf(root, config)).map(
           (finding) => `${finding.code} ${finding.symbol.name} ${finding.confidence}`,
         ),
-      ).toEqual(["DS1004 lib possible", "DS1004 emulate possible", "DS1201 lib.Commands possible"]);
+      ).toEqual([]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -333,6 +332,7 @@ const HELD: Inventory = {
   unanswered: [],
   byName: new Map(),
   modules: new Map([[LIB.id, "lib"]]),
+  ambient: new Set(),
   dependents: new Map(),
 };
 
@@ -374,6 +374,13 @@ describe("a use of a declaration an augmentation holds", () => {
   it("reads the interfaces a script's global scope holds, and not the script", () => {
     expect(readThrough(AREA, new Set([SCRIPT.id]))).toEqual(["Shape"]);
     expect(readThrough(AREA)).toEqual([]);
+  });
+
+  it("reads the block once where two uses at one place reach two declarations it holds", () => {
+    const read = (to: InventorySymbol): Reference => ({ ...written(to), use: "read" });
+    const uses = [read(PLUGINS), read(SEARCH)];
+    expect(augmentationReferences(HELD, uses).map((one) => one.to)).toEqual([LIB.id]);
+    expect(augmentationReferences(HELD, [...uses, read(LIB)])).toEqual([]);
   });
 
   it("reads nothing where no augmentation holds the declaration, a namespace or interface named global included", () => {

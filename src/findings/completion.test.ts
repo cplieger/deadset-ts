@@ -58,16 +58,17 @@ describe("the placement of every family's findings in their components", () => {
       rmSync(root, { recursive: true, force: true });
     });
 
-    it("gives each unused dependency a component of its own that deletes no declaration line", () => {
+    it("gives each unused dependency a component of its own that deletes no declaration line, and one only dead code uses that code's", () => {
       const input = emitterInputOf(root, configOf(root));
       const rows = findingsOf(input).filter((finding) => finding.code === "DS1601");
 
       expect(input.swept.sweep.components).toHaveLength(1);
       expect(placements(rows)).toEqual([
-        "DS1601 unused-runtime deadset-ts/c-0003 root 1 0",
-        "DS1601 @types/bundled deadset-ts/c-0004 root 1 0",
-        "DS1601 unused-dev deadset-ts/c-0005 root 1 0",
-        "DS1601 peer-unused deadset-ts/c-0006 root 1 0",
+        "DS1601 left-pad deadset-ts/c-0001 1 3",
+        "DS1601 unused-runtime deadset-ts/c-0002 root 1 0",
+        "DS1601 @types/bundled deadset-ts/c-0003 root 1 0",
+        "DS1601 unused-dev deadset-ts/c-0004 root 1 0",
+        "DS1601 peer-unused deadset-ts/c-0005 root 1 0",
       ]);
     });
   });
@@ -433,9 +434,12 @@ describe("a part of test-support code only test code calls", () => {
     const found = reportedOver(
       {
         "package.json": '{ "name": "@example/parts", "type": "module", "main": "./src/main.ts" }\n',
+        "node_modules/vitest/package.json":
+          '{ "name": "vitest", "version": "1.0.0", "types": "./index.d.ts" }\n',
+        "node_modules/vitest/index.d.ts": "export {};\n",
         "src/main.ts": "console.log(1);\n",
         "src/fakes/fake.ts":
-          "export function fake(value: number, ignored: number): number {\n  return value;\n}\n",
+          'import "vitest";\n\nexport function fake(value: number, ignored: number): number {\n  return value;\n}\n',
         "src/main.test.ts": 'import { fake } from "./fakes/fake.js";\n\nconsole.log(fake(1, 2));\n',
       },
       { target: { kind: "application" } },

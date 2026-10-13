@@ -95,7 +95,9 @@ describe("an unreachable statement", () => {
         ]),
       ).toEqual([
         "DS1805 statement src/main.ts:8",
+        "DS1807 set src/main.ts:8",
         "DS1805 statement src/main.ts:13",
+        "DS1807 second src/main.ts:14",
         "DS1805 statement src/main.ts:19",
       ]);
     },

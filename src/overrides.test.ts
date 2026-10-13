@@ -187,16 +187,27 @@ describe("the overrides of a class a dependency declares", () => {
     ).toEqual(["Leaf -> Leaf.run"]);
   });
 
-  it("are not read for a base that is a value with a constructor type rather than a class", () => {
+  it("are read for a library class written as an interface and a variable, toString of an error's included", () => {
     expect(
       overridesOf({
         "src/main.ts": lines(
           "export class E extends Error {",
           '  override message = "x";',
+          '  override name = "E";',
+          "  override toString(): string {",
+          "    return this.message;",
+          "  }",
+          "  own(): void {}",
           "}",
-          "console.log(new E());",
+          "export class M extends Map<string, number> {",
+          "  override clear(): void {}",
+          "  toString(): string {",
+          '    return "m";',
+          "  }",
+          "}",
+          "console.log(new E(), new M());",
         ),
       }),
-    ).toEqual([]);
+    ).toEqual(["E -> E.message", "E -> E.name", "E -> E.toString", "M -> M.clear"]);
   });
 });

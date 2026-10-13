@@ -326,8 +326,10 @@ describe("a test of dead code across configurations", () => {
           "src/a.ts": LIVE_AND_DEAD,
           "src/runner.test.ts":
             "// deadset:ignore DS1001 -- Called by the test runner's plugin.\nexport function runner(): number {\n  return 2;\n}\n",
+          "node_modules/vitest/package.json": '{ "name": "vitest", "types": "./index.d.ts" }\n',
+          "node_modules/vitest/index.d.ts": "export {};\n",
           "src/support.ts":
-            "// deadset:ignore DS1004 -- Loaded by the test runner's setup.\nexport function helper(): number {\n  return 3;\n}\n",
+            'import "vitest";\n\n// deadset:ignore DS1004 -- Loaded by the test runner\'s setup.\nexport function helper(): number {\n  return 3;\n}\n',
           "src/a.test.ts":
             'import { dead } from "./a.ts";\nimport { runner } from "./runner.test.ts";\nimport { helper } from "./support.ts";\n\nfunction checks(): unknown {\n  return [dead(), runner(), helper(), import("./setup.ts")];\n}\n',
         }),

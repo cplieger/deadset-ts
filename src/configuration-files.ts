@@ -8,10 +8,13 @@
  */
 
 import {
+  isCallExpression,
   isExportDeclaration,
+  isIdentifier,
   isImportDeclaration,
   isNoSubstitutionTemplateLiteral,
   isStringLiteral,
+  SyntaxKind,
   type Node,
   type SourceFile,
 } from "@typescript/native/ast";
@@ -110,7 +113,7 @@ interface ConfigurationDocument {
 export type ParseFile = (fileName: string, text: string) => SourceFile;
 
 /** One file no program holds that a configuration module outside the program leads to. */
-interface OutsideModule {
+export interface OutsideModule {
   /** The file, parsed alone. */
   readonly file: SourceFile;
   /** The directories of the manifests of the configuration files the file was reached from. */
@@ -439,19 +442,70 @@ export function configurationFiles(
   };
 }
 
-/** The relative specifiers one file's imports and re-exports name. */
-function relativeSpecifiers(file: SourceFile): readonly string[] {
-  return file.statements.flatMap((statement) => {
-    const specifier =
+/** The literal module specifier one `require(...)` or `import(...)` call names, if any. */
+function calledSpecifier(node: Node): Node | undefined {
+  if (!isCallExpression(node) || node.arguments.length !== 1) {
+    return undefined;
+  }
+  const callee = node.expression;
+  const loads =
+    callee.kind === SyntaxKind.ImportKeyword || (isIdentifier(callee) && callee.text === "require");
+  return loads ? node.arguments[0] : undefined;
+}
+
+/**
+ * The relative specifiers one file's imports and re-exports name, and those its
+ * `require(...)` and `import(...)` calls name by a literal.
+ */
+export function relativeSpecifiers(file: SourceFile): readonly string[] {
+  const known = specifiersOf.get(file);
+  if (known !== undefined) {
+    return known;
+  }
+  const found: string[] = [];
+  const named = (specifier: Node | undefined): void => {
+    if (
+      specifier !== undefined &&
+      (isStringLiteral(specifier) || isNoSubstitutionTemplateLiteral(specifier)) &&
+      RELATIVE_PREFIXES.some((prefix) => specifier.text.startsWith(prefix))
+    ) {
+      found.push(specifier.text);
+    }
+  };
+  const visit = (node: Node): void => {
+    named(calledSpecifier(node));
+    node.forEachChild(visit);
+  };
+  for (const statement of file.statements) {
+    named(
       isImportDeclaration(statement) || isExportDeclaration(statement)
         ? statement.moduleSpecifier
-        : undefined;
-    return specifier !== undefined &&
-      isStringLiteral(specifier) &&
-      RELATIVE_PREFIXES.some((prefix) => specifier.text.startsWith(prefix))
-      ? [specifier.text]
-      : [];
-  });
+        : undefined,
+    );
+    visit(statement);
+  }
+  specifiersOf.set(file, found);
+  return found;
+}
+
+/** What {@link relativeSpecifiers} found in each file, which every project of a run reads alike. */
+const specifiersOf = new WeakMap<SourceFile, readonly string[]>();
+
+/**
+ * The files no program holds that a chain from `seeds` reads: each seed, and each file
+ * below the target root one imports, re-exports or loads by a relative specifier that no
+ * program holds either, until no further file joins, each read against the manifest
+ * directory its seed names. A file that cannot be read is skipped.
+ */
+export function outsideChain(
+  host: Host,
+  targetRoot: string,
+  files: SourceFiles,
+  parse: ParseFile,
+  seeds: readonly { readonly path: string; readonly manifestDir: string }[],
+): readonly OutsideModule[] {
+  const root = resolvePath(host.workingDirectory(), targetRoot);
+  return outsideModules(host, root, [], files, () => false, parse, seeds);
 }
 
 /**

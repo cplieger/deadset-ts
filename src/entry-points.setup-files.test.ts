@@ -39,6 +39,19 @@ function setupRoots(files: Readonly<Record<string, string>>): string[] {
 
 describe("the setup files of a test-runner workspace file", () => {
   it(
+    "are read against its directory where a literal names a file with no leading dot segment",
+    () => {
+      expect(
+        setupRoots({
+          "vitest.workspace.ts":
+            'export default { test: { setupFiles: ["setup.ts"], globalSetup: "https://example.com/global.ts" } };\n',
+        }),
+      ).toEqual(["setup.ts#\ttest-runner\tsetup.ts"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
     "are the literals its test object names, each rooted alone and none of its exports",
     () => {
       expect(

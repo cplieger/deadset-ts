@@ -14,6 +14,7 @@
 import {
   isArrayLiteralExpression,
   isAsExpression,
+  isBinaryExpression,
   isCallExpression,
   isExportAssignment,
   isIdentifier,
@@ -26,6 +27,8 @@ import {
   isPropertyAssignment,
   isSatisfiesExpression,
   isStringLiteral,
+  isTemplateExpression,
+  SyntaxKind,
   type Node,
   type SourceFile,
 } from "@typescript/native/ast";
@@ -40,6 +43,7 @@ import type { Selected } from "./conventions.ts";
 import { globExpression } from "./glob.ts";
 import type { Host } from "./host.ts";
 import { htmlEntries } from "./html-entries.ts";
+import { documentEntries } from "./mdx-entries.ts";
 import { dirnamePath, relativePath, resolvePath } from "./paths.ts";
 import { UNANSWERED } from "./query.ts";
 import type { ProjectView } from "./session.ts";
@@ -61,7 +65,15 @@ export type EntryRule =
   /** A file a module script of an HTML file below the target root loads. */
   | "html-entry"
   /** A file a `run:` step of a workflow in the target root's `.github/workflows` names. */
-  | "workflow-step";
+  | "workflow-step"
+  /**
+   * A file a load whose path is computed may name: below the directory the literal
+   * start of an `import()` or `require()` argument names, or matched by the literal
+   * glob of `import.meta.glob`.
+   */
+  | "computed-import"
+  /** A file an import line of a Markdown or MDX document below the target root names. */
+  | "document-import";
 
 /** One file a rule enters. */
 interface EntryPoint {
@@ -78,6 +90,8 @@ interface EntryPoint {
    * level and names none of its exports.
    */
   readonly exports: boolean;
+  /** Where the file is entered for some of its exports only, their export names. */
+  readonly names?: readonly string[];
 }
 
 /** One file-name convention: the stems a tool looks for, under each extension it loads. */
@@ -114,8 +128,11 @@ const SETUP_MEMBERS = ["setupFiles", "globalSetup"] as const;
 /** A member that moves the directory every path of a test-runner configuration is read from. */
 const ROOT_MEMBER = "root";
 
-/** The prefixes a literal is relative with, in a module specifier and a URL reference alike. */
-const RELATIVE_PREFIXES = ["./", "../"] as const;
+/**
+ * A URL reference's scheme. A reference with none that does not start with a solidus is
+ * relative, the bare name included: https://url.spec.whatwg.org/#relative-url-string
+ */
+const URL_SCHEME = /^[a-z][a-z\d+.-]*:/iu;
 
 /** The constructors whose first argument addresses a worker script. */
 const WORKER_CONSTRUCTORS: ReadonlySet<string> = new Set(["Worker", "SharedWorker"]);
@@ -228,9 +245,17 @@ function literalsOf(value: Node): readonly string[] | undefined {
   return found;
 }
 
-/** Whether a literal is relative in the sense a module specifier and a URL reference share. */
+/**
+ * Whether a literal is a relative URL reference, which is also how the test runner reads a
+ * setup file's path against its root.
+ */
 function isRelative(text: string): boolean {
-  return RELATIVE_PREFIXES.some((prefix) => text.startsWith(prefix));
+  return text !== "" && !text.startsWith("/") && !URL_SCHEME.test(text);
+}
+
+/** Whether a module specifier is relative, which a bare name is not: it names a package. */
+function isModuleRelative(text: string): boolean {
+  return text.startsWith("./") || text.startsWith("../");
 }
 
 /** A URL reference with its query and its fragment removed, which name no part of the file. */
@@ -470,10 +495,10 @@ function workerSitesOf(file: SourceFile): readonly WorkerSite[] {
 }
 
 /**
- * The workers one file addresses. A call's names must resolve to the platform's own
- * declarations, which no file of the target declares and no import brings in; a
- * name the target binds itself is the target's own constructor or object, which
- * addresses no worker this rule knows. One batch per file that writes such a call.
+ * The workers one file addresses. A call's names must resolve to a symbol the platform
+ * declares, which a file of the target may augment and no import brings in; a name only
+ * the target declares is the target's own constructor or object, which addresses no
+ * worker this rule knows. One batch per file that writes such a call.
  */
 function workersOf<Brand>(
   project: ProjectView<Brand>,
@@ -498,8 +523,7 @@ function workersOf<Brand>(
     if (
       symbol !== undefined &&
       (symbol.flags & SymbolFlags.Alias) === 0 &&
-      symbol.declarations.length > 0 &&
-      symbol.declarations.every((handle) => !files.byName.has(handle.path))
+      symbol.declarations.some((handle) => !files.byName.has(handle.path))
     ) {
       platform.add(name);
     }
@@ -514,6 +538,94 @@ function workersOf<Brand>(
       found.push({ file: named, rule: "worker", source: site.literal, exports: false });
     }
   }
+  return found;
+}
+
+/** The literal text a computed path starts with: a template's head, or a concatenation's first literal. */
+function leadingLiteral(node: Node): string | undefined {
+  const at = unwrapped(node);
+  if (isTemplateExpression(at)) {
+    return at.head.text;
+  }
+  if (isBinaryExpression(at) && at.operatorToken.kind === SyntaxKind.PlusToken) {
+    return literalOf(unwrapped(at.left)) ?? leadingLiteral(at.left);
+  }
+  return undefined;
+}
+
+/** Whether one call is `import.meta.glob(...)`. */
+function isMetaGlob(node: Node): boolean {
+  if (!isCallExpression(node) || !isPropertyAccessExpression(node.expression)) {
+    return false;
+  }
+  const { expression, name } = node.expression;
+  return (
+    isIdentifier(name) &&
+    name.text === "glob" &&
+    isMetaProperty(expression) &&
+    expression.keywordToken === SyntaxKind.ImportKeyword
+  );
+}
+
+/**
+ * The files one file loads by a computed path, each with what exports: every own file
+ * below the directory a relative literal start of an `import()` or `require()` argument
+ * names, other than the calling file's own directory or one holding it, which would name
+ * every sibling, and
+ * every own file a relative literal glob of `import.meta.glob` matches, both read against
+ * the calling file's directory, as a bundler's context module reads them.
+ */
+function computedImportsOf(file: SourceFile, files: SourceFiles): readonly EntryPoint[] {
+  const dir = dirnamePath(file.fileName);
+  const found: EntryPoint[] = [];
+  const below = (prefix: string): void => {
+    const target = resolvePath(dir, prefix);
+    if (
+      !isModuleRelative(prefix) ||
+      !prefix.endsWith("/") ||
+      target === dir ||
+      relativePath(target, dir) !== undefined
+    ) {
+      return;
+    }
+    for (const candidate of files.byName.values()) {
+      if (candidate !== file && relativePath(target, candidate.fileName) !== undefined) {
+        found.push({ file: candidate, rule: "computed-import", source: prefix, exports: true });
+      }
+    }
+  };
+  const globbed = (pattern: string): void => {
+    if (!isModuleRelative(pattern)) {
+      return;
+    }
+    const expression = globExpression(resolvePath(dir, pattern));
+    for (const candidate of files.byName.values()) {
+      if (candidate !== file && expression.test(candidate.fileName)) {
+        found.push({ file: candidate, rule: "computed-import", source: pattern, exports: true });
+      }
+    }
+  };
+  const visit = (node: Node): void => {
+    if (isCallExpression(node)) {
+      const [first] = node.arguments;
+      const callee = node.expression;
+      const loads =
+        callee.kind === SyntaxKind.ImportKeyword ||
+        (isIdentifier(callee) && callee.text === "require");
+      if (loads && first !== undefined) {
+        const prefix = leadingLiteral(first);
+        if (prefix !== undefined) {
+          below(prefix);
+        }
+      } else if (isMetaGlob(node) && first !== undefined) {
+        for (const pattern of literalsOf(first) ?? []) {
+          globbed(pattern);
+        }
+      }
+    }
+    node.forEachChild(visit);
+  };
+  file.forEachChild(visit);
   return found;
 }
 
@@ -554,9 +666,19 @@ export function entryPoints<Brand>(
       }
     }
     found.push(...workersOf(project, file, files));
+    found.push(...computedImportsOf(file, files));
   }
   for (const { file, source } of htmlEntries(host, targetRoot, files, parse)) {
     found.push({ file, rule: "html-entry", source, exports: true });
+  }
+  for (const { file, source, names } of documentEntries(host, targetRoot, files)) {
+    found.push({
+      file,
+      rule: "document-import",
+      source,
+      exports: true,
+      ...(names === undefined ? {} : { names }),
+    });
   }
   for (const { file, source } of workflowEntries(host, targetRoot, files)) {
     found.push({ file, rule: "workflow-step", source, exports: true });

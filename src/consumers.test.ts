@@ -263,7 +263,7 @@ describe("a consumer the scope declares", () => {
 
       expect(claims(analyze(root, ["."]).report)).toEqual([
         "DS1001 dead certain",
-        "DS1002 deadCaller certain",
+        "DS1002 deadCaller probable",
       ]);
     },
     LOAD_TIMEOUT,
@@ -284,7 +284,7 @@ describe("a consumer the scope declares", () => {
 
       expect(claims(analyze(root).report)).toEqual([
         "DS1004 onlyTested certain",
-        "DS1002 helper certain",
+        "DS1002 helper probable",
       ]);
     },
     LOAD_TIMEOUT,

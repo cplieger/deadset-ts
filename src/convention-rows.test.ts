@@ -13,6 +13,8 @@ const PLUGIN_CALLS = [
   "@remix-run/dev vitePlugin",
   "@solidjs/start/config solidStart",
   "@sveltejs/kit/vite sveltekit",
+  "@tanstack/router-plugin/vite TanStackRouterVite",
+  "@tanstack/router-plugin/vite tanstackRouter",
 ];
 
 /** Every placeholder one template writes. */

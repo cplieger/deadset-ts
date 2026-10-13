@@ -129,6 +129,7 @@ export function openEngine(options: EngineOptions): Engine {
     ...(mapper === undefined ? {} : { runExternalCode: true }),
   });
   let closed = false;
+  const parsed = new Map<string, { readonly text: string; readonly file: SourceFile }>();
   return {
     parseConfigFile: (file) => api.parseConfigFile(file),
     parseConfigJson: (json, configFile) =>
@@ -160,8 +161,14 @@ export function openEngine(options: EngineOptions): Engine {
         moduleResolutions: { fallback: "resolve", entries: [...entries] },
       }),
     parseSourceFile: (fileName, text) => {
+      // Every project of a run reads the same files outside its program, so one parse serves all.
+      const known = parsed.get(fileName);
+      if (known?.text === text) {
+        return known.file;
+      }
       const retained = api.createSourceFile(fileName, text);
       try {
+        parsed.set(fileName, { text, file: retained.sourceFile });
         return retained.sourceFile;
       } finally {
         retained.dispose();

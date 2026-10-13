@@ -71,7 +71,7 @@ export function writeProject(files: Readonly<Record<string, string>>): string {
  * table reads is measured rather than self-reported, and a second read of one
  * container's table is a duplicate entry naming that container.
  */
-export interface TableReads {
+interface TableReads {
   /** One entry per `getMembers` call: a class, an interface or a type. */
   readonly members: readonly string[];
   /** One entry per `getExports` call: a module, a namespace, an enum or a class. */
@@ -239,7 +239,7 @@ export function analyzeProject(
 }
 
 /** The references one consumer's pass made, and the target declarations they name. */
-export interface ConsumerPass {
+interface ConsumerPass {
   readonly references: readonly Reference[];
   /** The target's declarations, enumerated over the target files the consumer's program holds. */
   readonly held: Inventory;

@@ -49,9 +49,11 @@ export const REF_EXPRESSIONS: readonly string[] = [
   `^${SCOPE}#$`,
   `^${SCOPE}#${TS_HEAD}$`,
   `^${SCOPE}#(?:${TS_QUOTED}\\.)?${TS_HEAD}:alias$`,
+  `^${SCOPE}#${TS_HEAD}:import$`,
   `^${SCOPE}#${TS_HEAD}(?:\\.${TS_MEMBER})+$`,
   `^${SCOPE}#${TS_HEAD}(?:\\.${TS_MEMBER})+:static$`,
   `^${SCOPE}#${TS_HEAD}(?:\\.${TS_MEMBER})*(?::static)?<${TS_IDENT}>$`,
+  `^${SCOPE}#(?:${TS_HEAD}(?:\\.${TS_MEMBER})*(?::static)?)?\\(${TS_IDENT}\\)$`,
   `^${MANIFEST_SCOPE}#${TS_PACKAGE}:(?:dependency|dev-dependency|peer-dependency)$`,
 ];
 
@@ -149,6 +151,16 @@ function quoted(name: string): string {
  */
 export function computedComponent(text: string): string {
   return `[${text.replaceAll(ASCII_WHITESPACE, "")}]`;
+}
+
+/** The reference of an import binding, read against the reference of the module that holds it. */
+export function importRef(moduleRef: string, name: string): string {
+  return `${moduleRef}${nameComponent(name)}:import`;
+}
+
+/** The reference of a parameter, read against the reference of the declaration that holds it. */
+export function parameterRef(holderRef: string, name: string): string {
+  return `${holderRef}(${name})`;
 }
 
 /** The fragment of an export alias, inside the `declare module` block named, if one is. */

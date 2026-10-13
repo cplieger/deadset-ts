@@ -196,7 +196,31 @@ function brandMembers(input: EmitterInput): ReadonlySet<string> {
 const BRANDS: ReadonlySet<SymbolKind> = new Set(["type-member", "class-member"]);
 
 /** The findings of the unused-declarations family, `DS1000` to `DS1099`. */
-export const unusedDeclarations: Emitter = (input) => familyFindings(input, false);
+export const unusedDeclarations: Emitter = (input) => [
+  ...familyFindings(input, false),
+  ...unusedImports(input),
+];
+
+/**
+ * The import bindings their file never reads, under the unexported code. A generated
+ * file's are the generator's to remove unless the run includes generated files.
+ */
+function unusedImports(input: EmitterInput): Finding[] {
+  const generated =
+    input.config.analysis.generatedFiles === "include" ? undefined : input.files.generated;
+  return input.intraFunction.imports.flatMap((binding) =>
+    binding.used || generated?.has(binding.position.path) === true
+      ? []
+      : [
+          {
+            code: "DS1002",
+            position: binding.position,
+            symbol: { ref: binding.ref, kind: "import", name: binding.name, sizeLines: 1 },
+            message: `import binding ${binding.name} is never read in its file`,
+          },
+        ],
+  );
+}
 
 /**
  * The finding each member of a dead container would carry were its container live: what

@@ -19,12 +19,44 @@ function refsOf(symbols: readonly InventorySymbol[] | undefined, kind: string): 
 }
 
 describe("a declaration form", () => {
-  it("is nothing for a destructuring pattern, whose bindings no reference names", () => {
+  it("is a variable for each name a destructuring pattern binds, but one beside a rest element or with a default", () => {
     expect(
       declared({
-        "src/unit.ts": "export const { a, b } = { a: 1, b: 2 };\nexport const [c] = [3];\n",
+        "src/unit.ts":
+          "export const { a, b: { c } } = { a: 1, b: { c: 2 } };\nexport const [d, [e]] = [3, [4]];\nexport const { f, ...g } = { f: 5, h: 6 };\nexport const { i = 7 } = {} as { i?: number };\n",
       }),
-    ).toEqual(["file src/unit.ts 1-2"]);
+    ).toEqual([
+      "file src/unit.ts 1-4",
+      "variable a 1-1",
+      "variable c 1-1",
+      "variable d 2-2",
+      "variable e 2-2",
+      "variable g 3-3",
+    ]);
+  });
+
+  it("reports a name an exported destructuring binds that nothing imports", () => {
+    const root = writeProject({
+      "package.json": '{ "name": "@example/forms", "private": true, "type": "module" }\n',
+      "src/main.ts": 'import { a } from "./unit.js";\nconsole.log(a);\n',
+      "src/unit.ts": "export const { a, b } = { a: 1, b: 2 };\n",
+    });
+    try {
+      const { config } = resolve({
+        repository: JSON.stringify({
+          target: { kind: "application" },
+          ts: { entry_files: ["src/main.ts"] },
+        }),
+        repositoryLabel: "deadset.json",
+      });
+      expect(
+        findingsOf(emitterInputOf(root, config)).map(
+          (finding) => `${finding.code} ${finding.symbol.ref} ${finding.fixability}`,
+        ),
+      ).toEqual(["DS1001 ts://@example/forms/src/unit.ts#b deletable"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("names a numeric and a quoted key by the value it denotes", () => {

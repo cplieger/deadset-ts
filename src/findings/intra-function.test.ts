@@ -163,7 +163,6 @@ describe("the intra-function family", () => {
       ).toEqual([
         { code: "DS1801", name: "unread", line: 11 },
         { code: "DS1801", name: "ignored", line: 15 },
-        { code: "DS1801", name: "_value", line: 27 },
         { code: "DS1803", name: "result", line: 31 },
         { code: "DS1805", name: "statement", line: 46 },
         { code: "DS1807", name: "value", line: 57 },
@@ -190,7 +189,7 @@ describe("the intra-function family", () => {
         {
           code: "DS1801",
           kind: "parameter",
-          ref: "ts://@example/parts/src/main.ts#partial",
+          ref: "ts://@example/parts/src/main.ts#partial(unread)",
           message:
             "parameter unread is never read in the body; also reported by tsc --noUnusedParameters and @typescript-eslint/no-unused-vars",
           overlap: ["tsc --noUnusedParameters", "@typescript-eslint/no-unused-vars"],
@@ -200,19 +199,9 @@ describe("the intra-function family", () => {
         {
           code: "DS1801",
           kind: "parameter",
-          ref: "ts://@example/parts/src/main.ts#onEvent",
+          ref: "ts://@example/parts/src/main.ts#onEvent(ignored)",
           message:
             "parameter ignored is never read in the body; also reported by tsc --noUnusedParameters and @typescript-eslint/no-unused-vars",
-          overlap: ["tsc --noUnusedParameters", "@typescript-eslint/no-unused-vars"],
-          relation: undefined,
-          writes: undefined,
-        },
-        {
-          code: "DS1801",
-          kind: "parameter",
-          ref: "ts://@example/parts/src/main.ts#marked",
-          message:
-            "parameter _value is never read in the body; also reported by tsc --noUnusedParameters and @typescript-eslint/no-unused-vars",
           overlap: ["tsc --noUnusedParameters", "@typescript-eslint/no-unused-vars"],
           relation: undefined,
           writes: undefined,
@@ -256,6 +245,99 @@ describe("the intra-function family", () => {
           relation: undefined,
           writes: undefined,
         },
+      ]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "gives each parameter its own reference, so two on one line are two subjects, and two functions one holder holds share one for a name both declare",
+    () => {
+      const found = partsOf(
+        {
+          "package.json": '{ "name": "@example/pair", "private": true, "type": "module" }\n',
+          "src/main.ts": [
+            "function pair(kept: number, first: number, second: number): number {",
+            "  return kept;",
+            "}",
+            "console.log(pair(1, 2, 3), [1].map((value, index) => 0));",
+            "console.log([2].map((value, index) => 1));",
+            "",
+          ].join("\n"),
+        },
+        ENTRY,
+      ).map(({ finding }) => `${String(finding.position.line)} ${finding.symbol.ref}`);
+
+      expect(found).toEqual([
+        "1 ts://@example/pair/src/main.ts#pair(first)",
+        "1 ts://@example/pair/src/main.ts#pair(second)",
+        "4 ts://@example/pair/src/main.ts#(value)",
+        "4 ts://@example/pair/src/main.ts#(index)",
+        "5 ts://@example/pair/src/main.ts#(value)",
+        "5 ts://@example/pair/src/main.ts#(index)",
+      ]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "names the compiler's rule for a parameter only in a file the compiler checks",
+    () => {
+      const found = partsOf(
+        {
+          "package.json": '{ "name": "@example/js-parts", "private": true, "type": "module" }\n',
+          "tsconfig.json": '{ "compilerOptions": { "allowJs": true, "noEmit": true } }\n',
+          "src/main.ts": [
+            'import { plain } from "./plain.js";',
+            'import { checked } from "./checked.js";',
+            "console.log(plain(1, 2), checked(1, 2));",
+            "",
+          ].join("\n"),
+          "src/plain.js": "export function plain(read, unread) {\n  return read;\n}\n",
+          "src/checked.js":
+            "// @ts-check\n/** @param {number} read @param {number} unread */\nexport function checked(read, unread) {\n  return read;\n}\n",
+        },
+        ENTRY,
+      ).map(({ finding }) => `${finding.position.path}: ${finding.message}`);
+
+      expect(found.sort()).toEqual([
+        "src/checked.js: parameter unread is never read in the body; also reported by tsc --noUnusedParameters and @typescript-eslint/no-unused-vars",
+        "src/plain.js: parameter unread is never read in the body; also reported by @typescript-eslint/no-unused-vars",
+      ]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "reads a pragma only where the compiler does, from a line comment that starts with it",
+    () => {
+      const body = "export function f(read: number, unread: number): number {\n  return read;\n}\n";
+      const found = partsOf(
+        {
+          "package.json": '{ "name": "@example/pragmas", "private": true, "type": "module" }\n',
+          "tsconfig.json": '{ "compilerOptions": { "allowJs": true, "noEmit": true } }\n',
+          "src/main.ts": [
+            'import { f as block } from "./block.js";',
+            'import { f as prose } from "./prose.js";',
+            'import { f as upper } from "./upper.js";',
+            'import { checked } from "./checked.js";',
+            "console.log(block(1, 2), prose(1, 2), upper(1, 2), checked(1, 2));",
+            "",
+          ].join("\n"),
+          "src/block.ts": `/* @ts-nocheck */\n${body}`,
+          "src/prose.ts": `// see the @ts-nocheck rule\n${body}`,
+          "src/upper.ts": `// @TS-NOCHECK\n${body}`,
+          "src/checked.js":
+            "/* @ts-check */\nexport function checked(read, unread) {\n  return read;\n}\n",
+        },
+        ENTRY,
+      ).map(({ finding }) => `${finding.position.path}: ${finding.message}`);
+
+      expect(found.sort()).toEqual([
+        "src/block.ts: parameter unread is never read in the body; also reported by tsc --noUnusedParameters and @typescript-eslint/no-unused-vars",
+        "src/checked.js: parameter unread is never read in the body; also reported by @typescript-eslint/no-unused-vars",
+        "src/prose.ts: parameter unread is never read in the body; also reported by tsc --noUnusedParameters and @typescript-eslint/no-unused-vars",
+        "src/upper.ts: parameter unread is never read in the body; also reported by @typescript-eslint/no-unused-vars",
       ]);
     },
     LOAD_TIMEOUT,
@@ -354,7 +436,7 @@ describe("the intra-function family", () => {
     () => {
       expect(
         partsOf(APPLICATION, { ...ENTRY, severity: { DS1805: "allow" } }).map(({ code }) => code),
-      ).toEqual(["DS1801", "DS1801", "DS1801", "DS1803", "DS1807", "DS1809"]);
+      ).toEqual(["DS1801", "DS1801", "DS1803", "DS1807", "DS1809"]);
     },
     LOAD_TIMEOUT,
   );
@@ -457,28 +539,28 @@ describe("a constructor's parameters", () => {
           name: "unused",
           line: 6,
           kind: "parameter",
-          ref: "ts://@example/parts/src/main.ts#Typed",
+          ref: "ts://@example/parts/src/main.ts#Typed(unused)",
         },
         {
           code: "DS1801",
           name: "spare",
           line: 12,
           kind: "parameter",
-          ref: "ts://@example/parts/src/main.ts#Base",
+          ref: "ts://@example/parts/src/main.ts#Base(spare)",
         },
         {
           code: "DS1801",
           name: "spare",
           line: 43,
           kind: "parameter",
-          ref: "ts://@example/parts/src/main.ts#Held",
+          ref: "ts://@example/parts/src/main.ts#Held(spare)",
         },
         {
           code: "DS1801",
           name: "spare",
           line: 55,
           kind: "parameter",
-          ref: "ts://@example/parts/src/main.ts#Shape",
+          ref: "ts://@example/parts/src/main.ts#Shape(spare)",
         },
       ]);
     },
@@ -536,7 +618,7 @@ function placed(found: readonly { finding: CompletedFinding }[]): string[] {
 
 describe("a parameter of a function expression a free function holds", () => {
   it(
-    "is reported where no read parameter follows it, since a caller of the value may pass it, and never before a read one",
+    "is deleted where no read parameter follows it, since a caller of the value may pass it, and renamed before a read one",
     () => {
       expect(
         placed(
@@ -555,7 +637,7 @@ describe("a parameter of a function expression a free function holds", () => {
             ENTRY,
           ),
         ),
-      ).toEqual(["DS1801 position src/main.ts:2"]);
+      ).toEqual(["DS1801 unused src/main.ts:2", "DS1801 position src/main.ts:2"]);
     },
     LOAD_TIMEOUT,
   );
@@ -600,6 +682,9 @@ describe("a part of test code", () => {
           partsOf(
             {
               "package.json": '{ "name": "@example/tested", "private": true, "type": "module" }\n',
+              "node_modules/vitest/package.json":
+                '{ "name": "vitest", "version": "1.0.0", "types": "./index.d.ts" }\n',
+              "node_modules/vitest/index.d.ts": "export {};\n",
               "src/main.ts": 'import { kept } from "./lib.js";\n\nconsole.log(kept());\n',
               "src/lib.ts": [
                 "export function kept(): number {",
@@ -612,6 +697,7 @@ describe("a part of test code", () => {
                 "",
               ].join("\n"),
               "src/fakes/fake.ts": [
+                'import "vitest";',
                 "export function fake(value: number, ignored: number): number {",
                 "  return value;",
                 "}",
@@ -649,7 +735,7 @@ describe("a part of test code", () => {
           ),
         ),
       ).toEqual([
-        "DS1801 ignored src/fakes/fake.ts:1",
+        "DS1801 ignored src/fakes/fake.ts:2",
         "DS1801 unused src/main.test.ts:4",
         "DS1801 dropped src/main.test.ts:16",
       ]);

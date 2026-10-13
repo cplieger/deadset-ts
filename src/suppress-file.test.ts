@@ -207,6 +207,39 @@ describe("an ignore entry", () => {
     expect(held.records.map((one) => one.bound)).toEqual([named.id]);
   });
 
+  it("binds a parameter's reference to the declaration that holds the parameter", () => {
+    const named = declaration(ENTRY.symbol, ENTRY.path);
+    const held = readIgnoreFile(
+      hostWith({
+        [IGNORE_FILE]: JSON.stringify({
+          ignore: [{ ...ENTRY, code: "DS1801", symbol: `${ENTRY.symbol}(unread)` }],
+        }),
+      }),
+      ROOT,
+      [named],
+    );
+
+    expect(held.records.map((one) => [one.symbol, one.bound])).toEqual([
+      [`${ENTRY.symbol}(unread)`, named.id],
+    ]);
+  });
+
+  it("binds nothing through a parameter's reference under a code that is no part kind", () => {
+    const held = readIgnoreFile(
+      hostWith({
+        [IGNORE_FILE]: JSON.stringify({
+          ignore: [{ ...ENTRY, code: "DS1001", symbol: `${ENTRY.symbol}(unread)` }],
+        }),
+      }),
+      ROOT,
+      [declaration(ENTRY.symbol, ENTRY.path)],
+    );
+
+    expect(held.records.map((one) => [one.symbol, one.bound])).toEqual([
+      [`${ENTRY.symbol}(unread)`, ""],
+    ]);
+  });
+
   it("names nothing when its path is another file than its reference's", () => {
     const held = readIgnoreFile(
       hostWith({ [IGNORE_FILE]: JSON.stringify({ ignore: [{ ...ENTRY, path: "src/other.ts" }] }) }),

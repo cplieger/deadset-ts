@@ -6,7 +6,6 @@
  */
 
 import {
-  isArrayBindingPattern,
   isArrowFunction,
   isAwaitExpression,
   isBigIntLiteral,
@@ -29,6 +28,8 @@ import {
   isExpressionStatement,
   isFunctionDeclaration,
   isFunctionExpression,
+  isForInStatement,
+  isForOfStatement,
   isFunctionLikeDeclaration,
   isHeritageClause,
   isIdentifier,
@@ -46,6 +47,7 @@ import {
   isObjectLiteralExpression,
   isParenthesizedExpression,
   isPrefixUnaryExpression,
+  isPropertyAssignment,
   isPropertyAccessExpression,
   isQualifiedName,
   isReturnStatement,
@@ -56,6 +58,7 @@ import {
   isThrowStatement,
   isTypeAliasDeclaration,
   isTypeReferenceNode,
+  isVariableDeclarationList,
   isVariableStatement,
   isVoidExpression,
   NodeFlags,
@@ -66,15 +69,27 @@ import {
   type CallExpression,
   type CatchClause,
   type ConstructorDeclaration,
+  type ForInStatement,
+  type ForOfStatement,
+  type FunctionLikeDeclaration,
   type FunctionExpression,
   type Identifier,
   type Node,
   type SourceFile,
   type Statement,
+  type VariableDeclarationList,
 } from "@typescript/native/ast";
+import { SignatureKind, type Type } from "@typescript/native/sync";
 import type { FindingPosition } from "./finding.ts";
+import {
+  exportsLocally,
+  implicitReads,
+  importBindings,
+  type JsxOptions,
+} from "./import-bindings.ts";
 import { isParameterProperty, nodeKey, type Inventory } from "./inventory.ts";
 import { positionKey, renderPosition } from "./position.ts";
+import { importRef } from "./ref.ts";
 import { isAnswered, UNANSWERED, type Answer } from "./query.ts";
 import type { Reference } from "./references.ts";
 import type { ProjectView } from "./session.ts";
@@ -116,6 +131,14 @@ interface ParameterPlace {
   readonly beforeARead: boolean;
   /** Whether no declaration of the inventory declares the function, which is then a value. */
   readonly inValue: boolean;
+  /**
+   * Where the parameter carries an annotation and the compiler gives its function a
+   * contextual type: whether a type parameter of the callee reads the parameter's type,
+   * so the annotation may steer the call's inference.
+   */
+  readonly annotated?: "steers" | "free";
+  /** Whether the compiler checks the parameter's file, so its unused-parameter rule may report it. */
+  readonly checked: boolean;
 }
 
 /** What one declaration's signature answers to beside its body. */
@@ -129,9 +152,18 @@ interface SignatureFact {
   readonly constructor: boolean;
 }
 
+/** One name an import declaration binds, and whether its file reads it. */
+interface ImportFact {
+  readonly ref: string;
+  readonly name: string;
+  readonly position: FindingPosition;
+  readonly used: boolean;
+}
+
 /** What one project answers about the parts of its declarations. */
 export interface ProjectParts {
   readonly parts: readonly PartFact[];
+  readonly imports: readonly ImportFact[];
   readonly signatures: readonly SignatureFact[];
   /** Each name written as the callee of a call, by position, and what the call does with its value. */
   readonly calls: ReadonlyMap<string, CallUse>;
@@ -510,8 +542,47 @@ interface ParameterName {
   /** The parameter's index in its list. */
   readonly at: number;
   readonly pattern: boolean;
-  /** A name beside a rest element of its object pattern: removing it changes what the rest holds. */
+  /**
+   * Whether the name is never reported: it is spelled declared unread, or it stands beside a
+   * rest element of its object pattern, whose removal changes what the rest holds.
+   */
   readonly exempt: boolean;
+}
+
+/** Whether a name is spelled with a leading underscore, which declares it unread. */
+function declaredUnread(name: Identifier): boolean {
+  return name.text.startsWith("_");
+}
+
+/** A file's leading comments, where the compiler reads its `@ts-check` and `@ts-nocheck` pragmas. */
+const LEADING_COMMENTS = /^(?:#![^\n]*)?(?:\s|\/\/[^\n]*|\/\*[\s\S]*?\*\/)*/u;
+
+/** A comment of the leading comments, a line comment's text after its slashes captured. */
+const LEADING_COMMENT = /\/\*[\s\S]*?\*\/|\/\/\/?([^\n]*)/gu;
+
+/**
+ * Whether a file's leading comments hold one pragma: as the compiler reads it, a line
+ * comment that starts with the pragma's name, in any case, followed by nothing or a space.
+ */
+function hasPragma(leading: string, pragma: RegExp): boolean {
+  return [...leading.matchAll(LEADING_COMMENT)].some(
+    ([, text]) => text !== undefined && pragma.test(text),
+  );
+}
+
+/**
+ * Whether the compiler checks a file, so its rules report what they find there: a
+ * JavaScript file only under `checkJs` or a `@ts-check` pragma, and no file with a
+ * `@ts-nocheck` pragma.
+ */
+function checkedByTheCompiler(file: SourceFile, checkJs: boolean): boolean {
+  const leading = LEADING_COMMENTS.exec(file.text)?.[0] ?? "";
+  if (hasPragma(leading, /^\s*@ts-nocheck(?:\s|$)/iu)) {
+    return false;
+  }
+  return (
+    !/\.[cm]?jsx?$/u.test(file.fileName) || checkJs || hasPragma(leading, /^\s*@ts-check(?:\s|$)/iu)
+  );
 }
 
 /** What one file's walk collects before the batch that resolves its names. */
@@ -524,6 +595,8 @@ interface FileWalk {
     readonly holder: string;
   }[];
   readonly blocks: Block[];
+  /** The loops whose `let` or `const` variables each iteration writes. */
+  readonly loops: { readonly loop: ForOfStatement | ForInStatement; readonly holder: string }[];
   readonly unreachable: { readonly statement: Statement; readonly holder: string }[];
   readonly cases: { readonly clause: Node; readonly text: string; readonly holder: string }[];
 }
@@ -548,8 +621,13 @@ export function projectParts<Brand>(
   const constructions = new Set<string>();
   const sites: { readonly file: SourceFile; readonly declared: Declared }[] = [];
   const contextual: ContextualParameter[] = [];
+  const imports: ImportFact[] = [];
+  const refs = new Map(held.symbols.map((symbol) => [symbol.id, symbol.ref]));
+  const options = project.program.getCompilerOptions();
+  const jsx = options as JsxOptions;
 
   for (const file of files) {
+    const checked = checkedByTheCompiler(file, options.checkJs === true);
     // A parameter property's own parts stay with the parameter when its member goes.
     const declarationAt = (node: Node): string | undefined =>
       isParameterProperty(node) ? undefined : held.declarations.get(nodeKey(file, node));
@@ -569,6 +647,7 @@ export function projectParts<Brand>(
       values: [],
       catches: [],
       blocks: [],
+      loops: [],
       unreachable: [],
       cases: [],
     };
@@ -667,6 +746,18 @@ export function projectParts<Brand>(
       if (isBlock(node) && silenced === 0 && holderOf(node) !== undefined) {
         walk.blocks.push(node);
       }
+      const loopHolder =
+        (isForOfStatement(node) || isForInStatement(node)) && silenced === 0
+          ? holderOf(node)
+          : undefined;
+      if (
+        loopHolder !== undefined &&
+        (isForOfStatement(node) || isForInStatement(node)) &&
+        isVariableDeclarationList(node.initializer) &&
+        (node.initializer.flags & (NodeFlags.Let | NodeFlags.Const)) !== 0
+      ) {
+        walk.loops.push({ loop: node, holder: loopHolder });
+      }
       if (isBlock(node) || isCaseClause(node) || isDefaultClause(node)) {
         statementsOf(node.statements);
         return;
@@ -699,7 +790,44 @@ export function projectParts<Brand>(
     for (const store of stores) {
       asked.push(...store.flatMap((local) => [local.name, ...local.uses]));
     }
+    const loopVariables = walk.loops.map(({ loop, holder }) => {
+      const list = loop.initializer as VariableDeclarationList;
+      // A loop must bind a name, so one spelled declared unread is no subject.
+      const names = list.declarations
+        .flatMap((declaration) => boundNames(declaration.name))
+        .filter((name) => !declaredUnread(name));
+      const uses = identifiersNaming(loop.statement, new Set(names.map((one) => one.text)));
+      asked.push(...names, ...uses);
+      return { names, uses, holder };
+    });
+    const bindings = fileId === undefined ? [] : importBindings(file);
+    const bound = new Set<Node>(bindings);
+    const bindingUses =
+      bindings.length === 0
+        ? []
+        : identifiersNaming(file, new Set(bindings.map((one) => one.text))).filter(
+            (use) => !bound.has(use),
+          );
+    asked.push(...bindings, ...bindingUses);
     const ids = resolvedIds(project, [...new Set(asked)]);
+    const implicit = bindings.length === 0 ? new Set<string>() : implicitReads(file, jsx);
+    for (const binding of bindings) {
+      const fileRef = fileId === undefined ? undefined : refs.get(fileId);
+      if (fileId === undefined || fileRef === undefined) {
+        continue;
+      }
+      imports.push({
+        ref: importRef(fileRef, binding.text),
+        name: binding.text,
+        position: spanOf(file, targetRoot, binding),
+        used:
+          implicit.has(binding.text) ||
+          bindingUses.some(
+            (use) =>
+              use.text === binding.text && (exportsLocally(use) || readsBinding(use, binding, ids)),
+          ),
+      });
+    }
 
     for (const one of walk.declared) {
       const constructor = isConstructorDeclaration(one.node);
@@ -714,7 +842,10 @@ export function projectParts<Brand>(
       });
       const reader = readers.get(one.signature);
       if (reader !== undefined) {
-        const found = parameterParts(file, targetRoot, one.id, one.signature, reader, ids, false);
+        const found = parameterParts(file, targetRoot, one.id, one.signature, reader, ids, {
+          inValue: false,
+          checked,
+        });
         parts.push(...found.parts);
         contextual.push(...found.contextual);
       }
@@ -722,15 +853,10 @@ export function projectParts<Brand>(
     for (const one of walk.values) {
       const reader = readers.get(one.signature);
       if (reader !== undefined) {
-        const found = parameterParts(
-          file,
-          targetRoot,
-          one.holder,
-          one.signature,
-          reader,
-          ids,
-          true,
-        );
+        const found = parameterParts(file, targetRoot, one.holder, one.signature, reader, ids, {
+          inValue: true,
+          checked,
+        });
         parts.push(...found.parts);
         contextual.push(...found.contextual);
       }
@@ -746,6 +872,19 @@ export function projectParts<Brand>(
         used: (caught[at] ?? []).some((use) => readsBinding(use, name, ids)),
       });
     });
+    for (const { names, uses, holder } of loopVariables) {
+      for (const name of names) {
+        parts.push({
+          code: DEAD_STORE,
+          declaration: holder,
+          kind: "store",
+          name: name.text,
+          position: spanOf(file, targetRoot, name),
+          message: `value written to ${name.text} is never read`,
+          used: uses.some((use) => use.text === name.text && readsBinding(use, name, ids)),
+        });
+      }
+    }
     walk.blocks.forEach((block, at) => {
       const holder = holderOf(block);
       if (holder !== undefined) {
@@ -779,6 +918,7 @@ export function projectParts<Brand>(
   parts.push(...resultParts(project, targetRoot, sites, references, calls));
   return {
     parts: withContextualRead(project, parts, contextual),
+    imports,
     signatures,
     calls,
     specifiers,
@@ -807,7 +947,9 @@ function valueSignature(node: Node): SignatureNode | undefined {
 /**
  * Every name one function's parameters bind, a binding pattern's names one by one. A
  * `this` parameter receives no argument, a decorated one is read by its decorator, and a
- * parameter property is read by the write to its member, so none binds a subject.
+ * parameter property is read by the write to its member, so none binds a subject. A name
+ * spelled with a leading underscore is declared unread, so it is listed for its reads and
+ * reported never.
  */
 function parameterNames(signature: SignatureNode): ParameterName[] {
   const found: ParameterName[] = [];
@@ -820,7 +962,8 @@ function parameterNames(signature: SignatureNode): ParameterName[] {
         continue;
       }
       if (isIdentifier(element.name)) {
-        const exempt = rest && element.dotDotDotToken === undefined;
+        const exempt =
+          (rest && element.dotDotDotToken === undefined) || declaredUnread(element.name);
         found.push({ name: element.name, at, pattern: true, exempt });
       } else {
         patternNames(element.name, at);
@@ -837,7 +980,7 @@ function parameterNames(signature: SignatureNode): ParameterName[] {
     }
     if (isIdentifier(name)) {
       if (name.text !== "this") {
-        found.push({ name, at, pattern: false, exempt: false });
+        found.push({ name, at, pattern: false, exempt: declaredUnread(name) });
       }
       return;
     }
@@ -850,13 +993,110 @@ function parameterNames(signature: SignatureNode): ParameterName[] {
 interface ContextualParameter {
   readonly part: PartFact;
   readonly signature: ArrowFunction | FunctionExpression;
+  /** The parameter's index in its list. */
+  readonly at: number;
+  /** Whether the parameter is an object binding pattern, rather than an annotated name. */
+  readonly pattern: boolean;
+}
+
+/** How deep a type is searched for a type parameter: a callback of a callback is two levels. */
+const TYPE_PARAMETER_DEPTH = 3;
+
+/** Whether one type is or holds a type parameter, through constituents, type arguments and signatures. */
+function namesTypeParameter<Brand>(project: ProjectView<Brand>, type: Type, depth = 0): boolean {
+  if (type.isTypeParameter()) {
+    return true;
+  }
+  if (depth >= TYPE_PARAMETER_DEPTH) {
+    return false;
+  }
+  const { queries } = project;
+  const parts = type.isUnionType() || type.isIntersectionType() ? queries.constituents(type) : [];
+  const args = queries.typeArguments(type);
+  const signatures = queries.signaturesOf(type, SignatureKind.Call);
+  if (!isAnswered(parts) || !isAnswered(args) || !isAnswered(signatures)) {
+    return true;
+  }
+  const inner = [
+    ...parts,
+    ...args,
+    ...signatures.flatMap((signature) =>
+      signature.parameters.map((_parameter, at) => queries.typeAtPosition(signature, at)),
+    ),
+  ];
+  return inner.some((one) => !isAnswered(one) || namesTypeParameter(project, one, depth + 1));
 }
 
 /**
- * The parts with each name of `contextual` read where the compiler gives its function a
- * contextual type: the inference of the call holding the function may read a parameter's
- * annotation, and the code handing the argument may act on what an object pattern reads.
- * A question the checker leaves unanswered keeps the name read.
+ * Whether the call a function expression is written in may read the annotation of its
+ * parameter at `at`: the callee is generic, and its parameter type at the function's place
+ * reads a type parameter there. A function written inside an object literal a generic
+ * call is passed is read so too, and a question the checker leaves unanswered reads it.
+ */
+function calleeSteers<Brand>(
+  project: ProjectView<Brand>,
+  signature: ArrowFunction | FunctionExpression,
+  at: number,
+): boolean {
+  const { queries } = project;
+  let value: Node = signature;
+  while (isParenthesizedExpression(value.parent)) {
+    value = value.parent;
+  }
+  let nested = false;
+  while (
+    (isPropertyAssignment(value.parent) && isObjectLiteralExpression(value.parent.parent)) ||
+    isObjectLiteralExpression(value.parent)
+  ) {
+    value = isObjectLiteralExpression(value.parent) ? value.parent : value.parent.parent;
+    nested = true;
+  }
+  const call = value.parent;
+  if (!isCallExpression(call) && !isNewExpression(call)) {
+    return false;
+  }
+  const argument = (call.arguments ?? []).findIndex((one) => one === value);
+  const resolved = argument < 0 ? undefined : queries.resolvedSignature(call);
+  const generic =
+    resolved === undefined || !isAnswered(resolved) ? resolved : queries.genericOf(resolved);
+  if (argument < 0 || generic === undefined) {
+    return false;
+  }
+  if (!isAnswered(generic) || nested) {
+    return true;
+  }
+  const position = queries.typeAtPosition(generic, argument);
+  if (!isAnswered(position) || position.isTypeParameter()) {
+    return true;
+  }
+  const parts =
+    position.isUnionType() || position.isIntersectionType()
+      ? queries.constituents(position)
+      : [position];
+  if (!isAnswered(parts)) {
+    return true;
+  }
+  return parts.some((part) => {
+    if (part.isTypeParameter()) {
+      return true;
+    }
+    const calls = queries.signaturesOf(part, SignatureKind.Call);
+    if (!isAnswered(calls)) {
+      return true;
+    }
+    return calls.some((one) => {
+      const type = at < one.parameters.length ? queries.typeAtPosition(one, at) : undefined;
+      return type !== undefined && (!isAnswered(type) || namesTypeParameter(project, type));
+    });
+  });
+}
+
+/**
+ * The parts with each name of `contextual` judged where the compiler gives its function a
+ * contextual type: the code handing the argument may act on what an object pattern reads,
+ * so each such name is read, and an annotated parameter is marked with whether the call's
+ * inference may read its annotation. A question the checker leaves unanswered keeps the
+ * name read.
  */
 function withContextualRead<Brand>(
   project: ProjectView<Brand>,
@@ -868,9 +1108,28 @@ function withContextualRead<Brand>(
   }
   const signatures = [...new Set(contextual.map((one) => one.signature))];
   const answers = project.queries.contextualTypes(signatures);
-  const typed = new Set(signatures.filter((_signature, at) => answers[at] !== undefined));
-  const read = new Set(contextual.filter((one) => typed.has(one.signature)).map((one) => one.part));
-  return parts.map((part) => (read.has(part) ? { ...part, used: true } : part));
+  const typedBy = new Map(signatures.map((signature, at) => [signature, answers[at]]));
+  const judged = new Map<PartFact, PartFact>();
+  for (const one of contextual) {
+    const answer = typedBy.get(one.signature);
+    if (answer === undefined) {
+      continue;
+    }
+    const place = one.part.parameter;
+    judged.set(
+      one.part,
+      one.pattern || answer === UNANSWERED || place === undefined
+        ? { ...one.part, used: true }
+        : {
+            ...one.part,
+            parameter: {
+              ...place,
+              annotated: calleeSteers(project, one.signature, one.at) ? "steers" : "free",
+            },
+          },
+    );
+  }
+  return parts.map((part) => judged.get(part) ?? part);
 }
 
 /**
@@ -886,7 +1145,7 @@ function parameterParts(
   signature: SignatureNode,
   reader: { readonly names: readonly ParameterName[]; readonly uses: readonly Identifier[] },
   ids: ReadonlyMap<Node, Answer<number>>,
-  inValue: boolean,
+  place: Pick<ParameterPlace, "inValue" | "checked">,
 ): { readonly parts: PartFact[]; readonly contextual: ContextualParameter[] } {
   // A function that reads its `arguments` reads every parameter by position. A nested
   // function other than an arrow has an `arguments` object of its own.
@@ -917,7 +1176,7 @@ function parameterParts(
       position: spanOf(file, root, name),
       message: `parameter ${name.text} is never read in the body`,
       used: read[index] === true,
-      parameter: { beforeARead: !pattern && at < lastRead, inValue },
+      parameter: { beforeARead: !pattern && at < lastRead, ...place },
     };
     found.push(part);
     const parameter = signature.parameters[at];
@@ -927,7 +1186,12 @@ function parameterParts(
       parameter !== undefined &&
       (parameter.type !== undefined || isObjectBindingPattern(parameter.name))
     ) {
-      contextual.push({ part, signature: expression });
+      contextual.push({
+        part,
+        signature: expression,
+        at,
+        pattern: isObjectBindingPattern(parameter.name),
+      });
     }
   });
   return { parts: found, contextual };
@@ -939,44 +1203,85 @@ interface Local {
   readonly statement: number;
   readonly initialized: boolean;
   readonly uses: readonly Identifier[];
+  /** A `var` of a nested block, whose function scope outlives the block's end. */
+  readonly outlives: boolean;
 }
 
 /**
  * The names one declaration binds that a write of its initializer stores each on its own:
- * the declared name, or each element name of an array binding pattern at any depth.
+ * the declared name, or each element name of a binding pattern at any depth. A name with a
+ * default is left out, because removing it skips the default's evaluation, and so is a name
+ * beside a rest element of its object pattern, whose removal changes what the rest holds.
  */
-function arrayPatternNames(name: BindingName): readonly Identifier[] {
+function boundNames(name: BindingName): readonly Identifier[] {
   if (isIdentifier(name)) {
     return [name];
   }
-  if (!isArrayBindingPattern(name)) {
-    return [];
-  }
-  return name.elements.flatMap((element) =>
-    isBindingElement(element) && element.name !== undefined ? arrayPatternNames(element.name) : [],
-  );
+  const rest =
+    isObjectBindingPattern(name) &&
+    name.elements.some((element) => element.dotDotDotToken !== undefined);
+  return name.elements.flatMap((element) => {
+    if (!isBindingElement(element) || element.name === undefined) {
+      return [];
+    }
+    if (element.initializer !== undefined || (rest && element.dotDotDotToken === undefined)) {
+      return [];
+    }
+    return boundNames(element.name);
+  });
 }
 
-/** The locals one block declares with `let` or `const`, each with the names that spell it. */
+/** The function whose scope a `var` of one block belongs to, or none at a module's top level. */
+function functionOf(block: Block): FunctionLikeDeclaration | undefined {
+  for (let at: Node = block.parent; ; at = at.parent) {
+    if (isFunctionLikeDeclaration(at)) {
+      return at;
+    }
+    if (isSourceFile(at)) {
+      return undefined;
+    }
+  }
+}
+
+/**
+ * The locals one block declares with `let`, `const` or `var`, each with the names of the
+ * block that spell it. A `var` of a nested block is one where no nested function of its
+ * function names it, since the function scope holds it past the block's end.
+ */
 function localsOf(block: Block): readonly Local[] {
-  const declared: { name: Identifier; statement: number; initialized: boolean }[] = [];
+  const declared: {
+    name: Identifier;
+    statement: number;
+    initialized: boolean;
+    outlives: boolean;
+  }[] = [];
+  const scope = functionOf(block);
+  const outlives = scope?.body !== block;
   block.statements.forEach((statement, at) => {
     if (!isVariableStatement(statement)) {
       return;
     }
     const list = statement.declarationList;
-    if (
-      (list.flags & (NodeFlags.Let | NodeFlags.Const)) === 0 ||
-      (list.flags & NodeFlags.Using) !== 0
-    ) {
+    const blockScoped = (list.flags & (NodeFlags.Let | NodeFlags.Const)) !== 0;
+    if ((!blockScoped && scope === undefined) || (list.flags & NodeFlags.Using) !== 0) {
       return;
     }
     for (const declaration of list.declarations) {
-      for (const name of arrayPatternNames(declaration.name)) {
+      for (const name of boundNames(declaration.name)) {
+        if (
+          !blockScoped &&
+          outlives &&
+          identifiersNaming(scope?.body ?? block, new Set([name.text])).some((use) =>
+            inNestedFunction(use, scope ?? block),
+          )
+        ) {
+          continue;
+        }
         declared.push({
           name,
           statement: at,
           initialized: declaration.initializer !== undefined,
+          outlives: !blockScoped && outlives,
         });
       }
     }
@@ -991,14 +1296,23 @@ function localsOf(block: Block): readonly Local[] {
   }));
 }
 
+/** Whether one name is the whole target of a plain assignment, which writes it and reads nothing. */
+function isPlainWrite(use: Identifier): boolean {
+  const parent = outerParent(use);
+  return (
+    isBinaryExpression(parent) &&
+    parent.operatorToken.kind === SyntaxKind.EqualsToken &&
+    unwrapped(parent.left) === use
+  );
+}
+
 /**
  * The writes to the locals of one block that no read reaches. A write is a declaration's
- * initializer or a plain assignment written as a statement of the block itself; it is
- * dead when the statements after it in the block read the local nowhere before the next
- * such write to it, or before the block ends, which ends the local's scope. A statement
- * that writes the local inside a nested construct ends the search with the write kept,
- * and a local a nested function names is no subject, because the function may read it
- * at any time.
+ * initializer or a plain assignment written as a statement of the block; it is dead when
+ * the block's later statements read the local nowhere before the next such write or the
+ * block's end. A statement writing it inside a nested construct ends the search with the
+ * write kept. A local a nested function reads is no subject, since the function may run at
+ * any time, and every write to a local nothing reads is dead, a nested function's included.
  */
 function deadStores(
   file: SourceFile,
@@ -1009,8 +1323,22 @@ function deadStores(
   ids: ReadonlyMap<Node, Answer<number>>,
 ): PartFact[] {
   const found: PartFact[] = [];
+  const deadAt = (local: Local, target: Identifier): PartFact => ({
+    code: DEAD_STORE,
+    declaration: holder,
+    kind: "store",
+    name: local.name.text,
+    position: spanOf(file, root, target),
+    message: `value written to ${local.name.text} is never read`,
+    used: false,
+  });
   for (const local of locals) {
     const uses = local.uses.filter((use) => readsBinding(use, local.name, ids));
+    if (!local.outlives && uses.every(isPlainWrite)) {
+      const targets = [...(local.initialized ? [local.name] : []), ...uses];
+      found.push(...targets.map((target) => deadAt(local, target)));
+      continue;
+    }
     if (uses.some((use) => inNestedFunction(use, block))) {
       continue;
     }
@@ -1050,7 +1378,7 @@ function deadStores(
       if (sameStatement.length > 0) {
         continue;
       }
-      let dead = true;
+      let dead = !local.outlives;
       for (let at = write.at + 1; at < statements.length; at += 1) {
         const statement = statements[at];
         if (statement === undefined) {
@@ -1067,19 +1395,9 @@ function deadStores(
           break;
         }
       }
-      if (!dead) {
-        continue;
+      if (dead) {
+        found.push(deadAt(local, write.target));
       }
-      const position = spanOf(file, root, write.target);
-      found.push({
-        code: DEAD_STORE,
-        declaration: holder,
-        kind: "store",
-        name: local.name.text,
-        position,
-        message: `value written to ${local.name.text} is never read`,
-        used: false,
-      });
     }
   }
   return found;
@@ -1142,6 +1460,8 @@ function resultParts<Brand>(
 export interface IntraFunctionFacts {
   /** Every part of the run, each once, in use where any project found it in use. */
   readonly parts: readonly PartFact[];
+  /** Every import binding of the run, each once, read where any project found it read. */
+  readonly imports: readonly ImportFact[];
   /** The declarations whose signature is free to change. */
   readonly free: ReadonlySet<string>;
   /** The declarations whose signature is free but for a use as a value. */
@@ -1171,6 +1491,15 @@ export function intraFunctionFacts(
     const key = `${part.code}\u0000${positionKey(part.position)}`;
     const known = parts.get(key);
     parts.set(key, known === undefined ? part : { ...known, used: known.used || part.used });
+  }
+  const imports = new Map<string, ImportFact>();
+  for (const binding of projects.flatMap((one) => one.imports)) {
+    const key = positionKey(binding.position);
+    const known = imports.get(key);
+    imports.set(
+      key,
+      known === undefined ? binding : { ...known, used: known.used || binding.used },
+    );
   }
   const calls = new Map<string, CallUse>();
   const specifiers = new Set<string>();
@@ -1231,5 +1560,11 @@ export function intraFunctionFacts(
       .filter(([id, all]) => all && !valued.has(id) && !sequenced.has(id))
       .map(([id]) => id),
   );
-  return { parts: [...parts.values()], free, freeButValued, discardedEverywhere };
+  return {
+    parts: [...parts.values()],
+    imports: [...imports.values()],
+    free,
+    freeButValued,
+    discardedEverywhere,
+  };
 }

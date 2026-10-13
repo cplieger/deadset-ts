@@ -364,7 +364,7 @@ describe("the relations an in-memory graph holds live", () => {
 });
 
 describe("what a run counting test references reaches", () => {
-  it("is what a test file's top level and its top-level exports reference, and nothing else", () => {
+  it("is what a test file's top level and the functions it exports reference, and nothing else", () => {
     const source = file();
     const exportedProduction = { ...declared("exportedProduction", 2), exported: true };
     const usedByTopLevel = declared("usedByTopLevel", 3);
@@ -403,7 +403,6 @@ describe("what a run counting test references reaches", () => {
       "usedByCheck",
       "src/a.test.ts",
       "check",
-      "suite",
     ]);
   });
 });

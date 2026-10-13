@@ -1,6 +1,6 @@
 {
-  "schema_version": "8.2.0",
-  "contract_version": "7.2.0",
+  "schema_version": "9.0.0",
+  "contract_version": "8.0.0",
   "analyzer": {
     "name": "deadset-ts",
     "version": "0.0.0",
@@ -8,12 +8,12 @@
       "ts"
     ],
     "schema_versions_accepted": [
-      "8.2.0"
+      "9.0.0"
     ],
     "conformance": {
-      "corpus_version": "5.2.0",
+      "corpus_version": "6.0.0",
       "result": "pass",
-      "digest": "sha256:012872542679539ec105f49b5ee502b0a9fa35c6bbd9ef3983b5f6e53af83d8e"
+      "digest": "sha256:76c07ac14bda6e302444918d832b01844bac6f29b6f22a742d538804480c0769"
     }
   },
   "target": {
@@ -162,7 +162,7 @@
         "size_lines": 3
       },
       "reachability_class": "certain",
-      "confidence": "certain",
+      "confidence": "probable",
       "liveness_relation": "reachability",
       "test_only": false,
       "generated": false,
@@ -236,7 +236,7 @@
         "size_lines": 3
       },
       "reachability_class": "certain",
-      "confidence": "certain",
+      "confidence": "probable",
       "liveness_relation": "reachability",
       "test_only": false,
       "generated": false,
@@ -569,7 +569,7 @@
         "size_lines": 4
       },
       "reachability_class": "certain",
-      "confidence": "certain",
+      "confidence": "probable",
       "liveness_relation": "reachability",
       "test_only": false,
       "generated": false,
@@ -606,7 +606,7 @@
         "size_lines": 1
       },
       "reachability_class": "certain",
-      "confidence": "certain",
+      "confidence": "probable",
       "liveness_relation": "reachability",
       "test_only": false,
       "generated": false,

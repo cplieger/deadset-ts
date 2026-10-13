@@ -669,8 +669,11 @@ describe("the test code of a run", () => {
         "console.log(testedOnly() + zeta + alpha);",
         "",
       ].join("\n"),
-      "src/zeta-fixture.ts": "export const zeta = 1;\n",
-      "src/alpha-fixture.ts": "export const alpha = 2;\n",
+      "node_modules/vitest/package.json":
+        '{ "name": "vitest", "version": "1.0.0", "types": "./index.d.ts" }\n',
+      "node_modules/vitest/index.d.ts": "export {};\n",
+      "src/zeta-fixture.ts": 'import "vitest";\n\nexport const zeta = 1;\n',
+      "src/alpha-fixture.ts": 'import "vitest";\n\nexport const alpha = 2;\n',
       "scripts/outside.test.ts":
         'import { outsideOnly } from "../src/lib.js";\n\nconsole.log(outsideOnly());\n',
       "scripts/tool.ts": 'import { toolOnly } from "../src/lib.js";\n\nconsole.log(toolOnly());\n',
@@ -704,7 +707,7 @@ describe("the test code of a run", () => {
           `${one.configuration}: ${one.testFiles.join(" ")}; ${(one.supportFiles ?? []).join(" ")}`,
       ),
     ).toEqual([
-      "app: src/lib.test.ts scripts/outside.test.ts; src/alpha-fixture.ts src/zeta-fixture.ts",
+      "app: src/lib.test.ts scripts/outside.test.ts src/alpha-fixture.ts src/zeta-fixture.ts; src/alpha-fixture.ts src/zeta-fixture.ts",
       "tools: scripts/outside.test.ts; ",
     ]);
     expect(analysis.run.testFileRules.filter((one) => one.matched > 0)).toEqual([
@@ -1132,7 +1135,10 @@ describe("a baseline write", () => {
           "",
         ].join("\n"),
       }),
-    ).toEqual(["DS1801 ts://./src/scale.ts#scaled src/scale.ts"]);
+    ).toEqual([
+      "DS1801 ts://./src/scale.ts#scaled(value) src/scale.ts",
+      "DS1801 ts://./src/scale.ts#scaled(factor) src/scale.ts",
+    ]);
   });
 });
 

@@ -51,9 +51,11 @@ import {
   type ConventionRow,
   type DirectoryMove,
   type HelperReading,
+  type ManifestEntryKey,
   type MoveReading,
   type OptionsCall,
   type PackageKey,
+  type PrefixedNameReading,
   type ShortNameReading,
   type TestFileReading,
 } from "./convention-rows.ts";
@@ -692,6 +694,47 @@ function manifestKeyUses(manifest: unknown, keys: readonly string[]): readonly s
   );
 }
 
+/** The extensions an entry a manifest entry key names without one may carry. */
+const ENTRY_EXTENSIONS = "{js,jsx,mjs,cjs,ts,tsx,mts,cts}";
+
+/** The characters that make a manifest string a pattern rather than a directory's name. */
+const PATTERN = /[*?{}[\]]/u;
+
+/**
+ * The entry globs one applied row's manifest entry keys write, below the manifest's
+ * directory: a directory's every module, or a file with or without an extension. A string
+ * that leaves the directory names nothing.
+ */
+function manifestEntryGlobs(manifest: unknown, keys: readonly ManifestEntryKey[]): string[] {
+  const at = (value: unknown, path: readonly string[]): unknown[] => {
+    const [key, ...rest] = path;
+    if (key === undefined) {
+      return [value];
+    }
+    if (!isRecord(value)) {
+      return [];
+    }
+    const next = key === "*" ? Object.values(value) : Object.hasOwn(value, key) ? [value[key]] : [];
+    return next.flatMap((one) => at(one, rest));
+  };
+  return keys.flatMap(({ key, directory }) =>
+    at(manifest, key.split(".")).flatMap((value) =>
+      documentStrings(value).flatMap((text) => {
+        const path = normalizePath(text)
+          .replace(/^(?:\.\/)+/u, "")
+          .replace(/\/+$/u, "");
+        if (path === "" || path === ".." || path.startsWith("../") || path.startsWith("/")) {
+          return [];
+        }
+        if (!directory) {
+          return [path, `${path}.${ENTRY_EXTENSIONS}`];
+        }
+        return PATTERN.test(path) ? [] : [`${path}/**/*.${ENTRY_EXTENSIONS}`];
+      }),
+    ),
+  );
+}
+
 /** What one configuration file states about one property. */
 interface PropertyReading {
   /** The literal values the file sets the property to. */
@@ -892,6 +935,66 @@ function shortNameUses(
   return [...used].filter((name) => declared.has(name)).sort(compare);
 }
 
+/**
+ * The package one value of a prefixed-name reading names, or none: ESLint's own naming,
+ * https://github.com/eslint/eslintrc/blob/main/lib/shared/naming.js
+ */
+function prefixedPackage(value: string, reading: PrefixedNameReading): string | undefined {
+  const { prefix, marker } = reading;
+  let name: string;
+  if (marker === undefined) {
+    if (value.includes(":") || value.startsWith(".") || value.startsWith("/")) {
+      return undefined;
+    }
+    const parts = value.split("/");
+    name = (value.startsWith("@") ? parts.slice(0, 2) : parts.slice(0, 1)).join("/");
+  } else {
+    if (!value.startsWith(marker) || !value.includes("/", marker.length)) {
+      return undefined;
+    }
+    name = value.slice(marker.length, value.lastIndexOf("/"));
+  }
+  if (name === "") {
+    return undefined;
+  }
+  if (!name.startsWith("@")) {
+    return name.startsWith(`${prefix}-`) ? name : `${prefix}-${name}`;
+  }
+  const [scope, rest] = name.split("/");
+  if (rest === undefined || rest === "" || rest === prefix) {
+    return `${scope ?? name}/${prefix}`;
+  }
+  return rest.startsWith(`${prefix}-`) ? name : `${scope ?? name}/${prefix}-${rest}`;
+}
+
+/** The declared dependencies an applied row's prefixed names use. */
+function prefixedNameUses(
+  host: Host,
+  parse: ParseSource,
+  dir: string,
+  manifest: unknown,
+  readings: readonly PrefixedNameReading[],
+): readonly string[] {
+  const declared = new Set(
+    DEPENDENCY_SECTIONS.flatMap((section) => {
+      const held = isRecord(manifest) ? manifest[section] : undefined;
+      return isRecord(held) ? Object.keys(held) : [];
+    }),
+  );
+  const used = new Set<string>();
+  for (const reading of readings) {
+    for (const { file } of readingFiles(host, parse, dir, reading.files)) {
+      for (const value of readProperty(file, reading.property, reading.call, true).values) {
+        const named = prefixedPackage(value, reading);
+        if (named !== undefined && declared.has(named)) {
+          used.add(named);
+        }
+      }
+    }
+  }
+  return [...used].sort(compare);
+}
+
 /** The declared dependencies an applied row's helper settings use. */
 function helperUses(
   host: Host,
@@ -1064,6 +1167,10 @@ export function readConventions(
       for (const name of shortNameUses(host, parse, manifest.dir, declared, row.shortNames ?? [])) {
         uses.add(name);
       }
+      const prefixed = row.prefixedNames ?? [];
+      for (const name of prefixedNameUses(host, parse, manifest.dir, declared, prefixed)) {
+        uses.add(name);
+      }
       const keys = row.packageKeys ?? [];
       for (const name of packageKeyUses(host, parse, manifest.dir, declared, keys)) {
         uses.add(name);
@@ -1082,7 +1189,11 @@ export function readConventions(
       for (const below of new Set((row.generated ?? []).flatMap((one) => expand(one, resolved)))) {
         generated.push({ dir: manifest.dir, row: row.name, below });
       }
-      for (const glob of new Set(row.entries.flatMap((entry) => expand(entry, resolved)))) {
+      const written = [
+        ...row.entries.flatMap((entry) => expand(entry, resolved)),
+        ...manifestEntryGlobs(declared, row.manifestEntries ?? []),
+      ];
+      for (const glob of new Set(written)) {
         globs.push({
           dir: manifest.dir,
           row: row.name,
@@ -1138,12 +1249,15 @@ export function conventionEntries(
   const found = new Map<string, ConventionEntry>();
   for (const glob of conventions.globs) {
     for (const file of files.byName.values()) {
-      const path = relativePath(glob.dir, file.fileName);
-      if (
-        path !== undefined &&
-        glob.expression.test(path) &&
-        !glob.excludes.some((one) => one.test(path))
-      ) {
+      const matched = [file.fileName, ...files.writtenAs(file)].some((name) => {
+        const path = relativePath(glob.dir, name);
+        return (
+          path !== undefined &&
+          glob.expression.test(path) &&
+          !glob.excludes.some((one) => one.test(path))
+        );
+      });
+      if (matched) {
         found.set(`${file.fileName}\u0000${glob.row}`, { file, row: glob.row });
       }
     }

@@ -32,6 +32,22 @@ export interface ShortNameReading extends MoveReading {
 }
 
 /**
+ * One configuration property whose values name packages by the tool's prefix convention:
+ * `x` stands for `<prefix>-x`, `@s` for `@s/<prefix>` and `@s/x` for `@s/<prefix>-x`, and
+ * a name already holding the prefix for itself.
+ */
+export interface PrefixedNameReading extends MoveReading {
+  /** The prefix the convention puts before a short name. */
+  readonly prefix: string;
+  /**
+   * The text a value starts with to name a package, the name ending at its last `/`.
+   * Absent, every value without a `:` names one, the name ending at its first `/` past
+   * a scope.
+   */
+  readonly marker?: string;
+}
+
+/**
  * One configuration property whose value makes the tool's output import a runtime helper
  * package, so the package is used where the property holds that value.
  */
@@ -61,6 +77,14 @@ export interface TestFileReading extends MoveReading {
    * written. A value that is not one string literal leaves the file's strings unread.
    */
   readonly roots: readonly string[];
+}
+
+/** One member of the declaring `package.json` whose strings name the tool's entries. */
+export interface ManifestEntryKey {
+  /** The member's path through nested objects, its keys joined by `.`, a `*` key standing for every member. */
+  readonly key: string;
+  /** Whether each string names a directory of entries, or one entry, its extension optional. */
+  readonly directory: boolean;
 }
 
 /** One directory a row's globs name that a configuration property moves. */
@@ -96,6 +120,8 @@ export interface ConventionRow {
   readonly moves: readonly DirectoryMove[];
   /** The properties that name a package the configuration uses by a short name. */
   readonly shortNames?: readonly ShortNameReading[];
+  /** The properties that name a package the configuration uses by its prefix convention. */
+  readonly prefixedNames?: readonly PrefixedNameReading[];
   /**
    * The properties whose value only selects files to test, mutate, cover or ignore, so a
    * string there names no file the tool runs or loads.
@@ -110,6 +136,8 @@ export interface ConventionRow {
   readonly packageKeys?: readonly PackageKey[];
   /** The members of a `package.json` the tool reads its configuration from. */
   readonly manifestKeys?: readonly string[];
+  /** The members of the declaring `package.json` whose strings name entries, as an entry glob does. */
+  readonly manifestEntries?: readonly ManifestEntryKey[];
   /** The settings that make the tool's output import a runtime helper package. */
   readonly helpers?: readonly HelperReading[];
 }
@@ -118,6 +146,8 @@ const SCRIPT = "{js,jsx,ts,tsx}";
 const MODULE = "{js,mjs,ts,mts}";
 const ANY_MODULE = "{js,mjs,cjs,ts,mts,cts}";
 const VITE_CONFIG = `vite.config.${ANY_MODULE}`;
+/** The legacy configuration files of ESLint that hold JSON or a CommonJS module. */
+const ESLINTRC = [".eslintrc", ".eslintrc.json", ".eslintrc.{js,cjs}"];
 
 const SVELTEKIT_ROUTE_FILES = "+{page,layout,server,page.server,layout.server,error}";
 
@@ -232,10 +262,36 @@ export const CONVENTION_ROWS: readonly ConventionRow[] = [
     })),
   },
   {
+    name: "docusaurus",
+    package: "@docusaurus/core",
+    range: ">=2.0.0 <4.0.0",
+    entries: [`src/pages/**/*.${SCRIPT}`, `src/theme/**/*.${SCRIPT}`],
+    moves: [],
+  },
+  {
+    name: "eslint",
+    package: "eslint",
+    range: ">=4.0.0 <10.0.0",
+    entries: [],
+    moves: [],
+    prefixedNames: [
+      { property: "plugins", files: ESLINTRC, prefix: "eslint-plugin" },
+      { property: "extends", files: ESLINTRC, prefix: "eslint-plugin", marker: "plugin:" },
+      { property: "extends", files: ESLINTRC, prefix: "eslint-config" },
+    ],
+  },
+  {
     name: "eslint",
     package: "eslint",
     range: ">=10.0.0 <11.0.0",
     entries: [`**/eslint.config.${ANY_MODULE}`],
+    moves: [],
+  },
+  {
+    name: "expo",
+    package: "expo",
+    range: ">=44.0.0 <60.0.0",
+    entries: [`{index,App}.${SCRIPT}`],
     moves: [],
   },
   {
@@ -320,6 +376,28 @@ export const CONVENTION_ROWS: readonly ConventionRow[] = [
         defaults: ["server"],
         readings: [{ property: "serverDir", files: NUXT_CONFIG }],
       },
+    ],
+  },
+  {
+    name: "oclif",
+    package: "@oclif/core",
+    range: ">=1.0.0 <5.0.0",
+    entries: [`src/{commands,hooks}/**/*.${SCRIPT}`],
+    moves: [],
+    manifestEntries: [
+      { key: "oclif.commands", directory: true },
+      { key: "oclif.hooks", directory: false },
+    ],
+  },
+  {
+    name: "parcel",
+    package: "parcel",
+    range: ">=2.0.0 <3.0.0",
+    entries: [],
+    moves: [],
+    manifestEntries: [
+      { key: "source", directory: false },
+      { key: "targets.*.source", directory: false },
     ],
   },
   {
@@ -610,6 +688,31 @@ export const CONVENTION_ROWS: readonly ConventionRow[] = [
         files: [".swcrc"],
         value: true,
         package: "@swc/helpers",
+      },
+    ],
+  },
+  {
+    name: "tanstack-router",
+    package: "@tanstack/router-plugin",
+    range: ">=1.0.0 <2.0.0",
+    entries: [`<routes>/**/*.${SCRIPT}`],
+    moves: [
+      {
+        id: "routes",
+        defaults: ["src/routes"],
+        readings: [
+          { property: "routesDirectory", files: ["tsr.config.json"] },
+          {
+            property: "routesDirectory",
+            files: [VITE_CONFIG],
+            call: { module: "@tanstack/router-plugin/vite", export: "tanstackRouter" },
+          },
+          {
+            property: "routesDirectory",
+            files: [VITE_CONFIG],
+            call: { module: "@tanstack/router-plugin/vite", export: "TanStackRouterVite" },
+          },
+        ],
       },
     ],
   },

@@ -4,6 +4,7 @@ import type { InventorySymbol, SymbolKind } from "../inventory.ts";
 import type { MatrixCandidate } from "../matrix.ts";
 import { declarationKey } from "../ref.ts";
 import type { RootKind } from "../roots.ts";
+import { runnerCalls } from "../sweep.ts";
 import type { Emitter, EmitterInput } from "./emitter.ts";
 import { writeOnlyDeclarations } from "./reads-and-writes.ts";
 
@@ -51,8 +52,31 @@ function publishes(kinds: ReadonlySet<RootKind> | undefined): boolean {
   return [...(kinds ?? [])].some((kind) => PUBLISHING.has(kind));
 }
 
+/**
+ * The root kinds that name a file without entering it by its exports: a configuration
+ * string or a script token runs the file, and no tool reads a name it exports.
+ */
+const RUN_ONLY: ReadonlySet<RootKind> = new Set<RootKind>(["configuration-string", "script"]);
+
+/** Whether a root makes its file an entry file, or its declaration an entry, which a tool may read by name. */
 function entersByName(kinds: ReadonlySet<RootKind> | undefined): boolean {
-  return [...(kinds ?? [])].some((kind) => !PUBLISHING.has(kind));
+  return [...(kinds ?? [])].some((kind) => !PUBLISHING.has(kind) && !RUN_ONLY.has(kind));
+}
+
+/**
+ * Whether the roots of a declaration's file enter it by name: a test runner's root
+ * enters only an export the runner calls, so another export of a test file is judged.
+ */
+function fileEntersByName(
+  kinds: ReadonlySet<RootKind> | undefined,
+  symbol: InventorySymbol,
+): boolean {
+  const entering = [...(kinds ?? [])].filter(
+    (kind) => !PUBLISHING.has(kind) && !RUN_ONLY.has(kind),
+  );
+  return (
+    entering.some((kind) => kind !== "test-runner") || (entering.length > 0 && runnerCalls(symbol))
+  );
 }
 
 /**
@@ -163,7 +187,7 @@ function narrowing(
     world.writeOnly.has(declarationKey(symbol.ref, symbol.position.path)) ||
     symbol.kind === "export-alias" ||
     entersByName(facts.rootedBy[at]) ||
-    entersByName(facts.rootedBy[file]) ||
+    fileEntersByName(facts.rootedBy[file], symbol) ||
     (facts.named[at] ?? 0) === 0
   ) {
     return undefined;
@@ -253,8 +277,13 @@ export function narrowings(input: EmitterInput): readonly Finding[] {
       return;
     }
     const candidate = candidates.get(symbol.id);
+    // A declaration of test code, a test file's or test-support code's, that only test code
+    // references is a candidate, live in the run that counts test references.
+    const live =
+      candidate === undefined ||
+      (facts.graph.test[at] === true && !candidate.unreferencedTest && !candidate.testOfDeadCode);
     const found =
-      candidate === undefined
+      candidate === undefined || live
         ? narrowing(facts, at, symbol, world)
         : unreachable(facts, at, symbol, candidate, input);
     if (found !== undefined) {

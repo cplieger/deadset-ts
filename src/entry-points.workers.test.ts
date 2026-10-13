@@ -51,6 +51,38 @@ function workerRoots(files: Readonly<Record<string, string>>): string[] {
 
 describe("a worker a call addresses", () => {
   it(
+    "is the file a relative URL reference names with no leading dot segment, and none a scheme or a solidus names",
+    () => {
+      expect(
+        workerRoots({
+          ...workers("bare", "rooted", "remote"),
+          "src/app.ts": [
+            'export const a = new Worker("bare.ts");',
+            'export const b = new Worker("/src/rooted.ts");',
+            'export const c = new Worker("https://example.com/src/remote.ts");',
+            "",
+          ].join("\n"),
+        }),
+      ).toEqual(["src/bare.ts#\tworker\tbare.ts"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "is the file its literal names where the target augments the platform's constructor",
+    () => {
+      expect(
+        workerRoots({
+          ...workers("augmented"),
+          "src/env.d.ts": "interface Worker {\n  readonly tag?: string;\n}\n",
+          "src/app.ts": 'export const a = new Worker("./augmented.ts", { type: "module" });\n',
+        }),
+      ).toEqual(["src/augmented.ts#\tworker\t./augmented.ts"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
     "is the file its literal names with the query and the fragment removed, rooted alone",
     () => {
       expect(

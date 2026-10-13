@@ -165,5 +165,24 @@
     "details": {
       "implementations": []
     }
+  },
+  {
+    "code": "DS1201",
+    "position": {
+      "path": "src/probe.test.ts",
+      "line": 6,
+      "column": 18,
+      "endLine": 8
+    },
+    "symbol": {
+      "ref": "ts://@example/interfaces/src/probe.test.ts#TestDouble",
+      "kind": "interface",
+      "name": "TestDouble",
+      "sizeLines": 3
+    },
+    "message": "nothing in the target names the interface as a type",
+    "details": {
+      "implementations": []
+    }
   }
 ]

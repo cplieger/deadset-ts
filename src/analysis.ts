@@ -6,6 +6,7 @@
  * another project's checker, which holds only for views the session hands out.
  */
 
+import { isStringLiteralLikeNode } from "@typescript/native/ast";
 import { lineOf, readComponent } from "./component-files.ts";
 import { kindOf, type Config, type Provenance } from "./config.ts";
 import {
@@ -26,9 +27,11 @@ import {
   discoverProjects,
   DiscoveryError,
   isGuess,
+  MISSING_GLOBAL_TYPE,
   projectErrors,
   renderDiagnostic,
   targetRelative,
+  withBaseUrlPaths,
   type LocatedDiagnostic,
   type NotBuilt,
 } from "./discover.ts";
@@ -70,7 +73,7 @@ import { injectionContainer } from "./injection-container.ts";
 import { interfaceSatisfaction, settledSatisfaction } from "./interface-satisfaction.ts";
 import { intraFunctionFacts, projectParts, type ProjectParts } from "./intra-function-parts.ts";
 import { inventory, type Inventory, type InventorySymbol } from "./inventory.ts";
-import { packageEntries, readManifest } from "./manifest.ts";
+import { packageEntries, readManifest, type ManifestEntry } from "./manifest.ts";
 import {
   liveFilesAt,
   matrixOf,
@@ -112,7 +115,7 @@ import type { Scope } from "./scope.ts";
 import { serializationContract } from "./serialization-contract.ts";
 import { outsideTestReferences, testFilesAt, type OutsideTest } from "./outside-tests.ts";
 import { joinedTestFiles, withJoinedTests } from "./test-joins.ts";
-import { supportReferences, testSupportFiles } from "./test-support.ts";
+import { supportReferences, testSupportFiles, type TestEvidence } from "./test-support.ts";
 import {
   diagnosticsOf,
   ownedAs,
@@ -390,6 +393,11 @@ function readProjects<Answer>(
       publishedMembers: new Set(
         (workspace?.entries ?? []).filter((entry) => entry.published).map((entry) => entry.dir),
       ),
+      runFiles: new Set(
+        opened.flatMap((one) =>
+          one.fileNames().map((name) => resolvePath(host.workingDirectory(), name)),
+        ),
+      ),
     };
   };
   const notBuilt: NotBuilt[] = [...discovered.notBuilt];
@@ -420,6 +428,12 @@ function readProjects<Answer>(
   const joins = discovered.derived
     ? joinedTestFiles(engine, host, absoluteRoot, discovered.configFiles, testPatterns)
     : new Map<string, readonly string[]>();
+  const programs = withBaseUrlPaths(
+    engine,
+    host,
+    [...discovered.configFiles, ...consumerOf.keys()],
+    workspace?.programs ?? new Map(),
+  );
   const session = runSession(
     engine,
     [...discovered.configFiles, ...consumerOf.keys()],
@@ -514,11 +528,29 @@ function readProjects<Answer>(
           error: renderDiagnostic(one, (path) => relativePath(absoluteRoot, path) ?? path),
         })),
       );
+      const missingGlobal = raw.unfound.find(
+        ({ diagnostic }) => diagnostic.code === MISSING_GLOBAL_TYPE,
+      );
+      const skips =
+        missingGlobal === undefined
+          ? reading.skips
+          : [
+              ...reading.skips,
+              ...project.ownSourceFiles().map((file) => ({
+                record: {
+                  path: relativePath(absoluteRoot, file.fileName) ?? file.fileName,
+                  line: 1,
+                  message: missingGlobal.diagnostic.text,
+                },
+                file,
+                unit: file,
+              })),
+            ];
       const configuration = ids.get(project.configFile) ?? project.configFile;
       const read = (): ProjectRead => {
         const held = inventory(project, host, targetRoot);
         const found = roots(project, held, targetRoot, options);
-        const kept = skippedRoots(project, held, reading.skips);
+        const kept = skippedRoots(project, held, skips);
         const rooted =
           kept.length === 0
             ? found
@@ -535,8 +567,8 @@ function readProjects<Answer>(
           configFile: project.configFile,
           held,
           rooted,
-          typeErrorSkips: reading.skips.map((one) => one.record),
-          skipped: skippedUnits(reading.skips, absoluteRoot),
+          typeErrorSkips: skips.map((one) => one.record),
+          skipped: skippedUnits(skips, absoluteRoot),
           referenceOnly: project
             .ownSourceFiles()
             .filter((file) => referenceOnly(file.fileName))
@@ -551,9 +583,7 @@ function readProjects<Answer>(
       return stage(project, { configuration, read });
     },
     discovered.derived ? "record" : "refuse",
-    joins.size === 0
-      ? workspace?.programs
-      : withJoinedTests(engine, host, workspace?.programs ?? new Map(), joins),
+    joins.size === 0 ? programs : withJoinedTests(engine, host, programs, joins),
     () => {
       outsideTests = testFilesAt(
         host,
@@ -759,6 +789,8 @@ interface SweptProject<Extra> {
   /** The component files the project holds of its own, by path below the target root. */
   readonly componentFiles: readonly string[];
   readonly componentWarnings: readonly ComponentWarning[];
+  /** The manifest entries the project reads back to no file of its own. */
+  readonly unmappedEntries: readonly ManifestEntry[];
   readonly extra: Extra;
 }
 
@@ -770,6 +802,8 @@ interface ReadProject<Extra> {
   readonly evidence: readonly Exemption[];
   readonly componentFiles: readonly string[];
   readonly componentWarnings: readonly ComponentWarning[];
+  /** Per own file below the target root, the module specifiers its imports write. */
+  readonly imports: ReadonlyMap<string, readonly string[]>;
   readonly extra: Extra;
 }
 
@@ -798,6 +832,64 @@ interface ReadRun<Extra> {
   readonly memberDirs: readonly string[];
   /** The directory of every nested package, absolute. */
   readonly nestedDirs: readonly string[];
+}
+
+/** The manifest section of a package test evidence counts, and the sections that keep one out of it. */
+const DEV_SECTION = "devDependencies";
+const OTHER_SECTIONS = ["dependencies", "peerDependencies", "optionalDependencies"] as const;
+
+/**
+ * The imports of a run's own files and the manifests below the target root that test
+ * evidence reads: a package is a devDependency of a file where the nearest manifest at or
+ * above it that declares the package declares it under `devDependencies` alone.
+ */
+function testEvidence(
+  host: Host,
+  targetRoot: string,
+  projects: readonly { readonly imports: ReadonlyMap<string, readonly string[]> }[],
+): TestEvidence {
+  const imports = new Map<string, readonly string[]>();
+  for (const one of projects) {
+    for (const [path, specifiers] of one.imports) {
+      imports.set(path, specifiers);
+    }
+  }
+  const manifests = new Map<string, Readonly<Record<string, unknown>> | undefined>();
+  const manifestAt = (dir: string): Readonly<Record<string, unknown>> | undefined => {
+    if (!manifests.has(dir)) {
+      let value: unknown;
+      try {
+        value = JSON.parse(host.readFile(joinPath(dir, "package.json")));
+      } catch {
+        value = undefined;
+      }
+      manifests.set(
+        dir,
+        typeof value === "object" && value !== null && !Array.isArray(value)
+          ? (value as Record<string, unknown>)
+          : undefined,
+      );
+    }
+    return manifests.get(dir);
+  };
+  const declares = (section: unknown, name: string): boolean =>
+    typeof section === "object" && section !== null && Object.hasOwn(section, name);
+  const root = resolvePath(host.workingDirectory(), targetRoot);
+  return {
+    imports,
+    devDependency: (path, name) => {
+      for (let dir = dirnamePath(joinPath(root, path)); ; dir = dirnamePath(dir)) {
+        const manifest = manifestAt(dir);
+        const other = OTHER_SECTIONS.some((one) => declares(manifest?.[one], name));
+        if (declares(manifest?.[DEV_SECTION], name) || other) {
+          return !other;
+        }
+        if (normalizePath(dir) === normalizePath(root) || dirnamePath(dir) === dir) {
+          return false;
+        }
+      }
+    },
+  };
 }
 
 /**
@@ -856,6 +948,14 @@ function readRun<Extra>(
       testFiles: resolved.testFilePaths,
       evidence,
       componentFiles: components.map(pathOf),
+      imports: new Map(
+        project.ownSourceFiles().flatMap((file) => {
+          const path = relativePath(targetRoot, file.fileName);
+          return path === undefined
+            ? []
+            : [[path, file.imports.filter(isStringLiteralLikeNode).map((one) => one.text)]];
+        }),
+      ),
       componentWarnings: components.flatMap((file) =>
         readComponent(file.originalText, extensionOf(file.fileName)).warnings.map((warning) => ({
           path: pathOf(file),
@@ -882,6 +982,7 @@ function readRun<Extra>(
     withOutside.flatMap((one) => one.references),
     withOutside.flatMap((one) => one.projectRead.rooted.liveUnderReachability),
     withOutside.flatMap((one) => one.testFiles),
+    testEvidence(host, targetRoot, withOutside),
   );
   const settled = settledSatisfaction(
     withOutside.map((one) => ({ evidence: one.evidence, held: one.projectRead.held })),
@@ -903,8 +1004,9 @@ function readRun<Extra>(
       symbols: projectRead.held.symbols,
       references: [...made, ...evidenceReferences(projectRead.held.symbols, detected.inTestFiles)],
       roots: projectRead.rooted.liveUnderReachability,
-      testFiles: one.testFiles,
+      testFiles: [...one.testFiles, ...supportFiles],
       ...(supportFiles.length === 0 ? {} : { supportFiles }),
+      ...(projectRead.held.ambient.size === 0 ? {} : { ambient: projectRead.held.ambient }),
       ...(projectRead.referenceOnly.length === 0
         ? {}
         : { referenceOnly: projectRead.referenceOnly }),
@@ -925,6 +1027,7 @@ function readRun<Extra>(
         ...exempt.filter(isUnansweredRecord).map((record) => record.id),
       ],
       typeErrorSkips: projectRead.typeErrorSkips,
+      unmappedEntries: projectRead.rooted.unmappedEntries,
       skipped: projectRead.skipped,
       componentFiles: one.componentFiles,
       componentWarnings: one.componentWarnings,
@@ -1190,7 +1293,8 @@ export function readEmitterRun(
  * The workspace members whose dependencies the run judges: `read` holds those a built
  * project holds a file below, `unbuilt` the others whose own directory, the nearest
  * manifest's above the configuration, holds a configuration the run could not build. A
- * member no configuration holds a file of is in neither.
+ * member no configuration holds a file of is in neither. A nested package no built project
+ * holds a file below joins `unbuilt` the same way.
  */
 function judgedMembers(
   host: Host,
@@ -1211,6 +1315,16 @@ function judgedMembers(
     if ([...held].some((path) => path.startsWith(`${below}/`))) {
       judged.read.push(dir);
     } else if (owners.has(dir)) {
+      judged.unbuilt.push(dir);
+    }
+  }
+  for (const dir of read.nestedDirs) {
+    const below = relativePath(root, dir);
+    if (
+      below !== undefined &&
+      owners.has(dir) &&
+      ![...held].some((path) => path.startsWith(`${below}/`))
+    ) {
       judged.unbuilt.push(dir);
     }
   }
@@ -1359,6 +1473,7 @@ function readAnalysis(
       componentsUnread: read.componentsUnread,
       librariesUnfound: read.librariesUnfound,
       conventionsApplied: read.conventionsApplied,
+      unmappedEntries: unmappedEverywhere(read.projects),
     },
     configured: read.projects.map((one) => one.configured),
     symbols,
@@ -1410,6 +1525,22 @@ function inputsOver(
   };
 }
 
+/** The manifest entries every project of the run reads back to no file, in the first project's order. */
+function unmappedEverywhere(
+  projects: readonly { readonly unmappedEntries: readonly ManifestEntry[] }[],
+): readonly ManifestEntry[] {
+  const key = (entry: ManifestEntry): string => `${entry.dir}\u0000${entry.member}`;
+  const [first, ...rest] = projects;
+  const others = rest.map((one) => new Set(one.unmappedEntries.map(key)));
+  const found = new Map<string, ManifestEntry>();
+  for (const entry of first?.unmappedEntries ?? []) {
+    if (others.every((one) => one.has(key(entry)))) {
+      found.set(key(entry), entry);
+    }
+  }
+  return [...found.values()];
+}
+
 /** One project of a run: the name the run gives it and the file it was opened from. */
 export interface RunProject {
   readonly id: string;
@@ -1439,6 +1570,8 @@ interface RunFacts {
   readonly librariesUnfound: readonly LibraryUnfound[];
   /** The convention rows the run applied. */
   readonly conventionsApplied: readonly AppliedConvention[];
+  /** The manifest entries no project of the run reads back to a file, each once. */
+  readonly unmappedEntries: readonly ManifestEntry[];
 }
 
 /** One configuration whose component files a run cannot read. */

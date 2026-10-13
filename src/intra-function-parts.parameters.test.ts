@@ -196,7 +196,7 @@ describe("whether a function reads a parameter", () => {
 
 describe("an unread parameter of a declared function used as a value", () => {
   it(
-    "is reported only where no read parameter follows it, since a caller passes it by position",
+    "is reported where no read parameter follows it, and as a rename where one does, since a caller passes it by position",
     () => {
       expect(
         partsOf([
@@ -216,6 +216,7 @@ describe("an unread parameter of a declared function used as a value", () => {
           "console.log(table.length);",
         ]),
       ).toEqual([
+        "DS1801 unused src/main.ts:1",
         "DS1801 unused src/main.ts:5",
         "DS1801 first src/main.ts:9",
         "DS1801 second src/main.ts:9",

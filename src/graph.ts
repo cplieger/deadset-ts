@@ -63,6 +63,8 @@ const NAMES_A_CALLER: Readonly<Record<RootKind, boolean>> = {
   worker: true,
   "html-entry": true,
   "workflow-step": true,
+  "computed-import": true,
+  "document-import": true,
 };
 
 /** Whether the sweep judges a declaration of one kind. */
@@ -112,6 +114,8 @@ export interface Graph {
   readonly test: readonly boolean[];
   /** Per declaration, whether a test-support file holds it. */
   readonly support: readonly boolean[];
+  /** Per declaration, whether it is ambient, describing code the target does not implement. */
+  readonly ambient: readonly boolean[];
   /** Per declaration, whether the sweep judges its liveness. */
   readonly subject: readonly boolean[];
   /**
@@ -145,6 +149,7 @@ export function graphOf(
   roots: readonly Root[],
   testFiles: readonly string[],
   supportFiles: readonly string[] = [],
+  ambient: ReadonlySet<string> = new Set(),
 ): Graph {
   const supports = new Set(supportFiles);
   const index = new Map(symbols.map((symbol, at) => [symbol.id, at]));
@@ -199,6 +204,7 @@ export function graphOf(
     parent,
     test: symbols.map((symbol) => tests.has(symbol.position.path)),
     support: symbols.map((symbol) => supports.has(symbol.position.path)),
+    ambient: symbols.map((symbol) => ambient.has(symbol.id)),
     subject: symbols.map((symbol) => swept(symbol.kind)),
     exportsOf,
     rooted,

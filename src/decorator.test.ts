@@ -4,6 +4,7 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
 import { fixture } from "../__test-helpers__/fixtures.ts";
 import { writeProject } from "../__test-helpers__/projects.ts";
+import { treeFindings } from "../__test-helpers__/tree-findings.ts";
 import { runSweep, type RunSweep } from "./analysis.ts";
 import { resolve } from "./resolve.ts";
 import { run, type Writer } from "./run.ts";
@@ -89,6 +90,25 @@ describe("decorator", () => {
       "Widget.create reference-counting",
       "Plain.run reference-counting",
     ]);
+  });
+});
+
+describe("a parameter property of a decorated class", () => {
+  it("is judged by its reads, the decorator holding back the class's other members", () => {
+    expect(
+      treeFindings({
+        "main.ts": [
+          "function component(_value: unknown, _context: ClassDecoratorContext): void {}",
+          "@component",
+          "class View {",
+          "  constructor(private readonly dialog: string, private readonly title: string) {}",
+          "  shown(): string { return this.title; }",
+          "}",
+          'console.log(new View("d", "t").shown());',
+          "",
+        ].join("\n"),
+      }).filter((one) => one.includes("View.")),
+    ).toEqual(["DS1301 View.dialog"]);
   });
 });
 

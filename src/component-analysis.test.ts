@@ -112,6 +112,7 @@ describe("component files, read through the compiler's content mapper", () => {
     expect(answered.findings).toEqual([
       "DS1301 src/Crlf.vue:7:3-7 Row.unread",
       "DS1301 src/Crlf.vue:8:3-8 Row.note",
+      "DS1502 src/Half.vue:1:1-1 src/Half.vue",
       "DS1502 src/Orphan.vue:1:1-4 src/Orphan.vue",
       "DS1002 src/Orphan.vue:3:7-3 lonely",
       "DS1301 src/Wide.vue:2:56-2 Shape.side",

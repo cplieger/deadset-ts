@@ -1,6 +1,6 @@
 {
-  "schema_version": "8.2.0",
-  "contract_version": "7.2.0",
+  "schema_version": "9.0.0",
+  "contract_version": "8.0.0",
   "analyzer": {
     "name": "deadset-ts",
     "version": "0.0.0",
@@ -8,12 +8,12 @@
       "ts"
     ],
     "schema_versions_accepted": [
-      "8.2.0"
+      "9.0.0"
     ],
     "conformance": {
-      "corpus_version": "5.2.0",
+      "corpus_version": "6.0.0",
       "result": "pass",
-      "digest": "sha256:012872542679539ec105f49b5ee502b0a9fa35c6bbd9ef3983b5f6e53af83d8e"
+      "digest": "sha256:76c07ac14bda6e302444918d832b01844bac6f29b6f22a742d538804480c0769"
     }
   },
   "target": {
@@ -51,7 +51,7 @@
         "size_lines": 4
       },
       "reachability_class": "certain",
-      "confidence": "certain",
+      "confidence": "probable",
       "liveness_relation": "reachability",
       "test_only": false,
       "generated": false,
@@ -92,10 +92,10 @@
       "test_only": false,
       "generated": false,
       "component": {
-        "id": "deadset-ts/c-0007",
+        "id": "deadset-ts/c-0002",
         "root": true,
-        "symbol_count": 1,
-        "deletable_lines": 0
+        "symbol_count": 4,
+        "deletable_lines": 8
       },
       "retained_by": [],
       "configurations": [
@@ -130,9 +130,9 @@
       "generated": false,
       "component": {
         "id": "deadset-ts/c-0002",
-        "root": true,
-        "symbol_count": 2,
-        "deletable_lines": 6
+        "root": false,
+        "symbol_count": 4,
+        "deletable_lines": 8
       },
       "retained_by": [],
       "configurations": [
@@ -221,6 +221,42 @@
       }
     },
     {
+      "code": "DS1502",
+      "kind": "file-never-imported",
+      "language": "ts",
+      "position": {
+        "path": "src/imported-by-dead.ts",
+        "line": 1,
+        "column": 1,
+        "end_line": 3
+      },
+      "symbol": {
+        "ref": "ts://@example/non-code-artifacts-imports/src/imported-by-dead.ts#",
+        "kind": "file",
+        "name": "src/imported-by-dead.ts",
+        "size_lines": 3
+      },
+      "reachability_class": "certain",
+      "confidence": "probable",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0002",
+        "root": false,
+        "symbol_count": 4,
+        "deletable_lines": 8
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "only code that is itself dead imports this file, and no root names it or a declaration in it",
+      "details": {}
+    },
+    {
       "code": "DS1001",
       "kind": "unused-exported",
       "language": "ts",
@@ -237,15 +273,15 @@
         "size_lines": 3
       },
       "reachability_class": "certain",
-      "confidence": "certain",
+      "confidence": "probable",
       "liveness_relation": "reachability",
       "test_only": false,
       "generated": false,
       "component": {
         "id": "deadset-ts/c-0002",
         "root": false,
-        "symbol_count": 2,
-        "deletable_lines": 6
+        "symbol_count": 4,
+        "deletable_lines": 8
       },
       "retained_by": [],
       "configurations": [
@@ -278,10 +314,10 @@
       "test_only": false,
       "generated": false,
       "component": {
-        "id": "deadset-ts/c-0008",
+        "id": "deadset-ts/c-0004",
         "root": true,
         "symbol_count": 1,
-        "deletable_lines": 0
+        "deletable_lines": 4
       },
       "retained_by": [],
       "configurations": [
@@ -314,10 +350,10 @@
       "test_only": false,
       "generated": false,
       "component": {
-        "id": "deadset-ts/c-0009",
+        "id": "deadset-ts/c-0005",
         "root": true,
-        "symbol_count": 1,
-        "deletable_lines": 0
+        "symbol_count": 3,
+        "deletable_lines": 7
       },
       "retained_by": [],
       "configurations": [
@@ -351,10 +387,10 @@
       "test_only": false,
       "generated": false,
       "component": {
-        "id": "deadset-ts/c-0004",
-        "root": true,
-        "symbol_count": 2,
-        "deletable_lines": 6
+        "id": "deadset-ts/c-0005",
+        "root": false,
+        "symbol_count": 3,
+        "deletable_lines": 7
       },
       "retained_by": [],
       "configurations": [
@@ -383,15 +419,15 @@
         "size_lines": 3
       },
       "reachability_class": "certain",
-      "confidence": "certain",
+      "confidence": "probable",
       "liveness_relation": "reachability",
       "test_only": false,
       "generated": false,
       "component": {
-        "id": "deadset-ts/c-0004",
+        "id": "deadset-ts/c-0005",
         "root": false,
-        "symbol_count": 2,
-        "deletable_lines": 6
+        "symbol_count": 3,
+        "deletable_lines": 7
       },
       "retained_by": [],
       "configurations": [
@@ -425,7 +461,7 @@
       "test_only": false,
       "generated": false,
       "component": {
-        "id": "deadset-ts/c-0005",
+        "id": "deadset-ts/c-0006",
         "root": true,
         "symbol_count": 1,
         "deletable_lines": 1
@@ -438,6 +474,43 @@
       "fixability": "deletable",
       "severity": "deny",
       "message": "exported variable has no reference in the target and none from any loaded consumer",
+      "details": {}
+    },
+    {
+      "code": "DS1004",
+      "kind": "test-only-use",
+      "language": "ts",
+      "position": {
+        "path": "src/tested.ts",
+        "line": 1,
+        "column": 17,
+        "end_line": 3
+      },
+      "symbol": {
+        "ref": "ts://@example/non-code-artifacts-imports/src/tested.ts#tested",
+        "kind": "function",
+        "name": "tested",
+        "size_lines": 3
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": true,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0007",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 3
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "function is referenced only from test files and never from production code",
       "details": {}
     }
   ],
@@ -473,10 +546,6 @@
     {
       "rule": "test-file-pattern-7",
       "matched": 0
-    },
-    {
-      "rule": "test-support",
-      "matched": 1
     }
   ],
   "type_error_skips": [],
@@ -484,13 +553,13 @@
   "unanswered_questions": [],
   "conventions_applied": [],
   "totals": {
-    "findings": 11,
+    "findings": 13,
     "by_severity": {
       "allow": 0,
       "warn": 0,
-      "deny": 11
+      "deny": 13
     },
-    "deletable_lines": 22,
+    "deletable_lines": 32,
     "suppressions_in_effect": 0,
     "reasons_recorded": 0,
     "stale_suppressions": 0,
@@ -499,7 +568,7 @@
     "withheld": {
       "certain": 0,
       "probable": 0,
-      "possible": 1
+      "possible": 0
     }
   }
 }

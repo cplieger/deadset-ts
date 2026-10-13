@@ -3,6 +3,28 @@
     "code": "DS1601",
     "position": {
       "path": "package.json",
+      "line": 12,
+      "column": 5,
+      "endLine": 12
+    },
+    "symbol": {
+      "ref": "ts://@example/dependencies/package.json#left-pad:dependency",
+      "kind": "dependency",
+      "name": "left-pad",
+      "sizeLines": 1
+    },
+    "message": "only code that is itself dead uses the declared dependency",
+    "details": {
+      "dependencyClass": "dependency"
+    },
+    "fallsWith": [
+      "src/main.ts:12:10"
+    ]
+  },
+  {
+    "code": "DS1601",
+    "position": {
+      "path": "package.json",
       "line": 13,
       "column": 5,
       "endLine": 13

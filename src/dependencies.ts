@@ -8,15 +8,19 @@
  */
 
 import {
+  isArrayLiteralExpression,
   isCallExpression,
   isExportDeclaration,
+  isExpressionStatement,
   isExternalModuleReference,
   isIdentifier,
   isImportDeclaration,
   isImportEqualsDeclaration,
   isMetaProperty,
   isNamespaceExport,
+  isObjectLiteralExpression,
   isPropertyAccessExpression,
+  isPropertyAssignment,
   isShorthandPropertyAssignment,
   isStringLiteral,
   isNoSubstitutionTemplateLiteral,
@@ -25,11 +29,14 @@ import {
   type Node,
   type SourceFile,
 } from "@typescript/native/ast";
+import { automaticTypes, type AutomaticTypes } from "./automatic-types.ts";
 import {
   configurationFiles,
   declaredIn as declaredBeside,
   dependenciesNamed,
   moduleStrings,
+  outsideChain,
+  type OutsideModule,
   type ParseFile,
 } from "./configuration-files.ts";
 import type { FindingPosition } from "./finding.ts";
@@ -40,13 +47,16 @@ import { dirnamePath, isAbsolutePath, joinPath, relativePath, resolvePath } from
 import type { DependencySection, Module } from "./ref.ts";
 import { UNANSWERED } from "./query.ts";
 import type { Handle, ProjectView } from "./session.ts";
-import { sourceFilesOf } from "./source-files.ts";
+import { sourceFilesOf, type SourceFiles } from "./source-files.ts";
 import { workflowTokens } from "./workflow-steps.ts";
 
 const MANIFEST = "package.json";
 const MODULES_DIR = "node_modules";
 const MODULES_SEGMENT = `/${MODULES_DIR}/`;
 const TYPES_SCOPE = "@types/";
+
+/** A script token naming a JavaScript file by a path no expansion changes. */
+const SCRIPT_FILE = /^[^$`{*?[~]+\.(?:js|mjs|cjs)$/u;
 
 /** The manifest sections a dependency is declared in, each by the selector its reference spells. */
 const SECTIONS: readonly (readonly [string, DependencySection])[] = [
@@ -72,7 +82,7 @@ interface DeclaredDependency {
 export function configurationNeeds(packages: readonly string[]): ProjectNeeds {
   return {
     uses: new Map([[PROJECT_OWNER, new Set(packages)]]),
-    at: new Map([[ANYWHERE, new Set(packages)]]),
+    at: new Map([[ANYWHERE, new Map(packages.map((one) => [one, new Set([PROJECT_OWNER])]))]]),
     unanswered: [],
   };
 }
@@ -98,10 +108,12 @@ export interface ProjectNeeds {
   readonly uses: ReadonlyMap<string, ReadonlySet<string>>;
   /**
    * Per absolute path of the file a use is written in, the packages it names, which a
-   * dependency only a manifest at or above that file declares serves. The empty key holds
-   * the uses no one file holds, which every manifest's dependency of that name serves.
+   * dependency of the nearest manifest at or above that file declaring the name serves,
+   * each with the owners {@link uses} holds it by; an import whose bindings nothing in the
+   * file uses holds its package by none. The empty key holds the uses no one file holds,
+   * which every manifest's dependency of that name serves.
    */
-  readonly at: ReadonlyMap<string, ReadonlySet<string>>;
+  readonly at: ReadonlyMap<string, ReadonlyMap<string, ReadonlySet<string>>>;
   /**
    * The files writing a module specifier the checker left unanswered, each of which may
    * use any dependency a manifest at or above it declares.
@@ -134,6 +146,18 @@ export interface Dependencies {
    * written inside it, sorted bytewise; a candidate holding no last use has no entry.
    */
   readonly lastUses: ReadonlyMap<string, readonly string[]>;
+  /**
+   * Per file, by its path below the target root, the declared dependencies whose every use
+   * in the target is written in it, sorted bytewise, which deleting the file removes.
+   */
+  readonly fileLastUses: ReadonlyMap<string, readonly string[]>;
+  /**
+   * The needed declared dependencies, by {@link declarationKey}, each with the owners
+   * {@link ProjectNeeds.uses} holds its uses by, sorted bytewise: none that a command runs,
+   * that an unanswered specifier may need, that an import none of whose bindings is used
+   * names, or that a dependency so needed names as a peer.
+   */
+  readonly heldBy: ReadonlyMap<string, readonly string[]>;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -203,6 +227,34 @@ function typePackages(name: string, programPackages: ReadonlySet<string>): reado
 }
 
 /**
+ * The strings the `extends` member of one compiler configuration file holds, read as the
+ * compiler reads the file, comments and trailing commas allowed; none where it cannot be read.
+ */
+function extendsOf(host: Host, path: string, parse: ParseFile): readonly string[] {
+  let text: string;
+  try {
+    text = host.readFile(path);
+  } catch {
+    return [];
+  }
+  const [statement] = parse(path, text).statements;
+  const document =
+    statement !== undefined && isExpressionStatement(statement) ? statement.expression : undefined;
+  if (document === undefined || !isObjectLiteralExpression(document)) {
+    return [];
+  }
+  const value = document.properties
+    .filter(isPropertyAssignment)
+    .findLast(
+      (property) => isLiteralText(property.name) && property.name.text === "extends",
+    )?.initializer;
+  const entries = value !== undefined && isArrayLiteralExpression(value) ? value.elements : [value];
+  return entries.flatMap((entry) =>
+    entry !== undefined && isLiteralText(entry) ? [entry.text] : [],
+  );
+}
+
+/**
  * The packages the compiler configuration of one project names: its type packages,
  * its JSX import source, the helper library it imports, its plugins, and every
  * package a configuration file it extends through is read from.
@@ -212,6 +264,7 @@ function configurationPackages(
   configFile: string,
   options: Readonly<Record<string, unknown>>,
   programPackages: ReadonlySet<string>,
+  parse: ParseFile,
 ): Set<string> {
   const found = new Set<string>();
   const add = (name: unknown): void => {
@@ -248,12 +301,7 @@ function configurationPackages(
       continue;
     }
     seen.add(file);
-    const read = readJSON(host, file);
-    const extended = isRecord(read?.value) ? read.value["extends"] : undefined;
-    for (const entry of Array.isArray(extended) ? extended : [extended]) {
-      if (typeof entry !== "string") {
-        continue;
-      }
+    for (const entry of extendsOf(host, file, parse)) {
       if (entry.startsWith(".") || isAbsolutePath(entry)) {
         const local = resolvePath(dirnamePath(file), entry);
         pending.push(local.endsWith(".json") ? local : `${local}.json`);
@@ -318,7 +366,7 @@ export function projectNeeds<Brand>(
   held: Inventory,
   host: Host,
   targetRoot: string,
-  parse?: ParseFile,
+  parse: ParseFile,
 ): ProjectNeeds {
   const programPackages = new Set<string>();
   for (const name of project.program.getSourceFileNames()) {
@@ -327,18 +375,19 @@ export function projectNeeds<Brand>(
       programPackages.add(named);
     }
   }
-  const packages = configurationPackages(
-    host,
-    project.configFile,
-    project.program.getCompilerOptions() as Readonly<Record<string, unknown>>,
-    programPackages,
-  );
+  const options = project.program.getCompilerOptions() as Readonly<Record<string, unknown>>;
+  const packages = configurationPackages(host, project.configFile, options, programPackages, parse);
+  const automatic = automaticTypes(host, project.configFile, options, parse);
   const uses = new Map<string, Set<string>>();
-  const at = new Map<string, Set<string>>();
+  const at = new Map<string, Map<string, Set<string>>>();
   const use = (owners: readonly string[], named: Iterable<string>, path: string): void => {
     for (const one of named) {
-      at.set(path, (at.get(path) ?? new Set()).add(one));
+      const inFile = at.get(path) ?? new Map<string, Set<string>>();
+      at.set(path, inFile);
+      const holders = inFile.get(one) ?? new Set<string>();
+      inFile.set(one, holders);
       for (const owner of owners) {
+        holders.add(owner);
         let set = uses.get(owner);
         if (set === undefined) {
           set = new Set();
@@ -355,7 +404,7 @@ export function projectNeeds<Brand>(
     const inFile = (owners: readonly string[], named: Iterable<string>): void => {
       use(owners, named, file.fileName);
     };
-    if (fileNeeds(project, held, file, programPackages, inFile)) {
+    if (fileNeeds(project, held, file, { programPackages, automatic }, inFile)) {
       unanswered.push(file.fileName);
     }
   }
@@ -370,12 +419,8 @@ export function projectNeeds<Brand>(
     }
     return names;
   };
-  const configuration = configurationFiles(
-    host,
-    targetRoot,
-    sourceFilesOf(project, targetRoot),
-    parse,
-  );
+  const files = sourceFilesOf(project, targetRoot);
+  const configuration = configurationFiles(host, targetRoot, files, parse);
   for (const { file, manifestDir } of configuration.modules) {
     const names = declaredAt(joinPath(manifestDir, MANIFEST));
     for (const { node, text } of moduleStrings(file)) {
@@ -390,7 +435,14 @@ export function projectNeeds<Brand>(
       }
     }
   }
-  for (const { file, manifestDirs } of configuration.outside) {
+  const ranFiles: readonly OutsideModule[] = outsideChain(
+    host,
+    targetRoot,
+    files,
+    parse,
+    scriptRunFiles(host, targetRoot, files),
+  );
+  for (const { file, manifestDirs } of [...configuration.outside, ...ranFiles]) {
     for (const manifestDir of manifestDirs) {
       const names = declaredAt(joinPath(manifestDir, "package.json"));
       for (const { text } of moduleStrings(file)) {
@@ -399,6 +451,55 @@ export function projectNeeds<Brand>(
     }
   }
   return { uses, at, unanswered };
+}
+
+/**
+ * The JavaScript files no program holds that a script of a manifest at or above one of the
+ * project's files runs, each with the directory of that manifest, and those a workflow
+ * step or git hook runs, with the target root's: a token naming such a file below the
+ * target root and in no `node_modules`, read against the manifest's directory.
+ */
+function scriptRunFiles(
+  host: Host,
+  targetRoot: string,
+  files: SourceFiles,
+): readonly { readonly path: string; readonly manifestDir: string }[] {
+  const root = resolvePath(host.workingDirectory(), targetRoot);
+  const dirs = new Set<string>([root]);
+  for (const name of files.byName.keys()) {
+    for (let dir = dirnamePath(name); !dirs.has(dir); dir = dirnamePath(dir)) {
+      if (relativePath(root, dir) === undefined) {
+        break;
+      }
+      dirs.add(dir);
+    }
+  }
+  const tokens = new Map<string, ReadonlySet<string>>([
+    [root, new Set(workflowTokens(host, root))],
+  ]);
+  for (const dir of dirs) {
+    const read = readJSON(host, joinPath(dir, MANIFEST));
+    if (read !== undefined && isRecord(read.value)) {
+      const own = scriptTokensOf(read.value);
+      tokens.set(dir, dir === root ? new Set([...own, ...(tokens.get(root) ?? [])]) : own);
+    }
+  }
+  const found: { path: string; manifestDir: string }[] = [];
+  for (const [manifestDir, held] of tokens) {
+    for (const token of held) {
+      const path = SCRIPT_FILE.test(token) ? resolvePath(manifestDir, token) : undefined;
+      const below = path === undefined ? undefined : relativePath(root, path);
+      if (
+        path !== undefined &&
+        below?.split("/").includes(MODULES_DIR) === false &&
+        !files.byName.has(path) &&
+        host.kindOf(path) === "file"
+      ) {
+        found.push({ path, manifestDir });
+      }
+    }
+  }
+  return found;
 }
 
 /** The declarations of the inventory a use written at one node belongs to. */
@@ -425,12 +526,47 @@ function ownersOf(file: SourceFile, held: Inventory, node: Node): readonly strin
   return [PROJECT_OWNER];
 }
 
-/** Records the needs of one file, and answers whether a specifier of it went unanswered. */
+/**
+ * Whether one identifier stands for a value or type of the scope it is written in, rather
+ * than naming a member, a property or a label.
+ */
+function isScopeName(node: Identifier): boolean {
+  const parent = node.parent as Node | undefined;
+  if (parent === undefined || isShorthandPropertyAssignment(parent)) {
+    return true;
+  }
+  const named = parent as {
+    readonly name?: Node;
+    readonly right?: Node;
+    readonly propertyName?: Node;
+    readonly label?: Node;
+  };
+  return (
+    named.name !== node &&
+    (parent.kind !== SyntaxKind.QualifiedName || named.right !== node) &&
+    named.propertyName !== node &&
+    named.label !== node
+  );
+}
+
+/** What the packages a project's configuration brings in hold, which a file's needs are read against. */
+interface ProgramTypes {
+  /** The packages the program holds a file of. */
+  readonly programPackages: ReadonlySet<string>;
+  /** What the type packages a compiler would include automatically declare. */
+  readonly automatic: AutomaticTypes;
+}
+
+/**
+ * Records the needs of one file, and answers whether a specifier of it went unanswered. A
+ * module specifier or a name of the file's scope that resolves to nothing, and that an
+ * automatically included type package declares, uses that package.
+ */
 function fileNeeds<Brand>(
   project: ProjectView<Brand>,
   held: Inventory,
   file: SourceFile,
-  programPackages: ReadonlySet<string>,
+  { programPackages, automatic }: ProgramTypes,
   use: (owners: readonly string[], named: Iterable<string>) => void,
 ): boolean {
   const specifiers = [...file.imports, ...file.moduleAugmentations].filter(isLiteralText);
@@ -449,17 +585,22 @@ function fileNeeds<Brand>(
   }
   const names = new Set(bindings.map(({ node }) => node.text));
   const candidates: Identifier[] = [];
+  const globals: Identifier[] = [];
   const visit = (node: Node): void => {
-    if (isIdentifier(node) && names.has(node.text) && !bound.has(node)) {
-      candidates.push(node);
+    if (isIdentifier(node) && !bound.has(node)) {
+      if (names.has(node.text)) {
+        candidates.push(node);
+      } else if (automatic.globals.has(node.text) && isScopeName(node)) {
+        globals.push(node);
+      }
     }
     node.forEachChild(visit);
   };
-  if (names.size > 0) {
+  if (names.size > 0 || automatic.globals.size > 0) {
     visit(file);
   }
 
-  const asked = [...specifiers, ...bindings.map(({ node }) => node), ...candidates];
+  const asked = [...specifiers, ...bindings.map(({ node }) => node), ...candidates, ...globals];
   const handles: Handle<Brand>[] = asked.map((node) => project.handle(node));
   const resolved = project.symbolsAt(handles);
 
@@ -471,6 +612,9 @@ function fileNeeds<Brand>(
       named.add(byName);
     }
     const symbol = resolved[index];
+    if (symbol === undefined) {
+      automatic.modules.get(specifier.text)?.forEach((one) => named.add(one));
+    }
     for (const declaration of typeof symbol === "object" ? symbol.declarations : []) {
       const byPath = packageOfPath(declaration.path);
       if (byPath !== undefined) {
@@ -508,7 +652,7 @@ function fileNeeds<Brand>(
     let symbol = resolved[offset + index];
     const parent = node.parent as Node | undefined;
     if (parent !== undefined && isShorthandPropertyAssignment(parent) && parent.name === node) {
-      symbol = project.shorthandValueAt(project.handle(node));
+      symbol = project.shorthandValueAt(project.handle(parent));
     }
     const named =
       symbol === UNANSWERED || (unresolvedNames.has(node.text) && symbol === undefined)
@@ -519,6 +663,13 @@ function fileNeeds<Brand>(
             (unresolvedNames.has(node.text) ? byName.get(node.text) : undefined));
     if (named !== undefined) {
       use(ownersOf(file, held, node), named);
+    }
+  });
+  const unresolvedAt = offset + candidates.length;
+  globals.forEach((node, index) => {
+    const symbol = resolved[unresolvedAt + index];
+    if (symbol === undefined || symbol === UNANSWERED) {
+      use(ownersOf(file, held, node), automatic.globals.get(node.text) ?? []);
     }
   });
 
@@ -732,6 +883,22 @@ function manifestDir(dependency: DeclaredDependency): string {
 }
 
 /**
+ * The declarations of one name a use written at `below` needs: those of the nearest
+ * manifest at or above it that declares the name, or every one for a use no file holds.
+ */
+function nearestDeclaring(
+  declarations: readonly DeclaredDependency[],
+  below: string | undefined,
+): readonly DeclaredDependency[] {
+  if (below === undefined) {
+    return declarations;
+  }
+  const enclosing = declarations.filter((dependency) => isInside(below, manifestDir(dependency)));
+  const nearest = Math.max(-1, ...enclosing.map((dependency) => manifestDir(dependency).length));
+  return enclosing.filter((dependency) => manifestDir(dependency).length === nearest);
+}
+
+/**
  * Adds to `needed` each declared dependency that the installed manifest of a needed or
  * run declared dependency names as a peer, until no further one joins: the declaration of
  * that name in the needing dependency's manifest or in a manifest above it, where the
@@ -829,6 +996,8 @@ export function dependenciesOf(
   // A declaration several projects compile is one user, and a use any project makes is
   // a use, so the uses are merged by declaration before anything is counted.
   const needed = new Set<string>();
+  const live = new Set<string>();
+  const holders = new Map<string, Set<string>>();
   const byName = new Map<string, DeclaredDependency[]>();
   for (const dependency of declared) {
     byName.set(dependency.name, [...(byName.get(dependency.name) ?? []), dependency]);
@@ -841,7 +1010,10 @@ export function dependenciesOf(
     const unknownDeclared = declared.filter((dependency) =>
       unanswered.some((file) => isInside(file, manifestDir(dependency))),
     );
-    unknownDeclared.forEach((dependency) => needed.add(declarationKey(dependency)));
+    for (const dependency of unknownDeclared) {
+      needed.add(declarationKey(dependency));
+      live.add(declarationKey(dependency));
+    }
     const unknown = unknownDeclared.map((dependency) => dependency.name);
     const held = unknown.length === 0 ? [] : [[PROJECT_OWNER, new Set(unknown)] as const];
     for (const [id, used] of [...project.uses, ...held]) {
@@ -851,16 +1023,34 @@ export function dependenciesOf(
     }
     for (const [path, named] of project.at) {
       const below = path === ANYWHERE ? undefined : relativePath(root, path);
-      for (const one of named) {
-        for (const dependency of byName.get(one) ?? []) {
-          if (below === undefined || isInside(below, manifestDir(dependency))) {
-            needed.add(declarationKey(dependency));
+      for (const [one, owners] of named) {
+        // An import none of whose bindings is used is no evidence about the code using it.
+        const unheld = owners.size === 0;
+        for (const dependency of nearestDeclaring(byName.get(one) ?? [], below)) {
+          const key = declarationKey(dependency);
+          needed.add(key);
+          if (unheld) {
+            live.add(key);
+          } else {
+            const held = holders.get(key) ?? new Set<string>();
+            owners.forEach((owner) => held.add(owner));
+            holders.set(key, held);
           }
         }
       }
     }
   }
   addNeededPeers(declared, peers, needed, ran);
+  addNeededPeers(declared, peers, live, ran);
+  const heldBy = new Map<string, readonly string[]>();
+  for (const [key, held] of holders) {
+    if (!live.has(key) && !ran.has(key)) {
+      heldBy.set(
+        key,
+        [...held].sort((a, b) => (a < b ? -1 : 1)),
+      );
+    }
+  }
   const users = new Map<string, number>();
   for (const used of uses.values()) {
     used.forEach((one) => users.set(one, (users.get(one) ?? 0) + 1));
@@ -876,5 +1066,21 @@ export function dependenciesOf(
       );
     }
   }
-  return { declared, needed, ran, unbuilt, lastUses };
+  const owners = new Map<string, Set<string>>();
+  for (const [owner, used] of uses) {
+    for (const one of used) {
+      if (names.has(one)) {
+        owners.set(one, (owners.get(one) ?? new Set<string>()).add(owner));
+      }
+    }
+  }
+  const fileLastUses = new Map<string, string[]>();
+  for (const [one, held] of [...owners].sort(([a], [b]) => (a < b ? -1 : 1))) {
+    const paths = new Set([...held].map((owner) => owner.replace(/:\d+:\d+$/u, "")));
+    const [path] = paths;
+    if (paths.size === 1 && path !== undefined && path !== PROJECT_OWNER) {
+      fileLastUses.set(path, [...(fileLastUses.get(path) ?? []), one]);
+    }
+  }
+  return { declared, needed, ran, unbuilt, lastUses, fileLastUses, heldBy };
 }

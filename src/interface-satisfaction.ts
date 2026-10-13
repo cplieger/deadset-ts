@@ -1,10 +1,10 @@
 /**
  * The interface-satisfaction class: a member is held back when a value of its class
- * reaches a position the checker types as an interface requiring that member, through an
- * `implements` entry, a typed initializer, an assignment, an argument, a return, an array
- * element, an object property or an `as` or `satisfies` operand. `this` is a value of its
- * class, and a position typed by a type parameter reaches its constraint. The contextual
- * lookup has no batch form, so it is asked only of a value typed as a target class.
+ * reaches a position typed as an interface, or an object type a type alias names, that
+ * requires the member: an `implements` entry, a typed initializer, an assignment, an
+ * argument, a return, an array element, an object property or an `as` or `satisfies`
+ * operand. `this` is a value of its class; a type parameter reaches its constraint. The
+ * contextual lookup has no batch form, so it is asked only of a value of a target class.
  */
 
 import {
@@ -20,6 +20,7 @@ import {
   isNewExpression,
   isObjectLiteralExpression,
   isSetAccessorDeclaration,
+  isTypeLiteralNode,
   ModifierFlags,
   SyntaxKind,
   type Expression,
@@ -72,6 +73,11 @@ interface Pair {
   readonly target: Type;
   readonly name: string;
   readonly sites: Node[];
+}
+
+/** Whether a type alias names one type: the client's type object carries the alias it was written through. */
+function aliased(type: Type): boolean {
+  return (type as { readonly aliasSymbol?: unknown }).aliasSymbol !== undefined;
 }
 
 /** Whether one node declares a static member, whose `this` is the class itself. */
@@ -225,24 +231,38 @@ export function interfaceSatisfaction<Brand>(input: DetectorInput<Brand>): reado
       return generic === undefined ? [] : [{ owner: generic, type: part }];
     });
 
-  const interfaceNames = new Map<number, string | undefined>();
-  /** The interface types one position's type is or holds, each with the interface's name. */
+  const interfaceNames = new Map<string, string | undefined>();
+  /**
+   * The interface types one position's type is or holds, each with the interface's name:
+   * an interface, or an object type literal a type alias names, directly or as a
+   * constituent of an intersection the alias names.
+   */
   const interfacesOf = (type: Type): readonly { type: Type; name: string }[] =>
     partsOf(type).flatMap((part): readonly { type: Type; name: string }[] => {
       if (part.isTypeParameter()) {
         const constraint = must(queries.constraintOf(part));
         return constraint === undefined ? [] : interfacesOf(constraint);
       }
-      if (!interfaceNames.has(part.id)) {
+      const named = aliased(part) ? part : aliased(type) ? type : undefined;
+      const key = `${String(part.id)}:${String(named?.id ?? "")}`;
+      if (!interfaceNames.has(key)) {
         const symbol = part.isObjectType() ? must(queries.symbolOfType(part)) : undefined;
+        const flags = symbol?.flags ?? 0;
         interfaceNames.set(
-          part.id,
-          symbol !== undefined && (symbol.flags & SymbolFlags.Interface) !== 0
-            ? symbol.name
-            : undefined,
+          key,
+          (flags & SymbolFlags.Interface) !== 0
+            ? symbol?.name
+            : (flags & SymbolFlags.TypeLiteral) !== 0 &&
+                named !== undefined &&
+                symbol?.declarations.some((handle) => {
+                  const node = project.declarationAt(handle)?.node;
+                  return node !== undefined && isTypeLiteralNode(node);
+                }) === true
+              ? must(queries.typeToString(named))
+              : undefined,
         );
       }
-      const name = interfaceNames.get(part.id);
+      const name = interfaceNames.get(key);
       return name === undefined ? [] : [{ type: part, name }];
     });
 

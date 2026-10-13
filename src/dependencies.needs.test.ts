@@ -274,4 +274,100 @@ describe("what one project's files need", () => {
     },
     LOAD_TIMEOUT,
   );
+
+  it(
+    "holds a binding written as a shorthand property by the declaration writing it",
+    () => {
+      const main = [...IMPORTS, "export function wrapped(): object { return { pad }; }", ""].join(
+        "\n",
+      );
+
+      expect(needsOf(main).uses).toEqual({
+        "src/main.ts:1:1": ["polyfill"],
+        "src/main.ts:5:17": ["left-pad"],
+      });
+    },
+    LOAD_TIMEOUT,
+  );
+});
+
+/** A type package declaring globals, an ambient module, and in a module file one more global. */
+const AUTOMATIC = {
+  "node_modules/@types/runner/package.json": '{ "name": "@types/runner", "types": "main.d.ts" }',
+  "node_modules/@types/runner/main.d.ts": '/// <reference path="more.d.ts" />\n',
+  "node_modules/@types/runner/more.d.ts": [
+    "declare function suite(name: string): void;",
+    "declare namespace Runner { interface Options {} }",
+    'declare module "runner:io" { export const io: number; }',
+    "",
+  ].join("\n"),
+  "node_modules/@types/augment/index.d.ts":
+    "export {};\ndeclare global { var augmented: number; }\n",
+  "node_modules/@types/modular/index.d.ts": "export declare const modular: number;\n",
+};
+
+describe("what the type packages a compiler includes automatically declare", () => {
+  it(
+    "holds a type package by each use of its globals and ambient modules that resolves to nothing",
+    () => {
+      const main = [
+        'import { io } from "runner:io";',
+        "export function tested(options: Runner.Options): number {",
+        '  suite("a");',
+        "  return io + augmented + Number(options);",
+        "}",
+        "declare const loose: any;",
+        "export const named = loose.suite + { suite: 1 }.suite;",
+        "",
+      ].join("\n");
+
+      expect(needsOf(main, [], AUTOMATIC)).toEqual({
+        uses: { "src/main.ts:2:17": ["@types/augment", "@types/runner"] },
+        at: { "src/main.ts": ["@types/augment", "@types/runner"] },
+        unanswered: [],
+      });
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "holds none where the configuration lists its types",
+    () => {
+      const main = 'export function tested(): void { suite("a"); }\n';
+      const tsconfig = {
+        compilerOptions: { strict: true, module: "NodeNext", noEmit: true, types: [] },
+        include: ["src"],
+      };
+
+      expect(
+        needsOf(main, [], { ...AUTOMATIC, "tsconfig.json": JSON.stringify(tsconfig) }),
+      ).toEqual({ uses: {}, at: {}, unanswered: [] });
+    },
+    LOAD_TIMEOUT,
+  );
+});
+
+describe("what a script runs outside the program needs", () => {
+  it(
+    "reads the JavaScript file a script or a workflow step runs, and each file it loads, against the manifest",
+    () => {
+      const files = {
+        "package.json": JSON.stringify({
+          name: "app",
+          private: true,
+          scripts: { build: "node ./scripts/build.mjs --fast", glob: "node scripts/*.js" },
+          devDependencies: { bundler: "1", ci: "1", unused: "1" },
+        }),
+        "scripts/build.mjs": 'import { make } from "./base.cjs";\nmake();\n',
+        "scripts/base.cjs": 'module.exports = { make: () => require("bundler") };\n',
+        "scripts/ci.js": 'require("ci");\n',
+        ".github/workflows/ci.yml": "jobs:\n  a:\n    steps:\n      - run: node scripts/ci.js\n",
+      };
+
+      expect(needsOf("export const one = 1;\n", [], files).at).toEqual({
+        "package.json": ["bundler", "ci"],
+      });
+    },
+    LOAD_TIMEOUT,
+  );
 });

@@ -8,15 +8,11 @@ export interface DirectoryEntry {
 }
 
 /**
- * The platform one run reads: the filesystem, the directory relative paths
- * resolve against, and the version of the package this analyzer was installed
- * from.
- *
- * It is a parameter rather than an import because a published module that reads
- * the filesystem directly carries the whole platform's type surface into every
- * consumer's compile, and because the run's own reads are then the one thing a
- * caller can watch. The command line binds it to the platform it runs on; nothing
- * under this module does.
+ * The platform one run reads: the filesystem, the working directory and the analyzer's
+ * installed version. A run may keep what it reads for the host's life, so a caller whose
+ * tree changes passes a new host. It is a parameter, not an import, so a published module
+ * carries no platform type surface into a consumer's compile and a caller can watch the
+ * run's reads. The command line binds it to the platform; nothing under this module does.
  */
 export interface Host {
   /** The directory a relative path resolves against. */

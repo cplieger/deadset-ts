@@ -6,11 +6,17 @@
 
 import type { SourceFile } from "@typescript/native/ast";
 import { commonDirectory, emittedFrom } from "./emit-map.ts";
-import { dirnamePath, relativePath, resolvePath } from "./paths.ts";
+import { dirnamePath, joinPath, relativePath, resolvePath } from "./paths.ts";
 import type { ProjectView } from "./session.ts";
 
 /** The one character a subpath pattern of a manifest's `exports` holds. */
 const SUBPATH_WILDCARD = "*";
+
+/** The extension a source file's name drops when the project writes it out. */
+const SOURCE_EXTENSION = /\.[cm]?[jt]sx?$/u;
+
+/** The extensions the project may write a source file's output under. */
+const OUTPUT_EXTENSIONS = [".js", ".mjs", ".cjs", ".jsx", ".d.ts", ".d.mts", ".d.cts"] as const;
 
 /**
  * Whether one path is what a subpath pattern stands for: the text before the
@@ -40,6 +46,47 @@ export interface SourceFiles {
   named(path: string): readonly SourceFile[];
   /** The directories the project writes its output below, absolute: its output and declaration directories. */
   readonly outputDirs: readonly string[];
+  /** The output paths, absolute, the project writes one own file to, each of which {@link named} reads back to it. */
+  writtenAs(file: SourceFile): readonly string[];
+  /**
+   * The own files one absolute path names read as an output of the project written below
+   * `outputDir`: a manifest that ships from its build directory names its entries there.
+   */
+  namedAsOutput(outputDir: string, path: string): readonly SourceFile[];
+}
+
+/** The first own file of the paths given that the project holds, or none. */
+function heldAt(
+  byName: ReadonlyMap<string, SourceFile>,
+  paths: readonly string[],
+): readonly SourceFile[] {
+  for (const candidate of paths) {
+    const file = byName.get(candidate);
+    if (file !== undefined) {
+      return [file];
+    }
+  }
+  return [];
+}
+
+/** Where one project writes its output, and the directory it writes it from, absolute. */
+function layoutOf<Brand>(
+  project: ProjectView<Brand>,
+  fileNames: readonly string[],
+): {
+  readonly outDir: string | undefined;
+  readonly declarationDir: string | undefined;
+  readonly sourceDir: string;
+} {
+  const options = project.program.getCompilerOptions();
+  const configDir = dirnamePath(project.configFile);
+  const at = (option: string | undefined): string | undefined =>
+    option === undefined ? undefined : resolvePath(configDir, option);
+  return {
+    outDir: at(options.outDir),
+    declarationDir: at(options.declarationDir),
+    sourceDir: at(options.rootDir) ?? commonDirectory(fileNames),
+  };
 }
 
 /**
@@ -62,14 +109,7 @@ export function sourceFilesOf<Brand>(project: ProjectView<Brand>, targetRoot: st
     }
   }
 
-  const options = project.program.getCompilerOptions();
-  const configDir = dirnamePath(project.configFile);
-  const at = (option: string | undefined): string | undefined =>
-    option === undefined ? undefined : resolvePath(configDir, option);
-  const outDir = at(options.outDir);
-  const declarationDir = at(options.declarationDir);
-  const sourceDir = at(options.rootDir) ?? commonDirectory([...byName.keys()]);
-
+  const { outDir, declarationDir, sourceDir } = layoutOf(project, [...byName.keys()]);
   const layout = { outDir, declarationDir, sourceDirs: [sourceDir] };
 
   /** The source paths one written path may stand for, the path itself first. */
@@ -79,15 +119,25 @@ export function sourceFilesOf<Brand>(project: ProjectView<Brand>, targetRoot: st
     byPath,
     byName,
     outputDirs: [...new Set([outDir, declarationDir])].filter((dir) => dir !== undefined),
+    writtenAs: (file) => {
+      const below = relativePath(sourceDir, file.fileName);
+      if (below === undefined) {
+        return [];
+      }
+      const written = [outDir, declarationDir].flatMap((dir) =>
+        dir === undefined
+          ? []
+          : OUTPUT_EXTENSIONS.map((extension) =>
+              joinPath(dir, below.replace(SOURCE_EXTENSION, extension)),
+            ),
+      );
+      return [...new Set(written)].filter((path) => heldAt(byName, candidates(path))[0] === file);
+    },
+    namedAsOutput: (outputDir, path) =>
+      heldAt(byName, emittedFrom(path, { outDir: outputDir, sourceDirs: [sourceDir] })),
     named: (path) => {
       if (!path.includes(SUBPATH_WILDCARD)) {
-        for (const candidate of candidates(path)) {
-          const held = byName.get(candidate);
-          if (held !== undefined) {
-            return [held];
-          }
-        }
-        return [];
+        return heldAt(byName, candidates(path));
       }
       const patterns = candidates(path).filter((candidate) => candidate.includes(SUBPATH_WILDCARD));
       return [...byName.values()].filter((file) =>

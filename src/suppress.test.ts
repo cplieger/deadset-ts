@@ -152,6 +152,49 @@ describe("the ledger over a run's records", () => {
     expect([ledger.withheld(first), ledger.withheld(second)]).toEqual([true, true]);
   });
 
+  it("tells two parameters of one declaration apart by their own references", () => {
+    const parameter = (name: string, column: number): Finding => ({
+      ...finding("DS1801", "helper", 4, "parameter"),
+      position: { path: "src/lib.ts", line: 4, column, endLine: 4 },
+      symbol: {
+        ref: `ts://@example/app/src/lib.ts#helper(${name})`,
+        holder: "ts://@example/app/src/lib.ts#helper",
+        kind: "parameter",
+        name,
+        sizeLines: 1,
+      },
+    });
+    const [first, second] = [parameter("first", 17), parameter("second", 24)];
+    const named = ledgerOf([{ ...recordOf(second, "ignore"), bound: "" }], [first, second], OPEN);
+    const holder = ledgerOf(
+      [{ ...recordOf(first, "ignore"), symbol: "ts://@example/app/src/lib.ts#helper", bound: "" }],
+      [first, second],
+      OPEN,
+    );
+
+    expect([named.withheld(first), named.withheld(second)]).toEqual([false, true]);
+    expect([holder.withheld(first), holder.withheld(second)]).toEqual([true, true]);
+    expect(isSymbolRef(first.symbol.ref)).toBe(true);
+  });
+
+  it("withholds through one entry the parameters of one name that two functions of one holder declare", () => {
+    const callback = (line: number): Finding => ({
+      ...finding("DS1801", "", line, "parameter"),
+      position: { path: "src/lib.ts", line, column: 20, endLine: line },
+      symbol: {
+        ref: "ts://@example/app/src/lib.ts#(value)",
+        holder: "ts://@example/app/src/lib.ts#",
+        kind: "parameter",
+        name: "value",
+        sizeLines: 1,
+      },
+    });
+    const [first, second] = [callback(4), callback(5)];
+    const ledger = ledgerOf([{ ...recordOf(first, "ignore"), bound: "" }], [first, second], OPEN);
+
+    expect([ledger.withheld(first), ledger.withheld(second)]).toEqual([true, true]);
+  });
+
   it("is dormant for a part kind only when the dials withhold every part finding it claims", () => {
     const at = (column: number): Finding => ({
       ...finding("DS1801", "helper", 4, "parameter"),

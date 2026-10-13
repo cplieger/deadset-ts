@@ -1,14 +1,10 @@
 /**
- * The decorator class: a member a decorator expression is attached to, and every
- * member of a class a decorator expression is attached to, is held back, because the
- * decorator receives the member or the class when the class is defined and may reach
- * the member by its name.
- *
- * The rule is read from the tree alone: a decorator is attached where it is written.
- * The use the decorator itself makes of what it decorates is the reference pass's,
- * which records it as a `decorator` reference; this class records only that the
- * declaration is held back, and the member set of a decorated class is every member
- * the inventory holds for the class, static members included.
+ * The decorator class: a member a decorator expression is attached to, and every member
+ * of a class one is attached to but the member a parameter property declares, is held
+ * back, because the decorator may reach the member by its name. The rule is read from
+ * the tree alone. The decorator's own use of what it decorates is the reference pass's
+ * `decorator` reference; this class records only that the declaration is held back,
+ * static members of a decorated class included.
  */
 
 import type { Node } from "@typescript/native/ast";
@@ -44,25 +40,39 @@ export function decorator<Brand>(input: DetectorInput<Brand>): readonly Evidence
     }
   }
 
-  const found: Evidence[] = [];
+  const decorated: {
+    readonly symbol: InventorySymbol;
+    readonly detail: string;
+    readonly site: Evidence["site"];
+  }[] = [];
+  // A decorated class's container passes each constructor argument, which keeps the
+  // parameter, not the member a parameter property stores it in.
+  const parameterMembers = new Set<string>();
   for (const file of project.ownSourceFiles()) {
     const visit = (node: Node): void => {
       const id = held.declarations.get(nodeKey(file, node));
       const symbol = id === undefined ? undefined : byId.get(id);
+      if (id !== undefined && isParameterProperty(node)) {
+        parameterMembers.add(id);
+      }
       // A parameter property's decorator is attached to its parameter, and to no member.
       if (symbol !== undefined && DECORATED.has(symbol.kind) && !isParameterProperty(node)) {
         for (const attached of decoratorsOf(node)) {
-          const detail = `decorated by ${spelledDecorator(attached)}`;
-          const site = renderPosition(file, targetRoot, attached.getStart());
-          const reached = symbol.kind === "class" ? (membersOf.get(symbol.id) ?? []) : [symbol];
-          for (const member of reached) {
-            found.push({ id: member.id, detail, site });
-          }
+          decorated.push({
+            symbol,
+            detail: `decorated by ${spelledDecorator(attached)}`,
+            site: renderPosition(file, targetRoot, attached.getStart()),
+          });
         }
       }
       node.forEachChild(visit);
     };
     file.forEachChild(visit);
   }
-  return found;
+  return decorated.flatMap(({ symbol, detail, site }) =>
+    (symbol.kind === "class"
+      ? (membersOf.get(symbol.id) ?? []).filter((member) => !parameterMembers.has(member.id))
+      : [symbol]
+    ).map((member) => ({ id: member.id, detail, site })),
+  );
 }

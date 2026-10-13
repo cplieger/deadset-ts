@@ -88,3 +88,26 @@ describe("a member a unique symbol keys", () => {
     ).toEqual(["DS1301 Both.[b.mark] 5"]);
   });
 });
+
+describe("a member a well-known iteration symbol keys", () => {
+  it("is read by a for-of statement, a spread and a for-await statement over a value of its type", () => {
+    expect(
+      findings({
+        "src/main.ts": [
+          "class Bag {",
+          "  [Symbol.iterator](): Iterator<number> { return [1].values(); }",
+          "  [Symbol.asyncIterator](): AsyncIterator<number> { return (async function* () { yield 1; })(); }",
+          "}",
+          "class Pair {",
+          "  [Symbol.iterator](): Iterator<number> { return [1, 2].values(); }",
+          "}",
+          "interface Stream { [Symbol.asyncIterator](): AsyncIterator<number> }",
+          "for (const n of new Bag()) console.log(n);",
+          "console.log([...new Pair()]);",
+          "export async function drain(s: Stream): Promise<void> { for await (const n of s) console.log(n); }",
+          "",
+        ].join("\n"),
+      }),
+    ).toEqual(["DS1003 Bag.[Symbol.asyncIterator] 3"]);
+  });
+});

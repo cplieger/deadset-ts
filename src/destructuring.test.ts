@@ -138,7 +138,7 @@ describe("the members a destructuring reads", () => {
 
   it("accounts for every request it makes", () => {
     expect(RESOLVED?.cost.patternBatches, "one batch for the one module holding patterns").toBe(1);
-    expect(RESOLVED?.cost.typedLookups, "and the typed reads' batches of argument types").toBe(10);
+    expect(RESOLVED?.cost.typedLookups, "and the typed reads' batches of argument types").toBe(14);
     expect(ANALYZED.referenceRequests, "and the client measured no other").toBe(
       accounted(RESOLVED?.cost),
     );
@@ -171,6 +171,7 @@ describe("the members a destructuring reads", () => {
       "a generator's yielded value, and both values a generator yields and returns",
     ).toEqual([
       "unit.ts:18:10 Row.key destructured",
+      "unit.ts:18:19 Bag.[Symbol.iterator] keyed",
       "unit.ts:20:10 Row.key by-name",
       "unit.ts:20:10 Other.key by-name",
     ]);
@@ -204,8 +205,10 @@ describe("the members a destructuring reads", () => {
       "a string key spelled as the checker's symbol key, and a unique symbol named iterator",
     ).toEqual([
       "unit.ts:26:10 Row.key destructured",
+      "unit.ts:26:19 Forged.[Symbol.iterator] keyed",
       "unit.ts:28:10 Row.key by-name",
       "unit.ts:28:10 Other.key by-name",
+      "unit.ts:28:19 Named.[Symbol.iterator] keyed",
     ]);
   });
 

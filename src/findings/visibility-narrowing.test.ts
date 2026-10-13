@@ -456,3 +456,34 @@ describe("an export of a project written for the case", () => {
     ).toEqual(["DS1103 helper", "DS1103 retired", "DS1103 deadCaller"]);
   });
 });
+
+describe("an export used only in a file a script token or a configuration string names", () => {
+  it("is a redundant export keyword, as in a file nothing names, while an entry file's export is not", () => {
+    const root = writeProject({
+      "package.json": JSON.stringify({
+        name: "@example/scripts",
+        private: true,
+        type: "module",
+        scripts: { start: "node src/run.ts" },
+      }),
+      "src/main.ts": "export const label = 1;\nconsole.log(label);\n",
+      "src/run.ts": "export function step(): number { return 1; }\nconsole.log(step());\n",
+    });
+    try {
+      const { config } = resolve({
+        repository: JSON.stringify({
+          target: { kind: "application" },
+          ts: { entry_files: ["src/main.ts"] },
+        }),
+        repositoryLabel: "deadset.json",
+      });
+      expect(
+        findingsOf(emitterInputOf(root, config))
+          .filter((finding) => finding.code === "DS1104")
+          .map((finding) => `${finding.symbol.name} ${finding.position.path}`),
+      ).toEqual(["step src/run.ts"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});

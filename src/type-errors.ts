@@ -8,6 +8,7 @@
 
 import {
   isClassDeclaration,
+  isFunctionLikeDeclaration,
   isNoSubstitutionTemplateLiteral,
   isPropertyAccessExpression,
   isStringLiteral,
@@ -25,6 +26,7 @@ import { isAnswered } from "./query.ts";
 import type { TypeErrorSkip } from "./report.ts";
 import type { Engine, ProjectView } from "./session.ts";
 import type { SetupFailure } from "./setup-failure.ts";
+import { findWorkspace, type Workspace } from "./workspace.ts";
 
 /** The compiler's codes for an import whose module it cannot find. */
 const MODULE_NOT_FOUND: ReadonlySet<number> = new Set([2307, 2792]);
@@ -78,6 +80,8 @@ interface ErrorContext {
   readonly targetRoot: string;
   /** The project configuration's `paths` mapping. */
   readonly paths: PathsMapping;
+  /** Whether one manifest is a workspace member's, whose dependencies the workspace installs. */
+  readonly member: (manifest: string) => boolean;
 }
 
 /** One configuration's `paths` mapping, its targets read against `base`. */
@@ -241,7 +245,11 @@ function expectedModule(
     name === undefined
       ? undefined
       : declaringManifest(host, dirnamePath(importer), targetRoot, name);
-  if (manifest === undefined) {
+  // No run requires a nested package that is no workspace member to be installed.
+  if (
+    manifest === undefined ||
+    (dirnamePath(manifest) !== targetRoot && !context.member(manifest))
+  ) {
     return undefined;
   }
   const where = relativePath(targetRoot, manifest) ?? manifest;
@@ -249,13 +257,27 @@ function expectedModule(
 }
 
 /**
- * The unit a type error at one offset skips: the class member holding it where a
- * top-level class does, else the top-level statement.
+ * The unit a type error at one offset skips: the innermost function holding it, else the
+ * class member holding it where a top-level class does, else the top-level statement.
  */
 function unitAt(file: SourceFile, offset: number): Node | undefined {
   const statement = file.statements.find((one) => one.pos <= offset && offset < one.end);
-  if (statement === undefined || !isClassDeclaration(statement)) {
-    return statement;
+  if (statement === undefined) {
+    return undefined;
+  }
+  let innermost: Node | undefined;
+  const visit = (node: Node): void => {
+    if (offset < node.getStart() || offset >= node.end) {
+      return;
+    }
+    if (isFunctionLikeDeclaration(node)) {
+      innermost = node;
+    }
+    node.forEachChild(visit);
+  };
+  visit(statement);
+  if (innermost !== undefined || !isClassDeclaration(statement)) {
+    return innermost ?? statement;
   }
   return statement.members.find((one) => one.pos <= offset && offset < one.end) ?? statement;
 }
@@ -274,8 +296,18 @@ function messageOf(text: string, targetRoot: string): string {
 export function readErrors<Brand>(
   project: ProjectView<Brand>,
   errors: readonly LocatedDiagnostic[],
-  context: ErrorContext,
+  where: Omit<ErrorContext, "member">,
 ): ProjectErrorReading {
+  let workspace: Workspace | undefined | null = null;
+  const context: ErrorContext = {
+    ...where,
+    member: (manifest) => {
+      if (workspace === null) {
+        workspace = findWorkspace(where.host, where.targetRoot, () => undefined);
+      }
+      return workspace?.memberOf(manifest) !== undefined;
+    },
+  };
   const files = new Map(project.ownSourceFiles().map((file) => [file.fileName, file]));
   const missing: SetupFailure[] = [];
   const skips: Skip[] = [];

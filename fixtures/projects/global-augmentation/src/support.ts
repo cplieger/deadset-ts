@@ -1,3 +1,5 @@
+import "vitest";
+
 declare global {
   interface ImportMeta {
     fixtures(pattern: string): Record<string, string>;

@@ -112,6 +112,7 @@ interface Doc {
   readonly injectionRegistrations: readonly DeclarationEntry[] | undefined;
   readonly lifecycleContracts: readonly LifecycleContract[] | undefined;
   readonly serializers: readonly DeclarationEntry[] | undefined;
+  readonly rootsComplete: boolean | undefined;
 }
 
 /** One document the resolution reads, with the origin its settings carry. */
@@ -894,6 +895,7 @@ function readDoc(value: unknown, label: string): Doc {
     ),
     lifecycleContracts: readLifecycleContracts(ts, label),
     serializers: readDeclarations(ts, "serializers", "ts.serializers", label),
+    rootsComplete: readBoolean(ts, "roots_complete", "ts.roots_complete", label),
   };
 }
 
@@ -1191,6 +1193,7 @@ function settleAll(inputs: Inputs): { config: Config; provenance: Map<string, Or
         (doc) => doc.lifecycleContracts,
       ),
       serializers: at("ts.serializers", defaults.ts.serializers, (doc) => doc.serializers),
+      rootsComplete: at("ts.roots_complete", defaults.ts.rootsComplete, (doc) => doc.rootsComplete),
     },
   };
 

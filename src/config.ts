@@ -175,6 +175,8 @@ export interface TSSection {
   readonly injectionRegistrations: readonly DeclarationEntry[];
   readonly lifecycleContracts: readonly LifecycleContract[];
   readonly serializers: readonly DeclarationEntry[];
+  /** Whether the maintainer declares the roots the analysis finds every root the target has. */
+  readonly rootsComplete: boolean;
 }
 
 /**
@@ -253,6 +255,7 @@ export function defaultConfig(): Config {
       injectionRegistrations: [],
       lifecycleContracts: [],
       serializers: [],
+      rootsComplete: false,
     },
   };
 }

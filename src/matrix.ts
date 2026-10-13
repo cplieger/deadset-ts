@@ -30,6 +30,8 @@ export interface Configured {
   readonly testFiles: readonly string[];
   /** The paths of the test-support files, which only test code imports. */
   readonly supportFiles?: readonly string[] | undefined;
+  /** The ids of the ambient declarations, which describe code the target does not implement. */
+  readonly ambient?: ReadonlySet<string> | undefined;
   /**
    * The paths of the workspace-package files the configuration holds but does not
    * compile itself. Their declarations count in its graph and its verdict on them is no
@@ -160,7 +162,7 @@ export function matrixOf(per: readonly Configured[]): Matrix {
   return {
     configurations: per.map((one) => one.configuration),
     graphs: per.map((one) =>
-      graphOf(one.symbols, one.references, one.roots, one.testFiles, one.supportFiles),
+      graphOf(one.symbols, one.references, one.roots, one.testFiles, one.supportFiles, one.ambient),
     ),
     union: graphOf(
       symbols,
@@ -168,6 +170,7 @@ export function matrixOf(per: readonly Configured[]): Matrix {
       per.flatMap((one) => one.roots),
       [...new Set(per.flatMap((one) => one.testFiles))],
       [...new Set(per.flatMap((one) => one.supportFiles ?? []))],
+      new Set(per.flatMap((one) => [...(one.ambient ?? [])])),
     ),
     heldIn: symbols.map((symbol) => holders.get(symbol.id) ?? []),
     dependents,
@@ -199,10 +202,7 @@ export function sweepMatrix(matrix: Matrix, input: SweepInput): SweepResult {
   );
 
   const union = matrix.union;
-  const dead = union.symbols.map(() => false);
-  const testOfDeadCode = union.symbols.map(() => false);
   const heldBy: (string | undefined)[] = union.symbols.map(() => undefined);
-  const unreferencedTest = union.symbols.map(() => false);
   const testReached = reachedWithTheTests(union, [
     ...input.marked,
     ...(input.exempt ?? []).map((record) => record.id),
@@ -223,6 +223,7 @@ export function sweepMatrix(matrix: Matrix, input: SweepInput): SweepResult {
       (edge) =>
         union.test[edge.to] === true ||
         union.support[edge.to] === true ||
+        union.ambient[edge.to] === true ||
         union.subject[edge.to] !== true ||
         judged[edge.to] !== undefined,
     );
@@ -239,10 +240,7 @@ export function sweepMatrix(matrix: Matrix, input: SweepInput): SweepResult {
       heldBy[union.parent[at] ?? OUTSIDE] ??
       (union.support[at] === true && testRefs > 0 && !admitted ? symbol.id : undefined);
     const unreferenced = union.test[at] === true && !admitted && testReached[at] !== true;
-    dead[at] = true;
-    testOfDeadCode[at] = admitted;
     heldBy[at] = heldByTests;
-    unreferencedTest[at] = unreferenced;
     const productionRefs = union.made[at]?.production ?? 0;
     const counted = all.every((candidate) => candidate.relation === "reference-counting");
     candidates.push({
@@ -264,14 +262,34 @@ export function sweepMatrix(matrix: Matrix, input: SweepInput): SweepResult {
   return {
     liveUnder,
     candidates,
-    components: componentsOf(
-      union,
-      dead.map((one, at) => one && heldBy[at] === undefined),
-      testOfDeadCode,
-      unreferencedTest,
-      positionsOf(union, matrix.dependents, liveUnder),
-    ),
+    components: deadComponents(matrix, { liveUnder, candidates }, new Set()),
   };
+}
+
+/**
+ * The dead components of one sweep over the union, with the file declarations at `files`
+ * dead as well: a file that is deleted whole takes the declarations it holds and every
+ * dead declaration only its top level references with it.
+ */
+export function deadComponents(
+  matrix: Matrix,
+  result: Pick<SweepResult, "liveUnder" | "candidates">,
+  files: ReadonlySet<number>,
+): readonly Component[] {
+  const union = matrix.union;
+  const byId = new Map(result.candidates.map((candidate) => [candidate.id, candidate]));
+  const candidateAt = (at: number): MatrixCandidate | undefined =>
+    byId.get(union.symbols[at]?.id ?? "");
+  return componentsOf(
+    union,
+    union.symbols.map((_symbol, at) => {
+      const candidate = candidateAt(at);
+      return files.has(at) || (candidate !== undefined && candidate.heldByTests === undefined);
+    }),
+    union.symbols.map((_symbol, at) => candidateAt(at)?.testOfDeadCode === true),
+    union.symbols.map((_symbol, at) => candidateAt(at)?.unreferencedTest === true),
+    positionsOf(union, matrix.dependents, result.liveUnder),
+  );
 }
 
 /**
