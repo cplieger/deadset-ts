@@ -64,6 +64,12 @@ function entersByName(kinds: ReadonlySet<RootKind> | undefined): boolean {
 }
 
 /**
+ * The root kinds whose root of a file enters no export by name: a document's import roots
+ * each export it imports, so an export it does not import is judged as in any file.
+ */
+const PER_NAME: ReadonlySet<RootKind> = new Set<RootKind>(["document-import"]);
+
+/**
  * Whether the roots of a declaration's file enter it by name: a test runner's root
  * enters only an export the runner calls, so another export of a test file is judged.
  */
@@ -72,7 +78,7 @@ function fileEntersByName(
   symbol: InventorySymbol,
 ): boolean {
   const entering = [...(kinds ?? [])].filter(
-    (kind) => !PUBLISHING.has(kind) && !RUN_ONLY.has(kind),
+    (kind) => !PUBLISHING.has(kind) && !RUN_ONLY.has(kind) && !PER_NAME.has(kind),
   );
   return (
     entering.some((kind) => kind !== "test-runner") || (entering.length > 0 && runnerCalls(symbol))
@@ -222,7 +228,7 @@ function narrowing(
  * export no code outside the target can import, because the manifest declares
  * `exports` and no root reaches it. Each arm yields to a more specific kind, so one
  * declaration is reported once: a test whose every subject is dead, an interface, a
- * declaration only a test file references, and a deprecated one.
+ * declaration only a test file references or a test that stays keeps, and a deprecated one.
  */
 function unreachable(
   facts: Facts,
@@ -237,7 +243,7 @@ function unreachable(
     (facts.rootedBy[at]?.size ?? 0) > 0 ||
     candidate.testOfDeadCode ||
     symbol.kind === "interface" ||
-    (candidate.productionRefs === 0 && candidate.testRefs > 0) ||
+    (candidate.testRefs > 0 && (candidate.productionRefs === 0 || candidate.keptByTests)) ||
     (candidate.productionRefs === 0 && input.deprecated.has(symbol.id))
   ) {
     return undefined;

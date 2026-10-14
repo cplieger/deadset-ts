@@ -6,7 +6,7 @@
  * test code.
  */
 
-import { CONVENTION_ROWS } from "./convention-rows.ts";
+import { CONVENTION_ROWS, TEST_LIBRARIES, TEST_LIBRARY_SCOPES } from "./convention-rows.ts";
 import { packageOfSpecifier } from "./dependencies.ts";
 import type { InventorySymbol } from "./inventory.ts";
 import type { Reference } from "./references.ts";
@@ -17,16 +17,12 @@ const SKIP_ROOT = "type-error";
 
 /**
  * The test runners and test libraries an import of which is test evidence: each runner a
- * convention row reads test files for, the platform's own runner, and the libraries below.
+ * convention row reads test files for, and the convention table's test libraries.
  */
 const TEST_PACKAGES: ReadonlySet<string> = new Set([
   ...CONVENTION_ROWS.filter((row) => row.testFiles !== undefined).map((row) => row.package),
-  "node:test",
-  "@playwright/test",
+  ...TEST_LIBRARIES,
 ]);
-
-/** The scopes every package of which is a test library. */
-const TEST_SCOPES = ["@testing-library/"] as const;
 
 /**
  * The Node.js built-in modules a bare specifier names, which are no package. The set is
@@ -94,7 +90,7 @@ function namesTestPackage(specifier: string): boolean {
   const name = specifier.startsWith("node:") ? specifier : packageOfSpecifier(specifier);
   return (
     name !== undefined &&
-    (TEST_PACKAGES.has(name) || TEST_SCOPES.some((scope) => name.startsWith(scope)))
+    (TEST_PACKAGES.has(name) || TEST_LIBRARY_SCOPES.some((scope) => name.startsWith(scope)))
   );
 }
 
@@ -134,13 +130,21 @@ function evidenceReader(
   };
 }
 
+/** The files only tests reach, split by whether each carries test evidence of its own. */
+interface TestReached {
+  /** The test-support files: test code. */
+  readonly support: ReadonlySet<string>;
+  /** The files only tests reach that are no test-support file: production code only tests use. */
+  readonly testUsed: ReadonlySet<string>;
+}
+
 /**
  * The files of one project that are test-support code, below the target root: the
  * largest set of files a test file reaches, none of them a test file or holding a root,
  * each carrying test evidence of its own, whose every user outside the set is a test
- * file. A root has a caller outside the reference graph: a runtime, a tool, a
- * configuration, or a consumer of a library's published API. `testFiles` are the files
- * the test-file rules classified.
+ * file; and the files only tests reach that are not among them. A root has a caller
+ * outside the reference graph: a runtime, a tool, a configuration, or a consumer of a
+ * library's published API. `testFiles` are the files the test-file rules classified.
  */
 export function testSupportFiles(
   symbols: readonly InventorySymbol[],
@@ -148,7 +152,7 @@ export function testSupportFiles(
   roots: readonly Root[],
   testFiles: readonly string[],
   evidence: TestEvidence,
-): ReadonlySet<string> {
+): TestReached {
   const fileOf = new Map(symbols.map((symbol) => [symbol.id, symbol.position.path]));
   const users = new Map<string, Set<string>>();
   const uses = new Map<string, Set<string>>();
@@ -203,7 +207,7 @@ export function testSupportFiles(
   const support = withoutOutsideUsers(
     new Set([...onlyTests].filter((path) => carries(onlyTests, path))),
   );
-  return support;
+  return { support, testUsed: new Set([...onlyTests].filter((path) => !support.has(path))) };
 }
 
 /** The references with every one a test-support file makes counted as a test reference. */

@@ -977,7 +977,7 @@ function readRun<Extra>(
   }));
   // Test-support code is code only test code imports in any configuration of the run: a
   // configuration that holds no test file says nothing about what the tests import.
-  const support = testSupportFiles(
+  const { support, testUsed } = testSupportFiles(
     withOutside.flatMap((one) => one.projectRead.held.symbols),
     withOutside.flatMap((one) => one.references),
     withOutside.flatMap((one) => one.projectRead.rooted.liveUnderReachability),
@@ -999,6 +999,7 @@ function readRun<Extra>(
     const made = supportReferences([...one.references, ...(satisfied?.references ?? [])], support);
     const held = new Set(projectRead.held.symbols.map((symbol) => symbol.position.path));
     const supportFiles = [...support].filter((path) => held.has(path)).sort();
+    const testUsedFiles = [...testUsed].filter((path) => held.has(path)).sort();
     const configured: Configured = {
       configuration: projectRead.configuration,
       symbols: projectRead.held.symbols,
@@ -1006,6 +1007,7 @@ function readRun<Extra>(
       roots: projectRead.rooted.liveUnderReachability,
       testFiles: [...one.testFiles, ...supportFiles],
       ...(supportFiles.length === 0 ? {} : { supportFiles }),
+      ...(testUsedFiles.length === 0 ? {} : { testUsedFiles }),
       ...(projectRead.held.ambient.size === 0 ? {} : { ambient: projectRead.held.ambient }),
       ...(projectRead.referenceOnly.length === 0
         ? {}

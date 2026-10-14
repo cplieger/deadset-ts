@@ -198,6 +198,34 @@ describe("an interface a file that is no module declares", () => {
       }),
     ).toEqual(["DS1203 ImportMeta.spare"]);
   });
+
+  it("in a declaration file is used by a test file's read of a member it declares, as production code", () => {
+    expect(
+      findingsIn({
+        "deadset.json":
+          '{ "target": { "kind": "application" }, "analysis": { "min_confidence": "possible" } }\n',
+        "env.d.ts":
+          "interface ImportMeta {\n  glob(pattern: string): Record<string, unknown>;\n}\n",
+        "main.ts": "export const ready = true;\n",
+        "sheets.test.ts":
+          'const sheets = import.meta.glob("./css/*.css");\n\nexport function count(): number {\n  return Object.keys(sheets).length;\n}\n',
+      }),
+    ).toEqual([]);
+  });
+
+  it("in a declaration file that merges into no outside interface stays used only by the test that reads it", () => {
+    expect(
+      findingsIn({
+        "deadset.json":
+          '{ "target": { "kind": "application" }, "analysis": { "min_confidence": "possible" } }\n',
+        "env.d.ts":
+          "interface OwnGlobal {\n  read(): string;\n}\ndeclare const ownGlobal: OwnGlobal;\n",
+        "main.ts": "export const ready = true;\n",
+        "read.test.ts":
+          "const value = ownGlobal.read();\n\nexport function check(): string {\n  return value;\n}\n",
+      }),
+    ).toEqual(["DS1004 ownGlobal", "DS1201 OwnGlobal", "DS1502 env.d.ts"]);
+  });
 });
 
 describe("a module augmentation no import of the target names", () => {

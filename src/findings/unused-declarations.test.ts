@@ -1031,13 +1031,13 @@ describe("a member naming a type parameter of its type beside another member", (
     ).toEqual(["DS1003 Pair.first", "DS1004 Pair.second"]);
   });
 
-  it("is reported once dead code and a test file read the other as often", () => {
+  it("is reported once dead code and a test file read the other as often, the test keeping the other as test-only use", () => {
     expect(
       reported(
         `${PAIR}function deadReader(): string | undefined {\n  return pair.second;\n}\n`,
         'import { pair } from "./main.js";\n\nconsole.log(pair.second);\n',
       ),
-    ).toEqual(["DS1003 Pair.first", "DS1003 Pair.second", "DS1002 deadReader"]);
+    ).toEqual(["DS1003 Pair.first", "DS1004 Pair.second", "DS1002 deadReader"]);
   });
 
   it("is reported deprecated though both are brands, the deprecated code naming no brand", () => {
@@ -1049,5 +1049,53 @@ describe("a member naming a type parameter of its type beside another member", (
         ).replace("  readonly second?: P;", "  /** @deprecated */\n  readonly second?: P;"),
       ),
     ).toEqual(["DS1006 Pair.first", "DS1006 Pair.second"]);
+  });
+});
+
+describe("a declaration only dead code references in production", () => {
+  /** The family's findings of an application whose test file is `test`, as `code name: message`. */
+  function reported(test: string): string[] {
+    const root = writeProject({
+      "package.json": '{ "name": "@example/app", "type": "module", "main": "./src/main.ts" }\n',
+      "src/main.ts": 'import { now } from "./clock.js";\n\nconsole.log(now());\n',
+      "src/clock.ts":
+        "export function now(): number {\n  return Date.now();\n}\n\nexport const fixedNow = 1;\n\nexport function stale(): number {\n  return fixedNow;\n}\n",
+      "src/clock.test.ts": test,
+    });
+    try {
+      return family(
+        emitterInputOf(
+          root,
+          configOf(
+            '{ "target": { "kind": "application" }, "analysis": { "min_confidence": "possible" } }',
+          ),
+        ),
+      ).map((finding) => `${finding.code} ${finding.symbol.name}: ${finding.message}`);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  it("is test-only use where a test that also reaches live code references it", () => {
+    expect(
+      reported(
+        'import { fixedNow, now } from "./clock.js";\n\nexport function testClock(): boolean {\n  return now() > fixedNow;\n}\n',
+      ),
+    ).toEqual([
+      "DS1004 fixedNow: variable is referenced only from test files and from declarations that are themselves dead",
+      "DS1001 stale: exported function has no reference in the target and none from any loaded consumer",
+    ]);
+  });
+
+  it("is dead code beside its test where every test referencing it is a test of dead code", () => {
+    expect(
+      reported(
+        'import { fixedNow } from "./clock.js";\n\nexport function testFixed(): boolean {\n  return fixedNow > 0;\n}\n',
+      ),
+    ).toEqual([
+      "DS1005 testFixed: every target symbol this test references is reported dead",
+      "DS1001 fixedNow: exported variable is referenced only from declarations that are themselves dead",
+      "DS1001 stale: exported function has no reference in the target and none from any loaded consumer",
+    ]);
   });
 });

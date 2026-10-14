@@ -5,12 +5,12 @@
   "contract_version": "8.0.0",
   "reason": "The release whose closed configuration key list, exit-code table, issue-kind vocabulary, exemption classes, analysis rules, scope and describe documents, stable-symbol-reference grammar with its token and pattern corpora, template and SARIF pages, published configuration, SARIF, baseline and template vectors, refused documents and conformance corpus this analyzer is written against.",
   "digests": {
-    "fixtures/contract": "237ee1d3e58c2aa2d5427be17589300fdc1bc9fb2dd61676dddb9928b0750e10",
-    "fixtures/corpus": "b17639a26d100d26dbf8171e05bb24dece01f72d06934f8ed2e854b6acf1930d",
+    "fixtures/contract": "72ac33c90e9b1f96d09b89d16ff0f8839aeb5b77272edafa3b335461872a7b72",
+    "fixtures/corpus": "4e131484092913443b46cfd1ee618e43de6aad23d5815107e5403d198ed95fb1",
     "fixtures/corpus-document": "2cc9b2d1f795845471f62632a991bd69ffb30dd44808b5679f6dcbc44394d664",
     "fixtures/examples/describe": "1605774965cfd26f5ef95ea302c6c863faf4ef033be7e07b50217d162b2e6328",
-    "fixtures/examples/negatives": "e80a1b734ea43d76677d30e4219a146f7a375c78680b0d8251a5b7a6f290f076",
+    "fixtures/examples/negatives": "0bec6b61275374f84c843cd9d4cdce4115110d4a8d1257d43a7aa00f9e586e05",
     "fixtures/examples/scope": "f49f66169cb5ec0580840a90b66f9009ff3c907495f0b35d4e3e0a17ffa93e6f",
-    "fixtures/vectors": "1471620b8e59a9b597b433a55289319e2ca740829f002b9d86d41ea94f9690c8"
+    "fixtures/vectors": "f0876715654d12dc3c5f69e570fb9210741903d32780b21ab20c6e9ccbc0acb4"
   }
 }

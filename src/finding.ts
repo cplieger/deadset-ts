@@ -120,6 +120,11 @@ export interface CompletedFinding extends Finding {
   /** The reachability class capped by the code's ceiling. */
   readonly confidence: Confidence;
   /**
+   * Where test-used code alone lowers the confidence, the one the finding would carry
+   * otherwise, which its component's cap and the dials read.
+   */
+  readonly componentConfidence?: Confidence;
+  /**
    * The relation that decided the subject: present on a declaration the sweep judged
    * dead, absent on a live one and on a subject that is no declaration.
    */
