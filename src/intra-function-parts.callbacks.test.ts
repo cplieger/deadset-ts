@@ -67,6 +67,7 @@ describe("an unread parameter of a function used as a value", () => {
         "first 3 certain: parameter first is never read in the body, and a read parameter follows it, so rename it to _first",
         "third 3 certain: parameter third is never read in the body",
         "first 5 certain: parameter first is never read in the body, and a read parameter follows it, so rename it to _first",
+        "toFixed 6 probable: parameter toFixed is never read in the body",
       ]);
     },
     LOAD_TIMEOUT,
@@ -115,6 +116,32 @@ describe("an unread parameter of a function used as a value", () => {
           ");",
         ]),
       ).toEqual([]);
+    },
+    LOAD_TIMEOUT,
+  );
+});
+
+describe("a name an object pattern binds in a parameter of a contextually typed function", () => {
+  it(
+    "is reported at probable where the body never reads it, whether or not it reads another name of the pattern",
+    () => {
+      expect(
+        parameters([
+          'import { infer } from "./calls.js";',
+          "console.log(",
+          "  infer<{ field: number; fieldState: number }>(({ field, fieldState }) => {",
+          "    console.log(field);",
+          "  }),",
+          "  infer<{ signal: string }>(({ signal }) => undefined),",
+          "  infer<{ read: number }>(({ read }) => {",
+          "    console.log(read);",
+          "  }),",
+          ");",
+        ]),
+      ).toEqual([
+        "fieldState 3 probable: parameter fieldState is never read in the body",
+        "signal 6 probable: parameter signal is never read in the body",
+      ]);
     },
     LOAD_TIMEOUT,
   );

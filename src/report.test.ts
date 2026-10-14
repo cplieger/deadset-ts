@@ -130,7 +130,12 @@ describe("the report", () => {
       (member) => member !== "merged_from",
     );
 
-    expect(Object.keys(buildReport(input(result([]))))).toEqual(declared);
+    expect(Object.keys(buildReport({ ...input(result([])), listsComponents: true }))).toEqual(
+      declared,
+    );
+    expect(Object.keys(buildReport(input(result([]))))).toEqual(
+      declared.filter((member) => member !== "components"),
+    );
   });
 
   it("orders findings by path, line, column, code and symbol reference whatever order the run answered", () => {
@@ -286,8 +291,9 @@ function withoutRelation(one: CompletedFinding): CompletedFinding {
 
 describe("a finding's details and component", () => {
   it("carries each member a code sets, in the schema's order, and no member it leaves unset", () => {
-    const report = buildReport(
-      input(
+    const report = buildReport({
+      listsComponents: true,
+      ...input(
         result([
           finding("src/a.ts", 1, 1, {
             details: {
@@ -317,7 +323,7 @@ describe("a finding's details and component", () => {
           ),
         ]),
       ),
-    );
+    });
     const [detailed, listed] = report.findings;
 
     expect(detailed?.details).toStrictEqual({
@@ -337,11 +343,17 @@ describe("a finding's details and component", () => {
     expect(detailed?.liveness_relation).toBe("reference-counting");
     expect(listed?.details).toStrictEqual({});
     expect(Object.keys(listed ?? {})).not.toContain("liveness_relation");
-    expect(listed?.component.members).toEqual([
+    expect(Object.keys(listed?.component ?? {})).not.toContain("members");
+    expect(report.components).toEqual([
       {
-        ref: "ts://@example/app/src/a.ts#f2x1",
-        name: "f2x1",
-        position: { path: "src/a.ts", line: 2, column: 1, end_line: 4 },
+        id: "deadset-ts/c-700",
+        members: [
+          {
+            ref: "ts://@example/app/src/a.ts#f2x1",
+            name: "f2x1",
+            position: { path: "src/a.ts", line: 2, column: 1, end_line: 4 },
+          },
+        ],
       },
     ]);
   });
@@ -575,5 +587,63 @@ describe("the finding cap", () => {
   it("keeps every finding at zero and at a cap the set does not reach", () => {
     expect(capFindings(report, 0)).toBe(report);
     expect(capFindings(report, 3)).toBe(report);
+  });
+});
+
+describe("a run that lists each component in full", () => {
+  const members = [
+    {
+      ref: "ts://@example/app/src/a.ts#f1x1",
+      name: "f1x1",
+      position: { path: "src/a.ts", line: 1, column: 1, endLine: 1 },
+    },
+    {
+      ref: "ts://@example/app/src/a.ts#f5x1",
+      name: "f5x1",
+      position: { path: "src/a.ts", line: 5, column: 1, endLine: 1 },
+    },
+  ];
+  const component = (root: boolean): CompletedFinding["component"] => ({
+    id: "deadset-ts/c-900",
+    root,
+    symbolCount: 2,
+    deletableLines: 2,
+    members,
+  });
+
+  it("lists a component's members once, in the order of the first finding naming it, and on no finding", () => {
+    const report = buildReport({
+      ...input(
+        result([
+          finding("src/a.ts", 5, 1, { component: component(false) }),
+          finding("src/a.ts", 1, 1, { component: component(true) }),
+          finding("src/b.ts", 1, 1),
+        ]),
+      ),
+      listsComponents: true,
+    });
+
+    expect(report.components).toEqual([
+      {
+        id: "deadset-ts/c-900",
+        members: [
+          {
+            ref: "ts://@example/app/src/a.ts#f1x1",
+            name: "f1x1",
+            position: { path: "src/a.ts", line: 1, column: 1, end_line: 1 },
+          },
+          {
+            ref: "ts://@example/app/src/a.ts#f5x1",
+            name: "f5x1",
+            position: { path: "src/a.ts", line: 5, column: 1, end_line: 1 },
+          },
+        ],
+      },
+    ]);
+    expect(report.findings.map((one) => Object.keys(one.component))).toEqual([
+      ["id", "root", "symbol_count", "deletable_lines"],
+      ["id", "root", "symbol_count", "deletable_lines"],
+      ["id", "root", "symbol_count", "deletable_lines"],
+    ]);
   });
 });

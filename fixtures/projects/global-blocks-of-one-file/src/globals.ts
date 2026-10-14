@@ -1,8 +1,9 @@
-// Both blocks spell one reference, and only a member of the second one is read.
+// Both blocks spell one reference, and only a member of the second one is read; the
+// first declares an interface of its own, which nothing outside the target names.
 export {};
 
 declare global {
-  interface Window {
+  interface Probe {
     unread: number;
   }
 }

@@ -1,6 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it, onTestFinished } from "vitest";
+import { nodeHost } from "../bin/node-host.ts";
+import { writeProject } from "../__test-helpers__/projects.ts";
 import type { Host } from "./host.ts";
 import { readManifest, scriptTokens } from "./manifest.ts";
+import { run } from "./run.ts";
 
 /** A host holding one manifest at `/pkg`, or none. */
 function hostWith(manifest: string | undefined): Host {
@@ -40,6 +46,15 @@ describe("readManifest", () => {
       "module /pkg/esm/index.js import true",
       "types /pkg/index.d.ts import true",
     ]);
+  });
+
+  it("reads browser written as one path, or each file a browser map replaces a module with", () => {
+    expect(entries({ browser: "dist/browser.js" })).toEqual([
+      "browser /pkg/dist/browser.js import true",
+    ]);
+    expect(
+      entries({ browser: { "./server.js": "./client.js", fs: false, "node-only": "shim" } }),
+    ).toEqual(['browser["./server.js"] /pkg/client.js import true']);
   });
 
   it("reads a bin written as one path, with or without a leading dot, or as a command map", () => {
@@ -125,6 +140,44 @@ describe("the scripts of a manifest", () => {
     ).toEqual([
       'scripts["gen"] /pkg/node script false',
       'scripts["gen"] /pkg/bin/gen.ts script false',
+    ]);
+  });
+});
+
+describe("a package whose browser member alone names an entry", () => {
+  it("roots the browser entry's source file and what it exports", () => {
+    const root = writeProject({
+      "package.json": JSON.stringify({
+        name: "@example/browser-only",
+        private: true,
+        browser: "./src/browser.ts",
+      }),
+      "deadset.json": JSON.stringify({ target: { kind: "application" } }),
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: { strict: true, noEmit: true, module: "esnext", target: "es2022" },
+        include: ["src"],
+      }),
+      "src/browser.ts": "export class BrowserAPI {}\n",
+      "src/unused.ts": "export const unused = 1;\n",
+    });
+    const out = mkdtempSync(join(tmpdir(), "deadset-ts-manifest-browser-"));
+    onTestFinished(() => {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(out, { recursive: true, force: true });
+    });
+    const report = join(out, "report.json");
+    const discard = { write: () => undefined };
+    run(["analyze", "--target=.", `--report=${report}`], discard, discard, {
+      ...nodeHost(),
+      workingDirectory: () => root,
+    });
+    const { findings } = JSON.parse(readFileSync(report, "utf8")) as {
+      findings: { code: string; position: { path: string } }[];
+    };
+
+    expect(findings.map((one) => `${one.code} ${one.position.path}`)).toEqual([
+      "DS1502 src/unused.ts",
+      "DS1001 src/unused.ts",
     ]);
   });
 });

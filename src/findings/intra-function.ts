@@ -42,7 +42,8 @@ type ParameterVerdict =
  * caller may pass a function used as a value more arguments than it declares, so there one
  * a read parameter follows is renamed to an underscore name, which the compilers read as
  * declared unread, and one no read parameter follows is deleted: kept where the call's
- * inference may read its annotation, at `probable` where nothing reads the annotation.
+ * inference may read its annotation, at `probable` where nothing reads the annotation or
+ * where it is a name a contextually typed object pattern binds.
  */
 function parameterVerdict(
   part: PartFact,
@@ -63,7 +64,8 @@ function parameterVerdict(
   if (place?.annotated === "steers") {
     return undefined;
   }
-  return { fix: "delete", confidence: place?.annotated === "free" ? "probable" : "certain" };
+  const unseen = place?.annotated === "free" || place?.contextualPattern === true;
+  return { fix: "delete", confidence: unseen ? "probable" : "certain" };
 }
 
 /**

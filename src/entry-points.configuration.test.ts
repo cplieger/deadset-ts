@@ -105,6 +105,33 @@ describe("a file a configuration file names", () => {
   );
 
   it(
+    "is not rooted by a string at a selection key of an applied row in a configuration module no program holds",
+    () => {
+      expect(
+        rootsBelow("src/", {
+          "package.json": manifest({ vitest: "5.0.3" }),
+          ...installed("vitest", "5.0.3"),
+          ...modules("src/excluded.ts", "src/aliased.ts"),
+          "tsconfig.json": `${JSON.stringify({ compilerOptions: { strict: true }, include: ["src"] })}\n`,
+          "vitest.config.ts": [
+            "export default {",
+            "  test: {",
+            '    coverage: { exclude: ["src/excluded.ts"] },',
+            '    alias: { app: "./src/aliased.ts" },',
+            "  },",
+            "};",
+            "",
+          ].join("\n"),
+        }),
+      ).toEqual([
+        "src/aliased.ts#\tconfiguration-string\t./src/aliased.ts",
+        "src/aliased.ts#value\tconfiguration-string\t./src/aliased.ts",
+      ]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
     "is not rooted by a string at a selection key of a JSON configuration file, once per occurrence",
     () => {
       expect(

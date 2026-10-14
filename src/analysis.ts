@@ -107,6 +107,7 @@ import { references, testFileRulesOf, type Reference, type TestFileRule } from "
 import {
   roots,
   unmatchedEverywhere,
+  type Root,
   type RootKind,
   type RootOptions,
   type Roots,
@@ -114,7 +115,10 @@ import {
 import type { Scope } from "./scope.ts";
 import { serializationContract } from "./serialization-contract.ts";
 import { outsideTestReferences, testFilesAt, type OutsideTest } from "./outside-tests.ts";
+import { mergedGlobalInterfaces } from "./augmentations.ts";
+import { unseenLoadsOf, type UnseenLoad } from "./unseen-loads.ts";
 import { joinedTestFiles, withJoinedTests } from "./test-joins.ts";
+import { GLOBALS_RUNNER, namesTestGlobals, withTestGlobals } from "./test-globals.ts";
 import { supportReferences, testSupportFiles, type TestEvidence } from "./test-support.ts";
 import {
   diagnosticsOf,
@@ -428,11 +432,17 @@ function readProjects<Answer>(
   const joins = discovered.derived
     ? joinedTestFiles(engine, host, absoluteRoot, discovered.configFiles, testPatterns)
     : new Map<string, readonly string[]>();
-  const programs = withBaseUrlPaths(
+  const programs = withTestGlobals(
     engine,
     host,
-    [...discovered.configFiles, ...consumerOf.keys()],
-    workspace?.programs ?? new Map(),
+    parse,
+    discovered.configFiles,
+    withBaseUrlPaths(
+      engine,
+      host,
+      [...discovered.configFiles, ...consumerOf.keys()],
+      workspace?.programs ?? new Map(),
+    ),
   );
   const session = runSession(
     engine,
@@ -804,6 +814,8 @@ interface ReadProject<Extra> {
   readonly componentWarnings: readonly ComponentWarning[];
   /** Per own file below the target root, the module specifiers its imports write. */
   readonly imports: ReadonlyMap<string, readonly string[]>;
+  /** The global augmentations a declaration outside the project names. */
+  readonly augmented: readonly Root[];
   readonly extra: Extra;
 }
 
@@ -940,6 +952,9 @@ function readRun<Extra>(
       disabled,
     );
     const components = project.ownSourceFiles().filter(isComponentFile);
+    const injected = project.program
+      .getSourceFileNames()
+      .some((name) => name.endsWith(`/node_modules/${GLOBALS_RUNNER}/globals.d.ts`));
     const pathOf = (file: (typeof components)[number]): string =>
       relativePath(targetRoot, file.fileName) ?? file.fileName;
     return {
@@ -948,12 +963,27 @@ function readRun<Extra>(
       testFiles: resolved.testFilePaths,
       evidence,
       componentFiles: components.map(pathOf),
+      augmented: mergedGlobalInterfaces(
+        project,
+        projectRead.held,
+        sourceFilesOf(project, targetRoot),
+      ).map((id): Root => ({ id, kind: "global-augmentation", source: "" })),
       imports: new Map(
         project.ownSourceFiles().flatMap((file) => {
           const path = relativePath(targetRoot, file.fileName);
-          return path === undefined
-            ? []
-            : [[path, file.imports.filter(isStringLiteralLikeNode).map((one) => one.text)]];
+          if (path === undefined) {
+            return [];
+          }
+          const specifiers = file.imports.filter(isStringLiteralLikeNode).map((one) => one.text);
+          // A file calling the globals a program declares is written for their runner.
+          return [
+            [
+              path,
+              injected && namesTestGlobals(project, file)
+                ? [...specifiers, GLOBALS_RUNNER]
+                : specifiers,
+            ],
+          ];
         }),
       ),
       componentWarnings: components.flatMap((file) =>
@@ -1004,7 +1034,9 @@ function readRun<Extra>(
       configuration: projectRead.configuration,
       symbols: projectRead.held.symbols,
       references: [...made, ...evidenceReferences(projectRead.held.symbols, detected.inTestFiles)],
-      roots: projectRead.rooted.liveUnderReachability,
+      // The augmentations are rooted after test support is read: an outside declaration
+      // naming one calls nothing of its file.
+      roots: [...projectRead.rooted.liveUnderReachability, ...one.augmented],
       testFiles: [...one.testFiles, ...supportFiles],
       ...(supportFiles.length === 0 ? {} : { supportFiles }),
       ...(testUsedFiles.length === 0 ? {} : { testUsedFiles }),
@@ -1246,6 +1278,7 @@ interface EmitterExtra {
   readonly directives: readonly InlineDirective[];
   readonly declarationsNamed: readonly boolean[];
   readonly parts: ProjectParts;
+  readonly unseenLoads: readonly UnseenLoad[];
 }
 
 /** Reads a run's projects with every per-project fact an emitter reads. */
@@ -1281,6 +1314,7 @@ export function readEmitterRun(
       ),
       declarationsNamed: declarationsNamed(project, read.held, configuredDeclarations(config)),
       parts: projectParts(project, read.held, references, targetRoot),
+      unseenLoads: unseenLoadsOf(project, read.configuration, targetRoot, testFiles),
     }),
   );
   // Whether a declaration carries the marker decides its code, so one whose marker went
@@ -1386,6 +1420,7 @@ export function emitterInputOver(
       heldByInclusion: new Set(projects.flatMap((one) => one.extra.heldByInclusion)),
       generated: new Set(projects.flatMap((one) => one.extra.generated)),
       inOperands: new Set(projects.flatMap((one) => one.extra.inOperands)),
+      unseenLoads: projects.flatMap((one) => one.extra.unseenLoads),
     },
     boundary: {
       consumers: {
@@ -1476,6 +1511,7 @@ function readAnalysis(
       librariesUnfound: read.librariesUnfound,
       conventionsApplied: read.conventionsApplied,
       unmappedEntries: unmappedEverywhere(read.projects),
+      unseenLoads: read.projects.flatMap((one) => one.extra.unseenLoads),
     },
     configured: read.projects.map((one) => one.configured),
     symbols,
@@ -1574,6 +1610,8 @@ interface RunFacts {
   readonly conventionsApplied: readonly AppliedConvention[];
   /** The manifest entries no project of the run reads back to a file, each once. */
   readonly unmappedEntries: readonly ManifestEntry[];
+  /** The loads of production files whose target the run cannot resolve, per configuration. */
+  readonly unseenLoads: readonly UnseenLoad[];
 }
 
 /** One configuration whose component files a run cannot read. */

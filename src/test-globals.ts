@@ -1,0 +1,275 @@
+/**
+ * The globals a test runner injects into every file it runs, which no import names: a
+ * Vitest configuration whose `test.globals` is `true` gives each test and each file it
+ * loads `describe`, `it`, `expect` and `vi` (https://vitest.dev/config/globals). A program
+ * analyzed without the runner's declarations of them reads every use as an error, so a
+ * configuration under such a runner is read with them; and a file that calls one is
+ * written for the runner, as one that imports it is.
+ */
+
+import {
+  isAsExpression,
+  isBinaryExpression,
+  isCallExpression,
+  isExportAssignment,
+  isExpressionStatement,
+  isIdentifier,
+  isObjectLiteralExpression,
+  isParenthesizedExpression,
+  isPropertyAccessExpression,
+  isPropertyAssignment,
+  isSatisfiesExpression,
+  SyntaxKind,
+  type Node,
+  type SourceFile,
+} from "@typescript/native/ast";
+import type { ParseFile } from "./configuration-files.ts";
+import type { Host } from "./host.ts";
+import { dirnamePath, joinPath } from "./paths.ts";
+import { UNANSWERED } from "./query.ts";
+import type { Engine, ProjectView } from "./session.ts";
+import { writtenPath, type WorkspaceProgram } from "./workspace-programs.ts";
+
+/** The test runner whose configuration injects the globals, and the `types` entry declaring them. */
+export const GLOBALS_RUNNER = "vitest";
+const GLOBALS_TYPES = "vitest/globals";
+
+/** The configuration files the runner reads its settings from, by name. */
+const RUNNER_CONFIG = /^(?:vitest|vite)\.config\.(?:js|mjs|cjs|ts|mts|cts)$/u;
+
+/** The globals `vitest/globals` declares that a test or a helper calls or reads a member of. */
+const GLOBAL_NAMES: ReadonlySet<string> = new Set([
+  "afterAll",
+  "afterEach",
+  "assert",
+  "assertType",
+  "beforeAll",
+  "beforeEach",
+  "bench",
+  "describe",
+  "expect",
+  "expectTypeOf",
+  "it",
+  "onTestFailed",
+  "onTestFinished",
+  "suite",
+  "test",
+  "vi",
+  "vitest",
+]);
+
+/** The expression one wrapper that changes no value holds, and a call's first argument. */
+function configObject(node: Node): Node | undefined {
+  let at: Node | undefined = node;
+  while (at !== undefined) {
+    if (isParenthesizedExpression(at) || isAsExpression(at) || isSatisfiesExpression(at)) {
+      at = at.expression;
+    } else if (isCallExpression(at)) {
+      at = at.arguments[0];
+    } else {
+      return at;
+    }
+  }
+  return undefined;
+}
+
+/** The value one object literal writes for one member as `name: value`. */
+function member(object: Node | undefined, name: string): Node | undefined {
+  if (object === undefined || !isObjectLiteralExpression(object)) {
+    return undefined;
+  }
+  for (const property of object.properties) {
+    if (
+      isPropertyAssignment(property) &&
+      isIdentifier(property.name) &&
+      property.name.text === name
+    ) {
+      return configObject(property.initializer);
+    }
+  }
+  return undefined;
+}
+
+/** Whether one runner configuration's default export sets `test.globals` to `true`. */
+function setsGlobals(file: SourceFile): boolean {
+  for (const statement of file.statements) {
+    let exported: Node | undefined;
+    if (isExportAssignment(statement)) {
+      exported = statement.expression;
+    } else if (isExpressionStatement(statement) && isBinaryExpression(statement.expression)) {
+      const { left, operatorToken, right } = statement.expression;
+      if (
+        operatorToken.kind === SyntaxKind.EqualsToken &&
+        isPropertyAccessExpression(left) &&
+        isIdentifier(left.expression) &&
+        left.expression.text === "module" &&
+        isIdentifier(left.name) &&
+        left.name.text === "exports"
+      ) {
+        exported = right;
+      }
+    }
+    const object = exported === undefined ? undefined : configObject(exported);
+    const globals = member(member(object, "test"), "globals");
+    if (globals?.kind === SyntaxKind.TrueKeyword) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Whether the runner's configuration in one manifest's directory injects the globals. */
+function injectsGlobals(host: Host, parse: ParseFile, dir: string): boolean {
+  let names: readonly string[];
+  try {
+    names = host
+      .readDirectory(dir)
+      .filter((entry) => !entry.directory && RUNNER_CONFIG.test(entry.name))
+      .map((entry) => entry.name);
+  } catch {
+    return false;
+  }
+  return names.some((name) => {
+    const path = joinPath(dir, name);
+    try {
+      return setsGlobals(parse(path, host.readFile(path)));
+    } catch {
+      return false;
+    }
+  });
+}
+
+/** Whether a file declaring the globals is installed where the configuration resolves packages from. */
+function globalsInstalled(host: Host, configFile: string): boolean {
+  for (let dir = dirnamePath(configFile); ; dir = dirnamePath(dir)) {
+    if (host.kindOf(joinPath(dir, "node_modules", GLOBALS_RUNNER, "globals.d.ts")) === "file") {
+      return true;
+    }
+    if (dirnamePath(dir) === dir) {
+      return false;
+    }
+  }
+}
+
+/** The directory of the manifest nearest one configuration file, at or above its own. */
+function manifestDir(host: Host, configFile: string): string | undefined {
+  for (let dir = dirnamePath(configFile); ; dir = dirnamePath(dir)) {
+    if (host.kindOf(joinPath(dir, "package.json")) === "file") {
+      return dir;
+    }
+    if (dirnamePath(dir) === dir) {
+      return undefined;
+    }
+  }
+}
+
+function typesOf(value: unknown): readonly string[] | undefined {
+  return Array.isArray(value) && value.every((one) => typeof one === "string") ? value : undefined;
+}
+
+/**
+ * How the snapshot reads each configuration of `configFiles` whose nearest manifest's
+ * runner configuration injects the globals and that can resolve their declarations: as
+ * `programs` reads it, else as itself, with the globals' declarations added to its `types`.
+ * A configuration the compiler cannot read is left for its project to refuse.
+ */
+export function withTestGlobals(
+  engine: Engine,
+  host: Host,
+  parse: ParseFile,
+  configFiles: readonly string[],
+  programs: ReadonlyMap<string, WorkspaceProgram>,
+): ReadonlyMap<string, WorkspaceProgram> {
+  const found = new Map(programs);
+  const injects = new Map<string, boolean>();
+  for (const configFile of configFiles) {
+    const dir = manifestDir(host, configFile);
+    if (dir === undefined || !globalsInstalled(host, configFile)) {
+      continue;
+    }
+    if (!injects.has(dir)) {
+      injects.set(dir, injectsGlobals(host, parse, dir));
+    }
+    if (injects.get(dir) !== true) {
+      continue;
+    }
+    let base: readonly string[];
+    try {
+      base = typesOf(engine.parseConfigFile(configFile).options.types) ?? [];
+    } catch {
+      continue;
+    }
+    const held = found.get(configFile);
+    if (held?.kind === "program") {
+      const listed = typesOf(held.params.compilerOptions.types) ?? base;
+      if (!listed.includes(GLOBALS_TYPES)) {
+        found.set(configFile, {
+          kind: "program",
+          params: {
+            ...held.params,
+            compilerOptions: { ...held.params.compilerOptions, types: [...listed, GLOBALS_TYPES] },
+          },
+        });
+      }
+      continue;
+    }
+    let written: Record<string, unknown> = { extends: configFile };
+    if (held !== undefined) {
+      try {
+        written = JSON.parse(held.text) as Record<string, unknown>;
+      } catch {
+        continue;
+      }
+    }
+    const options = (written["compilerOptions"] ?? {}) as Record<string, unknown>;
+    const listed = typesOf(options["types"]) ?? base;
+    if (listed.includes(GLOBALS_TYPES)) {
+      continue;
+    }
+    found.set(configFile, {
+      kind: "configuration",
+      file: held?.file ?? writtenPath(host, configFile),
+      text: `${JSON.stringify(
+        { ...written, compilerOptions: { ...options, types: [...listed, GLOBALS_TYPES] } },
+        null,
+        2,
+      )}\n`,
+    });
+  }
+  return found;
+}
+
+/**
+ * Whether one file names a global the runner injects, which is how a file written for the
+ * runner's globals reads: a call of one of the names or a read of a member of it that
+ * resolves to a declaration outside the project's own files, the runner's declaration
+ * file. A name the file binds, imported, declared or a parameter, resolves to its own.
+ */
+export function namesTestGlobals<Brand>(project: ProjectView<Brand>, file: SourceFile): boolean {
+  const named: Node[] = [];
+  const visit = (node: Node): void => {
+    const callee = isCallExpression(node)
+      ? node.expression
+      : isPropertyAccessExpression(node)
+        ? node.expression
+        : undefined;
+    if (callee !== undefined && isIdentifier(callee) && GLOBAL_NAMES.has(callee.text)) {
+      named.push(callee);
+    }
+    node.forEachChild(visit);
+  };
+  file.forEachChild(visit);
+  if (named.length === 0) {
+    return false;
+  }
+  const own = project.ownPaths();
+  return project
+    .symbolsAt(named.map((node) => project.handle(node)))
+    .some(
+      (symbol) =>
+        symbol === UNANSWERED ||
+        (symbol !== undefined &&
+          symbol.declarations.length > 0 &&
+          symbol.declarations.every((handle) => !own.has(handle.path))),
+    );
+}

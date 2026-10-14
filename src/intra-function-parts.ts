@@ -137,6 +137,12 @@ interface ParameterPlace {
    * so the annotation may steer the call's inference.
    */
   readonly annotated?: "steers" | "free";
+  /**
+   * Whether the name is one an object binding pattern of a parameter binds, and the
+   * compiler gives its function a contextual type: the code handing the argument may act on
+   * the pattern's read of the property, which the program does not show.
+   */
+  readonly contextualPattern?: true;
   /** Whether the compiler checks the parameter's file, so its unused-parameter rule may report it. */
   readonly checked: boolean;
 }
@@ -1093,10 +1099,9 @@ function calleeSteers<Brand>(
 
 /**
  * The parts with each name of `contextual` judged where the compiler gives its function a
- * contextual type: the code handing the argument may act on what an object pattern reads,
- * so each such name is read, and an annotated parameter is marked with whether the call's
- * inference may read its annotation. A question the checker leaves unanswered keeps the
- * name read.
+ * contextual type: a name an object pattern binds is marked as one, and an annotated
+ * parameter with whether the call's inference may read its annotation. A question the
+ * checker leaves unanswered keeps the name read.
  */
 function withContextualRead<Brand>(
   project: ProjectView<Brand>,
@@ -1118,15 +1123,17 @@ function withContextualRead<Brand>(
     const place = one.part.parameter;
     judged.set(
       one.part,
-      one.pattern || answer === UNANSWERED || place === undefined
+      answer === UNANSWERED || place === undefined
         ? { ...one.part, used: true }
-        : {
-            ...one.part,
-            parameter: {
-              ...place,
-              annotated: calleeSteers(project, one.signature, one.at) ? "steers" : "free",
+        : one.pattern
+          ? { ...one.part, parameter: { ...place, contextualPattern: true } }
+          : {
+              ...one.part,
+              parameter: {
+                ...place,
+                annotated: calleeSteers(project, one.signature, one.at) ? "steers" : "free",
+              },
             },
-          },
     );
   }
   return parts.map((part) => judged.get(part) ?? part);
@@ -1205,6 +1212,8 @@ interface Local {
   readonly uses: readonly Identifier[];
   /** A `var` of a nested block, whose function scope outlives the block's end. */
   readonly outlives: boolean;
+  /** A function declaration, written at the start of the block whatever its place. */
+  readonly hoisted: boolean;
 }
 
 /**
@@ -1244,9 +1253,10 @@ function functionOf(block: Block): FunctionLikeDeclaration | undefined {
 }
 
 /**
- * The locals one block declares with `let`, `const` or `var`, each with the names of the
- * block that spell it. A `var` of a nested block is one where no nested function of its
- * function names it, since the function scope holds it past the block's end.
+ * The locals one block declares with `let`, `const`, `var` or a function declaration
+ * inside a function, each with the names of the block that spell it. A `var` of a nested
+ * block is one where no nested function of its function names it, since the function scope
+ * holds it past the block's end.
  */
 function localsOf(block: Block): readonly Local[] {
   const declared: {
@@ -1254,10 +1264,23 @@ function localsOf(block: Block): readonly Local[] {
     statement: number;
     initialized: boolean;
     outlives: boolean;
+    hoisted: boolean;
   }[] = [];
   const scope = functionOf(block);
   const outlives = scope?.body !== block;
   block.statements.forEach((statement, at) => {
+    if (isFunctionDeclaration(statement)) {
+      if (scope !== undefined && statement.name !== undefined && statement.body !== undefined) {
+        declared.push({
+          name: statement.name,
+          statement: at,
+          initialized: true,
+          outlives: false,
+          hoisted: true,
+        });
+      }
+      return;
+    }
     if (!isVariableStatement(statement)) {
       return;
     }
@@ -1267,6 +1290,11 @@ function localsOf(block: Block): readonly Local[] {
       return;
     }
     for (const declaration of list.declarations) {
+      // A write to a local typed `never` is the compiler's exhaustiveness check, which
+      // fails to compile once a case goes unhandled.
+      if (declaration.type?.kind === SyntaxKind.NeverKeyword) {
+        continue;
+      }
       for (const name of boundNames(declaration.name)) {
         if (
           !blockScoped &&
@@ -1282,6 +1310,7 @@ function localsOf(block: Block): readonly Local[] {
           statement: at,
           initialized: declaration.initializer !== undefined,
           outlives: !blockScoped && outlives,
+          hoisted: false,
         });
       }
     }
@@ -1333,10 +1362,20 @@ function deadStores(
     used: false,
   });
   for (const local of locals) {
-    const uses = local.uses.filter((use) => readsBinding(use, local.name, ids));
+    const own = local.hoisted ? block.statements[local.statement] : undefined;
+    // A function's reads of itself keep it no more than its absence would.
+    const uses = local.uses.filter(
+      (use) => readsBinding(use, local.name, ids) && (own === undefined || !within(use, own)),
+    );
     if (!local.outlives && uses.every(isPlainWrite)) {
-      const targets = [...(local.initialized ? [local.name] : []), ...uses];
+      // A declaration with no initializer writes `undefined`, the one store left to name.
+      const writes = [...(local.initialized ? [local.name] : []), ...uses];
+      const targets = writes.length === 0 ? [local.name] : writes;
       found.push(...targets.map((target) => deadAt(local, target)));
+      continue;
+    }
+    // A read anywhere in the block reads a function declaration, which is written first.
+    if (local.hoisted) {
       continue;
     }
     if (uses.some((use) => inNestedFunction(use, block))) {

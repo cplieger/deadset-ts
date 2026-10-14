@@ -94,11 +94,14 @@ describe("an unreachable statement", () => {
           "console.log(hoistedVar(), initializedVar(), partlyInitialized(), blockScoped());",
         ]),
       ).toEqual([
+        "DS1807 spare src/main.ts:3",
         "DS1805 statement src/main.ts:8",
         "DS1807 set src/main.ts:8",
         "DS1805 statement src/main.ts:13",
+        "DS1807 first src/main.ts:13",
         "DS1807 second src/main.ts:14",
         "DS1805 statement src/main.ts:19",
+        "DS1807 later src/main.ts:19",
       ]);
     },
     LOAD_TIMEOUT,

@@ -34,12 +34,13 @@ The same tree always gives the same report, and the analysis keeps no cache betw
 
 A root is a declaration the analysis keeps live without a reference. `print-roots` lists each one with the rule that made it a root. The roots are:
 
-- What a file exports when the target's manifest, or another workspace package's manifest, names it through `main`, `module`, `types`, `bin` or `exports`, or when `ts.entry_files` matches it. A `package.json` in a directory between the target and one of its compiler configurations counts here too. A build output it names, such as `dist/cli/main.js`, is read back to the rooted source file of the same name.
+- What a file exports when the target's manifest, or another workspace package's manifest, names it through `main`, `module`, `types`, `browser`, `bin` or `exports`, or when `ts.entry_files` matches it. A `package.json` in a directory between the target and one of its compiler configurations counts here too. A build output it names, such as `dist/cli/main.js`, is read back to the rooted source file of the same name.
 - A library target's published API, which includes an exported declaration whose documentation comment holds `@public`, `@beta` or `@alpha`. In an application, a workspace package whose `package.json` is not private has a published API too, reported at the confidence a library's carries.
 - What a file exports when an applied convention row names it, such as a Next.js page, a SvelteKit route or a Storybook story
 - A configuration file beside a `package.json` whose name is `<stem>.config.<ext>`, `<stem>.<qualifier>.config.<ext>` or `.<stem>rc.<ext>`
 - A file that a string names, read against the directory of such a configuration file or of its JSON form, like `<stem>.config.json` or `.<stem>rc`. A string that starts with `/` or holds a glob character names no file. Nor does a string at a key that only selects files, such as Stryker's `mutate` or Vitest's `test.coverage.include`.
 - A file that a token of a `package.json` script names, such as `node ./scripts/seed.ts`
+- What a file exports when a build script a `package.json` script runs names it as an entry of an `esbuild`, `webpack` or `rollup` build call the script runs, written as literals. In a library, such a file is published API too
 - A file that a `run:` step of a workflow in `.github/workflows` names by its path from the target root, such as `node scripts/check.ts`
 - The test files, Vitest's workspace configuration and the setup and global setup files it names, and the test files in Playwright's test directory
 - A global that a declaration file declares as `typeof import("<module>")["<name>"]`, which stands for that export, so using the global uses the export
@@ -49,7 +50,7 @@ A root is a declaration the analysis keeps live without a reference. `print-root
 
 A string in such a configuration file that spells a dependency its `package.json` declares, alone or followed by a subpath, keeps that dependency from `DS1601`. So does a string in a module such a configuration file imports by a relative specifier. A data file it imports, such as `./package.json`, is not read for strings. Both kinds of module are read whether or not a compiler configuration includes the file.
 
-A dependency is used where a script of the `package.json` that declares it runs its command, and so is one that a workflow `run:` step of the target runs. So is a package that `import.meta.resolve` or `require.resolve` names by a literal specifier. A declared dependency that the installed `package.json` of a needed dependency names in its `peerDependencies`, optional or not, is used too, and so on through the peers of that peer, because the declaration is what keeps the package the needed dependency expects beside it present.
+A dependency is used where a script of the `package.json` that declares it runs its command, or loads it through `--loader`, `--import`, `--require` or `-r` passed to `node` or to a runner that forwards them, and so is one that a workflow `run:` step of the target runs. So is a package that `import.meta.resolve` or `require.resolve` names by a literal specifier. A declared dependency that the installed `package.json` of a needed dependency names in its `peerDependencies`, optional or not, is used too, and so on through the peers of that peer, because the declaration is what keeps the package the needed dependency expects beside it present.
 
 `DS1601` also checks each workspace member's `package.json` once a built project holds a file below the member. It also checks each nested package's `package.json`, in a directory below the target at or above a source file or a compiler configuration. Each `package.json` is read against its own directory: an import keeps the dependency of that name in each `package.json` at or above the importing file, so a dependency a nested package declares and only a file outside it imports is reported there. A nested package's dependency that nothing installs is not checked. A dependency of a member whose source sits only in dropped configurations is reported at confidence `possible`.
 
@@ -72,16 +73,18 @@ The `angular` and `angular-devkit` rows also read `angular.json`. A package that
 | `astro` | `astro` | `>=5.0.0 <8.0.0` | Pages other than `_`-prefixed files and directories, middleware, actions and the content configuration below `src`, which `srcDir` moves |
 | `babel` | `@babel/core` | `>=7.0.0 <9.0.0` | Nothing. `@babel/runtime` counts as used where a Babel configuration file lists `@babel/plugin-transform-runtime` in `plugins` |
 | `docusaurus` | `@docusaurus/core` | `>=2.0.0 <4.0.0` | Every module below `src/pages` and `src/theme` |
-| `eslint` | `eslint` | `>=4.0.0 <10.0.0` | Nothing. A plugin or shareable configuration that `plugins` or `extends` of `.eslintrc`, `.eslintrc.json`, `.eslintrc.js` or `.eslintrc.cjs` names by its short name, such as `plugin:react/recommended` or `airbnb`, counts as used |
+| `eslint` | `eslint` | `>=4.0.0 <10.0.0` | Nothing. A plugin or shareable configuration that `plugins` or `extends` of `.eslintrc`, `.eslintrc.json`, `.eslintrc.js`, `.eslintrc.cjs`, `.eslintrc.yml` or `.eslintrc.yaml` names by its short name, such as `plugin:react/recommended` or `airbnb`, counts as used, and so does the package `parser` names |
 | `eslint` | `eslint` | `>=10.0.0 <11.0.0` | Every `eslint.config.*` file |
 | `expo` | `expo` | `>=44.0.0 <60.0.0` | The `index` and `App` modules beside the manifest |
 | `expo-router` | `expo-router` | `>=3.0.0 <58.0.0` | Every module below `app` or `src/app` |
 | `next` | `next` | `>=13.4.0 <17.0.0` | The App Router's special and metadata files, `pages`, and `proxy`, `middleware`, `instrumentation` and `mdx-components`, at the root or below `src` |
 | `nuxt` | `nuxt` | `>=3.0.0 <5.0.0` | The app, error, app configuration and router options files, pages, layouts, middleware, plugins, modules and server routes, which `srcDir`, `serverDir` and `dir` move |
 | `oclif` | `@oclif/core` | `>=1.0.0 <5.0.0` | Every module below `src/commands` and `src/hooks`, every module below the directory `oclif.commands` in `package.json` names, and each file `oclif.hooks` names |
+| `panda` | `@pandacss/dev` | `>=0.1.0 <2.0.0` | Nothing. Every file below `styled-system`, which `outdir` in `panda.config.*` moves, is generated |
 | `parcel` | `parcel` | `>=2.0.0 <3.0.0` | Each file `source` or `targets.*.source` in `package.json` names |
 | `qwik-city` | `@builder.io/qwik-city` | `>=1.0.0 <2.0.0` | `root`, the `entry.*` files and the routes, which `srcDir` and `routesDir` move |
 | `react-router` | `@react-router/dev` | `>=7.0.0 <9.0.0` | `root`, `routes`, `entry.client`, `entry.server` and the `routes` directory below `app`, which `appDirectory` moves |
+| `react-scripts` | `react-scripts` | `>=1.0.0 <6.0.0` | `src/index`, `src/setupProxy.js` and `src/setupTests` |
 | `remix` | `@remix-run/dev` | `>=2.0.0 <3.0.0` | The same files as `react-router`, which `appDirectory` moves |
 | `rolldown` | `rolldown` | `>=1.0.0 <2.0.0` | Nothing. `@oxc-project/runtime` counts as used where `rolldown.config.*` sets `transform.helpers.mode` to `Runtime` |
 | `solidstart` | `@solidjs/start` | `>=1.0.0 <3.0.0` | `app`, `entry-client`, `entry-server`, the middleware and the routes below `src`, which `appRoot` and `routeDir` move |

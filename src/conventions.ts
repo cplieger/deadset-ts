@@ -66,6 +66,7 @@ import { dirnamePath, joinPath, normalizePath, relativePath, resolvePath } from 
 import type { SetupFailure } from "./setup-failure.ts";
 import type { SourceFiles } from "./source-files.ts";
 import { satisfies } from "./version-range.ts";
+import { yamlDocument } from "./yaml-document.ts";
 
 /** One manifest the analysis reads. */
 export interface ConventionManifest {
@@ -150,6 +151,13 @@ interface ConventionEntry {
 type ParseSource = (fileName: string, text: string) => SourceFile;
 
 const JSON_EXTENSION = ".json";
+
+/**
+ * A configuration file its tool reads as a YAML document, read as the JSON document it
+ * denotes. Its nodes' offsets are that JSON text's, so no move may read one: a failure's
+ * line would name the wrong line.
+ */
+const YAML_NAME = /\.ya?ml$/u;
 
 /** A configuration file with no extension that its tool reads as a JSON document. */
 const JSON_RC = /^\.[\w-]+rc$/u;
@@ -881,6 +889,14 @@ function readingFiles(
       try {
         text = host.readFile(path);
       } catch {
+        continue;
+      }
+      if (YAML_NAME.test(name)) {
+        const value = yamlDocument(text);
+        if (value !== undefined) {
+          const json = JSON.stringify(value);
+          found.push({ name, text: json, file: parse(`${path}${JSON_EXTENSION}`, json) });
+        }
         continue;
       }
       found.push({

@@ -871,6 +871,98 @@ function scriptTokensOf(manifest: Record<string, unknown>): ReadonlySet<string> 
   return found;
 }
 
+/**
+ * The runtime flags whose value is a module loaded before the entry, as `--flag value` or
+ * `--flag=value`: https://nodejs.org/api/cli.html#--importmodule,
+ * https://nodejs.org/api/cli.html#--experimental-loadermodule,
+ * https://nodejs.org/api/cli.html#-r---require-module
+ */
+const PRELOAD_FLAGS: ReadonlySet<string> = new Set([
+  "--experimental-loader",
+  "--import",
+  "--loader",
+  "--require",
+  "-r",
+]);
+
+/**
+ * The programs that pass a preload flag to the runtime they start: Node itself, and the
+ * runners that forward Node's flags or read the same `--require`:
+ * https://mochajs.org/#-require-module-r-module, https://tsx.is/node-enhancement,
+ * https://typestrong.org/ts-node/docs/options#require,
+ * https://github.com/remy/nodemon#running-non-node-scripts
+ */
+const PRELOADING_PROGRAMS: ReadonlySet<string> = new Set([
+  "mocha",
+  "node",
+  "nodemon",
+  "ts-node",
+  "tsx",
+]);
+
+/** The programs that run the command after them, and an environment assignment before it. */
+const LAUNCHERS: ReadonlySet<string> = new Set(["cross-env", "env", "npx"]);
+const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/u;
+
+/** The commands one script string runs, split at the shell's list and pipeline operators. */
+const COMMAND_SEPARATORS = /&&|\|\||;|\||&/u;
+
+/**
+ * The packages one manifest's scripts preload by a runtime flag's bare module specifier,
+ * a flag counting only in a command whose program passes it to the runtime, and for Node
+ * only before the script it runs, whose own arguments come after it.
+ */
+function scriptPreloadsOf(manifest: Record<string, unknown>): ReadonlySet<string> {
+  const scripts = manifest["scripts"];
+  const found = new Set<string>();
+  if (!isRecord(scripts)) {
+    return found;
+  }
+  for (const script of Object.values(scripts)) {
+    if (typeof script !== "string") {
+      continue;
+    }
+    for (const command of script.split(COMMAND_SEPARATORS)) {
+      const tokens = scriptTokens(command);
+      let at = 0;
+      while (
+        at < tokens.length &&
+        (ASSIGNMENT.test(tokens[at] ?? "") || LAUNCHERS.has(tokens[at] ?? ""))
+      ) {
+        at += 1;
+      }
+      const path = tokens[at] ?? "";
+      const program = path.slice(path.lastIndexOf("/") + 1);
+      if (!PRELOADING_PROGRAMS.has(program)) {
+        continue;
+      }
+      for (at += 1; at < tokens.length; at += 1) {
+        const token = tokens[at] ?? "";
+        if (!token.startsWith("-")) {
+          if (program === "node") {
+            break;
+          }
+          continue;
+        }
+        const equals = token.indexOf("=");
+        const flag = equals < 0 ? token : token.slice(0, equals);
+        if (!PRELOAD_FLAGS.has(flag)) {
+          continue;
+        }
+        if (equals < 0) {
+          at += 1;
+        }
+        const value = equals < 0 ? tokens[at] : token.slice(equals + 1);
+        const name = value === undefined ? undefined : packageOfSpecifier(value);
+        if (name !== undefined) {
+          found.add(name);
+        }
+      }
+    }
+  }
+  return found;
+}
+
 /** Whether a path below the target root lies in the directory `dir` below it, `""` being the root. */
 function isInside(path: string, dir: string): boolean {
   return dir === "" || path.startsWith(`${dir}/`);
@@ -976,12 +1068,16 @@ export function dependenciesOf(
       continue;
     }
     const tokens = scriptTokensOf(read.value);
+    const preloads = scriptPreloadsOf(read.value);
     for (const dependency of declaredIn(read.text, read.value, path, scopeOf(path))) {
       const found = installedOf(host, dir, dependency.name);
       if (found === undefined && uninstalledHere.has(dir)) {
         continue;
       }
       declared.push(dependency);
+      if (preloads.has(dependency.name)) {
+        ran.add(declarationKey(dependency));
+      }
       if (found === undefined) {
         continue;
       }

@@ -2,7 +2,7 @@ import type { Confidence, Severity } from "../config.ts";
 import { jsonChunks } from "../json-chunks.ts";
 import { KINDS, type KindRow } from "../kinds.ts";
 import { declarationKey } from "../ref.ts";
-import type { Report, WireFinding, WireStaleSuppression } from "../report.ts";
+import type { Report, WireComponent, WireFinding, WireStaleSuppression } from "../report.ts";
 import { lineHashes, symbolFingerprint } from "./fingerprint.ts";
 import { RenderError, type RenderOptions } from "./reporter.ts";
 import { utf8Bytes } from "./sha256.ts";
@@ -151,8 +151,11 @@ interface Related {
   readonly endLine: number;
 }
 
+/** The members the report lists for one component, none where it lists none. */
+type MembersOf = (id: string) => WireComponent["members"];
+
 /** Every position a finding names beyond its own, in the mapping's order, the first hundred. */
-function relatedOf(found: WireFinding): readonly Related[] {
+function relatedOf(found: WireFinding, members: MembersOf): readonly Related[] {
   const related: Related[] = [];
   for (const one of found.details.implementations ?? []) {
     related.push({ label: "implementation", at: one.position, endLine: one.position.end_line });
@@ -164,7 +167,7 @@ function relatedOf(found: WireFinding): readonly Related[] {
     const at = found.details.name_literal;
     related.push({ label: "name", at, endLine: at.end_line });
   }
-  for (const one of found.component.members ?? []) {
+  for (const one of members(found.component.id)) {
     if (
       declarationKey(one.ref, one.position.path) !==
       declarationKey(found.symbol.ref, found.position.path)
@@ -188,7 +191,9 @@ function messageWithLinks(message: string, related: readonly Related[]): string 
 }
 
 /** Every member of the finding the mapping places nowhere else, under its schema name. */
-function propertiesOf(found: WireFinding): Record<string, unknown> {
+/** A result's member bag, its component holding the members the report lists for it once. */
+function propertiesOf(found: WireFinding, members: MembersOf): Record<string, unknown> {
+  const listed = members(found.component.id);
   return {
     language: found.language,
     symbol: found.symbol,
@@ -199,7 +204,7 @@ function propertiesOf(found: WireFinding): Record<string, unknown> {
       : { liveness_relation: found.liveness_relation }),
     test_only: found.test_only,
     generated: found.generated,
-    component: found.component,
+    component: listed.length === 0 ? found.component : { ...found.component, members: listed },
     retained_by: found.retained_by,
     configurations: found.configurations,
     consumers_loaded: found.consumers_loaded,
@@ -220,8 +225,9 @@ function findingResult(
   found: WireFinding,
   index: ReadonlyMap<string, number>,
   hashOf: (at: Located) => string,
+  members: MembersOf,
 ): Record<string, unknown> {
-  const related = relatedOf(found);
+  const related = relatedOf(found, members);
   return {
     ruleId: found.code,
     ruleIndex: ruleIndex(index, found.code),
@@ -241,7 +247,7 @@ function findingResult(
       primaryLocationLineHash: hashOf(found.position),
       "deadsetSymbolRef/v1": symbolFingerprint(found.code, found.symbol.ref),
     },
-    properties: propertiesOf(found),
+    properties: propertiesOf(found, members),
   };
 }
 
@@ -275,8 +281,10 @@ export function sarif(report: Report, options: RenderOptions): Iterable<string> 
   const ruleList = rules(kinds);
   const index = new Map(kinds.map((kind, at) => [kind.code, at]));
   const hashOf = lineHashCache(options.readSource);
+  const listed = new Map((report.components ?? []).map((one) => [one.id, one.members]));
+  const members: MembersOf = (id) => listed.get(id) ?? [];
   const results = [
-    ...report.findings.map((found) => findingResult(found, index, hashOf)),
+    ...report.findings.map((found) => findingResult(found, index, hashOf, members)),
     ...report.stale_suppressions.map((stale) => staleResult(stale, index, hashOf)),
   ];
   const languages = [...report.analyzer.languages].sort().join("+");

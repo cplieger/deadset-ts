@@ -11,6 +11,7 @@ import { packageScope } from "./inventory.ts";
 import { dirnamePath, joinPath, relativePath, resolvePath } from "./paths.ts";
 import { renderRef } from "./ref.ts";
 import type { ProjectView } from "./session.ts";
+import type { UnseenLoad } from "./unseen-loads.ts";
 
 /** A file name the compiler reads as a source file. */
 const SOURCE_FILE = /\.(?:ts|tsx|mts|cts)$/u;
@@ -51,6 +52,8 @@ export interface FileFacts {
   readonly generated?: ReadonlySet<string>;
   /** The property names an `in` expression of a production file tests by a literal. */
   readonly inOperands?: ReadonlySet<string>;
+  /** The loads of production files whose target the analysis cannot resolve. */
+  readonly unseenLoads?: readonly UnseenLoad[];
 }
 
 /** The line of the last character of one text, counted from one; an empty text is one line. */

@@ -835,3 +835,120 @@ describe("a value a declaration holds, passed by name to a function outside the 
     ).toEqual(["DS1301 Keyed.id", "DS1301 Keyed.note", "DS1301 Echoed.dropped"]);
   });
 });
+
+describe("a parameter that keeps no member name and that its function enumerates", () => {
+  it(
+    "holds back the properties of each value passed to it, through a parameter that hands it on",
+    () => {
+      expect(
+        retainedIn([
+          "interface Args { port?: number; seed?: string }",
+          "function command(args: { [key: string]: unknown }): string[] {",
+          "  return Object.keys(args).map((key) => `--${key}=${String(args[key])}`);",
+          "}",
+          "function start(args: any): string[] { return command(args); }",
+          "const args: Args = {};",
+          "args.port = 1;",
+          "console.log(start(args));",
+        ]),
+      ).toEqual(["Args.port 8:19 passed to start", "Args.seed 8:19 passed to start"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "holds back the properties a callback the function passes on enumerates, and none a nested function nothing calls enumerates",
+    () => {
+      expect(
+        retainedIn([
+          "interface Args { port?: number; seed?: string }",
+          "interface Other { kept?: number; spare?: string }",
+          "function command(args: { [key: string]: unknown }): string[] {",
+          "  return [1].flatMap(() => Object.keys(args));",
+          "}",
+          "function never(other: { [key: string]: unknown }): number {",
+          "  function unused(): string[] { return Object.keys(other); }",
+          "  return 1;",
+          "}",
+          "const args: Args = {};",
+          "const other: Other = {};",
+          "console.log(command(args), never(other));",
+        ]),
+      ).toEqual(["Args.port 12:21 passed to command", "Args.seed 12:21 passed to command"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "holds back nothing where an `Object` of the project's own takes the parameter",
+    () => {
+      expect(
+        retainedIn([
+          "interface Args { port?: number; seed?: string }",
+          "const Object = { keys: (_: unknown): string[] => [] };",
+          "function command(args: { [key: string]: unknown }): string[] {",
+          "  return Object.keys(args);",
+          "}",
+          "const args: Args = {};",
+          "console.log(command(args));",
+        ]),
+      ).toEqual([]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "holds back nothing where the function reads its parameter by no enumeration",
+    () => {
+      expect(
+        retainedIn([
+          "interface Args { port?: number; seed?: string }",
+          "function command(args: { [key: string]: unknown }): unknown {",
+          '  return args["port"];',
+          "}",
+          "const args: Args = {};",
+          "args.port = 1;",
+          "console.log(command(args));",
+        ]),
+      ).toEqual([]);
+    },
+    LOAD_TIMEOUT,
+  );
+});
+
+describe("a value a generic function serializes through its type parameter", () => {
+  it(
+    "holds back the type each call passes for the parameter, through the generic functions that hand it on",
+    () => {
+      expect(
+        retainedIn([
+          "interface Payload { kept: string; disabled?: boolean }",
+          "interface Other { spare?: string }",
+          "interface Options<T> { method: string; body?: T | string }",
+          "class Client {",
+          "  post<ReqT>(path: string, json?: ReqT): string {",
+          "    const options: Options<ReqT> = Object.assign({ method: path }, { body: json });",
+          "    return this.request<ReqT>(options);",
+          "  }",
+          "  request<ReqT>(options: Options<ReqT>): string {",
+          "    return this.send(options);",
+          "  }",
+          "  private send<ReqT>(options: Options<ReqT>): string {",
+          '    return typeof options.body === "string" ? options.body : JSON.stringify(options.body);',
+          "  }",
+          "}",
+          "function unrelated<T>(value: T): T { return value; }",
+          'const payload: Payload = { kept: "k" };',
+          "payload.disabled = true;",
+          "const other: Other = {};",
+          "unrelated(other);",
+          'console.log(new Client().post("/p", payload));',
+        ]),
+      ).toEqual([
+        "Payload.kept 21:13 passed to JSON.stringify through the type parameter ReqT",
+        "Payload.disabled 21:13 passed to JSON.stringify through the type parameter ReqT",
+      ]);
+    },
+    LOAD_TIMEOUT,
+  );
+});

@@ -281,3 +281,92 @@ describe("a local a declaration's pattern, a loop or the function's body declare
     LOAD_TIMEOUT,
   );
 });
+
+describe("a local that nothing reads and nothing initializes", () => {
+  it(
+    "is a dead store at its name, and only the writes are where it is written later",
+    () => {
+      expect(
+        partsOf([
+          "function bare(): number {",
+          "  var never;",
+          "  let assigned;",
+          "  assigned = 2;",
+          "  return 1;",
+          "}",
+          "",
+          "console.log(bare());",
+        ]),
+      ).toEqual(["DS1807 never src/main.ts:2", "DS1807 assigned src/main.ts:4"]);
+    },
+    LOAD_TIMEOUT,
+  );
+});
+
+describe("a function declaration of a function's body", () => {
+  it(
+    "is a dead store at its name where nothing but its own body reads it, and kept by a read before or after it",
+    () => {
+      expect(
+        partsOf([
+          "function outer(n: number): number {",
+          "  function unused(): number {",
+          "    return 1;",
+          "  }",
+          "  function recursive(k: number): number {",
+          "    return k > 0 ? recursive(k - 1) : 0;",
+          "  }",
+          "  function later(): number {",
+          "    return 2;",
+          "  }",
+          "  return n + later() + earlier();",
+          "  function earlier(): number {",
+          "    return 3;",
+          "  }",
+          "}",
+          "",
+          "console.log(outer(1));",
+        ]),
+      ).toEqual(["DS1807 unused src/main.ts:2", "DS1807 recursive src/main.ts:5"]);
+    },
+    LOAD_TIMEOUT,
+  );
+});
+
+describe("a local typed never", () => {
+  it(
+    "is no subject, written in a default arm or initialized past a narrowing, beside a local that is one",
+    () => {
+      expect(
+        partsOf([
+          'type Key = "a" | "b";',
+          "",
+          "function assigned(key: Key): number {",
+          "  let check: never;",
+          "  switch (key) {",
+          '    case "a":',
+          "      return 1;",
+          '    case "b":',
+          "      return 2;",
+          "    default:",
+          "      check = key;",
+          "      return 0;",
+          "  }",
+          "}",
+          "",
+          "function initialized(key: Key): number {",
+          '  if (key === "a" || key === "b") {',
+          "    return 1;",
+          "  }",
+          "  const unreached: never = key;",
+          "  const other: string = key;",
+          "  return 0;",
+          "}",
+          "",
+          'console.log(assigned("a"), initialized("b"));',
+        ]),
+      ).toEqual(["DS1807 other src/main.ts:21"]);
+    },
+    LOAD_TIMEOUT,
+  );
+});
