@@ -448,3 +448,34 @@ describe("a module augmentation of a dependency's class", () => {
     expect(found.filter((one) => one.includes("C."))).toEqual(["DS1003 C.own"]);
   });
 });
+
+describe("a global interface merging into one declared outside the target", () => {
+  it("is named by the compiler's library, with its block, and judges each member by its own references", () => {
+    expect(
+      findingsIn({
+        "tsconfig.json":
+          '{ "compilerOptions": { "lib": ["es2022", "dom"], "strict": true, "noEmit": true } }\n',
+        "main.ts":
+          "declare global {\n  interface Window {\n    chrome?: unknown;\n  }\n}\n\nexport const kind = typeof window;\n",
+      }),
+    ).toEqual(["DS1003 global.Window.chrome"]);
+  });
+
+  it("is named by a package's declaration, whose types may read every member it declares", () => {
+    expect(
+      findingsIn({
+        "package.json":
+          '{ "name": "app", "private": true, "type": "module", "main": "./main.ts", "devDependencies": { "tool": "1.0.0" } }\n',
+        "tsconfig.json":
+          '{ "compilerOptions": { "strict": true, "noEmit": true, "module": "esnext", "moduleResolution": "bundler" } }\n',
+        "node_modules/tool/package.json": '{ "name": "tool", "types": "./index.d.ts" }\n',
+        "node_modules/tool/index.d.ts": "export {};\n",
+        "node_modules/tool/client.d.ts":
+          'interface ToolOptions {}\ntype Strict = "strict" extends keyof ToolOptions ? true : false;\ninterface ImportMeta {\n  readonly strict: Strict;\n}\n',
+        "env.d.ts":
+          '/// <reference types="tool/client" />\n\ninterface ToolOptions {\n  strict: unknown;\n}\n',
+        "main.ts": "export const strict = import.meta.strict;\n",
+      }),
+    ).toEqual([]);
+  });
+});

@@ -245,17 +245,10 @@ describe("the SARIF rendering", () => {
       position: { path: "b/x.ts", line: 1, column: 1, end_line: 1 },
     };
     const [result] = onlyRun(
-      rendered(
-        report(
-          [
-            {
-              ...NARROWING,
-              component: { ...NARROWING.component, symbol_count: 2, members: [own, twin] },
-            },
-          ],
-          [],
-        ),
-      ),
+      rendered({
+        ...report([{ ...NARROWING, component: { ...NARROWING.component, symbol_count: 2 } }], []),
+        components: [{ id: NARROWING.component.id, members: [own, twin] }],
+      }),
     ).results;
 
     expect(result?.["relatedLocations"]).toEqual([

@@ -223,18 +223,32 @@ export function sweepMatrix(matrix: Matrix, input: SweepInput): SweepResult {
 
   const union = matrix.union;
   const heldBy: (string | undefined)[] = union.symbols.map(() => undefined);
-  const testReached = reachedWithTheTests(union, [
+  const held = [
     ...input.marked,
     ...(input.exempt ?? []).map((record) => record.id),
     ...(input.unanswered ?? []),
-  ]);
-  const judged = union.symbols.map((symbol, at): readonly Candidate[] | undefined => {
+  ];
+  const testReached = reachedWithTheTests(union, held);
+  // A test uses what it names: a file a test reads through a star re-export or a
+  // namespace keeps the exports nothing names at their own class.
+  const testNamed = reachedWithTheTests(union, held, false);
+  const everywhere = union.symbols.map((symbol, at): readonly Candidate[] | undefined => {
     const held = matrix.heldIn[at] ?? [];
     const found = held.map((configuration) => byConfiguration.get(configuration)?.get(symbol.id));
     return held.length === 0 || found.some((candidate) => candidate === undefined)
       ? undefined
       : found.filter((candidate): candidate is Candidate => candidate !== undefined);
   });
+  const compiled = compiledReferences(
+    matrix,
+    new Set(
+      union.symbols.flatMap((symbol, at) => (everywhere[at] === undefined ? [] : [symbol.id])),
+    ),
+    input.mode,
+  );
+  const judged = everywhere.map((found, at) =>
+    compiled.has(union.symbols[at]?.id ?? "") ? undefined : found,
+  );
   // A configuration that does not hold a test's subject's caller finds the subject dead,
   // so a test is of dead code only where every production subject it names is dead in
   // every configuration that holds it.
@@ -252,7 +266,7 @@ export function sweepMatrix(matrix: Matrix, input: SweepInput): SweepResult {
   const kept = keptByTests(union, testReached, admittedAt);
   const testUsed = testUsedReach(
     union,
-    union.symbols.map((_symbol, at) => matrix.testUsed[at] === true && testReached[at] === true),
+    union.symbols.map((_symbol, at) => matrix.testUsed[at] === true && testNamed[at] === true),
     judged.map((one) => one !== undefined),
   );
   const candidates: MatrixCandidate[] = [];
@@ -294,6 +308,39 @@ export function sweepMatrix(matrix: Matrix, input: SweepInput): SweepResult {
     candidates,
     components: deadComponents(matrix, { liveUnder, candidates }, new Set()),
   };
+}
+
+/**
+ * Every declaration of `dead`, those dead in every configuration that holds them, that a
+ * configuration's graph references from a judged declaration outside `dead` or already
+ * kept, until none joins: deleting one would break that configuration's compile. A
+ * production run counts no reference a test file made.
+ */
+function compiledReferences(
+  matrix: Matrix,
+  dead: ReadonlySet<string>,
+  mode: SweepInput["mode"],
+): ReadonlySet<string> {
+  const kept = new Set<string>();
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const graph of matrix.graphs) {
+      graph.out.forEach((edges, from) => {
+        const id = graph.symbols[from]?.id ?? "";
+        if (graph.subject[from] !== true || (dead.has(id) && !kept.has(id))) {
+          return;
+        }
+        for (const edge of edges) {
+          const to = graph.symbols[edge.to]?.id ?? "";
+          if ((!mode.production || !edge.test) && dead.has(to) && !kept.has(to)) {
+            kept.add(to);
+            changed = true;
+          }
+        }
+      });
+    }
+  }
+  return kept;
 }
 
 /** Per declaration of the union, whether one of `seeds` is it or reaches it through `dead` declarations. */

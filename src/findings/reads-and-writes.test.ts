@@ -128,11 +128,11 @@ describe("the reads-and-writes emitter", () => {
     ]);
   });
 
-  it("reports the type parameters of functions and methods nothing names, and none of a type declaration", () => {
+  it("reports the type parameters of functions, methods and type aliases nothing names, and none of a class or an interface", () => {
     const unused = fixtureFindings().filter((finding) => finding.code === "DS1303");
 
-    expect(named(unused)).toEqual(["DS1303 first<T>", "DS1303 Box.open<V>"]);
-    expect(unused.map((finding) => finding.confidence)).toEqual(["certain", "certain"]);
+    expect(named(unused)).toEqual(["DS1303 first<T>", "DS1303 Box.open<V>", "DS1303 ID<Phantom>"]);
+    expect(unused.map((finding) => finding.confidence)).toEqual(["certain", "certain", "certain"]);
   });
 
   it("counts a read from a test file as a read outside production mode", () => {
@@ -170,8 +170,8 @@ describe("the reads-and-writes emitter", () => {
 
     expect(own.some((finding) => finding.code === "DS1302")).toBe(false);
     expect(own.some((finding) => finding.code === "DS1301")).toBe(true);
-    expect(named(family)).toEqual(["DS1303 first<T>", "DS1303 Box.open<V>"]);
-    expect(family.map((finding) => finding.severity)).toEqual(["warn", "warn"]);
+    expect(named(family)).toEqual(["DS1303 first<T>", "DS1303 Box.open<V>", "DS1303 ID<Phantom>"]);
+    expect(family.map((finding) => finding.severity)).toEqual(["warn", "warn", "warn"]);
   });
 });
 

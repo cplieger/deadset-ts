@@ -39,6 +39,7 @@ describe("the placement of every family's findings in their components", () => {
       "DS1302 Mode.Write deadset-ts/c-0006 root 1 1",
       "DS1303 first<T> deadset-ts/c-0001 root 1 1",
       "DS1303 Box.open<V> deadset-ts/c-0003 root 1 1",
+      "DS1303 ID<Phantom> deadset-ts/c-0004 root 1 1",
     ]);
   });
 
@@ -300,7 +301,7 @@ describe("the defaults of a library", () => {
 });
 
 describe("the confidence of a dead component", () => {
-  // A published export only a test calls, and the test, which falls with it.
+  // A published export only a test calls, and the test.
   const root = writeProject({
     "package.json": `${JSON.stringify({
       name: "@example/capped",
@@ -333,17 +334,16 @@ describe("the confidence of a dead component", () => {
       ),
     ).map((finding) => `${finding.code} ${finding.symbol.name} ${finding.confidence}`);
 
-  it("caps every finding of a component at its weakest root, so the minimum confidence withholds it whole", () => {
+  it("withholds the export under the default minimum, and reports no test of it where no consumer judges it", () => {
     expect(reported({})).toEqual([]);
     expect(reported({ analysis: { min_confidence: "possible" } })).toEqual([
-      "DS1005 probe possible",
       "DS1004 testedOnly possible",
     ]);
   });
 });
 
 describe("a test of dead code in a library", () => {
-  it("is as uncertain as the published members it references", () => {
+  it("is no test of dead code where a target beside an internal one is published API no consumer judges", () => {
     const root = writeProject({
       "package.json":
         '{ "name": "@example/lib", "type": "module", "exports": { ".": "./src/index.ts" } }\n',
@@ -352,7 +352,8 @@ describe("a test of dead code in a library", () => {
       "src/index.ts":
         "export interface Handle {\n  destroy(): void;\n}\n\nexport function make(): Handle {\n  return { destroy() {} };\n}\n",
       "src/index.test.ts":
-        'import type { Handle } from "./index.ts";\n\nconst held: Handle[] = [];\n\nexport function clean(): void {\n  for (const one of held) {\n    one.destroy();\n  }\n}\n',
+        'import type { Handle } from "./index.ts";\nimport { reset } from "./internal.ts";\n\nconst held: Handle[] = [];\n\nexport function clean(): void {\n  reset();\n  for (const one of held) {\n    one.destroy();\n  }\n}\n',
+      "src/internal.ts": "export function reset(): void {}\n",
     });
     try {
       const { config } = resolve({
@@ -360,15 +361,13 @@ describe("a test of dead code in a library", () => {
           '{ "target": { "kind": "library" }, "analysis": { "min_confidence": "possible" } }',
         repositoryLabel: "deadset.json",
       });
-      const tests = findingsOf(emitterInputOf(root, config)).filter(
-        (finding) => finding.code === "DS1005",
+      const found = findingsOf(emitterInputOf(root, config)).filter(
+        (finding) => finding.code === "DS1005" || finding.symbol.name === "reset",
       );
 
       expect(
-        tests.map(
-          (finding) => `${finding.symbol.name} ${finding.reachabilityClass} ${finding.confidence}`,
-        ),
-      ).toEqual(["clean certain possible"]);
+        found.map((finding) => `${finding.code} ${finding.symbol.name} ${finding.confidence}`),
+      ).toEqual(["DS1004 reset possible"]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -535,6 +534,69 @@ describe("a component listed in full", () => {
       "late src/main.ts:3-5",
       "deadCaller src/main.ts:7-13",
       "early src/main.ts:15-17",
+    ]);
+  });
+
+  it("names the subject alone for a component minted for a subject in no dead component", () => {
+    const found = reportedOver(
+      {
+        "package.json":
+          '{ "name": "@example/minted", "type": "module", "main": "./src/main.ts" }\n',
+        "src/main.ts":
+          "export function used(kept: number, spare: number): number {\n  return kept;\n}\n",
+      },
+      { target: { kind: "application" }, reporters: { cascade: "full" } },
+    );
+    const part = found.find((finding) => finding.code === "DS1801");
+
+    expect(part?.component.members).toEqual([
+      { ref: part?.symbol.ref, name: part?.symbol.name, position: part?.position },
+    ]);
+  });
+
+  it("names an interface and the members that fall with it for a component minted for an interface tests hold", () => {
+    const found = reportedOver(
+      {
+        "package.json": '{ "name": "@example/probe", "type": "module", "main": "./src/main.ts" }\n',
+        "tsconfig.json": `${JSON.stringify({
+          compilerOptions: { strict: true, module: "NodeNext", noEmit: true, types: [] },
+          include: ["src", "tests"],
+        })}\n`,
+        "src/main.ts": "export const run = 1;\n",
+        "tests/support.ts": [
+          'import test from "node:test";',
+          "export interface Probe {",
+          "  check(): void;",
+          "  other(): void;",
+          "}",
+          "export class Impl implements Probe {",
+          "  check(): void {}",
+          "  other(): void {}",
+          "}",
+          "export const runner = test;",
+          "",
+        ].join("\n"),
+        "tests/a.test.ts": [
+          'import { Impl } from "./support.js";',
+          "const probe = new Impl();",
+          "probe.check();",
+          "probe.other();",
+          "",
+        ].join("\n"),
+      },
+      {
+        target: { kind: "application" },
+        reporters: { cascade: "full" },
+        ts: { test_files: ["tests/**/*.test.ts"] },
+      },
+    );
+    const probe = found.find((finding) => finding.symbol.name === "Probe");
+
+    expect(probe?.component.symbolCount).toBe(3);
+    expect(probe?.component.members?.map((member) => member.name)).toEqual([
+      "Probe",
+      "Probe.check",
+      "Probe.other",
     ]);
   });
 });

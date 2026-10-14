@@ -35,8 +35,8 @@ export interface ManifestEntry {
   readonly path: string;
   readonly role: EntryRole;
   /**
-   * Whether the member declares what a consumer may import, which is `exports` and
-   * the three members that preceded it. A command is published too, and is not this:
+   * Whether the member declares what a consumer may import, which is `exports`, `browser`
+   * and the three members that preceded `exports`. A command is published too, and is not this:
    * `exports` is the surface a library's published API is read from.
    */
   readonly published: boolean;
@@ -136,7 +136,7 @@ function manifestOf(host: Host, targetRoot: string): Record<string, unknown> | u
 export interface Manifest {
   /**
    * Every entry point the manifest names, in the order the members are read: `main`,
-   * `module`, `types`, then each `bin` command, then every target of `exports`, then
+   * `module`, `types`, then `browser` and each file it maps a module to, then each `bin` command, then every target of `exports`, then
    * every token of each script, which names a file only where one is at its path. Each
    * path is absolute.
    */
@@ -168,6 +168,24 @@ export function readManifest(host: Host, targetRoot: string): Manifest {
     const value = manifest[member];
     if (typeof value === "string" && isTarget(value, false)) {
       found.push({ member, path: value, role: "import", published: true });
+    }
+  }
+
+  // A `browser` string replaces `main` in a browser bundle, and an object replaces each
+  // module it maps with the file it names: https://github.com/defunctzombie/package-browser-field-spec
+  const browser = manifest["browser"];
+  if (typeof browser === "string" && isTarget(browser, false)) {
+    found.push({ member: "browser", path: browser, role: "import", published: true });
+  } else if (isRecord(browser)) {
+    for (const [replaced, value] of Object.entries(browser)) {
+      if (typeof value === "string" && isTarget(value, true)) {
+        found.push({
+          member: below("browser", replaced),
+          path: value,
+          role: "import",
+          published: true,
+        });
+      }
     }
   }
 

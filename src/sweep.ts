@@ -195,10 +195,14 @@ export function runnerCalls(symbol: InventorySymbol): boolean {
  * That run's roots are the graph's own and, of each test file, its top level and every
  * function it exports, which a test runner may call, and every export of a manual mock,
  * which the runner reads; any other export of a test file, and test-support code, which
- * runs where a test imports it, are judged as any file's are.
- * `held` seeds it as a mark or an exemption seeds a sweep.
+ * runs where a test imports it, are judged as any file's are. `held` seeds it as a mark
+ * seeds a sweep; with `namespaces` false a file read reaches none of the file's exports.
  */
-export function reachedWithTheTests(graph: Graph, held: readonly string[]): readonly boolean[] {
+export function reachedWithTheTests(
+  graph: Graph,
+  held: readonly string[],
+  namespaces = true,
+): readonly boolean[] {
   const tests = graph.symbols.flatMap((symbol, at) => {
     const exported = symbol.exported && graph.symbols[graph.parent[at] ?? OUTSIDE]?.kind === "file";
     const called = exported && runnerCalls(symbol);
@@ -208,9 +212,12 @@ export function reachedWithTheTests(graph: Graph, held: readonly string[]): read
       ? [{ at, kind: "test-runner" as const }]
       : [];
   });
-  return reachable({ ...graph, rooted: [...graph.rooted, ...tests] }, flagged(graph, held), {
-    production: false,
-  });
+  return reachable(
+    { ...graph, rooted: [...graph.rooted, ...tests] },
+    flagged(graph, held),
+    { production: false },
+    namespaces,
+  );
 }
 
 /**
@@ -240,7 +247,12 @@ function flagged(graph: Graph, ids: readonly string[]): boolean[] {
  * included, while a root reaches through the references the mode counts. The held seed
  * runs first, so what it reaches is expanded under the wider rule.
  */
-function reachable(graph: Graph, held: readonly boolean[], mode: Mode): readonly boolean[] {
+function reachable(
+  graph: Graph,
+  held: readonly boolean[],
+  mode: Mode,
+  namespaces = true,
+): readonly boolean[] {
   const reached = graph.symbols.map(() => false);
   const expanded = graph.symbols.map(() => false);
   const queue: number[] = [];
@@ -269,7 +281,7 @@ function reachable(graph: Graph, held: readonly boolean[], mode: Mode): readonly
         if (!holding && mode.production && edge.test) {
           continue;
         }
-        enter(edge.to, !edge.evaluation);
+        enter(edge.to, namespaces && !edge.evaluation);
       }
     }
   };
@@ -285,7 +297,7 @@ function reachable(graph: Graph, held: readonly boolean[], mode: Mode): readonly
   }
   // A consumer's reference reaches what it names as one of the target's own does.
   for (const edge of callsOf(graph, mode)) {
-    enter(edge.to, !edge.evaluation);
+    enter(edge.to, namespaces && !edge.evaluation);
   }
   walk(false);
   return reached;

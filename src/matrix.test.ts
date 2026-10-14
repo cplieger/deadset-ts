@@ -287,6 +287,58 @@ describe("a run whose configurations answer one declaration differently", () => 
   );
 });
 
+describe("a declaration dead in every configuration that holds it", () => {
+  it(
+    "is kept where a configuration compiles a reference to it from a declaration the run keeps",
+    () => {
+      const root = writeProject({
+        "package.json": '{ "name": "@example/compiled", "private": true, "type": "module" }\n',
+        "deadset.json": `${JSON.stringify({
+          target: { kind: "application" },
+          analysis: {
+            configurations: [
+              { id: "a", project: "tsconfig.json" },
+              { id: "b", project: "tsconfig.b.json" },
+            ],
+          },
+          ts: { entry_files: ["src/main-a.ts", "src/main-b.ts"] },
+        })}\n`,
+        "tsconfig.json": tsconfig(["src/main-a.ts"], { "#impl": ["./src/impl-a.ts"] }),
+        "tsconfig.b.json": tsconfig(["src/main-b.ts", "src/shared.ts"], {
+          "#impl": ["./src/impl-b.ts"],
+        }),
+        "src/main-a.ts": 'import { s } from "./shared.ts";\n\nconsole.log(s());\n',
+        "src/main-b.ts": "console.log(1);\n",
+        "src/shared.ts":
+          'import { g } from "#impl";\n\nexport function s(): number {\n  return g();\n}\n',
+        "src/impl-a.ts": "export function g(): number {\n  return 1;\n}\n",
+        "src/impl-b.ts":
+          "export function g(): number {\n  return 2;\n}\n\nexport function spare(): number {\n  return 3;\n}\n",
+      });
+      onTestFinished(() => {
+        rmSync(root, { recursive: true, force: true });
+      });
+      run(
+        ["analyze", "--target=.", "--report=report.json"],
+        new MemoryWriter(),
+        new MemoryWriter(),
+        {
+          ...nodeHost(),
+          workingDirectory: () => root,
+        },
+      );
+      const { findings } = JSON.parse(readFileSync(join(root, "report.json"), "utf8")) as {
+        findings: { code: string; position: { path: string }; symbol: { name: string } }[];
+      };
+
+      expect(findings.map((one) => `${one.code} ${one.position.path} ${one.symbol.name}`)).toEqual([
+        "DS1001 src/impl-b.ts spare",
+      ]);
+    },
+    LOAD_TIMEOUT,
+  );
+});
+
 describe("a test of dead code across configurations", () => {
   it(
     "is no test of dead code where one production subject it names is live in another configuration",

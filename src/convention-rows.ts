@@ -146,8 +146,8 @@ const SCRIPT = "{js,jsx,ts,tsx}";
 const MODULE = "{js,mjs,ts,mts}";
 const ANY_MODULE = "{js,mjs,cjs,ts,mts,cts}";
 const VITE_CONFIG = `vite.config.${ANY_MODULE}`;
-/** The legacy configuration files of ESLint that hold JSON or a CommonJS module. */
-const ESLINTRC = [".eslintrc", ".eslintrc.json", ".eslintrc.{js,cjs}"];
+/** The legacy configuration files of ESLint: JSON, YAML or a CommonJS module. */
+const ESLINTRC = [".eslintrc", ".eslintrc.json", ".eslintrc.{yml,yaml}", ".eslintrc.{js,cjs}"];
 
 const SVELTEKIT_ROUTE_FILES = "+{page,layout,server,page.server,layout.server,error}";
 
@@ -208,6 +208,35 @@ const ANGULAR_PACKAGE_KEYS: readonly PackageKey[] = [
   "styles",
   "scripts",
 ].map((key) => ({ key, files: ["angular.json"] }));
+
+/**
+ * The row of a code generator that writes its output below one directory its
+ * configuration's `property` sets, `fallback` where no configuration file sets it, so
+ * every file there is a generated file.
+ */
+function outputDirectoryRow(row: {
+  readonly name: string;
+  readonly package: string;
+  readonly range: string;
+  readonly files: readonly string[];
+  readonly property: string;
+  readonly fallback: string;
+}): ConventionRow {
+  return {
+    name: row.name,
+    package: row.package,
+    range: row.range,
+    entries: [],
+    generated: ["<output>"],
+    moves: [
+      {
+        id: "output",
+        defaults: [row.fallback],
+        readings: [{ property: row.property, files: row.files }],
+      },
+    ],
+  };
+}
 
 /**
  * The test runners and the assertion, mock and runner libraries whose import is test
@@ -299,6 +328,7 @@ export const CONVENTION_ROWS: readonly ConventionRow[] = [
     range: ">=4.0.0 <10.0.0",
     entries: [],
     moves: [],
+    packageKeys: [{ key: "parser", files: ESLINTRC }],
     prefixedNames: [
       { property: "plugins", files: ESLINTRC, prefix: "eslint-plugin" },
       { property: "extends", files: ESLINTRC, prefix: "eslint-plugin", marker: "plugin:" },
@@ -414,6 +444,14 @@ export const CONVENTION_ROWS: readonly ConventionRow[] = [
       { key: "oclif.hooks", directory: false },
     ],
   },
+  outputDirectoryRow({
+    name: "panda",
+    package: "@pandacss/dev",
+    range: ">=0.1.0 <2.0.0",
+    files: [`panda.config.${ANY_MODULE}`],
+    property: "outdir",
+    fallback: "styled-system",
+  }),
   {
     name: "parcel",
     package: "parcel",
@@ -480,6 +518,13 @@ export const CONVENTION_ROWS: readonly ConventionRow[] = [
         readings: [{ property: "appDirectory", files: [`react-router.config.${MODULE}`] }],
       },
     ],
+  },
+  {
+    name: "react-scripts",
+    package: "react-scripts",
+    range: ">=1.0.0 <6.0.0",
+    entries: [`src/index.${SCRIPT}`, "src/setupProxy.js", `src/setupTests.${SCRIPT}`],
+    moves: [],
   },
   {
     name: "remix",

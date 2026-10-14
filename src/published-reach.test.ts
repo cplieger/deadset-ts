@@ -300,3 +300,86 @@ describe("a manifest entry no source file is written at", () => {
     expect(report.notes ?? []).toEqual([]);
   });
 });
+
+describe("a value a published function returns", () => {
+  it("publishes each property its type carries, through a type assertion and an intersection a library call builds", () => {
+    const report = analyzed({
+      "package.json": JSON.stringify({
+        name: "@example/lib",
+        version: "1.0.0",
+        type: "module",
+        exports: "./index.ts",
+      }),
+      "deadset.json": JSON.stringify({ target: { kind: "library" } }),
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: { strict: true, module: "nodenext", noEmit: true },
+      }),
+      "index.ts": [
+        "export interface Meta {",
+        "  runtime: string;",
+        "}",
+        "type Static = Meta & { version?: string };",
+        "type Full = Meta & { version?: string; date?: Date };",
+        "function created(): Static {",
+        '  const made: Static = { runtime: "node" };',
+        '  made.version = "1";',
+        "  return made;",
+        "}",
+        "const meta = created();",
+        "export function getMeta(): Meta {",
+        "  return Object.assign({}, meta, { date: new Date() }) as Full;",
+        "}",
+        "",
+      ].join("\n"),
+    });
+
+    expect(
+      report.findings
+        .filter((one) => one.symbol.name.includes("version") || one.symbol.name.includes("date"))
+        .map((one) => `${one.code} ${one.symbol.name} ${one.confidence}`),
+    ).toEqual([
+      "DS1301 Static.version possible",
+      "DS1003 Full.version possible",
+      "DS1003 Full.date possible",
+    ]);
+  });
+
+  it("publishes each property the type of a value a method of a returned object literal returns carries", () => {
+    const report = analyzed({
+      "package.json": JSON.stringify({
+        name: "@example/lib",
+        version: "1.0.0",
+        type: "module",
+        exports: "./index.ts",
+      }),
+      "deadset.json": JSON.stringify({ target: { kind: "library" } }),
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: { strict: true, module: "nodenext", noEmit: true },
+      }),
+      "index.ts": [
+        "export interface Meta {",
+        "  runtime: string;",
+        "}",
+        "type Full = Meta & { version?: string; date?: Date };",
+        "interface Environment {",
+        "  getMeta: () => Meta;",
+        "}",
+        "export function createEnvironment(): Environment {",
+        "  const environment: Environment = {",
+        "    getMeta(): Meta {",
+        '      return Object.assign({}, { runtime: "node" }, { date: new Date() }) as Full;',
+        "    },",
+        "  };",
+        "  return environment;",
+        "}",
+        "",
+      ].join("\n"),
+    });
+
+    expect(
+      report.findings
+        .filter((one) => one.symbol.name.includes("version") || one.symbol.name.includes("date"))
+        .map((one) => `${one.code} ${one.symbol.name} ${one.confidence}`),
+    ).toEqual(["DS1003 Full.version possible", "DS1003 Full.date possible"]);
+  });
+});

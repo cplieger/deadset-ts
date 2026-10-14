@@ -10,7 +10,7 @@ import { ConfigError, kindOf, type Format } from "../config.ts";
 import { CONFORMANCE, DECLARED_GAPS } from "../conformance.ts";
 import { moduleIdentity } from "../consumers.ts";
 import { analyzerProvenance, verdictOf } from "../findings-pass.ts";
-import { joinPath, normalizePath, relativePath, resolvePath } from "../paths.ts";
+import { dirnamePath, joinPath, normalizePath, relativePath, resolvePath } from "../paths.ts";
 import type { Host } from "../host.ts";
 import type { ManifestEntry } from "../manifest.ts";
 import type { NotBuilt } from "../discover.ts";
@@ -30,6 +30,7 @@ import { RENDERINGS } from "../reporters/reporters.ts";
 import { parseTemplate, TemplateError, type Template } from "../reporters/template.ts";
 import { resolve } from "../resolve.ts";
 import { otherSchemeRows, rowReason, writeBaseline, type Recorded } from "../suppress-file.ts";
+import type { UnseenLoad } from "../unseen-loads.ts";
 import { CONTRACT_VERSION } from "../version.ts";
 import { EXIT_CLEAN, EXIT_FAILURE, type Verb, type VerbOptions } from "./verb.ts";
 
@@ -111,6 +112,27 @@ function unmappedNotes(
       message: `the manifest's ${entry.member} names ${named}, which reads back to no source file of the target: name the file it is built from in ts.entry_files`,
     };
   });
+}
+
+/**
+ * One note per load of a production file the run cannot resolve, each site once: a file
+ * it loads is a root the run does not see, so `ts.roots_complete` lifts no cap there.
+ */
+function unseenLoadNotes(loads: readonly UnseenLoad[]): readonly ReportNote[] {
+  return [
+    ...new Map(
+      loads.map((load) => {
+        const { path, line, column } = load.position;
+        const site = `${path}:${String(line)}:${String(column)}`;
+        const note: ReportNote = {
+          kind: "computed-load",
+          path: dirnamePath(path),
+          message: `${site} loads a module by a computed path the analysis cannot resolve, so the configurations compiling it report what no root reaches at probable at most, whatever ts.roots_complete says`,
+        };
+        return [site, note] as const;
+      }),
+    ).values(),
+  ];
 }
 
 /** Each project the run dropped as a report names it, by its configuration file below the target. */
@@ -309,7 +331,11 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
       typeErrorSkips: run.typeErrorSkips,
       unanswered: unansweredCounts(analysis),
       conventionsApplied: run.conventionsApplied,
-      notes: unmappedNotes(run.unmappedEntries, resolvePath(invoked, targetRoot)),
+      listsComponents: config.reporters.cascade === "full",
+      notes: [
+        ...unmappedNotes(run.unmappedEntries, resolvePath(invoked, targetRoot)),
+        ...unseenLoadNotes(run.unseenLoads),
+      ],
     });
     report = capFindings(sortFindings(built, config.reporters.sort), config.reporters.maxFindings);
     verdict = verdictOf(result, config);

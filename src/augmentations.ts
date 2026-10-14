@@ -7,9 +7,18 @@
  * as `import.meta` or `process.env`, so a use of its member is a use of it.
  */
 
-import type { Inventory, InventorySymbol } from "./inventory.ts";
+import {
+  isInterfaceDeclaration,
+  isModuleBlock,
+  isModuleDeclaration,
+  type Node,
+} from "@typescript/native/ast";
+import { nodeKey, type Inventory, type InventorySymbol } from "./inventory.ts";
 import { referenceKey } from "./matrix.ts";
 import type { Reference } from "./references.ts";
+import type { ProjectView } from "./session.ts";
+import type { SourceFiles } from "./source-files.ts";
+import type { NodeHandle } from "@typescript/native/sync";
 
 /** Whether one declaration is a `declare global` block: a module-level namespace named `global`. */
 function isGlobalBlock(
@@ -78,6 +87,72 @@ export function ambientGlobalInterfaces(
   return holders === undefined
     ? []
     : interfaces.filter((id) => held.ambient.has(id) && holders(id).global);
+}
+
+/**
+ * Each ambient global interface of the project's own files that merges into an interface
+ * declared outside them, with every interface, namespace and block between it and the
+ * global scope: the outside declaration names it wherever a value is typed by it. Where
+ * every outside declaration is a package's, not the compiler's library, and declares no
+ * member, each member it declares as well: such an interface is a slot the package reads
+ * by type, as `keyof` does, in declarations the analysis does not walk.
+ */
+export function mergedGlobalInterfaces<Brand>(
+  project: ProjectView<Brand>,
+  held: Inventory,
+  files: SourceFiles,
+): readonly string[] {
+  const scripts = new Set<string>();
+  const names = new Map<string, Node>();
+  for (const file of files.byName.values()) {
+    const fileId = held.declarations.get(nodeKey(file, file));
+    if (fileId !== undefined && file.externalModuleIndicator === undefined) {
+      scripts.add(fileId);
+    }
+    const visit = (node: Node): void => {
+      if (isInterfaceDeclaration(node)) {
+        const id = held.declarations.get(nodeKey(file, node));
+        if (id !== undefined) {
+          names.set(id, node.name);
+        }
+      } else if (isModuleDeclaration(node) || isModuleBlock(node)) {
+        node.forEachChild(visit);
+      }
+    };
+    file.forEachChild(visit);
+  }
+  const global = new Set(ambientGlobalInterfaces(held, [...names.keys()], scripts));
+  const asked = [...names].filter(([id]) => global.has(id));
+  if (asked.length === 0) {
+    return [];
+  }
+  const answers = project.symbolsAt(asked.map(([, name]) => project.handle(name)));
+  const holders = holdersOf(held, scripts);
+  const empty = (handle: NodeHandle): boolean => {
+    if (project.program.getSourceFileMetadata(handle.path)?.isDefaultLibrary === true) {
+      return false;
+    }
+    const node = project.declarationAt(handle)?.node;
+    return node !== undefined && isInterfaceDeclaration(node) && node.members.length === 0;
+  };
+  return [
+    ...new Set(
+      asked.flatMap(([id], at) => {
+        const symbol = answers[at];
+        if (typeof symbol !== "object") {
+          return [];
+        }
+        const outside = symbol.declarations.filter((handle) => !files.byName.has(handle.path));
+        if (outside.length === 0) {
+          return [];
+        }
+        const members = outside.every(empty)
+          ? held.symbols.filter((one) => one.parent === id).map((one) => one.id)
+          : [];
+        return [id, ...(holders?.(id).ids ?? []), ...members];
+      }),
+    ),
+  ];
 }
 
 /**

@@ -8,8 +8,8 @@ import type { Emitter, EmitterInput } from "./emitter.ts";
 /** The codes of this family. */
 type ReadsAndWritesCode = "DS1301" | "DS1302" | "DS1303";
 
-/** The containers whose type parameters `DS1303` reports: a function and a class method. */
-const SIGNATURES: ReadonlySet<string> = new Set(["function", "method"]);
+/** The containers whose type parameters `DS1303` reports: a function, a class method and a type alias. */
+const SIGNATURES: ReadonlySet<string> = new Set(["function", "method", "type"]);
 
 /** What the family reads of one run, indexed by declaration. */
 interface Run {
@@ -225,10 +225,11 @@ function unusedEnumMembers(run: Run): readonly Finding[] {
 }
 
 /**
- * `DS1303`: a type parameter of a function or a class method that neither the
- * declaration's signature nor its body names. A type parameter of a class, an interface,
- * a type alias or a method signature belongs to a type declaration and is never
- * reported, because a phantom parameter makes two instantiations distinct types.
+ * `DS1303`: a type parameter of a function, a class method or a type alias that neither
+ * the declaration's signature nor its body names. An alias names no type of its own, so
+ * a parameter its type never names makes no two instantiations distinct. One of a class,
+ * an interface or a method signature is never reported: a class or an interface merges
+ * only with declarations of the same parameters.
  */
 function unusedTypeParameters(run: Run): readonly Finding[] {
   return unnamed(run, "type-parameter")

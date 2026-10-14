@@ -81,11 +81,6 @@ export interface WireFinding {
     readonly root: boolean;
     readonly symbol_count: number;
     readonly deletable_lines: number;
-    readonly members?: readonly {
-      readonly ref: string;
-      readonly name: string;
-      readonly position: WirePosition;
-    }[];
   };
   readonly retained_by: readonly string[];
   readonly configurations: readonly string[];
@@ -94,6 +89,16 @@ export interface WireFinding {
   readonly severity: Severity;
   readonly message: string;
   readonly details: WireDetails;
+}
+
+/** One dead component a finding names, with its members, as the report lists it once. */
+export interface WireComponent {
+  readonly id: string;
+  readonly members: readonly {
+    readonly ref: string;
+    readonly name: string;
+    readonly position: WirePosition;
+  }[];
 }
 
 interface WireEdgeEvaluation {
@@ -218,6 +223,8 @@ export interface Report {
     }[];
   };
   readonly findings: readonly WireFinding[];
+  /** Present where the run lists each component in full. */
+  readonly components?: readonly WireComponent[];
   readonly edge_evaluations: readonly WireEdgeEvaluation[];
   readonly stale_suppressions: readonly WireStaleSuppression[];
   readonly declared_gaps: readonly WireDeclaredGap[];
@@ -231,13 +238,20 @@ export interface Report {
 }
 
 /** One hint about the run's setup, as the report schema's `notes` spells it. */
-export interface ReportNote {
-  readonly kind: "unmapped-entry";
-  /** The directory of the manifest the note is about, below the target root. */
-  readonly path: string;
-  readonly key: "ts.entry_files";
-  readonly message: string;
-}
+export type ReportNote =
+  | {
+      readonly kind: "unmapped-entry";
+      /** The directory of the manifest the note is about, below the target root. */
+      readonly path: string;
+      readonly key: "ts.entry_files";
+      readonly message: string;
+    }
+  | {
+      readonly kind: "computed-load";
+      /** The directory of the file that writes the load, below the target root. */
+      readonly path: string;
+      readonly message: string;
+    };
 
 /** What one run answered, from which its report is built. */
 export interface ReportInput {
@@ -258,6 +272,26 @@ export interface ReportInput {
   readonly conventionsApplied: readonly AppliedConvention[];
   /** The notes the run states, in any order. */
   readonly notes?: readonly ReportNote[];
+  /** Whether the run lists each component in full, which `reporters.cascade: full` asks for. */
+  readonly listsComponents?: boolean;
+}
+
+/**
+ * Each component the findings name, once, with the members the first finding naming it
+ * carries, in the order the findings are: `findings` paired with their wire forms and
+ * sorted, then the edge evaluations' findings.
+ */
+function componentsOf(
+  findings: readonly (readonly [WireFinding, CompletedFinding])[],
+): readonly WireComponent[] {
+  const listed = new Map<string, WireComponent>();
+  for (const [wire, finding] of findings) {
+    const { members } = finding.component;
+    if (members !== undefined && !listed.has(wire.component.id)) {
+      listed.set(wire.component.id, { id: wire.component.id, members: members.map(wireSymbol) });
+    }
+  }
+  return [...listed.values()];
 }
 
 /** Two strings ordered bytewise. */
@@ -342,9 +376,6 @@ export function wireFinding(finding: CompletedFinding): WireFinding {
       root: finding.component.root,
       symbol_count: finding.component.symbolCount,
       deletable_lines: finding.component.deletableLines,
-      ...(finding.component.members === undefined
-        ? {}
-        : { members: finding.component.members.map(wireSymbol) }),
     },
     retained_by: finding.retainedBy,
     configurations: finding.configurations,
@@ -470,7 +501,13 @@ function totalsOf(findings: readonly WireFinding[], result: PassResult): WireTot
 
 /** Builds the report of one run, every array in the order the Contract fixes for it. */
 export function buildReport(input: ReportInput): Report {
-  const findings = input.result.findings.map(wireFinding).sort(canonical);
+  const paired = input.result.findings
+    .map((finding) => [wireFinding(finding), finding] as const)
+    .sort(([a], [b]) => canonical(a, b));
+  const findings = paired.map(([wire]) => wire);
+  const evaluated = input.result.edgeEvaluations.flatMap((one) =>
+    one.finding === undefined ? [] : [[wireFinding(one.finding), one.finding] as const],
+  );
   const unavailable = [...new Map(input.unavailable.map((one) => [one.id, one])).values()]
     .sort((a, b) => compare(a.id, b.id))
     .map((one) => ({ id: one.id, role: "consumer" as const, reason: one.reason }));
@@ -500,6 +537,9 @@ export function buildReport(input: ReportInput): Report {
       .map((one) => ({ id: one.id, project: one.project, error: one.error })),
     consumers: { declared: loaded.length + unavailable.length, loaded, unavailable },
     findings,
+    ...(input.listsComponents === true
+      ? { components: componentsOf([...paired, ...evaluated]) }
+      : {}),
     edge_evaluations: input.result.edgeEvaluations.map(wireEvaluation).sort(byEdge),
     stale_suppressions: input.result.staleSuppressions.map(wireStale).sort(canonicalStale),
     // Every gap shares the one component of the canonical key a gap supplies, the analyzer's

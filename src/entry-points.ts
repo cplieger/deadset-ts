@@ -14,7 +14,6 @@
 import {
   isArrayLiteralExpression,
   isAsExpression,
-  isBinaryExpression,
   isCallExpression,
   isExportAssignment,
   isIdentifier,
@@ -27,7 +26,6 @@ import {
   isPropertyAssignment,
   isSatisfiesExpression,
   isStringLiteral,
-  isTemplateExpression,
   SyntaxKind,
   type Node,
   type SourceFile,
@@ -40,6 +38,7 @@ import {
   type ParseFile,
 } from "./configuration-files.ts";
 import type { Selected } from "./conventions.ts";
+import { buildScriptEntries } from "./build-scripts.ts";
 import { globExpression } from "./glob.ts";
 import type { Host } from "./host.ts";
 import { htmlEntries } from "./html-entries.ts";
@@ -48,6 +47,7 @@ import { dirnamePath, relativePath, resolvePath } from "./paths.ts";
 import { UNANSWERED } from "./query.ts";
 import type { ProjectView } from "./session.ts";
 import type { SourceFiles } from "./source-files.ts";
+import { computedLoadDirectory, leadingLiteral } from "./unseen-loads.ts";
 import { workflowEntries } from "./workflow-steps.ts";
 
 /** Which rule entered a file. */
@@ -56,6 +56,8 @@ export type EntryRule =
   | "configuration-file"
   /** A file a relative string of a configuration module or a JSON configuration file names. */
   | "configuration-string"
+  /** An entry a build script's bundler call names, whose exports the bundle exposes. */
+  | "bundler-entry"
   /** The test runner: its workspace configuration, its setup files and the test files. */
   | "test-runner"
   /** The test files below the browser-test runner's test directory. */
@@ -324,10 +326,7 @@ function configurationEntries(
     strings(dirnamePath(document.path), unselectedIn(document.path, document.strings));
   }
   for (const { file } of outside) {
-    strings(
-      dirnamePath(file.fileName),
-      moduleStrings(file).map((one) => one.text),
-    );
+    strings(dirnamePath(file.fileName), unselected(file));
   }
   return found;
 }
@@ -541,18 +540,6 @@ function workersOf<Brand>(
   return found;
 }
 
-/** The literal text a computed path starts with: a template's head, or a concatenation's first literal. */
-function leadingLiteral(node: Node): string | undefined {
-  const at = unwrapped(node);
-  if (isTemplateExpression(at)) {
-    return at.head.text;
-  }
-  if (isBinaryExpression(at) && at.operatorToken.kind === SyntaxKind.PlusToken) {
-    return literalOf(unwrapped(at.left)) ?? leadingLiteral(at.left);
-  }
-  return undefined;
-}
-
 /** Whether one call is `import.meta.glob(...)`. */
 function isMetaGlob(node: Node): boolean {
   if (!isCallExpression(node) || !isPropertyAccessExpression(node.expression)) {
@@ -579,13 +566,8 @@ function computedImportsOf(file: SourceFile, files: SourceFiles): readonly Entry
   const dir = dirnamePath(file.fileName);
   const found: EntryPoint[] = [];
   const below = (prefix: string): void => {
-    const target = resolvePath(dir, prefix);
-    if (
-      !isModuleRelative(prefix) ||
-      !prefix.endsWith("/") ||
-      target === dir ||
-      relativePath(target, dir) !== undefined
-    ) {
+    const target = computedLoadDirectory(dir, prefix);
+    if (target === undefined) {
       return;
     }
     for (const candidate of files.byName.values()) {
@@ -679,6 +661,9 @@ export function entryPoints<Brand>(
       exports: true,
       ...(names === undefined ? {} : { names }),
     });
+  }
+  for (const { file, source } of buildScriptEntries(host, targetRoot, files, parse)) {
+    found.push({ file, rule: "bundler-entry", source, exports: true });
   }
   for (const { file, source } of workflowEntries(host, targetRoot, files)) {
     found.push({ file, rule: "workflow-step", source, exports: true });

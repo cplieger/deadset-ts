@@ -1,0 +1,12 @@
+{
+  "name": "build-scripts",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:browser": "node build.js",
+    "build:pages": "node scripts/pages.cjs && node scripts/bundle.mjs",
+    "build:other": "node scripts/other.js",
+    "build:reach": "node scripts/reach.mjs"
+  }
+}

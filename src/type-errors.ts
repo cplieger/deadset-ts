@@ -31,6 +31,13 @@ import { findWorkspace, type Workspace } from "./workspace.ts";
 /** The compiler's codes for an import whose module it cannot find. */
 const MODULE_NOT_FOUND: ReadonlySet<number> = new Set([2307, 2792]);
 
+/**
+ * The compiler's codes for where the configuration places a file, which leave every type
+ * the file's statements carry as it is: an output that would overwrite an input (5055,
+ * 5056), a file outside `rootDir` (6059), one a composite project does not list (6307).
+ */
+const CONFIGURATION_LEVEL: ReadonlySet<number> = new Set([5055, 5056, 6059, 6307]);
+
 const MANIFEST = "package.json";
 const MANIFEST_SECTIONS = [
   "dependencies",
@@ -290,8 +297,8 @@ function messageOf(text: string, targetRoot: string): string {
 
 /**
  * Reads the errors one project's own files carry. A diagnostic marking unnecessary code
- * is no error here, and one in a file that is not the project's own is that file's
- * package's to answer for.
+ * or about where the configuration places a file is no error here, and one in a file that
+ * is not the project's own is that file's package's to answer for.
  */
 export function readErrors<Brand>(
   project: ProjectView<Brand>,
@@ -313,7 +320,11 @@ export function readErrors<Brand>(
   const skips: Skip[] = [];
   for (const { diagnostic, at } of errors) {
     const file = diagnostic.fileName === undefined ? undefined : files.get(diagnostic.fileName);
-    if (file === undefined || diagnostic.reportsUnnecessary === true) {
+    if (
+      file === undefined ||
+      diagnostic.reportsUnnecessary === true ||
+      CONFIGURATION_LEVEL.has(diagnostic.code)
+    ) {
       continue;
     }
     const path = relativePath(context.targetRoot, file.fileName) ?? file.fileName;

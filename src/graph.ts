@@ -41,9 +41,9 @@ const SWEPT: Readonly<Record<SymbolKind, boolean>> = {
  * Whether a root of each kind names a caller, which holds it live under both relations: a
  * tool reads what it loads and what its strings name, a runtime runs a test, setup or
  * worker file, a page's module script, a command, a script or a workflow step, the manifest
- * names what enters the package, an alias global stands for its export, and an entry file,
- * a configured root and a pattern assert a caller. A library's published API only supposes
- * an unseen consumer, so it is live under reachability alone.
+ * names what enters the package, an alias global stands for its export, an outside
+ * declaration names a global interface merging into it, and an entry file, a configured root
+ * and a pattern assert a caller. A published API supposes a consumer: reachability alone.
  */
 const NAMES_A_CALLER: Readonly<Record<RootKind, boolean>> = {
   "entry-file": true,
@@ -56,8 +56,10 @@ const NAMES_A_CALLER: Readonly<Record<RootKind, boolean>> = {
   pattern: true,
   "type-error": true,
   "type-query-alias": true,
+  "global-augmentation": true,
   "configuration-file": true,
   "configuration-string": true,
+  "bundler-entry": true,
   "test-runner": true,
   "browser-tests": true,
   worker: true,

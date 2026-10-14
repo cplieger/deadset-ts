@@ -13,7 +13,7 @@
     "conformance": {
       "corpus_version": "6.0.0",
       "result": "pass",
-      "digest": "sha256:d65daae4b7c95050c07896b166d0250d233cca71f97de75a6086c1d80fe76232"
+      "digest": "sha256:54d3de663b7867df0d50251bf79c3b3d1f023abd178fb477cf0bcd3a01ceb2e5"
     }
   },
   "target": {
@@ -106,6 +106,43 @@
       "fixability": "deletable",
       "severity": "deny",
       "message": "type parameter Box.open<V> is named in neither its signature nor its body",
+      "details": {}
+    },
+    {
+      "code": "DS1303",
+      "kind": "unused-type-parameter",
+      "language": "ts",
+      "position": {
+        "path": "src/generics.ts",
+        "line": 25,
+        "column": 16,
+        "end_line": 25
+      },
+      "symbol": {
+        "ref": "ts://@example/reads-and-writes/src/generics.ts#ID<Phantom>",
+        "kind": "type-parameter",
+        "name": "ID<Phantom>",
+        "size_lines": 1
+      },
+      "reachability_class": "certain",
+      "confidence": "certain",
+      "liveness_relation": "reference-counting",
+      "test_only": false,
+      "generated": false,
+      "component": {
+        "id": "deadset-ts/c-0004",
+        "root": true,
+        "symbol_count": 1,
+        "deletable_lines": 1
+      },
+      "retained_by": [],
+      "configurations": [
+        "tsconfig.json"
+      ],
+      "consumers_loaded": [],
+      "fixability": "deletable",
+      "severity": "deny",
+      "message": "type parameter ID<Phantom> is named in neither its signature nor its body",
       "details": {}
     },
     {
@@ -458,13 +495,13 @@
   "unanswered_questions": [],
   "conventions_applied": [],
   "totals": {
-    "findings": 9,
+    "findings": 10,
     "by_severity": {
       "allow": 0,
       "warn": 1,
-      "deny": 8
+      "deny": 9
     },
-    "deletable_lines": 7,
+    "deletable_lines": 8,
     "suppressions_in_effect": 0,
     "reasons_recorded": 0,
     "stale_suppressions": 0,

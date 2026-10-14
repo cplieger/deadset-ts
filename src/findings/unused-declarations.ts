@@ -2,6 +2,7 @@ import type { Finding } from "../finding.ts";
 import type { InventorySymbol, SymbolKind } from "../inventory.ts";
 import type { MatrixCandidate } from "../matrix.ts";
 import type { Emitter, EmitterInput } from "./emitter.ts";
+import { testsUnseenAPI } from "./completion.ts";
 import { unreachableExports } from "./visibility-narrowing.ts";
 
 /** The kinds of declaration that are members of a class, an interface, a type or an enum. */
@@ -55,6 +56,8 @@ interface Judged {
   readonly deprecated: boolean;
   /** Whether the unreachable-export kind reports it. */
   readonly unreachable: boolean;
+  /** Whether it is a test with a target that is published API no declared consumer judges. */
+  readonly testsUnseenAPI: boolean;
 }
 
 /**
@@ -68,7 +71,7 @@ interface Judged {
 function codeOf(judged: Judged): string | undefined {
   const { candidate, symbol } = judged;
   if (candidate.testOfDeadCode) {
-    return "DS1005";
+    return judged.testsUnseenAPI ? undefined : "DS1005";
   }
   if ((judged.test && !candidate.unreferencedTest) || NOT_THIS_FAMILY.has(symbol.kind)) {
     return undefined;
@@ -241,6 +244,7 @@ function familyFindings(input: EmitterInput, fallen: boolean): Finding[] {
   const union = input.swept.matrix.union;
   const dead = new Set(input.swept.sweep.candidates.map((candidate) => candidate.id));
   const unreachable = unreachableExports(input);
+  const unseenAPI = testsUnseenAPI(input);
   let brands: ReadonlySet<string> | undefined;
 
   const found: Finding[] = [];
@@ -260,6 +264,7 @@ function familyFindings(input: EmitterInput, fallen: boolean): Finding[] {
       test: union.test[at] === true,
       deprecated: input.deprecated.has(symbol.id),
       unreachable: unreachable.has(symbol.id),
+      testsUnseenAPI: candidate.testOfDeadCode && unseenAPI(candidate.id),
     };
     const code = codeOf(judged);
     if (

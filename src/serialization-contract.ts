@@ -17,6 +17,7 @@ import {
   isClassStaticBlockDeclaration,
   isFunctionDeclaration,
   isFunctionExpression,
+  isFunctionLikeDeclaration,
   isGetAccessorDeclaration,
   isIdentifier,
   isInterfaceDeclaration,
@@ -25,6 +26,7 @@ import {
   isNumericLiteral,
   isObjectLiteralExpression,
   isParenthesizedExpression,
+  isForInStatement,
   isPropertyAccessExpression,
   isPropertyDeclaration,
   isSatisfiesExpression,
@@ -307,9 +309,37 @@ function walkProject<Brand>(project: ProjectView<Brand>, held: Inventory): Walke
   return { sites, parameters };
 }
 
+/** The calls of `Object` that read every own property of their argument by name. */
+const ENUMERATIONS: ReadonlySet<string> = new Set([
+  "keys",
+  "entries",
+  "values",
+  "getOwnPropertyNames",
+  "assign",
+]);
+
 /**
- * The parameters that keep nothing of the value they are given: one typed `unknown` or
- * `any`, and a rest parameter whose elements are, each by its symbol.
+ * Whether a parameter type keeps no member name of the value it is given: `unknown`, `any`,
+ * or an object type of a string index signature and no property.
+ */
+function keepsNoName<Brand>(project: ProjectView<Brand>, type: Type): boolean {
+  if ((type.flags & ERASED) !== 0) {
+    return true;
+  }
+  if (
+    (type.flags & TypeFlags.Object) === 0 ||
+    must(project.queries.propertiesOf(type)).length > 0
+  ) {
+    return false;
+  }
+  return must(project.queries.indexInfosOf(type)).some(
+    (info) => (info.keyType.flags & TypeFlags.String) !== 0,
+  );
+}
+
+/**
+ * The parameters that keep no member name of the value they are given, as `keepsNoName`
+ * reads it, and a rest parameter whose elements keep none, each by its symbol.
  */
 function erasedParameters<Brand>(
   project: ProjectView<Brand>,
@@ -325,10 +355,10 @@ function erasedParameters<Brand>(
       return false;
     }
     if (!parameter.rest) {
-      return (type.flags & ERASED) !== 0;
+      return keepsNoName(project, type);
     }
     const [element] = must(project.queries.typeArguments(type));
-    return element !== undefined && (element.flags & ERASED) !== 0;
+    return element !== undefined && keepsNoName(project, element);
   });
   const bySymbol = new Map<number, Parameter>();
   project
@@ -341,6 +371,124 @@ function erasedParameters<Brand>(
       }
     });
   return bySymbol;
+}
+
+/** Whether one node is a function, whose body runs only where something calls it. */
+function isFunctionNode(node: Node): boolean {
+  return (
+    isFunctionDeclaration(node) ||
+    isFunctionExpression(node) ||
+    isArrowFunction(node) ||
+    isMethodDeclaration(node) ||
+    isGetAccessorDeclaration(node) ||
+    isSetAccessorDeclaration(node)
+  );
+}
+
+/** The name a function nested in another is called by: its own, or the variable it initializes. */
+function nestedName(fn: Node): string | undefined {
+  if (isFunctionDeclaration(fn)) {
+    return fn.name?.text;
+  }
+  let at = fn.parent;
+  while (isParenthesizedExpression(at) || isAsExpression(at) || isSatisfiesExpression(at)) {
+    at = at.parent;
+  }
+  return isVariableDeclaration(at) && isIdentifier(at.name) ? at.name.text : undefined;
+}
+
+/** The names one function's body writes as identifiers, other than the names its declarations bind. */
+function namesWritten(fn: Node): ReadonlySet<string> {
+  const found = new Set<string>();
+  const visit = (node: Node): void => {
+    const declares =
+      (isFunctionDeclaration(node.parent) || isVariableDeclaration(node.parent)) &&
+      node.parent.name === node;
+    if (isIdentifier(node) && !declares) {
+      found.add(node.text);
+    }
+    node.forEachChild(visit);
+  };
+  fn.forEachChild(visit);
+  return found;
+}
+
+/**
+ * The erased parameters their own function enumerates: one an `Object.keys`, `entries`,
+ * `values`, `getOwnPropertyNames` or `assign` call takes, `Object` the standard library's,
+ * or a `for…in` statement walks, which reads every property of the value by its name. A
+ * nested function is read as the function's own only where its name is written in it, or
+ * it has none, a callback or a function called where it is written.
+ */
+function enumeratedParameters<Brand>(
+  project: ProjectView<Brand>,
+  erased: ReadonlyMap<number, Parameter>,
+): readonly Parameter[] {
+  const asked: {
+    readonly node: Node;
+    readonly parameter: Parameter;
+    readonly object: Node | undefined;
+  }[] = [];
+  for (const parameter of erased.values()) {
+    const fn = parameter.name.parent.parent;
+    const spelled = parameter.name.getText();
+    const written = namesWritten(fn);
+    const visit = (node: Node): void => {
+      if (isFunctionNode(node)) {
+        const name = nestedName(node);
+        if (name !== undefined && !written.has(name)) {
+          return;
+        }
+      }
+      const read: Expression[] = [];
+      let object: Node | undefined;
+      if (isCallExpression(node)) {
+        const callee = node.expression;
+        if (
+          isPropertyAccessExpression(callee) &&
+          isIdentifier(callee.expression) &&
+          callee.expression.text === "Object" &&
+          ENUMERATIONS.has(callee.name.text)
+        ) {
+          object = callee.expression;
+          // `Object.assign` reads its sources, every argument after the target.
+          read.push(...node.arguments.slice(...(callee.name.text === "assign" ? [1] : [0, 1])));
+        }
+      } else if (isForInStatement(node)) {
+        read.push(node.expression);
+      }
+      for (const value of read.map(evaluated)) {
+        if (isIdentifier(value) && value.text === spelled) {
+          asked.push({ node: value, parameter, object });
+        }
+      }
+      node.forEachChild(visit);
+    };
+    fn.forEachChild(visit);
+  }
+  const symbols = project.symbolsAt(asked.map((one) => project.handle(one.node))).map(must);
+  const objects = asked.flatMap((one) => (one.object === undefined ? [] : [one.object]));
+  const own = project.ownPaths();
+  const standard = new Set(
+    project
+      .symbolsAt(objects.map((node) => project.handle(node)))
+      .map(must)
+      .flatMap((symbol, at) =>
+        symbol?.declarations.every((handle) => !own.has(handle.path)) === true ? [objects[at]] : [],
+      ),
+  );
+  return [
+    ...new Set(
+      asked.flatMap((one, at) => {
+        const symbol = symbols[at];
+        return symbol !== undefined &&
+          erased.get(symbol.id) === one.parameter &&
+          (one.object === undefined || standard.has(one.object))
+          ? [one.parameter]
+          : [];
+      }),
+    ),
+  ];
 }
 
 /** Each place a call's argument passes one of the erased parameters it can see. */
@@ -452,8 +600,8 @@ interface Destinations {
  * callee is a serializer an entry names; at the arguments its resolved signature types
  * `unknown` or `any` where its callee is declared outside the analysis or only ambiently
  * with no implementation in it; and, where its callee is a function of the project, at each
- * parameter the function hands on to a destination, holding back the widest of what those
- * destinations hold back, which is settled by widening until no parameter moves.
+ * parameter the function enumerates or hands on to a destination, holding back the widest
+ * of what those hold back, settled by widening until no parameter moves.
  */
 function destinations<Brand>(
   input: DetectorInput<Brand>,
@@ -674,6 +822,9 @@ function destinations<Brand>(
     return undefined;
   };
 
+  for (const parameter of enumeratedParameters(project, erased)) {
+    forwards.set(keyOf(parameter), "properties");
+  }
   const forwarded = handedOn(project, walked.sites, erased, invocation);
   for (let moved = true; moved;) {
     moved = false;
@@ -776,6 +927,19 @@ function flowsOf<Brand>(
           },
         ];
   });
+  const generic = typeParameterFlows(
+    project,
+    reach,
+    sites,
+    arguments_.flatMap((one) => {
+      const type = typeOf.get(one.value);
+      const parameters = type === undefined ? [] : typeParametersOf(project, type, 0);
+      const destination = parameters.length === 0 ? undefined : to.at(one.site.call, one.argument);
+      return destination === undefined
+        ? []
+        : parameters.map((parameter) => ({ parameter, to: destination }));
+    }),
+  );
   const left = stores.outside.flatMap((store) => {
     const reached = reach.reachedFrom(store.type);
     return reached.classes.size === 0 && reached.members.length === 0
@@ -790,7 +954,145 @@ function flowsOf<Brand>(
           },
         ];
   });
-  return [...passed, ...left];
+  return [...passed, ...generic, ...left];
+}
+
+/** The type parameters one type names, through constituents and type arguments. */
+function typeParametersOf<Brand>(project: ProjectView<Brand>, type: Type, depth: number): Type[] {
+  if (type.isTypeParameter()) {
+    return [type];
+  }
+  if (depth >= MENTION_DEPTH) {
+    return [];
+  }
+  const { queries } = project;
+  return [
+    ...(type.isUnionType() || type.isIntersectionType() ? must(queries.constituents(type)) : []),
+    ...must(queries.typeArguments(type)),
+  ].flatMap((one) => typeParametersOf(project, one, depth + 1));
+}
+
+/**
+ * The types an instantiated type puts where a declared type names `parameter`: matched
+ * through type arguments, and in a union every constituent the declared union does not
+ * itself name.
+ */
+function bound<Brand>(
+  project: ProjectView<Brand>,
+  declared: Type,
+  instantiated: Type,
+  parameter: Type,
+  depth: number,
+): Type[] {
+  if (declared.id === parameter.id) {
+    return [instantiated];
+  }
+  if (depth >= MENTION_DEPTH) {
+    return [];
+  }
+  const { queries } = project;
+  if (declared.isUnionType()) {
+    const parts = must(queries.constituents(declared));
+    if (parts.some((part) => part.id === parameter.id)) {
+      const kept = new Set(parts.map((part) => part.id));
+      const given = instantiated.isUnionType()
+        ? must(queries.constituents(instantiated))
+        : [instantiated];
+      return given.filter((part) => !kept.has(part.id));
+    }
+  }
+  const declaredArguments = must(queries.typeArguments(declared));
+  const givenArguments = must(queries.typeArguments(instantiated));
+  return declaredArguments.length !== givenArguments.length
+    ? []
+    : declaredArguments.flatMap((one, at) => {
+        const given = givenArguments[at];
+        return given === undefined ? [] : bound(project, one, given, parameter, depth + 1);
+      });
+}
+
+/**
+ * The flows a type parameter of a function of the project carries where a value its type
+ * names reaches a destination: each call of the function passes its type argument there,
+ * written or inferred from the arguments, and a type argument that is a type parameter
+ * of the calling function is followed on to that function's calls, to a fixpoint.
+ */
+function typeParameterFlows<Brand>(
+  project: ProjectView<Brand>,
+  reach: ReturnType<typeof valueReach>,
+  sites: readonly Site[],
+  pending: { readonly parameter: Type; readonly to: Destination }[],
+): readonly Flow[] {
+  const { queries } = project;
+  const byName = new Map<string, Site[]>();
+  for (const site of sites) {
+    const name = calleeName(site.call.expression)?.getText();
+    if (name !== undefined) {
+      byName.set(name, [...(byName.get(name) ?? []), site]);
+    }
+  }
+  const found: Flow[] = [];
+  const seen = new Set<number>();
+  for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+    const { parameter, to } = next;
+    if (seen.has(parameter.id)) {
+      continue;
+    }
+    seen.add(parameter.id);
+    const symbol = must(queries.symbolOfType(parameter));
+    const [handle] = symbol?.declarations ?? [];
+    const declaration = handle === undefined ? undefined : project.declarationAt(handle)?.node;
+    const fn = declaration?.parent;
+    const index =
+      fn === undefined || !isFunctionLikeDeclaration(fn)
+        ? -1
+        : (fn.typeParameters ?? []).findIndex((one) => one === declaration);
+    const name =
+      fn === undefined
+        ? undefined
+        : isMethodDeclaration(fn) && isIdentifier(fn.name)
+          ? fn.name.text
+          : nestedName(fn);
+    if (symbol === undefined || fn === undefined || index < 0 || name === undefined) {
+      continue;
+    }
+    for (const site of byName.get(name) ?? []) {
+      const resolved = must(queries.resolvedSignature(site.call));
+      const declared = resolved === undefined ? undefined : must(queries.genericOf(resolved));
+      const called =
+        declared?.declaration === undefined
+          ? undefined
+          : project.declarationAt(declared.declaration)?.node;
+      if (resolved === undefined || declared === undefined || called !== fn) {
+        continue;
+      }
+      const written = site.call.typeArguments?.[index];
+      const given =
+        written === undefined
+          ? site.call.arguments.flatMap((_argument, at) => {
+              const from = must(queries.parameterType(declared, at));
+              const into = must(queries.parameterType(resolved, at));
+              return from === undefined || into === undefined
+                ? []
+                : bound(project, from, into, parameter, 0);
+            })
+          : typesAt(project, [written]).filter((type) => type !== undefined);
+      for (const type of given) {
+        const reached = reach.reachedFrom(type);
+        if (reached.classes.size > 0 || reached.members.length > 0) {
+          found.push({
+            site: site.call,
+            classes: reached.classes,
+            members: reached.members,
+            to,
+            detail: `passed to ${to.callee} through the type parameter ${symbol.name}`,
+          });
+        }
+        pending.push(...typeParametersOf(project, type, 0).map((one) => ({ parameter: one, to })));
+      }
+    }
+  }
+  return found;
 }
 
 /**

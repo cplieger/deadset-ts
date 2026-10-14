@@ -117,12 +117,37 @@ function deadIn(drawn: DrawnConfiguration): Set<number> {
   return new Set(drawn.held.filter((at) => !named.has(at) || !reached.has(at)));
 }
 
+/**
+ * The functions of `reportable` some configuration calls from a function outside it, or
+ * one already kept, until none joins: deleting one would break that compile.
+ */
+function compiledReferences(
+  drawn: readonly DrawnConfiguration[],
+  reportable: ReadonlySet<number>,
+): ReadonlySet<number> {
+  const kept = new Set<number>();
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const one of drawn) {
+      for (const call of one.calls) {
+        const live = !reportable.has(call.from) || kept.has(call.from);
+        if (live && reportable.has(call.to) && !kept.has(call.to)) {
+          kept.add(call.to);
+          changed = true;
+        }
+      }
+    }
+  }
+  return kept;
+}
+
 describe("the matrix intersection", () => {
   /**
    * Property dead-code-suite/P11: for any matrix of configurations, each holding its own
    * declarations and making its own references, a declaration is reported exactly when it
-   * is dead in every configuration that holds it, a declaration no configuration holds is
-   * not reported at all, and each reported one names the configurations that hold it. A
+   * is dead in every configuration that holds it and no configuration calls it from a
+   * declaration the matrix does not report, a declaration no configuration holds is not
+   * reported at all, and each reported one names the configurations that hold it. A
    * configuration holding the file only for its references still keeps what it uses
    * live, and a declaration no other configuration holds is not reported.
    */
@@ -134,15 +159,22 @@ describe("the matrix intersection", () => {
           mode: { production: true },
         });
         const dead = drawn.map(deadIn);
+        const reportable = new Set(
+          FUNCTIONS.flatMap((_symbol, at) =>
+            drawn.some((one) => one.held.includes(at) && !one.referenceOnly) &&
+            drawn.every((one, index) => !one.held.includes(at) || dead[index]?.has(at))
+              ? [at]
+              : [],
+          ),
+        );
+        const compiled = compiledReferences(drawn, reportable);
         const expected = FUNCTIONS.flatMap((symbol, at) => {
           const holders = drawn.flatMap((one, index) =>
             one.held.includes(at) ? [`c${String(index)}`] : [],
           );
-          const everywhere = drawn.every(
-            (one, index) => !one.held.includes(at) || dead[index]?.has(at),
-          );
-          const judged = drawn.some((one) => one.held.includes(at) && !one.referenceOnly);
-          return judged && everywhere ? [`${symbol.name} ${holders.join(",")}`] : [];
+          return reportable.has(at) && !compiled.has(at)
+            ? [`${symbol.name} ${holders.join(",")}`]
+            : [];
         });
 
         expect(

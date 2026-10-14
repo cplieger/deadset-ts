@@ -21,7 +21,7 @@ export class Box<Phantom> {
   }
 }
 
-// A phantom parameter of a type declaration is never reported.
+// A type alias's parameter its type never names is reported.
 export type ID<Phantom> = string;
 
 export interface Reader {

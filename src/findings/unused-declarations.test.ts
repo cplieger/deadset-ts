@@ -1099,3 +1099,37 @@ describe("a declaration only dead code references in production", () => {
     ]);
   });
 });
+
+describe("a test of a library's published API", () => {
+  /** The family's findings of a library whose test calls `called` of the file `from`. */
+  const reported = (called: string, from: string): string[] => {
+    const root = writeProject({
+      "package.json":
+        '{ "name": "@example/lib", "version": "1.0.0", "type": "module", "exports": "./src/index.ts" }\n',
+      "src/index.ts": "export function unmarshal(): number {\n  return 1;\n}\n",
+      "src/internal.ts": "export function internal(): number {\n  return 2;\n}\n",
+      "src/it.test.ts": `import { ${called} } from "${from}";\n\nexport function testIt(): number {\n  return ${called}();\n}\n`,
+    });
+    try {
+      const document = JSON.stringify({
+        target: { kind: "library" },
+        analysis: { min_confidence: "possible" },
+      });
+      return named(family(emitterInputOf(root, configOf(document)))).sort();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  };
+
+  it("is no test of dead code where the run declares no consumer, which outside programs may be", () => {
+    expect(reported("unmarshal", "./index.js")).toEqual(["DS1004 unmarshal"]);
+  });
+
+  it("is a test of dead code where it calls a declaration outside the published API", () => {
+    expect(reported("internal", "./internal.js")).toEqual([
+      "DS1001 unmarshal",
+      "DS1004 internal",
+      "DS1005 testIt",
+    ]);
+  });
+});

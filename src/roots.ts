@@ -9,8 +9,17 @@
  */
 
 import {
+  isArrowFunction,
+  isAssertionExpression,
   isExpressionWithTypeArguments,
   isFunctionLikeDeclaration,
+  isIdentifier,
+  isMethodDeclaration,
+  isObjectLiteralExpression,
+  isParenthesizedExpression,
+  isPropertyAssignment,
+  isReturnStatement,
+  isSatisfiesExpression,
   isPropertyAccessExpression,
   isQualifiedName,
   isTypeQueryNode,
@@ -18,7 +27,10 @@ import {
   isPropertyDeclaration,
   isVariableDeclaration,
   isVariableStatement,
+  SyntaxKind,
+  type Expression,
   type Node,
+  type ObjectLiteralExpression,
   type SourceFile,
 } from "@typescript/native/ast";
 import { aliasChains } from "./alias-chain.ts";
@@ -67,6 +79,8 @@ export type RootKind =
   | "pattern"
   /** A declaration of a function or statement a type error skipped, and what it may have selected. */
   | "type-error"
+  /** An ambient global interface merging into one declared outside the target, and its holders. */
+  | "global-augmentation"
   /** A file a tool or the platform enters by its own convention, and what it exports where the tool reads it. */
   | EntryRule;
 
@@ -446,6 +460,12 @@ export function roots<Brand>(
       published.push(...entryFiles(entry));
     }
   }
+  if (options.publishedAPI) {
+    // A library's bundle hands what its entry exports to every program that loads it.
+    published.push(
+      ...points.filter((point) => point.rule === "bundler-entry").map((point) => point.file),
+    );
+  }
   const publishedNames = new Set(published.map((file) => file.fileName));
   const patterned: { file: SourceFile; pattern: string }[] = [];
   for (const pattern of options.entryFiles) {
@@ -713,15 +733,24 @@ function publishedAPI<Brand>(
       const symbol = byId.get(id);
       return symbol === undefined || symbol.kind === "file" ? [] : nodes.typeNamesOf(symbol);
     });
-    for (const symbol of inferredTypeSymbols(
+    const inferred = inferredTypeSymbols(
       project,
       round.flatMap((id) => {
         const symbol = byId.get(id);
         return symbol === undefined ? [] : nodes.nodesOf(symbol);
       }),
-    )) {
+    );
+    for (const symbol of inferred.types) {
       for (const target of chains.chainOf(symbol)) {
         reach(target.id);
+      }
+    }
+    for (const symbol of inferred.members) {
+      for (const target of chains.chainOf(symbol)) {
+        const member = byId.get(target.id);
+        if (member?.visibility === "public" || member?.visibility === "protected") {
+          reach(target.id);
+        }
       }
     }
     project.symbolsAt(named.map((node) => project.handle(node))).forEach((symbol, index) => {
@@ -783,30 +812,139 @@ function declarationNodes(
 const INFERRED_DEPTH = 4;
 
 /**
- * The declarations of the types the compiler infers where a declaration writes none: the
- * type of a variable or a property with no annotation, and the result of a function or a
- * method with no result annotation, each with the types its type arguments and its union
- * or intersection constituents name, to a fixed depth. A question the checker leaves
- * unanswered names nothing.
+ * The values one function body returns, each through the type assertions around it: the
+ * value a caller receives carries the operand's type whatever type the assertion or the
+ * signature names. A nested function's returns are its own.
+ */
+function returnedValues(body: Node): readonly Expression[] {
+  const found: Expression[] = [];
+  const add = (value: Expression): void => {
+    for (let at: Expression | undefined = value; at !== undefined;) {
+      found.push(at);
+      at =
+        isAssertionExpression(at) || isSatisfiesExpression(at) || isParenthesizedExpression(at)
+          ? at.expression
+          : undefined;
+    }
+  };
+  if (!isFunctionLikeDeclaration(body.parent) || body.parent.body !== body) {
+    return found;
+  }
+  if (isArrowFunction(body.parent) && body.kind !== SyntaxKind.Block) {
+    add(body as Expression);
+    return found;
+  }
+  const visit = (node: Node): void => {
+    if (isFunctionLikeDeclaration(node)) {
+      return;
+    }
+    if (isReturnStatement(node) && node.expression !== undefined) {
+      add(node.expression);
+    }
+    node.forEachChild(visit);
+  };
+  body.forEachChild(visit);
+  return found;
+}
+
+/** The object literal one returned value is, written there or as the initializer of a variable `body` declares. */
+function returnedLiteral(value: Expression, body: Node): ObjectLiteralExpression | undefined {
+  if (isObjectLiteralExpression(value)) {
+    return value;
+  }
+  if (!isIdentifier(value)) {
+    return undefined;
+  }
+  let found: ObjectLiteralExpression | undefined;
+  const visit = (node: Node): void => {
+    if (
+      isVariableDeclaration(node) &&
+      isIdentifier(node.name) &&
+      node.name.text === value.text &&
+      node.initializer !== undefined
+    ) {
+      let at: Expression = node.initializer;
+      while (
+        isAssertionExpression(at) ||
+        isSatisfiesExpression(at) ||
+        isParenthesizedExpression(at)
+      ) {
+        at = at.expression;
+      }
+      found = isObjectLiteralExpression(at) ? at : found;
+    }
+    if (!isFunctionLikeDeclaration(node)) {
+      node.forEachChild(visit);
+    }
+  };
+  body.forEachChild(visit);
+  return found;
+}
+
+/**
+ * The values one function body returns, and those each method of an object literal it
+ * returns returns, to a fixed depth: a caller holding the literal calls its methods, and
+ * receives what they return.
+ */
+function returnedThroughLiterals(body: Node, depth = 0): readonly Expression[] {
+  const values = returnedValues(body);
+  if (depth >= INFERRED_DEPTH) {
+    return values;
+  }
+  const found = [...values];
+  for (const value of values) {
+    for (const property of returnedLiteral(value, body)?.properties ?? []) {
+      const fn = isMethodDeclaration(property)
+        ? property
+        : isPropertyAssignment(property) && isFunctionLikeDeclaration(property.initializer)
+          ? property.initializer
+          : undefined;
+      if (fn?.body !== undefined) {
+        found.push(...returnedThroughLiterals(fn.body, depth + 1));
+      }
+    }
+  }
+  return found;
+}
+
+/**
+ * The declarations of the types the compiler infers where a declaration writes none, and
+ * of the values a function returns: the type of a variable or a property with no
+ * annotation, the result of a function or a method with no result annotation, and the type
+ * of each value its body returns, each with the types its type arguments and its union or
+ * intersection constituents name, to a fixed depth; and as `members` the properties of each
+ * returned value's type. A question the checker leaves unanswered names nothing.
  */
 function inferredTypeSymbols<Brand>(
   project: ProjectView<Brand>,
   declarations: readonly Node[],
-): readonly TSSymbol[] {
+): { readonly types: readonly TSSymbol[]; readonly members: readonly TSSymbol[] } {
   const { queries } = project;
-  const valued = declarations.flatMap((node) =>
+  const valued: Node[] = declarations.flatMap((node) =>
     (isVariableDeclaration(node) || isPropertyDeclaration(node)) &&
     node.type === undefined &&
     !isFunctionLikeDeclaration(node.initializer ?? node)
       ? [node.name]
       : [],
   );
+  const returned = declarations.flatMap((node) => {
+    const signature = isFunctionLikeDeclaration(node)
+      ? node
+      : isVariableDeclaration(node) &&
+          node.initializer !== undefined &&
+          isFunctionLikeDeclaration(node.initializer)
+        ? node.initializer
+        : undefined;
+    return signature?.body === undefined ? [] : returnedThroughLiterals(signature.body);
+  });
   const types: Type[] = [];
-  queries.typesAt(valued).forEach((type) => {
+  const returnedTypes: Type[] = [];
+  queries.typesAt([...valued, ...returned]).forEach((type, at) => {
     if (type !== UNANSWERED && type !== undefined) {
-      types.push(type);
+      (at < valued.length ? types : returnedTypes).push(type);
     }
   });
+  types.push(...returnedTypes);
   for (const node of declarations) {
     const signature = isFunctionLikeDeclaration(node)
       ? node
@@ -849,7 +987,19 @@ function inferredTypeSymbols<Brand>(
   types.forEach((type) => {
     visit(type, 0);
   });
-  return [...found.values()];
+  // A returned value carries each property of its type, one an anonymous type declares or
+  // an intersection merges included, which no type name reaches.
+  const members = new Map<number, TSSymbol>();
+  for (const type of returnedTypes) {
+    const parts = queries.constituents(type);
+    for (const one of [type, ...(parts === UNANSWERED ? [] : parts)]) {
+      const properties = queries.propertiesOf(one);
+      for (const property of properties === UNANSWERED ? [] : properties) {
+        members.set(property.id, property);
+      }
+    }
+  }
+  return { types: [...found.values()], members: [...members.values()] };
 }
 
 /**

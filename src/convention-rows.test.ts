@@ -80,4 +80,16 @@ describe("the convention rows", () => {
       expect(globs.flatMap(placeholders).filter((id) => !declared.includes(id))).toEqual([]);
     }
   });
+
+  it("read no directory move from a YAML file, whose read positions are not the file's", () => {
+    const yaml = CONVENTION_ROWS.flatMap((row) =>
+      row.moves.flatMap((move) =>
+        move.readings.flatMap(({ files }) =>
+          files.filter((glob) => /ya?ml|\{[^}]*y/u.test(glob)).map((glob) => `${row.name} ${glob}`),
+        ),
+      ),
+    );
+
+    expect(yaml).toEqual([]);
+  });
 });

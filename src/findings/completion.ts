@@ -132,6 +132,20 @@ function reachabilityClasses(input: EmitterInput): (id: string) => Confidence {
   };
 }
 
+/**
+ * Whether one test of dead code references a target symbol that is published API of a run
+ * that declares no consumer, which outside programs the run cannot see may use, so the
+ * target counts as live for the test and the test is no test of dead code.
+ */
+export function testsUnseenAPI(input: EmitterInput): (id: string) => boolean {
+  if (input.boundary.consumers.declared.length > 0) {
+    return () => false;
+  }
+  const union = input.swept.matrix.union;
+  const published = publishedIds(union);
+  return (id) => testTargets(union, id).some((target) => published.has(target));
+}
+
 /** The target symbols one test of dead code references, by id: production declarations the sweep judges. */
 function testTargets(union: Graph, id: string): readonly string[] {
   return (union.out[union.at(id)] ?? []).flatMap((edge) => {
@@ -197,17 +211,21 @@ function testUsedSubjects(input: EmitterInput): {
 
 /**
  * The ceiling the roots the run found put on one dead subject: a subject other declarations
- * reference, found dead only because no root reaches them, is `probable` unless
- * the configuration declares the roots complete, because a root the analysis cannot see
- * would make it live; every other declaration has none below `certain`.
+ * reference, found dead only because no root reaches them, is `probable` unless the
+ * configuration declares the roots complete and no configuration holding the subject loads
+ * a module the analysis cannot resolve, because a root the analysis cannot see would make
+ * it live; every other declaration has none below `certain`.
  */
 function rootsCeiling(
   input: EmitterInput,
   finding: Finding,
   candidate: Candidate | undefined,
+  configurations: readonly string[],
 ): Confidence {
   const unreachable = candidate?.relation === "reachability" || finding.unreachableOnly === true;
-  return unreachable && !input.config.ts.rootsComplete ? "probable" : "certain";
+  const unseen = new Set((input.files.unseenLoads ?? []).map((load) => load.configuration));
+  const complete = input.config.ts.rootsComplete && !configurations.some((one) => unseen.has(one));
+  return unreachable && !complete ? "probable" : "certain";
 }
 
 /**
@@ -225,9 +243,28 @@ function findingComponents(
       held.set(member, component);
     }
   }
+  const listed = membersListed(swept);
+  return (id) => {
+    const component = held.get(id);
+    return component === undefined
+      ? undefined
+      : {
+          id: component.id,
+          root: component.roots.includes(id),
+          symbolCount: component.members.length,
+          deletableLines: component.deletableLines,
+          ...(cascade === "full" ? { members: listed(component.members) } : {}),
+        };
+  };
+}
+
+/** The members of a component as the run lists them, positioned and in the canonical order. */
+function membersListed(
+  swept: RunSweep,
+): (members: readonly string[]) => readonly PositionedSymbol[] {
   const symbols = new Map(swept.matrix.union.symbols.map((symbol) => [symbol.id, symbol]));
-  const listed = (component: Component): readonly PositionedSymbol[] =>
-    component.members
+  return (members) =>
+    members
       .flatMap((member) => {
         const symbol = symbols.get(member);
         return symbol === undefined
@@ -244,18 +281,6 @@ function findingComponents(
             ];
       })
       .sort((a, b) => byPosition(a.position, b.position));
-  return (id) => {
-    const component = held.get(id);
-    return component === undefined
-      ? undefined
-      : {
-          id: component.id,
-          root: component.roots.includes(id),
-          symbolCount: component.members.length,
-          deletableLines: component.deletableLines,
-          ...(cascade === "full" ? { members: listed(component) } : {}),
-        };
-  };
 }
 
 /**
@@ -357,12 +382,13 @@ export function completed(
   // A join keeps its first component's identifier, so a minted one counts past every computed one.
   let minted = computed;
   const dead = new Set(components.map((component) => component.id));
-  const fallingWith = new Map<string, number>();
-  for (const { heldByTests } of swept.sweep.candidates) {
+  const fallingWith = new Map<string, string[]>();
+  for (const { id, heldByTests } of swept.sweep.candidates) {
     if (heldByTests !== undefined) {
-      fallingWith.set(heldByTests, (fallingWith.get(heldByTests) ?? 0) + 1);
+      fallingWith.set(heldByTests, [...(fallingWith.get(heldByTests) ?? []), id]);
     }
   }
+  const listed = membersListed(swept);
 
   const done = findings.map((finding): CompletedFinding => {
     const row = kinds.get(finding.code);
@@ -413,11 +439,25 @@ export function completed(
     let component = found;
     if (component === undefined) {
       minted += 1;
+      const falling = symbol?.kind === "interface" ? fallingWith.get(symbol.id) : undefined;
       component = {
         id: componentId(minted),
         root: true,
-        symbolCount: symbol?.kind === "interface" ? (fallingWith.get(symbol.id) ?? 1) : 1,
+        symbolCount: falling?.length ?? 1,
         deletableLines: 0,
+        ...(input.config.reporters.cascade !== "full"
+          ? {}
+          : falling === undefined
+            ? {
+                members: [
+                  {
+                    ref: finding.symbol.ref,
+                    name: finding.symbol.name,
+                    position: finding.position,
+                  },
+                ],
+              }
+            : { members: listed(falling) }),
       };
     }
     const counts =
@@ -431,8 +471,16 @@ export function completed(
         ? candidate !== undefined && testUsed.declarations.has(judged.id)
         : finding.code === FILE_NEVER_IMPORTED && testUsed.files.has(finding.position.path);
     const reachabilityClass = used && candidate?.testOfDeadCode !== true ? "possible" : ownClass;
+    const configurations =
+      candidate?.configurations ??
+      (judged === undefined && !part
+        ? swept.matrix.configurations
+        : (swept.matrix.heldIn[at] ?? swept.matrix.configurations));
     const untested = capped(
-      capped(capped(ownClass, row.maxClass), rootsCeiling(input, finding, candidate)),
+      capped(
+        capped(ownClass, row.maxClass),
+        rootsCeiling(input, finding, candidate, configurations),
+      ),
       judged === undefined ? "certain" : ceilingOf(judged.id),
     );
     const generated = input.files.generated?.has(finding.position.path) === true;
@@ -466,11 +514,7 @@ export function completed(
       generated,
       component,
       retainedBy: [],
-      configurations:
-        candidate?.configurations ??
-        (judged === undefined && !part
-          ? swept.matrix.configurations
-          : (swept.matrix.heldIn[at] ?? swept.matrix.configurations)),
+      configurations,
       consumersLoaded: input.boundary.consumers.loaded,
       fixability,
       severity: severityOf(input, finding.code, row.defaultSeverity),
