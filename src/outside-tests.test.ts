@@ -6,7 +6,10 @@ import { resolve } from "./resolve.ts";
 
 const DECLARED_MATRIX = JSON.stringify({
   target: { kind: "application" },
-  analysis: { configurations: [{ id: "app", project: "tsconfig.json" }] },
+  analysis: {
+    configurations: [{ id: "app", project: "tsconfig.json" }],
+    min_confidence: "possible",
+  },
 });
 
 const roots: string[] = [];

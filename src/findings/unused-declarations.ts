@@ -61,8 +61,9 @@ interface Judged {
  * The code one candidate is reported under, or none, each symbol once under the most
  * specific code: a test of dead code first; no other test-file declaration or enum
  * member nothing names; a test-support declaration test code references as test-only
- * use; then deprecation, a test reference, and the unreferenced codes, an unimportable
- * unused export being the unreachable kind's.
+ * use; then deprecation, a test reference, or only dead production references beside a
+ * test that stays, and the unreferenced codes, an unimportable unused export being the
+ * unreachable kind's.
  */
 function codeOf(judged: Judged): string | undefined {
   const { candidate, symbol } = judged;
@@ -85,7 +86,11 @@ function codeOf(judged: Judged): string | undefined {
   if (candidate.productionRefs === 0 && judged.deprecated) {
     return "DS1006";
   }
-  if (candidate.productionRefs === 0 && candidate.testRefs > 0) {
+  if (
+    candidate.testRefs > 0 &&
+    (candidate.productionRefs === 0 ||
+      (candidate.relation === "reachability" && candidate.keptByTests))
+  ) {
     return "DS1004";
   }
   if (MEMBERS.has(symbol.kind)) {
@@ -132,7 +137,9 @@ function messageOf(code: string, judged: Judged): string {
     case "DS1006":
       return `deprecated ${word} has no production reference`;
     case "DS1004":
-      return `${word} is referenced only from test files and never from production code`;
+      return candidate.productionRefs === 0
+        ? `${word} is referenced only from test files and never from production code`
+        : `${word} is referenced only from test files and from declarations that are themselves dead`;
   }
   const subject =
     code === "DS1003"

@@ -74,8 +74,119 @@ describe("test-support code", () => {
     expect(found).toContain("DS1004 shared certain");
   });
 
-  it("leaves out a file only a test reaches that carries no test evidence, which stays production code", () => {
-    expect(found).toContain("DS1004 plain certain");
+  it("leaves out a file only a test reaches that carries no test evidence, production code only tests use, at possible", () => {
+    expect(found).toContain("DS1004 plain possible");
+  });
+});
+
+/**
+ * An application whose tests reach files that carry no test evidence: a loader one test
+ * calls, a script file declaring a global another test reads, and a production file's
+ * helper only the loader's top level calls.
+ */
+const TEST_USED_PROJECT: Readonly<Record<string, string>> = {
+  "package.json": '{ "name": "@example/app", "type": "module", "main": "./main.ts" }\n',
+  "main.ts": 'import { live } from "./lib.js";\n\nconsole.log(live());\n',
+  "lib.ts":
+    "export function live(): number {\n  return 1;\n}\n\nexport function warm(): number {\n  return 2;\n}\n",
+  "support/loader.ts":
+    'import { warm } from "../lib.js";\n\nfunction inner(): number {\n  return 3;\n}\n\nexport function load(): number {\n  return inner();\n}\n\nexport const spare = 4;\n\nwarm();\n',
+  "support/env.d.ts":
+    "interface Fixtures {\n  root(): string;\n}\n\ndeclare const fixtures: Fixtures;\n",
+  "loader.test.ts":
+    'import { load } from "./support/loader.js";\n\nexport function testLoad(): boolean {\n  return load() > 0;\n}\n',
+  "env.test.ts":
+    "const root = fixtures.root();\n\nexport function check(): string {\n  return root;\n}\n",
+};
+
+/** Every finding of TEST_USED_PROJECT at a minimum confidence, as `code name class confidence`. */
+function testUsedFindings(minConfidence: string): string[] {
+  const root = writeProject(TEST_USED_PROJECT);
+  roots.push(root);
+  const repository = JSON.stringify({
+    target: { kind: "application" },
+    analysis: { min_confidence: minConfidence },
+  });
+  const { config } = resolve({ repository, repositoryLabel: "deadset.json" });
+  return findingsOf(emitterInputOf(root, config))
+    .map(
+      (finding) =>
+        `${finding.code} ${finding.symbol.name} ${finding.reachabilityClass} ${finding.confidence}`,
+    )
+    .sort();
+}
+
+describe("production code only tests use", () => {
+  it("reports what is dead only because tests alone use it at possible, and what nothing references at certain", () => {
+    expect(testUsedFindings("possible")).toEqual([
+      "DS1001 spare certain certain",
+      "DS1001 warm possible possible",
+      "DS1002 inner possible possible",
+      "DS1004 fixtures possible possible",
+      "DS1004 load possible possible",
+      "DS1005 testLoad certain possible",
+      "DS1201 Fixtures possible possible",
+      "DS1502 support/env.d.ts possible possible",
+    ]);
+  });
+
+  it("withholds all of it under the default minimum confidence", () => {
+    expect(testUsedFindings("probable")).toEqual(["DS1001 spare certain certain"]);
+  });
+});
+
+/**
+ * An application whose test calls a helper only tests reach, which imports no test library
+ * and calls an export of production code that a function nothing calls shares a callee with.
+ */
+const DEAD_ROOT_PROJECT: Readonly<Record<string, string>> = {
+  "package.json": '{ "name": "@example/app", "type": "module", "main": "./main.ts" }\n',
+  "main.ts": 'import { live } from "./core.js";\n\nconsole.log(live());\n',
+  "core.ts":
+    "export function live(): number {\n  return 0;\n}\n\n" +
+    "export function legacy(): number {\n  return shared() + only();\n}\n\n" +
+    "export function viaHelper(): number {\n  return shared();\n}\n\n" +
+    "function shared(): number {\n  return 1;\n}\n\nfunction only(): number {\n  return 2;\n}\n",
+  "helpers.ts":
+    'import { viaHelper } from "./core.js";\n\nexport function make(): number {\n  return viaHelper();\n}\n',
+  "make.test.ts":
+    'import { make } from "./helpers.js";\n\nexport function testMake(): boolean {\n  return make() === 1;\n}\n',
+};
+
+/** Every finding of DEAD_ROOT_PROJECT at a minimum confidence, as `code name class confidence`. */
+function deadRootFindings(minConfidence: string): string[] {
+  const root = writeProject(DEAD_ROOT_PROJECT);
+  roots.push(root);
+  const repository = JSON.stringify({
+    target: { kind: "application" },
+    analysis: { min_confidence: minConfidence },
+  });
+  const { config } = resolve({ repository, repositoryLabel: "deadset.json" });
+  return findingsOf(emitterInputOf(root, config))
+    .map(
+      (finding) =>
+        `${finding.code} ${finding.symbol.name} ${finding.reachabilityClass} ${finding.confidence}`,
+    )
+    .sort();
+}
+
+describe("a dead root beside production code only tests use", () => {
+  it("keeps its own class, and so does what only it reaches", () => {
+    expect(deadRootFindings("possible")).toEqual([
+      "DS1001 legacy certain certain",
+      "DS1001 viaHelper possible possible",
+      "DS1002 only certain probable",
+      "DS1002 shared possible possible",
+      "DS1004 make possible possible",
+      "DS1005 testMake certain possible",
+    ]);
+  });
+
+  it("is reported under the default minimum confidence with what only it reaches", () => {
+    expect(deadRootFindings("probable")).toEqual([
+      "DS1001 legacy certain certain",
+      "DS1002 only certain probable",
+    ]);
   });
 });
 
@@ -226,7 +337,7 @@ function supportOf(
   evidence: TestEvidence = runnerEverywhere(paths),
 ): string[] {
   const tests = paths.filter((path) => path.endsWith(".test.ts"));
-  return [...testSupportFiles(paths.map(fileAt), references, roots, tests, evidence)];
+  return [...testSupportFiles(paths.map(fileAt), references, roots, tests, evidence).support];
 }
 
 describe("the test-support files of a run", () => {
@@ -287,11 +398,11 @@ describe("the test-support files of a run", () => {
       .map((path) => imports("a.test.ts", path));
     const evidence: TestEvidence = {
       imports: new Map([
-        ["a.test.ts", ["vitest", "msw"]],
+        ["a.test.ts", ["vitest", "fake-server"]],
         ["runner.ts", ["node:test", "./bare.js"]],
         ["library.ts", ["@testing-library/dom"]],
-        ["mocks.ts", ["msw", "msw/node"]],
-        ["shared-dev.ts", ["msw", "esbuild"]],
+        ["mocks.ts", ["fake-server", "fake-server/node"]],
+        ["shared-dev.ts", ["fake-server", "esbuild"]],
         ["runtime.ts", ["zod"]],
         ["bare.ts", ["./runtime.js"]],
         ["main.ts", ["esbuild"]],
@@ -306,12 +417,30 @@ describe("the test-support files of a run", () => {
     ]);
   });
 
+  it.each(["chai", "sinon/pkg", "@jest/globals", "msw/node", "mocha", "nock"])(
+    "hold a file importing %s, an assertion, mock or runner library, even where production code imports it",
+    (specifier) => {
+      const paths = ["a.test.ts", "helper.ts", "main.ts"];
+      const evidence: TestEvidence = {
+        imports: new Map([
+          ["helper.ts", [specifier]],
+          ["main.ts", [specifier]],
+        ]),
+        devDependency: () => false,
+      };
+
+      expect(supportOf(paths, [imports("a.test.ts", "helper.ts")], [], evidence)).toEqual([
+        "helper.ts",
+      ]);
+    },
+  );
+
   it("drop a file whose devDependency another file imports that production code turns out to use", () => {
     const paths = ["a.test.ts", "shared.ts", "support.ts", "main.ts"];
     const evidence: TestEvidence = {
       imports: new Map([
-        ["shared.ts", ["msw"]],
-        ["support.ts", ["msw"]],
+        ["shared.ts", ["fake-server"]],
+        ["support.ts", ["fake-server"]],
       ]),
       devDependency: () => true,
     };
@@ -334,10 +463,10 @@ describe("the test-support files of a run", () => {
     const paths = ["a.test.ts", "bare.ts", "scheme.ts"];
     const evidence: TestEvidence = {
       imports: new Map([
-        ["bare.ts", ["fs", "fs/promises", "msw"]],
-        ["scheme.ts", ["node:fs", "msw"]],
+        ["bare.ts", ["fs", "fs/promises", "fake-server"]],
+        ["scheme.ts", ["node:fs", "fake-server"]],
       ]),
-      devDependency: (_path, name) => name === "msw",
+      devDependency: (_path, name) => name === "fake-server",
     };
 
     expect(

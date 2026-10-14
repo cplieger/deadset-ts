@@ -421,7 +421,7 @@ describe("an export of a project written for the case", () => {
     ).toEqual([]);
   });
 
-  it("is unreachable where only dead code references it, deprecated or tested", () => {
+  it("is unreachable where only dead code references it, deprecated, and no test that stays keeps it", () => {
     expect(
       reported(
         {
@@ -453,7 +453,7 @@ describe("an export of a project written for the case", () => {
         },
         { target: { kind: "library" } },
       ),
-    ).toEqual(["DS1103 helper", "DS1103 retired", "DS1103 deadCaller"]);
+    ).toEqual(["DS1103 retired", "DS1103 deadCaller"]);
   });
 });
 
@@ -482,6 +482,34 @@ describe("an export used only in a file a script token or a configuration string
           .filter((finding) => finding.code === "DS1104")
           .map((finding) => `${finding.symbol.name} ${finding.position.path}`),
       ).toEqual(["step src/run.ts"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("an export of a file a document imports", () => {
+  it("is a redundant export keyword where the document does not import it and only its own file references it", () => {
+    const root = writeProject({
+      "package.json": '{ "name": "@example/site", "private": true, "type": "module" }\n',
+      "docs/intro.mdx": 'import { Demo } from "../src/demo.ts";\n\n<Demo label="intro" />\n',
+      "src/main.ts": "console.log(1);\n",
+      "src/demo.ts":
+        "export type DemoProps = {\n  readonly label: string;\n};\n\nexport function Demo(props: DemoProps): string {\n  return props.label;\n}\n",
+    });
+    try {
+      const { config } = resolve({
+        repository: JSON.stringify({
+          target: { kind: "application" },
+          ts: { entry_files: ["src/main.ts"] },
+        }),
+        repositoryLabel: "deadset.json",
+      });
+      expect(
+        findingsOf(emitterInputOf(root, config)).map(
+          (finding) => `${finding.code} ${finding.symbol.name}`,
+        ),
+      ).toEqual(["DS1104 DemoProps"]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

@@ -13,7 +13,7 @@
     "conformance": {
       "corpus_version": "6.0.0",
       "result": "pass",
-      "digest": "sha256:76c07ac14bda6e302444918d832b01844bac6f29b6f22a742d538804480c0769"
+      "digest": "sha256:d65daae4b7c95050c07896b166d0250d233cca71f97de75a6086c1d80fe76232"
     }
   },
   "target": {
@@ -475,43 +475,6 @@
       "severity": "deny",
       "message": "exported variable has no reference in the target and none from any loaded consumer",
       "details": {}
-    },
-    {
-      "code": "DS1004",
-      "kind": "test-only-use",
-      "language": "ts",
-      "position": {
-        "path": "src/tested.ts",
-        "line": 1,
-        "column": 17,
-        "end_line": 3
-      },
-      "symbol": {
-        "ref": "ts://@example/non-code-artifacts-imports/src/tested.ts#tested",
-        "kind": "function",
-        "name": "tested",
-        "size_lines": 3
-      },
-      "reachability_class": "certain",
-      "confidence": "certain",
-      "liveness_relation": "reference-counting",
-      "test_only": true,
-      "generated": false,
-      "component": {
-        "id": "deadset-ts/c-0007",
-        "root": true,
-        "symbol_count": 1,
-        "deletable_lines": 3
-      },
-      "retained_by": [],
-      "configurations": [
-        "tsconfig.json"
-      ],
-      "consumers_loaded": [],
-      "fixability": "deletable",
-      "severity": "deny",
-      "message": "function is referenced only from test files and never from production code",
-      "details": {}
     }
   ],
   "edge_evaluations": [],
@@ -553,13 +516,13 @@
   "unanswered_questions": [],
   "conventions_applied": [],
   "totals": {
-    "findings": 13,
+    "findings": 12,
     "by_severity": {
       "allow": 0,
       "warn": 0,
-      "deny": 13
+      "deny": 12
     },
-    "deletable_lines": 32,
+    "deletable_lines": 29,
     "suppressions_in_effect": 0,
     "reasons_recorded": 0,
     "stale_suppressions": 0,
@@ -568,7 +531,7 @@
     "withheld": {
       "certain": 0,
       "probable": 0,
-      "possible": 0
+      "possible": 1
     }
   }
 }

@@ -115,6 +115,7 @@ export const GO_REF_EXPRESSIONS: readonly string[] = [
   `^go://${GO_PATH}#${GO_IDENT}$`,
   `^go://${GO_PATH}#${GO_IDENT}(?:\\.${GO_IDENT})+$`,
   `^go://${GO_PATH}#${GO_IDENT}(?:\\.${GO_IDENT})?\\[${GO_IDENT}\\]$`,
+  `^go://${GO_PATH}#(?:${GO_IDENT}(?:\\.${GO_IDENT})?)?\\(${GO_IDENT}\\)$`,
   `^go://${GO_PATH}#${GO_FILE}:file$`,
   `^go://${GO_PATH}#${GO_PATH}(?:@${GO_VERSION})?:require$`,
   `^go://${GO_PATH}#${GO_PATH}(?:@${GO_VERSION})?:replace$`,

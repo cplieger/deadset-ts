@@ -15,7 +15,10 @@ import {
   isIdentifier,
   isImportDeclaration,
   isImportEqualsDeclaration,
+  isInterfaceDeclaration,
   isMetaProperty,
+  isModuleBlock,
+  isModuleDeclaration,
   isNewExpression,
   isNamespaceExport,
   isNoSubstitutionTemplateLiteral,
@@ -49,7 +52,7 @@ import {
   type Inventory,
   type InventorySymbol,
 } from "./inventory.ts";
-import { augmentationReferences } from "./augmentations.ts";
+import { ambientGlobalInterfaces, augmentationReferences } from "./augmentations.ts";
 import { elementAccessReferences } from "./element-access.ts";
 import { indexedAccessReferences } from "./indexed-access.ts";
 import { keyofComparisonReferences } from "./keyof-comparisons.ts";
@@ -1610,6 +1613,39 @@ export function references<Brand>(
     }
   }
 
+  /** The ambient global interfaces of the walked files that merge into a declaration outside the project's own files. */
+  const libraryMerged = (scripts: ReadonlySet<string>): ReadonlySet<string> => {
+    const names = new Map<string, Node>();
+    const visit = (node: Node): void => {
+      if (isInterfaceDeclaration(node)) {
+        const id = declaredAt(node);
+        if (id !== undefined) {
+          names.set(id, node.name);
+        }
+      } else if (isModuleDeclaration(node) || isModuleBlock(node)) {
+        node.forEachChild(visit);
+      }
+    };
+    for (const { file } of walked) {
+      file.forEachChild(visit);
+    }
+    const global = new Set(ambientGlobalInterfaces(held, [...names.keys()], scripts));
+    const asked = [...names].filter(([id]) => global.has(id));
+    if (asked.length === 0) {
+      return new Set();
+    }
+    const answers = project.symbolsAt(asked.map(([, name]) => project.handle(name)));
+    return new Set(
+      asked.flatMap(([id], at) => {
+        const symbol = answers[at];
+        return typeof symbol === "object" &&
+          symbol.declarations.some((handle) => !ownPaths.has(handle.path))
+          ? [id]
+          : [];
+      }),
+    );
+  };
+
   const usesOf = new Map(walked.map((one) => [one.file, one.uses]));
   for (const [file, writes] of valued) {
     const uses = usesOf.get(file) ?? [];
@@ -1637,7 +1673,7 @@ export function references<Brand>(
   const scripts = new Set(
     walked.filter((one) => one.file.externalModuleIndicator === undefined).map((one) => one.fileId),
   );
-  found.push(...augmentationReferences(held, found, scripts));
+  found.push(...augmentationReferences(held, found, scripts, libraryMerged(scripts)));
   found.sort(
     (a, b) =>
       byPosition(a.position, b.position) ||

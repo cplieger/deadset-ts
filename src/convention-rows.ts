@@ -209,6 +209,31 @@ const ANGULAR_PACKAGE_KEYS: readonly PackageKey[] = [
   "scripts",
 ].map((key) => ({ key, files: ["angular.json"] }));
 
+/**
+ * The test runners and the assertion, mock and runner libraries whose import is test
+ * evidence beside each runner a row reads test files for. Each applies whether or not a
+ * manifest declares it, so none is a row.
+ */
+export const TEST_LIBRARIES: readonly string[] = [
+  "@jest/globals",
+  "@playwright/test",
+  "ava",
+  "chai",
+  "expect",
+  "jasmine",
+  "jest",
+  "mocha",
+  "msw",
+  "nock",
+  "node:test",
+  "sinon",
+  "tap",
+  "uvu",
+];
+
+/** The scopes every package of which is a test library. */
+export const TEST_LIBRARY_SCOPES: readonly string[] = ["@testing-library/"];
+
 /** Every row, ordered by name and then by range. */
 export const CONVENTION_ROWS: readonly ConventionRow[] = [
   {

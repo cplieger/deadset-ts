@@ -47,8 +47,11 @@ describe("the forms an entry's values take", () => {
         "ts://@example/app/src/lib.ts#helper",
         "Catalog.ResolveAlias",
         "go://example.com/app#Catalog.*",
+        "go://example.com/app#Catalog.ResolveAlias(name)",
+        "go://example.com/app#(limit)",
+        "go://example.com/app#Resolve(limit",
       ].map(isSymbolRef),
-    ).toEqual([true, true, false, false]);
+    ).toEqual([true, true, false, false, true, true, false]);
   });
 });
 

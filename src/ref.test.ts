@@ -298,7 +298,7 @@ describe("the reference grammar", () => {
 
   it("publishes one expression per form group the page names, and no other", () => {
     expect(REF_EXPRESSIONS.length).toBe(publishedExpressions("ts").length);
-    expect(publishedExpressions("go").length, "the page also fixes the other language").toBe(7);
+    expect(publishedExpressions("go").length, "the page also fixes the other language").toBe(8);
   });
 
   it("accepts every token the corpus accepts for this language", () => {

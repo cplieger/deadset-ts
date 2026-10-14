@@ -132,6 +132,20 @@ function reachabilityClasses(input: EmitterInput): (id: string) => Confidence {
   };
 }
 
+/** The target symbols one test of dead code references, by id: production declarations the sweep judges. */
+function testTargets(union: Graph, id: string): readonly string[] {
+  return (union.out[union.at(id)] ?? []).flatMap((edge) => {
+    const target = union.symbols[edge.to];
+    const testCode = union.test[edge.to] === true || union.support[edge.to] === true;
+    return target !== undefined &&
+      !testCode &&
+      union.ambient[edge.to] !== true &&
+      union.subject[edge.to] === true
+      ? [target.id]
+      : [];
+  });
+}
+
 /**
  * The confidence ceiling of a test of dead code: the lowest reachability class among the
  * target symbols it references, because its deadness is theirs, whether or not they share
@@ -145,25 +159,40 @@ function testCeilings(
   const tests = new Set(
     input.swept.sweep.candidates.filter((one) => one.testOfDeadCode).map((one) => one.id),
   );
-  return (id) => {
-    let lowest: Confidence = "certain";
-    if (!tests.has(id)) {
-      return lowest;
+  return (id) =>
+    tests.has(id)
+      ? testTargets(union, id).reduce<Confidence>(
+          (lowest, target) => capped(lowest, classOf(target)),
+          "certain",
+        )
+      : "certain";
+}
+
+/**
+ * The subjects dead only because production code only tests use is: each declaration the
+ * sweep marks test-used, each `DS1502` file of such code, and each test of dead code every
+ * target of which is one. Nothing they hold references a dead declaration outside them, so
+ * the rest of a component they share is reported without them.
+ */
+function testUsedSubjects(input: EmitterInput): {
+  readonly declarations: ReadonlySet<string>;
+  readonly files: ReadonlySet<string>;
+} {
+  const { matrix, sweep } = input.swept;
+  const union = matrix.union;
+  const used = new Set(sweep.candidates.filter((one) => one.testUsed).map((one) => one.id));
+  for (const test of sweep.candidates.filter((one) => one.testOfDeadCode)) {
+    const targets = testTargets(union, test.id);
+    if (targets.length > 0 && targets.every((target) => used.has(target))) {
+      used.add(test.id);
     }
-    for (const edge of union.out[union.at(id)] ?? []) {
-      const target = union.symbols[edge.to];
-      const testCode = union.test[edge.to] === true || union.support[edge.to] === true;
-      if (
-        target !== undefined &&
-        !testCode &&
-        union.ambient[edge.to] !== true &&
-        union.subject[edge.to] === true
-      ) {
-        lowest = capped(lowest, classOf(target.id));
-      }
-    }
-    return lowest;
-  };
+  }
+  const files = new Set(
+    union.symbols.flatMap((symbol, at) =>
+      matrix.testUsed[at] === true ? [symbol.position.path] : [],
+    ),
+  );
+  return { declarations: used, files };
 }
 
 /**
@@ -321,6 +350,7 @@ export function completed(
   const candidates = new Map(swept.sweep.candidates.map((candidate) => [candidate.id, candidate]));
   const classOf = reachabilityClasses(input);
   const ceilingOf = testCeilings(input, classOf);
+  const testUsed = testUsedSubjects(input);
   const { components, computed, files } = runComponents(swept, findings);
   const componentOf = findingComponents(swept, components, input.config.reporters.cascade);
   const held = new Set(components.filter((one) => one.held).flatMap((one) => one.members));
@@ -394,8 +424,17 @@ export function completed(
       candidate === undefined
         ? union.made[at]
         : { production: candidate.productionRefs, test: candidate.testRefs };
-    const reachabilityClass =
+    const ownClass =
       judged === undefined ? (finding.reachabilityClass ?? "certain") : classOf(judged.id);
+    const used =
+      judged !== undefined
+        ? candidate !== undefined && testUsed.declarations.has(judged.id)
+        : finding.code === FILE_NEVER_IMPORTED && testUsed.files.has(finding.position.path);
+    const reachabilityClass = used && candidate?.testOfDeadCode !== true ? "possible" : ownClass;
+    const untested = capped(
+      capped(capped(ownClass, row.maxClass), rootsCeiling(input, finding, candidate)),
+      judged === undefined ? "certain" : ceilingOf(judged.id),
+    );
     const generated = input.files.generated?.has(finding.position.path) === true;
     const fixability = generated
       ? "none"
@@ -420,10 +459,8 @@ export function completed(
       position: finding.position,
       symbol: finding.symbol,
       reachabilityClass,
-      confidence: capped(
-        capped(capped(reachabilityClass, row.maxClass), rootsCeiling(input, finding, candidate)),
-        judged === undefined ? "certain" : ceilingOf(judged.id),
-      ),
+      confidence: used ? "possible" : untested,
+      ...(used ? { componentConfidence: untested } : {}),
       ...(candidate === undefined ? {} : { livenessRelation: candidate.relation }),
       testOnly: judged !== undefined && counts?.production === 0 && counts.test > 0,
       generated,
@@ -450,7 +487,7 @@ export function completed(
 /**
  * The findings with every finding of a dead component capped by the lowest confidence
  * among the component's root members, so the minimum confidence reports or withholds a
- * component whole.
+ * component whole but for the findings test-used code lowers on their own.
  */
 function componentCapped(
   findings: readonly CompletedFinding[],
@@ -461,15 +498,27 @@ function componentCapped(
     const { id, root } = finding.component;
     if (root && dead.has(id)) {
       const held = lowest.get(id);
-      lowest.set(id, held === undefined ? finding.confidence : capped(held, finding.confidence));
+      const own = componentConfidenceOf(finding);
+      lowest.set(id, held === undefined ? own : capped(held, own));
     }
   }
   return findings.map((finding) => {
     const cap = lowest.get(finding.component.id);
-    return cap === undefined || RANK[cap] >= RANK[finding.confidence]
-      ? finding
-      : { ...finding, confidence: cap };
+    if (cap === undefined) {
+      return finding;
+    }
+    const own = finding.componentConfidence;
+    return {
+      ...finding,
+      confidence: capped(finding.confidence, cap),
+      ...(own === undefined ? {} : { componentConfidence: capped(own, cap) }),
+    };
   });
+}
+
+/** The confidence a finding gives its component's cap and the dials. */
+function componentConfidenceOf(finding: CompletedFinding): Confidence {
+  return finding.componentConfidence ?? finding.confidence;
 }
 
 /** Whether the dials withhold a finding by its own severity or confidence. */
@@ -494,7 +543,11 @@ export function dialsOf(
   const minConfidence = input.config.analysis.minConfidence;
   const components = new Set(
     findings
-      .filter((finding) => finding.component.root && dialed(finding, minConfidence))
+      .filter(
+        (finding) =>
+          finding.component.root &&
+          dialed({ ...finding, confidence: componentConfidenceOf(finding) }, minConfidence),
+      )
       .map((finding) => finding.component.id),
   );
   return {

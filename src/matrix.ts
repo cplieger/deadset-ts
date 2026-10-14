@@ -30,6 +30,8 @@ export interface Configured {
   readonly testFiles: readonly string[];
   /** The paths of the test-support files, which only test code imports. */
   readonly supportFiles?: readonly string[] | undefined;
+  /** The paths of the files only tests reach that are no test-support file. */
+  readonly testUsedFiles?: readonly string[] | undefined;
   /** The ids of the ambient declarations, which describe code the target does not implement. */
   readonly ambient?: ReadonlySet<string> | undefined;
   /**
@@ -60,6 +62,11 @@ export interface Matrix {
    * whose project holds it, in the run's order.
    */
   readonly heldIn: readonly (readonly string[])[];
+  /**
+   * Per declaration of {@link Matrix.union}, whether a file only tests reach that is no
+   * test-support file holds it in some configuration: production code only tests use.
+   */
+  readonly testUsed: readonly boolean[];
   /** Each declaration's dependents, by id, as the first configuration holding it states them. */
   readonly dependents: ReadonlyMap<string, readonly string[]>;
 }
@@ -81,6 +88,17 @@ export interface MatrixCandidate extends Candidate {
    * shape nothing references would be.
    */
   readonly unreferencedTest: boolean;
+  /**
+   * Whether it is dead only because code only tests use is: production code only tests
+   * use holds it and the run that counts test references reaches it, or such a
+   * declaration reaches it through dead declarations.
+   */
+  readonly testUsed: boolean;
+  /**
+   * Whether test code the run that counts test references reaches, and that is no test of
+   * dead code, references it: a test that stays keeps it.
+   */
+  readonly keptByTests: boolean;
 }
 
 /** One run's sweep. */
@@ -158,6 +176,7 @@ export function matrixOf(per: readonly Configured[]): Matrix {
     }
   });
   symbols.sort((a, b) => byPosition(a.position, b.position));
+  const testUsed = new Set(per.flatMap((one) => one.testUsedFiles ?? []));
 
   return {
     configurations: per.map((one) => one.configuration),
@@ -173,6 +192,7 @@ export function matrixOf(per: readonly Configured[]): Matrix {
       new Set(per.flatMap((one) => [...(one.ambient ?? [])])),
     ),
     heldIn: symbols.map((symbol) => holders.get(symbol.id) ?? []),
+    testUsed: symbols.map((symbol) => testUsed.has(symbol.position.path)),
     dependents,
   };
 }
@@ -227,6 +247,14 @@ export function sweepMatrix(matrix: Matrix, input: SweepInput): SweepResult {
         union.subject[edge.to] !== true ||
         judged[edge.to] !== undefined,
     );
+  const admittedAt = (at: number): boolean =>
+    judged[at]?.every((candidate) => candidate.testOfDeadCode) === true && subjectsDead(at);
+  const kept = keptByTests(union, testReached, admittedAt);
+  const testUsed = testUsedReach(
+    union,
+    union.symbols.map((_symbol, at) => matrix.testUsed[at] === true && testReached[at] === true),
+    judged.map((one) => one !== undefined),
+  );
   const candidates: MatrixCandidate[] = [];
   union.symbols.forEach((symbol, at) => {
     const all = judged[at];
@@ -234,7 +262,7 @@ export function sweepMatrix(matrix: Matrix, input: SweepInput): SweepResult {
       return;
     }
     const held = matrix.heldIn[at] ?? [];
-    const admitted = all.every((candidate) => candidate.testOfDeadCode) && subjectsDead(at);
+    const admitted = admittedAt(at);
     const testRefs = union.made[at]?.test ?? 0;
     const heldByTests =
       heldBy[union.parent[at] ?? OUTSIDE] ??
@@ -255,6 +283,8 @@ export function sweepMatrix(matrix: Matrix, input: SweepInput): SweepResult {
       configurations: held,
       heldByTests,
       unreferencedTest: unreferenced,
+      testUsed: testUsed[at] === true,
+      keptByTests: kept[at] === true,
     });
   });
 
@@ -264,6 +294,47 @@ export function sweepMatrix(matrix: Matrix, input: SweepInput): SweepResult {
     candidates,
     components: deadComponents(matrix, { liveUnder, candidates }, new Set()),
   };
+}
+
+/** Per declaration of the union, whether one of `seeds` is it or reaches it through `dead` declarations. */
+function testUsedReach(
+  union: Graph,
+  seeds: readonly boolean[],
+  dead: readonly boolean[],
+): readonly boolean[] {
+  // A file is no candidate, and its top level is what reaches what it alone calls.
+  const reached = seeds.map((seed, at) => seed && dead[at] === true);
+  const queue = seeds.flatMap((one, at) => (one ? [at] : []));
+  for (let at = queue.pop(); at !== undefined; at = queue.pop()) {
+    for (const edge of union.out[at] ?? []) {
+      if (dead[edge.to] === true && reached[edge.to] !== true) {
+        reached[edge.to] = true;
+        queue.push(edge.to);
+      }
+    }
+  }
+  return reached;
+}
+
+/** Per declaration of the union, whether test code `reached` holds and `admitted` rejects references it. */
+function keptByTests(
+  union: Graph,
+  reached: readonly boolean[],
+  admitted: (at: number) => boolean,
+): readonly boolean[] {
+  const kept = union.symbols.map(() => false);
+  union.out.forEach((edges, from) => {
+    const testCode = union.test[from] === true || union.support[from] === true;
+    if (!testCode || reached[from] !== true || admitted(from)) {
+      return;
+    }
+    for (const edge of edges) {
+      if (edge.test) {
+        kept[edge.to] = true;
+      }
+    }
+  });
+  return kept;
 }
 
 /**
