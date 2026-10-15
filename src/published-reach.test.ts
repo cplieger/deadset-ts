@@ -75,6 +75,53 @@ describe("the types a library's published API reaches without writing them", () 
     ]);
   });
 
+  it("reaches the members of a global augmentation in a published file or a file a published declaration is in", () => {
+    const report = analyzed({
+      "package.json": JSON.stringify({
+        name: "@example/lib",
+        type: "module",
+        exports: "./src/index.ts",
+      }),
+      "deadset.json": JSON.stringify({ target: { kind: "library" } }),
+      "src/index.ts": [
+        'import type { Shape } from "./shape.ts";',
+        "declare global {",
+        "  interface Window {",
+        "    chrome?: unknown;",
+        "  }",
+        "}",
+        "export function area(shape: Shape): number {",
+        "  return shape.side;",
+        "}",
+        "",
+      ].join("\n"),
+      "src/shape.ts": [
+        "declare global {",
+        "  interface Window {",
+        "    shapes?: unknown;",
+        "  }",
+        "}",
+        "export interface Shape {",
+        "  side: number;",
+        "}",
+        "",
+      ].join("\n"),
+      "src/internal.ts": [
+        "declare global {",
+        "  interface Window {",
+        "    hidden?: unknown;",
+        "  }",
+        "}",
+        "export {};",
+        "",
+      ].join("\n"),
+    });
+
+    expect(lines(report)).toContain("DS1003 global.Window.chrome possible");
+    expect(lines(report)).toContain("DS1003 global.Window.shapes possible");
+    expect(lines(report)).toContain("DS1003 global.Window.hidden certain");
+  });
+
   it("reaches the types of both accessors of a published pair, whichever comes first", () => {
     const report = analyzed({
       "package.json": JSON.stringify({

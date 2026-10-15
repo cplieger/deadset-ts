@@ -734,7 +734,7 @@ describe("the renderings beside the report", () => {
   );
 
   it(
-    "annotates a finding below the failing severity as a warning, and as an error once the failing severity reaches it",
+    "annotates a warn finding as a warning, whatever the failing severity",
     () => {
       const warnOnly = project({
         ...CLEAN_APPLICATION,
@@ -752,7 +752,7 @@ describe("the renderings beside the report", () => {
         ).split(" ", 1)[0] ?? "";
 
       expect(level([])).toBe("::warning");
-      expect(level(["--fail-on=warn"])).toBe("::error");
+      expect(level(["--fail-on=warn"])).toBe("::warning");
     },
     LOAD_TIMEOUT,
   );

@@ -225,10 +225,28 @@ describe("serialization-contract over checked values and ambient callees", () =>
   it("reads the operand's own type and each asserted type where an assertion erases them", () => {
     expect(serialized(swept, "Small", "Never", "AnyCast")).toEqual([
       "Small.tiny src/main.ts:152:20 passed to client.postMessage",
-      "Never.ghost src/main.ts:152:20 passed to client.postMessage",
       "AnyCast.erased src/main.ts:154:20 passed to client.postMessage",
     ]);
   });
+
+  it(
+    "reads each type an assertion names, whose members are held where the program writes them",
+    () => {
+      expect(
+        retainedIn([
+          "interface Small { tiny: string }",
+          "interface Other { ghost: string; unset?: string }",
+          'const small: Small = { tiny: "s" };',
+          'const other: Other = { ghost: "g" };',
+          "console.log(JSON.stringify(small as unknown as Other), other.unset);",
+        ]),
+      ).toEqual([
+        "Small.tiny 5:28 passed to JSON.stringify",
+        "Other.ghost 5:28 passed to JSON.stringify",
+      ]);
+    },
+    LOAD_TIMEOUT,
+  );
 
   it("reads a value passed to an unknown parameter of a callee the project declares only ambiently", () => {
     expect(serialized(swept, "Broadcast", "Relayed", "Forwarded", "Dropped")).toEqual([
@@ -251,6 +269,7 @@ describe("serialization-contract over checked values and ambient callees", () =>
           `${finding.code} ${finding.position.path}:${String(finding.position.line)} ${finding.symbol.name}`,
       ),
     ).toEqual([
+      "DS1003 src/main.ts:143 Never.ghost",
       "DS1301 src/main.ts:59 Dropped.gone",
       "DS1301 src/main.ts:70 Unsent.note",
       "DS1301 src/main.ts:94 HiddenD.viaDts",
@@ -527,6 +546,7 @@ describe("serialization-contract over a written tree", () => {
           "interface Shape { side: number; describe(): string; toJSON(): unknown; toString(): string }",
           "declare const shape: Shape;",
           "JSON.stringify(shape);",
+          "shape.side = 1;",
         ]),
       ).toEqual([
         "Shape.side 3:16 passed to JSON.stringify",
@@ -581,7 +601,7 @@ describe("serialization-contract over a written tree", () => {
           "interface Sized { size: number }",
           "class Crate { size = 1; }",
           "function pack(...items: Sized[]): void { JSON.stringify(items); }",
-          "pack(new Crate());",
+          "pack(new Crate(), { size: 2 });",
         ]),
       ).toEqual(["Sized.size 3:57 passed to JSON.stringify"]);
     },
@@ -849,9 +869,32 @@ describe("a parameter that keeps no member name and that its function enumerates
           "function start(args: any): string[] { return command(args); }",
           "const args: Args = {};",
           "args.port = 1;",
+          'args.seed = "s";',
           "console.log(start(args));",
         ]),
-      ).toEqual(["Args.port 8:19 passed to start", "Args.seed 8:19 passed to start"]);
+      ).toEqual(["Args.port 9:19 passed to start", "Args.seed 9:19 passed to start"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "holds back the properties of each value passed to a parameter typed by named properties and a string index signature",
+    () => {
+      expect(
+        retainedIn([
+          "interface Args { port?: number; seed?: string }",
+          "function command(args: { [key: string]: unknown }): string[] {",
+          "  return Object.keys(args).map((key) => `--${key}=${String(args[key])}`);",
+          "}",
+          "function start(args: { port?: number; [key: string]: unknown }): string[] {",
+          "  return command(args);",
+          "}",
+          "const args: Args = {};",
+          "args.port = 1;",
+          'args.seed = "s";',
+          "console.log(start(args));",
+        ]),
+      ).toEqual(["Args.seed 11:19 passed to start"]);
     },
     LOAD_TIMEOUT,
   );
@@ -870,7 +913,7 @@ describe("a parameter that keeps no member name and that its function enumerates
           "  function unused(): string[] { return Object.keys(other); }",
           "  return 1;",
           "}",
-          "const args: Args = {};",
+          'const args: Args = { port: 1, seed: "s" };',
           "const other: Other = {};",
           "console.log(command(args), never(other));",
         ]),
@@ -948,6 +991,207 @@ describe("a value a generic function serializes through its type parameter", () 
         "Payload.kept 21:13 passed to JSON.stringify through the type parameter ReqT",
         "Payload.disabled 21:13 passed to JSON.stringify through the type parameter ReqT",
       ]);
+    },
+    LOAD_TIMEOUT,
+  );
+});
+
+/** Each finding about a member, as `code name confidence`, of one application run over `main`. */
+function memberFindings(main: readonly string[], declarations = ""): string[] {
+  const root = writeProject({
+    "package.json": JSON.stringify({ name: "@example/tree", private: true, type: "module" }),
+    "deadset.json": JSON.stringify({
+      target: { kind: "application" },
+      ts: { entry_files: ["main.ts"] },
+    }),
+    "main.ts": `${main.join("\n")}\n`,
+    ...(declarations === "" ? {} : { "outside.d.ts": declarations }),
+  });
+  const report = join(root, "report.json");
+  try {
+    run(
+      ["analyze", "--target=.", "--min-confidence=possible", `--report=${report}`],
+      new MemoryWriter(),
+      new MemoryWriter(),
+      { ...nodeHost(), workingDirectory: () => root },
+    );
+    const found = JSON.parse(readFileSync(report, "utf8")) as {
+      findings: { code: string; symbol: { name: string }; confidence: string }[];
+    };
+    return found.findings
+      .filter((one) => one.symbol.name.includes("."))
+      .map((one) => `${one.code} ${one.symbol.name} ${one.confidence}`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+describe("a member of a type the program sends or only receives", () => {
+  it(
+    "is live on a sent type where production writes it, and dead where nothing writes or reads it",
+    () => {
+      expect(
+        memberFindings([
+          "interface Target { uri: string; body?: string; method: string }",
+          "class Stamp { at = 1; unset?: number; set?: number; constructor() { this.set = 2; } }",
+          'const target: Target = { uri: "u", method: "GET" };',
+          "console.log(JSON.stringify(target), JSON.stringify(new Stamp()));",
+        ]),
+      ).toEqual(["DS1003 Target.body certain", "DS1003 Stamp.unset certain"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "is written by a literal whose type is inferred, where a value of that type reaches the member's type",
+    () => {
+      expect(
+        memberFindings([
+          "interface Sent { id: number; label: string }",
+          "interface Kept { id: number; label: string }",
+          "function sent(ids: readonly number[]): readonly Sent[] {",
+          '  return ids.map((id) => ({ id, label: "l" }));',
+          "}",
+          "function kept(ids: readonly number[]): readonly Kept[] {",
+          '  return ids.map((id) => ({ id, label: "l" }));',
+          "}",
+          "console.log(JSON.stringify(sent([1])), kept([2]).length);",
+        ]),
+      ).toEqual(["DS1301 Kept.id certain", "DS1301 Kept.label certain"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "is dead where the program only decodes into it and never reads it: certain through JSON.parse, possible through a generic outside the analysis that fills its type parameter",
+    () => {
+      expect(
+        memberFindings(
+          [
+            'import { fetchJson, identity } from "./outside.js";',
+            "interface Parsed { used: string; unread: string }",
+            "interface Fetched { used: string; unread: string }",
+            "interface Passed { used: string; unread: string }",
+            'const parsed = JSON.parse(process.argv[2] ?? "{}") as Parsed;',
+            'const fetched = await fetchJson<Fetched>("u");',
+            'const passed = identity<Passed>(JSON.parse("{}") as Passed);',
+            "console.log(parsed.used, fetched.used, passed.used);",
+          ],
+          [
+            "export declare function fetchJson<T>(url: string): Promise<T>;",
+            "export declare function identity<T>(value: T): T;",
+            "",
+          ].join("\n"),
+        ),
+      ).toEqual([
+        "DS1003 Parsed.unread certain",
+        "DS1003 Fetched.unread possible",
+        "DS1003 Passed.unread certain",
+      ]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "is written by a decode the program sends on: JSON.parse asserted or annotated, or a generic outside the analysis that fills its type parameter",
+    () => {
+      expect(
+        memberFindings(
+          [
+            'import { fetchJson } from "./outside.js";',
+            "interface Relayed { kind: string; seq: number }",
+            "interface Saved { name: string; spare: string }",
+            "interface Fetched { kind: string; seq: number }",
+            "interface Built { ready: boolean }",
+            'const relayed = JSON.parse(process.argv[2] ?? "{}") as Relayed;',
+            'const saved: Saved = JSON.parse("{}");',
+            'saved.name = "renamed";',
+            'const fetched = await fetchJson<Fetched>("u");',
+            "const built = {} as Built;",
+            "console.log(JSON.stringify(relayed), JSON.stringify(saved));",
+            "console.log(JSON.stringify(fetched), JSON.stringify(built));",
+          ],
+          ["export declare function fetchJson<T>(url: string): Promise<T>;", ""].join("\n"),
+        ),
+      ).toEqual(["DS1003 Built.ready certain"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "is written by an untyped value read as its type where it is written, and by a callback's result a call hands on",
+    () => {
+      expect(
+        memberFindings(
+          [
+            'import { event, getJson } from "./outside.js";',
+            "interface Payload { kind: string; seq: number }",
+            "interface Saved { name: string; spare: number }",
+            "interface Line { id: string }",
+            "interface Listed { tag: string }",
+            "interface Message { body: string }",
+            "interface Posted { at: string }",
+            "interface Indexed { slot: string }",
+            "interface Built { ready: boolean }",
+            "function load(text: string): Saved {",
+            "  return JSON.parse(text);",
+            "}",
+            "const payload = (await getJson()) as Payload;",
+            "let line: Line;",
+            'line = JSON.parse("{}");',
+            'const listed: Listed[] = ["{}"].map((one) => JSON.parse(one));',
+            "const message = event.data as Message;",
+            "const posted: Posted = event.raw;",
+            'const indexed: Indexed = event["raw"];',
+            "const built = {} as Built;",
+            'console.log(JSON.stringify(load("{}")), JSON.stringify(payload));',
+            "console.log(JSON.stringify(line), JSON.stringify(listed));",
+            "console.log(JSON.stringify(message), JSON.stringify(built));",
+            "console.log(JSON.stringify(posted), JSON.stringify(indexed));",
+          ],
+          [
+            "export declare function getJson(): Promise<any>;",
+            "export declare const event: { data: unknown; raw: any };",
+            "",
+          ].join("\n"),
+        ),
+      ).toEqual(["DS1003 Built.ready certain"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "is written by a spread or an Object.assign copying a value whose type has the member",
+    () => {
+      expect(
+        memberFindings([
+          "interface Base { kind: string; extra: string }",
+          "interface Spread { kind: string; level: number }",
+          "interface Assigned { label: string; note: string }",
+          'const base: Base = { kind: "a", extra: "b" };',
+          "const spread: Spread = { ...base, level: 1 };",
+          "const assigned = {} as Assigned;",
+          'Object.assign(assigned, { label: "x" });',
+          "console.log(JSON.stringify(spread), JSON.stringify(assigned), base.extra);",
+        ]),
+      ).toEqual(["DS1003 Assigned.note certain"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "is not written by a JSON.parse result a satisfies check names the type of",
+    () => {
+      expect(
+        memberFindings([
+          "interface Payload { kept: string; ghost: string }",
+          "interface Stored { kept: string; ghost: string }",
+          'const checked = JSON.parse("{}") satisfies Payload;',
+          'const stored: Stored = JSON.parse("{}") satisfies Stored;',
+          'const sent = { kept: "x" } as Payload;',
+          "console.log(checked, JSON.stringify(sent), JSON.stringify(stored));",
+        ]),
+      ).toEqual(["DS1003 Payload.ghost certain"]);
     },
     LOAD_TIMEOUT,
   );

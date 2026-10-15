@@ -33,6 +33,8 @@ export interface Exemption {
    * The record holds only while one of them is called through its interface.
    */
   readonly implementing?: Implementing;
+  /** Whether the record holds only where a write the mode counts stores into the declaration. */
+  readonly whileWritten?: true;
 }
 
 /** The interface methods one retained class member implements, and whether its body is empty. */

@@ -45,7 +45,7 @@ Each rendering is written beside the report, at `PATH` with the format's suffix 
 | --- | --- | --- |
 | `text` | `.txt` | One finding per line, position first, then a line counting the findings `analysis.min_confidence` withheld, when it withheld any, then a summary line |
 | `json` | `.json` | The report document |
-| `github` | `.annotations` | One GitHub workflow command per finding |
+| `github` | `.annotations` | One GitHub workflow command per finding, stale suppression, type-error skip and note: a `deny` finding is an error, `warn` a warning, `allow` a notice |
 | `sarif` | `.sarif` | A SARIF 2.1.0 log |
 | `template` | `.tmpl` | The template `--template=FILE` names, rendered over the report |
 

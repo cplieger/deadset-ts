@@ -11,10 +11,13 @@ import {
   isArrayLiteralExpression,
   isArrowFunction,
   isAsExpression,
+  isAwaitExpression,
   isCallExpression,
   isClassDeclaration,
   isClassExpression,
   isClassStaticBlockDeclaration,
+  isElementAccessExpression,
+  isExpressionStatement,
   isFunctionDeclaration,
   isFunctionExpression,
   isFunctionLikeDeclaration,
@@ -22,6 +25,7 @@ import {
   isIdentifier,
   isInterfaceDeclaration,
   isMethodDeclaration,
+  isNonNullExpression,
   isNoSubstitutionTemplateLiteral,
   isNumericLiteral,
   isObjectLiteralExpression,
@@ -29,10 +33,14 @@ import {
   isForInStatement,
   isPropertyAccessExpression,
   isPropertyDeclaration,
+  isReturnStatement,
   isSatisfiesExpression,
   isSetAccessorDeclaration,
+  isSourceFile,
+  isSpreadAssignment,
   isSpreadElement,
   isStringLiteral,
+  isTypeAssertion,
   isTypeLiteralNode,
   isVariableDeclaration,
   ModifierFlags,
@@ -42,6 +50,8 @@ import {
   type Expression,
   type Node,
   type ParameterDeclaration,
+  type SourceFile,
+  type SpreadAssignment,
 } from "@typescript/native/ast";
 import {
   SignatureKind,
@@ -64,8 +74,8 @@ import {
 } from "./configured-declarations.ts";
 import type { DetectorInput, Evidence } from "./exempt.ts";
 import { nodeKey, type Inventory } from "./inventory.ts";
-import { renderPosition } from "./position.ts";
-import { must } from "./query.ts";
+import { renderPosition, type Position } from "./position.ts";
+import { must, Unanswerable } from "./query.ts";
 import type { ProjectView } from "./session.ts";
 import { erasedStores, type ErasedStores } from "./erased-stores.ts";
 import { checkedTypes, CONVERSION_MEMBERS, valueReach, type Reached } from "./value-reach.ts";
@@ -81,6 +91,9 @@ const SERIALIZED_CONVERSION = "toJSON";
 
 /** The parameter types that keep nothing of the value they are given. */
 const ERASED = TypeFlags.Any | TypeFlags.Unknown;
+
+/** The standard library's promise types, whose value is their one type argument. */
+const PROMISES: ReadonlySet<string> = new Set(["Promise", "PromiseLike"]);
 
 /** How deep a callee's result is searched for a type parameter: `Promise<Box<T>>` is two levels. */
 const MENTION_DEPTH = 3;
@@ -261,6 +274,8 @@ function throughMethod(call: CallExpression): MethodForm | undefined {
 interface Walked {
   readonly sites: readonly Site[];
   readonly parameters: readonly Parameter[];
+  /** The class properties whose declaration writes an initializer, by identifier. */
+  readonly initialized: ReadonlySet<string>;
 }
 
 /**
@@ -271,9 +286,16 @@ interface Walked {
 function walkProject<Brand>(project: ProjectView<Brand>, held: Inventory): Walked {
   const sites: Site[] = [];
   const parameters: Parameter[] = [];
+  const initialized = new Set<string>();
   for (const file of project.ownSourceFiles()) {
     const visit = (node: Node, self: string | undefined): void => {
       let inner = self;
+      if (isPropertyDeclaration(node) && node.initializer !== undefined) {
+        const id = held.declarations.get(nodeKey(file, node));
+        if (id !== undefined) {
+          initialized.add(id);
+        }
+      }
       if (isClassDeclaration(node) || isClassExpression(node)) {
         inner = held.declarations.get(nodeKey(file, node));
       } else if (resetsThis(node)) {
@@ -306,7 +328,7 @@ function walkProject<Brand>(project: ProjectView<Brand>, held: Inventory): Walke
       visit(child, undefined);
     });
   }
-  return { sites, parameters };
+  return { sites, parameters, initialized };
 }
 
 /** The calls of `Object` that read every own property of their argument by name. */
@@ -319,17 +341,15 @@ const ENUMERATIONS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Whether a parameter type keeps no member name of the value it is given: `unknown`, `any`,
- * or an object type of a string index signature and no property.
+ * Whether a parameter type keeps no member name of the value it is given beyond the
+ * properties it names: `unknown`, `any`, or an object type of a string index signature,
+ * under which every other member of the value is held.
  */
 function keepsNoName<Brand>(project: ProjectView<Brand>, type: Type): boolean {
   if ((type.flags & ERASED) !== 0) {
     return true;
   }
-  if (
-    (type.flags & TypeFlags.Object) === 0 ||
-    must(project.queries.propertiesOf(type)).length > 0
-  ) {
+  if ((type.flags & TypeFlags.Object) === 0) {
     return false;
   }
   return must(project.queries.indexInfosOf(type)).some(
@@ -973,6 +993,39 @@ function typeParametersOf<Brand>(project: ProjectView<Brand>, type: Type, depth:
 }
 
 /**
+ * The type parameters one type names, by identifier: through constituents, type arguments,
+ * an alias's arguments and the parameters and results of its call signatures, so a callback
+ * parameter's result names the parameter its callee's result does.
+ */
+function namedTypeParameters<Brand>(
+  project: ProjectView<Brand>,
+  type: Type,
+  depth: number,
+): readonly number[] {
+  const { queries } = project;
+  const aliased = (type as { readonly aliasTypeArguments?: readonly number[] }).aliasTypeArguments;
+  if (type.isTypeParameter()) {
+    return [type.id];
+  }
+  if (depth >= MENTION_DEPTH) {
+    return aliased ?? [];
+  }
+  return [
+    ...(aliased ?? []),
+    ...[
+      ...(type.isUnionType() || type.isIntersectionType() ? must(queries.constituents(type)) : []),
+      ...must(queries.typeArguments(type)),
+      ...must(queries.signaturesOf(type, SignatureKind.Call)).flatMap((signature) => [
+        ...signature.parameters.flatMap((_parameter, at) => [
+          must(queries.typeAtPosition(signature, at)),
+        ]),
+        ...[must(queries.returnTypeOf(signature))].filter((one) => one !== undefined),
+      ]),
+    ].flatMap((one) => namedTypeParameters(project, one, depth + 1)),
+  ];
+}
+
+/**
  * The types an instantiated type puts where a declared type names `parameter`: matched
  * through type arguments, and in a union every constituent the declared union does not
  * itself name.
@@ -1128,6 +1181,11 @@ export function serializationContract<Brand>(input: DetectorInput<Brand>): reado
     (flags & SymbolFlags.Property) !== 0 ||
     ((flags & CONVERSION_MEMBERS) !== 0 &&
       (name === SERIALIZED_CONVERSION || (to.reach === "conversions" && CONVERSIONS.has(name))));
+  // The receiver reads only what the program wrote, so a data member holds while written.
+  const evidence = (id: string, flags: SymbolFlags, detail: string, site: Position): Evidence =>
+    (flags & SymbolFlags.Property) !== 0 && !walked.initialized.has(id)
+      ? { id, detail, site, whileWritten: true }
+      : { id, detail, site };
   const found: Evidence[] = [];
   for (const flow of flows) {
     const site = renderPosition(flow.site.getSourceFile(), targetRoot, flow.site.getStart());
@@ -1136,16 +1194,402 @@ export function serializationContract<Brand>(input: DetectorInput<Brand>): reado
       const symbol = byId.get(member.id);
       const name = symbol === undefined ? "" : (memberComponent(symbol, byId) ?? "");
       if (holdsBack(member.flags, name, flow.to)) {
-        found.push({ id: member.id, detail, site });
+        found.push(evidence(member.id, member.flags, detail, site));
       }
     }
     for (const member of flow.members) {
       if (holdsBack(member.flags, member.name, flow.to)) {
         for (const id of chains.declarationsOf(member)) {
-          found.push({ id, detail, site });
+          found.push(evidence(id, member.flags, detail, site));
         }
       }
     }
   }
   return found;
+}
+
+/** The data members the decodes and copies of a project's production code fill. */
+export interface Decoded {
+  /**
+   * Those a generic declared outside the analysis fills, which it may read, and those of
+   * a value another call or a property types `any` or `unknown`, whose maker it cannot see.
+   */
+  readonly filled: readonly string[];
+  /** Those a `JSON.parse` call of the standard library fills. */
+  readonly parsed: readonly string[];
+  /** Those a spread or `Object.assign` copies from a value whose type has a member of the name. */
+  readonly copied: readonly string[];
+  /** Every data member of the project, where the checker left a question unanswered. */
+  readonly unanswered: readonly string[];
+}
+
+/**
+ * The data members the decodes and copies of `files` fill, as {@link Decoded} names them.
+ * A generic declared outside the analysis, or only ambiently, fills the type that a type
+ * parameter of its own no parameter names binds, where the awaited result carries that
+ * type through its data members rather than only naming it, as a store's methods do: no
+ * argument hands the value over, so it fills it where the analysis cannot see, and may
+ * read it. Where the checker leaves a question unanswered, every data member is `unanswered`.
+ */
+export function decodedMembers<Brand>(
+  project: ProjectView<Brand>,
+  held: Inventory,
+  files: readonly SourceFile[],
+  consumers: readonly string[],
+): Decoded {
+  try {
+    return { ...decodedOf(project, held, files, consumers), unanswered: [] };
+  } catch (error: unknown) {
+    if (!(error instanceof Unanswerable)) {
+      throw error;
+    }
+    return {
+      filled: [],
+      parsed: [],
+      copied: [],
+      unanswered: held.symbols
+        .filter((symbol) => symbol.kind === "class-member" || symbol.kind === "type-member")
+        .map((symbol) => symbol.id),
+    };
+  }
+}
+
+function decodedOf<Brand>(
+  project: ProjectView<Brand>,
+  held: Inventory,
+  files: readonly SourceFile[],
+  consumers: readonly string[],
+): Omit<Decoded, "unanswered"> {
+  const { queries } = project;
+  const own = project.ownPaths();
+  const inAnalysis = (path: string): boolean =>
+    own.has(path) || consumers.some((root) => path === root || path.startsWith(`${root}/`));
+  const calls: CallExpression[] = [];
+  const untyped: Expression[] = [];
+  const spreads: SpreadAssignment[] = [];
+  const noteRead = (node: Expression): void => {
+    const at = readAs(node);
+    if (at.tops.length > 0 || at.asserted.length > 0) {
+      untyped.push(node);
+    }
+  };
+  const visit = (node: Node): void => {
+    if (isCallExpression(node)) {
+      calls.push(node);
+      noteRead(node);
+    } else if (isPropertyAccessExpression(node) || isElementAccessExpression(node)) {
+      noteRead(node);
+    } else if (isSpreadAssignment(node)) {
+      spreads.push(node);
+    }
+    node.forEachChild(visit);
+  };
+  for (const file of files) {
+    file.forEachChild(visit);
+  }
+  const filled: { readonly carried: Type; readonly types: readonly Type[] }[] = [];
+  const resolved = queries.resolvedSignatures(calls).map(must);
+  for (const signature of resolved) {
+    const declared =
+      signature?.target === undefined ? undefined : must(queries.genericOf(signature));
+    const declaration = declared?.declaration;
+    const generic = declared?.typeParameters ?? [];
+    if (signature === undefined || declared === undefined || generic.length === 0) {
+      continue;
+    }
+    const node = declaration === undefined ? undefined : project.declarationAt(declaration)?.node;
+    if (
+      declaration === undefined ||
+      (inAnalysis(declaration.path) &&
+        (node === undefined || (node.flags & NodeFlags.Ambient) === 0))
+    ) {
+      continue;
+    }
+    const result = must(queries.returnTypeOf(declared));
+    const given = must(queries.returnTypeOf(signature));
+    if (result === undefined || given === undefined) {
+      continue;
+    }
+    const passed = new Set(
+      declared.parameters.flatMap((_parameter, at) => {
+        const type = must(queries.parameterType(declared, at));
+        return type === undefined ? [] : namedTypeParameters(project, type, 0);
+      }),
+    );
+    const types = typeParametersOf(project, result, 0)
+      .filter((parameter) => generic.includes(parameter.id) && !passed.has(parameter.id))
+      .flatMap((parameter) => bound(project, result, given, parameter, 0));
+    if (types.length > 0) {
+      filled.push({ carried: awaited(project, given), types });
+    }
+  }
+  const read = readTypes(project, untyped);
+  const copies = copiedNames(project, spreads, calls);
+  if (
+    filled.length === 0 &&
+    read.parsed.length === 0 &&
+    read.made.length === 0 &&
+    copies.length === 0
+  ) {
+    return { filled: [], parsed: [], copied: [] };
+  }
+  const reach = valueReach(project, held);
+  const chains = aliasChains(project, held);
+  const members = (type: Type): readonly string[] => {
+    const reached = reach.reachedFrom(type);
+    const ofClasses = classMembers(project, held, reached.classes, "instance");
+    return [
+      ...[...reached.classes].flatMap((id) =>
+        (ofClasses.get(id) ?? []).flatMap((member) =>
+          (member.flags & SymbolFlags.Property) !== 0 ? [member.id] : [],
+        ),
+      ),
+      ...reached.members.flatMap((member) =>
+        (member.flags & SymbolFlags.Property) !== 0 ? chains.declarationsOf(member) : [],
+      ),
+    ];
+  };
+  return {
+    filled: [
+      ...new Set([
+        ...filled.flatMap(({ carried, types }) => {
+          const carries = new Set(members(carried));
+          return types.flatMap((type) => members(type).filter((id) => carries.has(id)));
+        }),
+        ...read.made.flatMap(members),
+      ]),
+    ],
+    parsed: [...new Set(read.parsed.flatMap(members))],
+    copied: [
+      ...new Set(
+        copies.flatMap(({ into, names }) =>
+          must(queries.constituents(into)).flatMap((part) =>
+            must(queries.propertiesOf(part)).flatMap((property) =>
+              (property.flags & SymbolFlags.Property) !== 0 && names.has(property.name)
+                ? chains.declarationsOf(property)
+                : [],
+            ),
+          ),
+        ),
+      ),
+    ],
+  };
+}
+
+/** Where a value is read as a type: the assertions around it, and the positions it is written in. */
+interface ReadAs {
+  /** The type nodes of the `as` and angle-bracket assertions around the value. */
+  readonly asserted: readonly Node[];
+  /** The outermost expressions whose contextual types the value is read as. */
+  readonly tops: readonly Expression[];
+}
+
+/**
+ * Where one value is read as a type: each `as` and angle-bracket assertion around it,
+ * through parentheses, `await` and `!`, and the outermost expression unless a statement
+ * of its own or the object or callee of a further access holds it. A `satisfies` check
+ * is stepped through and types nothing, its expression's type being its operand's. A
+ * callback's result is read as well where the call taking the callback is, which may
+ * hand it on inside its result, as `map` does.
+ */
+function readAs(value: Expression, depth = 0): ReadAs {
+  const asserted: Node[] = [];
+  let at: Expression = value;
+  for (;;) {
+    const parent = at.parent;
+    if (isAsExpression(parent) || isTypeAssertion(parent)) {
+      asserted.push(parent.type);
+    } else if (
+      !isParenthesizedExpression(parent) &&
+      !isAwaitExpression(parent) &&
+      !isNonNullExpression(parent) &&
+      !isSatisfiesExpression(parent)
+    ) {
+      break;
+    }
+    at = parent;
+  }
+  const parent = at.parent;
+  const unused =
+    isExpressionStatement(parent) ||
+    ((isPropertyAccessExpression(parent) ||
+      isElementAccessExpression(parent) ||
+      isCallExpression(parent)) &&
+      parent.expression === at);
+  const call = depth < MENTION_DEPTH ? callTaking(at) : undefined;
+  const outer = call === undefined ? undefined : readAs(call, depth + 1);
+  return {
+    asserted: [...asserted, ...(outer?.asserted ?? [])],
+    tops: [...(unused ? [] : [at]), ...(outer?.tops ?? [])],
+  };
+}
+
+/** The call one value is returned to as a callback's result, an argument of that call. */
+function callTaking(value: Expression): CallExpression | undefined {
+  const parent = value.parent;
+  let callback: Node | undefined;
+  if (isArrowFunction(parent) && parent.body === value) {
+    callback = parent;
+  } else if (isReturnStatement(parent)) {
+    let at: Node = parent.parent;
+    while (!isFunctionLikeDeclaration(at) && !isSourceFile(at)) {
+      at = at.parent;
+    }
+    callback = isArrowFunction(at) || isFunctionExpression(at) ? at : undefined;
+  }
+  let at = callback?.parent;
+  while (at !== undefined && isParenthesizedExpression(at)) {
+    at = at.parent;
+  }
+  return at !== undefined && isCallExpression(at) && at.expression !== callback ? at : undefined;
+}
+
+/** The global the standard library declares one name of `JSON` or `Object` as. */
+function standardGlobal(callee: Expression, global: string, name: string): Node | undefined {
+  return isPropertyAccessExpression(callee) &&
+    isIdentifier(callee.expression) &&
+    callee.expression.text === global &&
+    callee.name.text === name
+    ? callee.expression
+    : undefined;
+}
+
+/**
+ * The types each value of `values` typed `any` or `unknown` is read as ({@link readAs}):
+ * `parsed` for a `JSON.parse` call of the standard library, `made` for any other call or
+ * property, whose maker the analysis cannot see. `JSON` must be the standard library's
+ * global.
+ */
+function readTypes<Brand>(
+  project: ProjectView<Brand>,
+  values: readonly Expression[],
+): { readonly parsed: readonly Type[]; readonly made: readonly Type[] } {
+  if (values.length === 0) {
+    return { parsed: [], made: [] };
+  }
+  const own = project.ownPaths();
+  const parses = values.map((value) =>
+    isCallExpression(value) ? standardGlobal(value.expression, "JSON", "parse") : undefined,
+  );
+  const globals = parses.flatMap((global) => (global === undefined ? [] : [global]));
+  const standard = new Set(
+    project
+      .symbolsAt(globals.map((global) => project.handle(global)))
+      .map(must)
+      .flatMap((symbol, at) =>
+        symbol?.declarations.every((handle) => !own.has(handle.path)) === true ? [globals[at]] : [],
+      ),
+  );
+  // An `await` around the value reads the value it resolves to.
+  const valueTypes = typesAt(
+    project,
+    values.map((value) => (isAwaitExpression(value.parent) ? value.parent : value)),
+  );
+  const sites = values.flatMap((value, at) => {
+    const parse = parses[at];
+    const parsed = parse !== undefined && standard.has(parse);
+    const type = valueTypes[at];
+    const untyped = type !== undefined && (type.flags & (TypeFlags.Any | TypeFlags.Unknown)) !== 0;
+    return parsed || untyped ? [{ ...readAs(value), parsed }] : [];
+  });
+  // Each type node and each outermost expression, with whether a `JSON.parse` call is read as it.
+  const typed = sites.flatMap((site) =>
+    site.asserted.map((node) => ({ node, parsed: site.parsed })),
+  );
+  const placed = sites.flatMap((site) => site.tops.map((node) => ({ node, parsed: site.parsed })));
+  const read = [
+    ...typesAt(
+      project,
+      typed.map((one) => one.node),
+    ).map((type, at) => ({ type, parsed: typed[at]?.parsed })),
+    ...project.queries
+      .contextualTypes(placed.map((one) => one.node))
+      .map(must)
+      .map((type, at) => ({ type, parsed: placed[at]?.parsed })),
+  ];
+  const typesWhere = (parsed: boolean): Type[] =>
+    read.flatMap((one) => (one.type !== undefined && one.parsed === parsed ? [one.type] : []));
+  return { parsed: typesWhere(true), made: typesWhere(false) };
+}
+
+/**
+ * The copies the spreads and calls of `files` make: for each spread in an object literal,
+ * the type the literal is read as, and for each `Object.assign` call of the standard
+ * library, its first argument's type, with the member names of the copied values' types.
+ */
+function copiedNames<Brand>(
+  project: ProjectView<Brand>,
+  spreads: readonly SpreadAssignment[],
+  calls: readonly CallExpression[],
+): readonly { readonly into: Type; readonly names: ReadonlySet<string> }[] {
+  const own = project.ownPaths();
+  const assigns = calls.flatMap((call) => {
+    const global = standardGlobal(call.expression, "Object", "assign");
+    const [target, ...sources] = call.arguments;
+    return global === undefined || target === undefined || sources.length === 0
+      ? []
+      : [{ global, target, sources: sources.filter((source) => !isSpreadElement(source)) }];
+  });
+  const standard = project
+    .symbolsAt(assigns.map((one) => project.handle(one.global)))
+    .map(must)
+    .map((symbol) => symbol?.declarations.every((handle) => !own.has(handle.path)) === true);
+  const assigned = assigns.filter((_one, at) => standard[at] === true);
+  const literals = spreads.flatMap((spread) =>
+    isObjectLiteralExpression(spread.parent)
+      ? [{ literal: spread.parent, source: spread.expression }]
+      : [],
+  );
+  const contexts = project.queries.contextualTypes(literals.map((one) => one.literal)).map(must);
+  const targets = typesAt(
+    project,
+    assigned.map((one) => one.target),
+  );
+  const spreadTypes = typesAt(
+    project,
+    literals.map((one) => one.source),
+  );
+  const sourceTypes = assigned.map((one) => typesAt(project, one.sources));
+  const namesOf = (types: readonly (Type | undefined)[]): ReadonlySet<string> =>
+    new Set(
+      types.flatMap((type) =>
+        type === undefined
+          ? []
+          : must(project.queries.propertiesOf(type)).map((property) => property.name),
+      ),
+    );
+  const found: { readonly into: Type; readonly names: ReadonlySet<string> }[] = [];
+  const add = (into: Type | undefined, names: ReadonlySet<string>): void => {
+    if (into !== undefined && names.size > 0) {
+      found.push({ into, names });
+    }
+  };
+  contexts.forEach((into, at) => {
+    add(into, namesOf([spreadTypes[at]]));
+  });
+  targets.forEach((into, at) => {
+    add(into, namesOf(sourceTypes[at] ?? []));
+  });
+  return found;
+}
+
+/** The value a promise of the standard library resolves to, through nested promises. */
+function awaited<Brand>(project: ProjectView<Brand>, type: Type): Type {
+  const { queries } = project;
+  let at = type;
+  for (let depth = 0; depth < MENTION_DEPTH; depth += 1) {
+    const symbol = must(queries.symbolOfType(at));
+    const [inner] = must(queries.typeArguments(at));
+    const standard =
+      symbol !== undefined &&
+      PROMISES.has(symbol.name) &&
+      symbol.declarations.every(
+        (handle) => project.program.getSourceFileMetadata(handle.path)?.isDefaultLibrary === true,
+      );
+    if (!standard || inner === undefined) {
+      break;
+    }
+    at = inner;
+  }
+  return at;
 }

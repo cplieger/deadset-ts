@@ -227,6 +227,40 @@ describe("the projects a run composes", () => {
     ]);
   });
 
+  it("drop a derived configuration whose extends chain is circular and build one referencing it", () => {
+    const root = written({
+      "tsconfig.json": including("*.ts"),
+      "main.ts": "export const one = 1;\n",
+      "cycle/tsconfig.json": '{ "extends": "./a.json", "include": ["*.ts"] }\n',
+      "cycle/a.json": '{ "extends": "./tsconfig.json" }\n',
+      "cycle/main.ts": "export const two = 2;\n",
+      "outer/tsconfig.json": '{ "extends": "../cycle/a.json", "include": ["*.ts"] }\n',
+      "outer/main.ts": "export const three = 3;\n",
+      "user/tsconfig.json": '{ "include": ["*.ts"], "references": [{ "path": "../cycle" }] }\n',
+      "user/main.ts": "export const four = 4;\n",
+    });
+    const host = nodeHost();
+    const { config } = configured({ target: { kind: "application" } });
+
+    const run = runProjects(
+      openEngine({ collectTiming: false }),
+      host,
+      scopeForDir(host, root),
+      config,
+    );
+
+    expect(run.configurations).toEqual(["tsconfig.json", "user/tsconfig.json"]);
+    expect(run.notBuilt.map((one) => one.id)).toEqual([
+      "cycle/tsconfig.json",
+      "outer/tsconfig.json",
+    ]);
+    for (const one of run.notBuilt) {
+      expect(one.error, one.id).toMatch(
+        /^TS18000: Circularity detected while resolving configuration/u,
+      );
+    }
+  });
+
   it("fail naming the first derived configuration when none of them could be built", () => {
     const root = written({
       "app/broken/tsconfig.json": '{ "compilerOptions": ',

@@ -1,11 +1,9 @@
-import type { Format, Severity } from "../config.ts";
+import type { Format } from "../config.ts";
 import type { Report } from "../report.ts";
 import type { Template } from "./template.ts";
 
 /** What a rendering reads beside the report. */
 export interface RenderOptions {
-  /** The lowest severity at which a finding fails the run. */
-  readonly failOn: Severity;
   /** The text of the file at one path below the target root, or a throw naming why not. */
   readonly readSource: (path: string) => string;
   /** The template the template rendering renders, where one was named. */

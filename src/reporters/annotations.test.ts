@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { Severity } from "../config.ts";
-import type { Report, TypeErrorSkip, WireFinding, WireStaleSuppression } from "../report.ts";
+import type {
+  Report,
+  ReportNote,
+  TypeErrorSkip,
+  WireFinding,
+  WireStaleSuppression,
+} from "../report.ts";
 import { annotations } from "./annotations.ts";
-import type { RenderOptions } from "./reporter.ts";
 
 /** The annotations one report renders to, as the file holds them. */
-function annotationsOf(of: Report, with_: RenderOptions): string {
-  return [...annotations(of, with_)].join("");
+function annotationsOf(of: Report): string {
+  return [...annotations(of)].join("");
 }
 
 function finding(severity: Severity, message = "exported function has no reference"): WireFinding {
@@ -51,52 +56,60 @@ const STALE: WireStaleSuppression = {
   message: "ignore entry for DS1001 matches no current finding",
 };
 
-/** A report holding only what an annotation reads: the findings, stale suppressions and skips. */
+/** A report holding only what an annotation reads: the findings, stale suppressions, skips and notes. */
 function report(
   findings: readonly WireFinding[],
   stale: readonly WireStaleSuppression[] = [],
   skips: readonly TypeErrorSkip[] = [],
+  notes: readonly ReportNote[] = [],
 ): Report {
-  return { findings, stale_suppressions: stale, type_error_skips: skips } as unknown as Report;
-}
-
-function options(failOn: Severity): RenderOptions {
   return {
-    failOn,
-    readSource: () => {
-      throw new Error("an annotation reads no source");
-    },
-    template: undefined,
-  };
+    findings,
+    stale_suppressions: stale,
+    type_error_skips: skips,
+    notes,
+  } as unknown as Report;
 }
 
 describe("annotations", () => {
   it("annotates a type-error skip after the findings as a warning at its file and line", () => {
     const skip = { path: "src/broken.ts", line: 7, message: "Property 'cuont' does not exist" };
 
-    expect(annotationsOf(report([finding("deny")], [], [skip]), options("deny"))).toBe(
+    expect(annotationsOf(report([finding("deny")], [], [skip]))).toBe(
       "::error file=src/catalog.ts,line=12,col=17,endLine=20,title=DS1001 unused-exported::exported function has no reference\n" +
         "::warning file=src/broken.ts,line=7,title=type error skipped::the analysis did not evaluate the function or statement holding this type error: Property 'cuont' does not exist\n",
     );
   });
 
-  it("annotates a finding at the failing severity as an error naming its span, code and kind", () => {
-    expect(annotationsOf(report([finding("deny")]), options("deny"))).toBe(
+  it("annotates a deny finding as an error naming its span, code and kind", () => {
+    expect(annotationsOf(report([finding("deny")]))).toBe(
       "::error file=src/catalog.ts,line=12,col=17,endLine=20,title=DS1001 unused-exported::exported function has no reference\n",
     );
   });
 
   it.each([
-    ["below the failing severity is a warning", "warn", "deny", "warning"],
-    ["at a lowered failing severity is an error", "warn", "warn", "error"],
-  ] as const)("annotates a finding %s", (_what, severity, failOn, level) => {
-    expect(annotationsOf(report([finding(severity)]), options(failOn))).toMatch(
-      new RegExp(`^::${level} `, "u"),
+    ["deny", "error"],
+    ["warn", "warning"],
+    ["allow", "notice"],
+  ] as const)("annotates a finding of severity %s as %s", (severity, level) => {
+    expect(annotationsOf(report([finding(severity)]))).toMatch(new RegExp(`^::${level} `, "u"));
+  });
+
+  it("annotates a note after the skips as a warning naming its directory and kind", () => {
+    const skip = { path: "src/broken.ts", line: 7, message: "Property 'cuont' does not exist" };
+    const note: ReportNote = {
+      kind: "computed-load",
+      path: "src/plugins",
+      message: "a load by a computed path, 50% read",
+    };
+
+    expect(annotationsOf(report([], [], [skip], [note])).split("\n")[1]).toBe(
+      "::warning file=src/plugins,title=computed-load::a load by a computed path, 50%25 read",
     );
   });
 
   it("annotates a stale suppression after the findings as an error at its own line, whatever the failing severity", () => {
-    const lines = annotationsOf(report([finding("warn")], [STALE]), options("deny")).split("\n");
+    const lines = annotationsOf(report([finding("warn")], [STALE])).split("\n");
 
     expect(lines[1]).toBe(
       "::error file=deadset-ignore.json,line=4,col=5,endLine=4,title=DS1703 stale-suppression::ignore entry for DS1001 matches no current finding",
@@ -109,12 +122,12 @@ describe("annotations", () => {
       position: { path: "src/a:b,c%.ts", line: 1, column: 1, end_line: 1 },
     };
 
-    expect(annotationsOf(report([odd]), options("deny"))).toBe(
+    expect(annotationsOf(report([odd]))).toBe(
       "::error file=src/a%3Ab%2Cc%25.ts,line=1,col=1,endLine=1,title=DS1001 unused-exported::100%25 dead%0Asee: a, b\n",
     );
   });
 
   it("writes nothing for a report holding no finding and no stale suppression", () => {
-    expect(annotationsOf(report([]), options("deny"))).toBe("");
+    expect(annotationsOf(report([]))).toBe("");
   });
 });

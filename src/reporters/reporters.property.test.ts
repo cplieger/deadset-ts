@@ -139,7 +139,6 @@ const TEMPLATE = parseTemplate(
 );
 
 const OPTIONS: RenderOptions = {
-  failOn: "deny",
   readSource: () => "x\n".repeat(MAX_LINE + 6),
   template: TEMPLATE,
 };

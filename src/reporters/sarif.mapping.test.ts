@@ -79,9 +79,7 @@ interface Run {
 }
 
 function runOf(of: Report, readSource: RenderOptions["readSource"]): Run {
-  const log = JSON.parse(
-    [...sarif(of, { failOn: "deny", readSource, template: undefined })].join(""),
-  );
+  const log = JSON.parse([...sarif(of, { readSource, template: undefined })].join(""));
   return (log as { runs: readonly Run[] }).runs[0] as Run;
 }
 

@@ -350,7 +350,6 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
   try {
     host.writeDocument(documents.report, json(report));
     const options = {
-      failOn: config.reporters.failOn,
       readSource: (path: string) => host.readFile(joinPath(targetRoot, path)),
       template,
     };

@@ -211,6 +211,8 @@ export interface Queries {
   symbolOfType(type: Type): Answer<TSSymbol | undefined>;
   signaturesOf(type: Type, kind: SignatureKind): Answer<readonly Signature[]>;
   resolvedSignature(node: Node): Answer<Signature | undefined>;
+  /** The signature each call-like node resolves to. */
+  resolvedSignatures(nodes: readonly Node[], cap?: number): Answer<Signature | undefined>[];
   parameterType(signature: Signature, index: number): Answer<Type | undefined>;
   /** The generic signature an instantiated one instantiates; none for another signature. */
   genericOf(signature: Signature): Answer<Signature | undefined>;
@@ -543,6 +545,15 @@ export function queriesOf(
         "getResolvedSignature",
         () => nodeLocation(node),
         () => checker.getResolvedSignature(node),
+      ),
+    resolvedSignatures: (nodes, cap = DEFAULT_BATCH_CAP) =>
+      each(
+        "getResolvedSignature",
+        nodes,
+        cap,
+        nodeLocation,
+        (node) => checker.getResolvedSignature.gen(node),
+        (node) => checker.getResolvedSignature(node),
       ),
     parameterType: (signature, index) =>
       one(

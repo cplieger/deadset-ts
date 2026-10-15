@@ -34,6 +34,7 @@ import {
   type SourceFile,
 } from "@typescript/native/ast";
 import { aliasChains } from "./alias-chain.ts";
+import { isGlobalBlock } from "./augmentations.ts";
 import {
   filesNamedBy,
   outsideChain,
@@ -680,9 +681,11 @@ const EXPORTING_CONTAINERS: ReadonlySet<string> = new Set(["file", "namespace"])
  * Every declaration a consumer of the library can name: what the published files export,
  * and below each the members a consumer writes, a namespace's exported ones and any other
  * declaration's public and protected ones. A declaration a published one's type names is
- * published too, and so is an exported declaration a release tag marks. A type name the
- * checker leaves unanswered publishes every declaration spelled as it is, as `guessed`. A
- * published file is not itself published.
+ * published too, and so is an exported declaration a release tag marks, and every
+ * declaration a `declare global` block of a published file, or of a file holding a published
+ * declaration, holds: the consumer's compiler loads that file's typings and their global
+ * scope with it. A type name the checker leaves unanswered publishes every declaration
+ * spelled as it is, as `guessed`. A published file is not itself published.
  */
 function publishedAPI<Brand>(
   project: ProjectView<Brand>,
@@ -715,57 +718,84 @@ function publishedAPI<Brand>(
       reach(id);
     }
   }
-  while (pending.length > 0) {
-    const round: string[] = [];
-    for (let next = pending.shift(); next !== undefined; next = pending.shift()) {
-      round.push(next);
-      const exporting = EXPORTING_CONTAINERS.has(byId.get(next)?.kind ?? "");
-      for (const member of children.get(next) ?? []) {
-        const reachable = exporting
-          ? member.exported
-          : member.visibility !== "private" && member.visibility !== "private-name";
-        if (member.kind !== "type-parameter" && reachable) {
+  const files = new Set(held.symbols.filter((one) => one.kind === "file").map((one) => one.id));
+  const blocks = held.symbols.filter((one) => isGlobalBlock(one, held, files));
+  const fileOf = (id: string): string | undefined => {
+    let at = byId.get(id);
+    while (at !== undefined && at.kind !== "file") {
+      at = byId.get(at.parent);
+    }
+    return at?.id;
+  };
+  const publishedFiles = published.flatMap(
+    (file) => held.declarations.get(nodeKey(file, file)) ?? [],
+  );
+  const globalsReached = (): boolean => {
+    const typed = new Set([...publishedFiles, ...[...reached].flatMap((id) => fileOf(id) ?? [])]);
+    const before = pending.length;
+    for (const block of blocks.filter((one) => typed.has(one.parent))) {
+      reach(block.id);
+      for (const member of children.get(block.id) ?? []) {
+        if (member.kind !== "type-parameter") {
           reach(member.id);
         }
       }
     }
-    const named = round.flatMap((id) => {
-      const symbol = byId.get(id);
-      return symbol === undefined || symbol.kind === "file" ? [] : nodes.typeNamesOf(symbol);
-    });
-    const inferred = inferredTypeSymbols(
-      project,
-      round.flatMap((id) => {
+    return pending.length > before;
+  };
+  do {
+    while (pending.length > 0) {
+      const round: string[] = [];
+      for (let next = pending.shift(); next !== undefined; next = pending.shift()) {
+        round.push(next);
+        const exporting = EXPORTING_CONTAINERS.has(byId.get(next)?.kind ?? "");
+        for (const member of children.get(next) ?? []) {
+          const reachable = exporting
+            ? member.exported
+            : member.visibility !== "private" && member.visibility !== "private-name";
+          if (member.kind !== "type-parameter" && reachable) {
+            reach(member.id);
+          }
+        }
+      }
+      const named = round.flatMap((id) => {
         const symbol = byId.get(id);
-        return symbol === undefined ? [] : nodes.nodesOf(symbol);
-      }),
-    );
-    for (const symbol of inferred.types) {
-      for (const target of chains.chainOf(symbol)) {
-        reach(target.id);
-      }
-    }
-    for (const symbol of inferred.members) {
-      for (const target of chains.chainOf(symbol)) {
-        const member = byId.get(target.id);
-        if (member?.visibility === "public" || member?.visibility === "protected") {
-          reach(target.id);
-        }
-      }
-    }
-    project.symbolsAt(named.map((node) => project.handle(node))).forEach((symbol, index) => {
-      if (symbol === UNANSWERED) {
-        for (const id of held.byName.get(named[index]?.getText() ?? "") ?? []) {
-          guessed.add(id);
-          reach(id);
-        }
-      } else if (symbol !== undefined) {
+        return symbol === undefined || symbol.kind === "file" ? [] : nodes.typeNamesOf(symbol);
+      });
+      const inferred = inferredTypeSymbols(
+        project,
+        round.flatMap((id) => {
+          const symbol = byId.get(id);
+          return symbol === undefined ? [] : nodes.nodesOf(symbol);
+        }),
+      );
+      for (const symbol of inferred.types) {
         for (const target of chains.chainOf(symbol)) {
           reach(target.id);
         }
       }
-    });
-  }
+      for (const symbol of inferred.members) {
+        for (const target of chains.chainOf(symbol)) {
+          const member = byId.get(target.id);
+          if (member?.visibility === "public" || member?.visibility === "protected") {
+            reach(target.id);
+          }
+        }
+      }
+      project.symbolsAt(named.map((node) => project.handle(node))).forEach((symbol, index) => {
+        if (symbol === UNANSWERED) {
+          for (const id of held.byName.get(named[index]?.getText() ?? "") ?? []) {
+            guessed.add(id);
+            reach(id);
+          }
+        } else if (symbol !== undefined) {
+          for (const target of chains.chainOf(symbol)) {
+            reach(target.id);
+          }
+        }
+      });
+    }
+  } while (globalsReached());
   return { ids: [...reached], guessed: [...guessed] };
 }
 

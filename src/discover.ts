@@ -3,7 +3,7 @@ import type { Diagnostic } from "@typescript/native/sync";
 import { baseUrlPaths } from "./base-url.ts";
 import type { BuildConfiguration, ProjectConfiguration } from "./config.ts";
 import type { Host } from "./host.ts";
-import { dirnamePath, isAbsolutePath, joinPath, relativePath, resolvePath } from "./paths.ts";
+import { dirnamePath, joinPath, relativePath, resolvePath } from "./paths.ts";
 import type { Scope } from "./scope.ts";
 import { SetupError } from "./setup-failure.ts";
 import type { Engine, ProjectDiagnostics } from "./session.ts";
@@ -347,54 +347,7 @@ function derivedId(targetRoot: string, configFile: string): string {
   return relativePath(targetRoot, configFile) ?? configFile;
 }
 
-/**
- * The code of a configuration whose `extends` chain returns to a configuration it already
- * passed. The parse reports it and returns, and a snapshot opened from it never answers:
- * https://github.com/microsoft/TypeScript/issues/64754
- */
-const CIRCULAR_EXTENDS = 18000;
-
 type Parsed = ReturnType<Engine["parseConfigFile"]>;
-
-/** The configuration files one parsed configuration's own `extends` names by path. */
-function extendedPaths(parsed: Parsed, configFile: string): readonly string[] {
-  const { raw } = parsed as { readonly raw?: unknown };
-  const named: unknown = typeof raw === "object" && raw !== null ? Reflect.get(raw, "extends") : [];
-  return (Array.isArray(named) ? named : [named])
-    .filter((one): one is string => typeof one === "string")
-    .filter((one) => one.startsWith("./") || one.startsWith("../") || isAbsolutePath(one))
-    .map((one) => resolvePath(dirnamePath(configFile), one));
-}
-
-/**
- * The `extends` chain from `configFile` to the first configuration it reaches twice, each
- * link by path, or undefined where no chain written by path returns.
- */
-function extendsCycle(
-  engine: Engine,
-  configFile: string,
-  parsed: Parsed,
-): readonly string[] | undefined {
-  const walk = (chain: readonly string[], at: Parsed): readonly string[] | undefined => {
-    for (const next of extendedPaths(at, chain.at(-1) ?? configFile)) {
-      if (chain.includes(next)) {
-        return [...chain, next];
-      }
-      let read: Parsed;
-      try {
-        read = engine.parseConfigFile(next);
-      } catch {
-        continue;
-      }
-      const cycle = walk([...chain, next], read);
-      if (cycle !== undefined) {
-        return cycle;
-      }
-    }
-    return undefined;
-  };
-  return walk([configFile], parsed);
-}
 
 /** The configuration files one parsed configuration's `references` name. */
 function referencesOf(parsed: Parsed): readonly string[] {
@@ -406,51 +359,17 @@ function referencesOf(parsed: Parsed): readonly string[] {
   );
 }
 
-/** Why one parsed configuration's own `extends` chain cannot be opened, where it is circular. */
-function circularity(engine: Engine, configFile: string, parsed: Parsed): string | undefined {
-  const chain = extendsCycle(engine, configFile, parsed);
-  if (chain === undefined && !parsed.errors.some(({ code }) => code === CIRCULAR_EXTENDS)) {
-    return undefined;
-  }
-  return `TS${String(CIRCULAR_EXTENDS)}: Circularity detected while resolving configuration: ${(chain ?? [configFile]).join(" -> ")}`;
-}
-
 /**
- * Why a configuration the `references` reach, transitively, cannot be opened, where one's
- * `extends` chain is circular: the compiler opens every referenced project with the one
- * that references it.
+ * The code of a configuration whose `extends` chain returns to a configuration it already
+ * passed. A snapshot that opens two configurations whose `extends` chains reach one such
+ * cycle panics (`OwnerCache.AddOwner: entry not found`, typescript 7.1.0-dev.20261014.1),
+ * so the analysis refuses one before any snapshot is asked to open it.
  */
-function referencedCircularity(
-  engine: Engine,
-  references: readonly string[],
-  visited: Set<string>,
-): string | undefined {
-  for (const reference of references) {
-    if (visited.has(reference)) {
-      continue;
-    }
-    visited.add(reference);
-    let parsed: Parsed;
-    try {
-      parsed = engine.parseConfigFile(reference);
-    } catch {
-      continue;
-    }
-    const reason =
-      circularity(engine, reference, parsed) ??
-      referencedCircularity(engine, referencesOf(parsed), visited);
-    if (reason !== undefined) {
-      return reason;
-    }
-  }
-  return undefined;
-}
+const CIRCULAR_EXTENDS = 18000;
 
 /**
- * The configuration files one configuration's `references` name, or why the compiler
- * cannot read the configuration: it throws, or its `extends` chain or that of a
- * configuration it references is circular, which the analysis refuses before any
- * snapshot is asked to open it.
+ * The configurations one configuration file's `references` name, or why it cannot be read:
+ * the compiler throws, or its parse reports the `extends` chain circular.
  */
 function readConfiguration(
   engine: Engine,
@@ -458,11 +377,12 @@ function readConfiguration(
 ): { readonly references: readonly string[] } | { readonly reason: string } {
   try {
     const parsed = engine.parseConfigFile(configFile);
-    const references = referencesOf(parsed);
-    const reason =
-      circularity(engine, configFile, parsed) ??
-      referencedCircularity(engine, references, new Set([configFile]));
-    return reason === undefined ? { references } : { reason };
+    const circular = parsed.errors.find(({ code }) => code === CIRCULAR_EXTENDS);
+    // The compiler leaves the message's `{0}` unfilled:
+    // https://github.com/microsoft/TypeScript/pull/64755
+    return circular === undefined
+      ? { references: referencesOf(parsed) }
+      : { reason: `TS${String(circular.code)}: ${circular.text.replace("{0}", () => configFile)}` };
   } catch (error: unknown) {
     return { reason: error instanceof Error ? error.message : String(error) };
   }
