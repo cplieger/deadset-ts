@@ -7,10 +7,10 @@
  * hands it the table of the classes it has.
  */
 
+import { EXEMPTION_CLASSES } from "./contract/contract.generated.ts";
 import type { Config, TSSection } from "./config.ts";
 import { ConfigError } from "./config.ts";
 import {
-  EXEMPTION_CLASSES,
   isExemptionClass,
   TS_EXEMPTION_CLASSES,
   typescriptVisibilityOf,
@@ -18,7 +18,7 @@ import {
   type TSExemptionClass,
   type TypeScriptVisibility,
 } from "./exempt-classes.ts";
-import type { Inventory, InventorySymbol, SymbolKind, Visibility } from "./inventory.ts";
+import type { Inventory, InventorySymbol, Visibility } from "./inventory.ts";
 import type { Matrix } from "./matrix.ts";
 import { byPosition, positionKey, type Position } from "./position.ts";
 import { Unanswerable } from "./query.ts";
@@ -107,20 +107,12 @@ function retainable(allowed: TypeScriptVisibility, visibility: Visibility | unde
   return true;
 }
 
-/**
- * The kinds of declaration each class can hold back, which a detector that stops holds
- * back whole. A class with no row here holds back every declaration but a file.
- */
-const RETAINABLE: ReadonlyMap<TSExemptionClass, ReadonlySet<SymbolKind>> = new Map([
-  ["interface-satisfaction", new Set<SymbolKind>(["method", "class-member"])],
-  ["enum-group", new Set<SymbolKind>(["enum-member"])],
-  ["injection-container", new Set<SymbolKind>(["method", "class-member"])],
-  ["framework-lifecycle", new Set<SymbolKind>(["method", "class-member"])],
-  [
-    "serialization-contract",
-    new Set<SymbolKind>(["method", "class-member", "interface-method", "type-member"]),
-  ],
-]);
+/** The kinds of declaration each class can hold back, which a detector that stops holds back whole. */
+const RETAINABLE: ReadonlyMap<string, ReadonlySet<string>> = new Map(
+  EXEMPTION_CLASSES.flatMap((row) =>
+    "ts" in row.retainsKinds ? [[row.class, new Set<string>(row.retainsKinds.ts)] as const] : [],
+  ),
+);
 
 /** The detail of a record a detector that could not finish holds. */
 const UNANSWERED_DETAIL = "kept live by a question the checker did not answer";
@@ -149,7 +141,7 @@ function detected<Brand>(
     }
     const kinds = RETAINABLE.get(exemptionClass);
     return input.held.symbols
-      .filter((symbol) => (kinds === undefined ? symbol.kind !== "file" : kinds.has(symbol.kind)))
+      .filter((symbol) => kinds?.has(symbol.kind) === true)
       .map((symbol) => ({ id: symbol.id, detail: UNANSWERED_DETAIL, site: symbol.position }));
   }
 }
@@ -316,8 +308,8 @@ export function retainedIn(
 }
 
 /**
- * One line per held-back declaration, in site order: its reference, then each record's
- * class, site and detail, all separated by tabs.
+ * One line per held-back declaration, in site order: its reference and position, then
+ * each record's class, site and detail, all separated by tabs.
  */
 export function retainedLines(
   symbols: readonly InventorySymbol[],
@@ -334,6 +326,6 @@ export function retainedLines(
       positionKey(record.site),
       record.detail,
     ]);
-    return [[symbol.ref, ...fields].join("\t")];
+    return [[symbol.ref, positionKey(symbol.position), ...fields].join("\t")];
   });
 }

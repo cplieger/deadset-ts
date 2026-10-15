@@ -59,7 +59,7 @@ describe("the exports of a test file", () => {
             "",
           ].join("\n"),
         }),
-      ).toEqual(["DS1104 src/a.test.ts fixtures", "DS1001 src/a.test.ts nobody"]);
+      ).toEqual(["DS1503 src/a.test.ts fixtures", "DS1001 src/a.test.ts nobody"]);
     },
     LOAD_TIMEOUT,
   );

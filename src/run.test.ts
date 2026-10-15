@@ -1,3 +1,4 @@
+import { CONTRACT_VERSION } from "./contract/contract.generated.ts";
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -9,7 +10,6 @@ import type { Host } from "./host.ts";
 import { run, SETTING_OPTIONS, type Writer } from "./run.ts";
 import { declaresSetting } from "./schema.ts";
 import { openEngine, type Engine, type EngineOptions } from "./session.ts";
-import { CONTRACT_VERSION } from "./version.ts";
 
 class MemoryWriter implements Writer {
   text = "";
@@ -840,8 +840,8 @@ describe("print-roots", () => {
 
     expect(got.code).toBe(1);
     expect(got.err).toBe(
-      "DS1704: roots.patterns names nothing: ts://@example/configured-roots/a/gone.ts#gone\n" +
-        "DS1704: roots.patterns names nothing: ts://@example/configured-roots/*#nothing?\n",
+      "DS9004: roots.patterns names nothing: ts://@example/configured-roots/a/gone.ts#gone\n" +
+        "DS9004: roots.patterns names nothing: ts://@example/configured-roots/*#nothing?\n",
     );
   });
 

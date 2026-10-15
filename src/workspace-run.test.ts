@@ -325,7 +325,7 @@ describe("a workspace package imported by name", () => {
 
     expect(found(analyze(root))).toEqual([
       "DS1001 packages/c/src/index.ts unrelated",
-      "DS1502 packages/c/src/index.ts packages/c/src/index.ts",
+      "DS1602 packages/c/src/index.ts packages/c/src/index.ts",
     ]);
   });
 

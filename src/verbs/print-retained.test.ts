@@ -53,7 +53,7 @@ describe("print-retained", () => {
     () => {
       expect(printRetained(DECORATED)).toEqual({
         code: 0,
-        out: "ts://@example/retained/src/handlers.ts#Handlers.onStart\tdecorator\tsrc/handlers.ts:4:3\tdecorated by @register\n",
+        out: "ts://@example/retained/src/handlers.ts#Handlers.onStart\tsrc/handlers.ts:5:3\tdecorator\tsrc/handlers.ts:4:3\tdecorated by @register\n",
         err: "",
       });
     },

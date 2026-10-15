@@ -1,8 +1,9 @@
+import { EXIT_CLEAN } from "../contract/contract.generated.ts";
 import { runProjects } from "../analysis.ts";
 import { partialNotes } from "../partial.ts";
 import { resolvePath } from "../paths.ts";
 import { resolveUnkinded } from "../resolve.ts";
-import { EXIT_CLEAN, type Verb } from "./verb.ts";
+import { type Verb } from "./verb.ts";
 
 /**
  * Writes the name of every project one run analyzes, one per line: the identifier the

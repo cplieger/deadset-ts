@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { contractDocument } from "../__test-helpers__/fixtures.ts";
-import { schemaValidator } from "../__test-helpers__/json-schema.ts";
+import { schemaRefusals } from "./report-schema.ts";
 import type { CompletedFinding } from "./finding.ts";
 import type { PassResult } from "./findings-pass.ts";
 import type { StaleSuppression } from "./findings/self-check.ts";
-import { buildReport, capFindings, sortFindings, type Report, type ReportInput } from "./report.ts";
+import { buildReport, capFindings, sortFindings, type ReportInput } from "./report.ts";
+import type { Report } from "./contract/report.generated.ts";
 
-const validate = schemaValidator(
+const validate = schemaRefusals(
   {
     "report.schema.json": contractDocument("report.schema.json"),
     "finding.schema.json": contractDocument("finding.schema.json"),
@@ -55,7 +56,7 @@ function finding(
 
 function stale(path: string, line: number, symbol: string): StaleSuppression {
   return {
-    code: "DS1703",
+    code: "DS9003",
     mechanism: "ignore",
     entry: { code: "DS1001", symbol, path, reason: "kept for a caller outside the target" },
     position: { path: "deadset-ignore.json", line, column: 5 },
@@ -143,13 +144,13 @@ describe("the report", () => {
       finding("src/b.ts", 1, 1),
       finding("src/a.ts", 10, 1),
       finding("src/a.ts", 2, 7),
-      finding("src/a.ts", 2, 3, { code: "DS1104" }),
+      finding("src/a.ts", 2, 3, { code: "DS1503" }),
       finding("src/a.ts", 2, 3),
     ];
 
     expect(positions(buildReport(input(result(findings))))).toEqual([
       "src/a.ts:2:3 DS1002",
-      "src/a.ts:2:3 DS1104",
+      "src/a.ts:2:3 DS1503",
       "src/a.ts:2:7 DS1002",
       "src/a.ts:10:1 DS1002",
       "src/b.ts:1:1 DS1002",
@@ -264,13 +265,13 @@ describe("the report", () => {
         declaredGaps: [
           { fixture: "zeta", capability: "DS1001", reason: "Not loaded." },
           { fixture: "alpha", symbol: "Row", capability: "reflective-lookup", reason: "Resolved." },
-          { fixture: "alpha", capability: "DS1104", reason: "Not narrowed." },
+          { fixture: "alpha", capability: "DS1503", reason: "Not narrowed." },
         ],
       }),
     );
 
     expect(report.declared_gaps).toEqual([
-      { fixture: "alpha", capability: "DS1104", reason: "Not narrowed." },
+      { fixture: "alpha", capability: "DS1503", reason: "Not narrowed." },
       { fixture: "alpha", symbol: "Row", capability: "reflective-lookup", reason: "Resolved." },
       { fixture: "zeta", capability: "DS1001", reason: "Not loaded." },
     ]);

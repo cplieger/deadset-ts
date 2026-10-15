@@ -1,10 +1,11 @@
+import { CODE } from "./contract/contract.generated.ts";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import type { Finding } from "./finding.ts";
 import type { Host } from "./host.ts";
 import type { InventorySymbol } from "./inventory.ts";
 import { joinPath } from "./paths.ts";
-import { ledgerOf, UNSCOPED_ENTRY, type Dials } from "./suppress.ts";
+import { ledgerOf, type Dials } from "./suppress.ts";
 import { IGNORE_FILE, readIgnoreFile } from "./suppress-file.ts";
 
 const ROOT = "/target";
@@ -188,7 +189,7 @@ describe("an ignore entry over same-named declarations", () => {
           );
 
           expect(read.refusals.map((one) => `${one.reported} ${one.symbol}`)).toEqual([
-            `${UNSCOPED_ENTRY} ${symbol}`,
+            `${CODE.unscopedIgnoreEntry} ${symbol}`,
           ]);
           expect(withheldBy(entry, declared)).toEqual([]);
         },

@@ -255,7 +255,7 @@ describe("explain", () => {
       const got = explainWithConsumers(
         {
           "target/deadset.json":
-            '{ "target": { "kind": "library" }, "severity": { "DS1004": "allow" } }\n',
+            '{ "target": { "kind": "library" }, "severity": { "DS1102": "allow" } }\n',
           "target/lib.ts": "export function onlyTested(): number {\n  return 1;\n}\n",
           "consumer/lib.test.ts": test,
           "other/tsconfig.json": TSCONFIG,

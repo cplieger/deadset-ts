@@ -1,9 +1,7 @@
+import { CODE } from "../contract/contract.generated.ts";
 import type { Config } from "../config.ts";
 import type { Finding } from "../finding.ts";
 import type { Emitter, EmitterInput } from "./emitter.ts";
-
-const FILE_NEVER_BUILT = "DS1501";
-const FILE_NEVER_IMPORTED = "DS1502";
 
 /** The subject kind of a finding about a source file, from the finding schema's vocabulary. */
 const FILE_SUBJECT = "file";
@@ -57,7 +55,7 @@ function fileNeverBuilt({ config, swept, files }: EmitterInput): readonly Findin
   const message = `no project of the build matrix includes this file (${swept.matrix.configurations.join(", ")})`;
   return files.tree
     .filter((file) => !built.has(file.path))
-    .map((file) => fileFinding(FILE_NEVER_BUILT, file, message));
+    .map((file) => fileFinding(CODE.fileNeverBuilt, file, message));
 }
 
 /** The files of the run, each with whether a reference written in another file reaches it. */
@@ -152,21 +150,21 @@ function fileNeverImported(input: EmitterInput): readonly Finding[] {
       return referenced.has(symbol.position.path)
         ? {
             ...fileFinding(
-              FILE_NEVER_IMPORTED,
+              CODE.fileNeverImported,
               file,
               "only code that is itself dead imports this file, and no root names it or a declaration in it",
             ),
             unreachableOnly: true as const,
           }
         : fileFinding(
-            FILE_NEVER_IMPORTED,
+            CODE.fileNeverImported,
             file,
             "no import reaches this file and no root names it or a declaration in it",
           );
     });
 }
 
-/** The findings of the non-code-artifacts family, `DS1500` to `DS1599`. */
+/** The findings of the files family, `DS1600` to `DS1699`. */
 export const nonCodeArtifacts: Emitter = (input) => [
   ...fileNeverBuilt(input),
   ...fileNeverImported(input),

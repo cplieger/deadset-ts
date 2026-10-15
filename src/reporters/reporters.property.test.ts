@@ -2,7 +2,7 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { readFixture } from "../../__test-helpers__/fixtures.ts";
 import { FIXED_SEVERITY_CODES } from "../kinds.ts";
-import type { Report, WireFinding, WireStaleSuppression } from "../report.ts";
+import type { Finding, Report, StaleSuppressionsEntry } from "../contract/report.generated.ts";
 import { resolve } from "../resolve.ts";
 import { writeBaseline } from "../suppress-file.ts";
 import type { RenderOptions } from "./reporter.ts";
@@ -29,7 +29,7 @@ interface Located {
 const PATHS = ["src/a.ts", "src/deep/b.ts", "src/with space.ts", "lib/c.mts"];
 const MAX_LINE = 30;
 
-const findingArb: fc.Arbitrary<WireFinding> = fc
+const findingArb: fc.Arbitrary<Finding> = fc
   .record({
     code: fc.constantFrom(
       ...[...KINDS.values()]
@@ -74,14 +74,14 @@ const findingArb: fc.Arbitrary<WireFinding> = fc
     details: {},
   }));
 
-const staleArb: fc.Arbitrary<WireStaleSuppression> = fc
+const staleArb: fc.Arbitrary<StaleSuppressionsEntry> = fc
   .record({
     path: fc.constantFrom(...PATHS),
     line: fc.integer({ min: 1, max: MAX_LINE }),
     column: fc.integer({ min: 1, max: 9 }),
   })
   .map((drawn) => ({
-    code: "DS1703",
+    code: "DS9003",
     mechanism: "inline",
     entry: { code: "DS1001", path: drawn.path, reason: "kept" },
     position: { path: drawn.path, line: drawn.line, column: drawn.column },
@@ -89,7 +89,7 @@ const staleArb: fc.Arbitrary<WireStaleSuppression> = fc
     message: "inline directive for DS1001 matches no current finding",
   }));
 
-function report(findings: readonly WireFinding[], stale: readonly WireStaleSuppression[]): Report {
+function report(findings: readonly Finding[], stale: readonly StaleSuppressionsEntry[]): Report {
   return {
     schema_version: "6.0.0",
     contract_version: "3.2.0",

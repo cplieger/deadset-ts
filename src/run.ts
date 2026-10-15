@@ -1,3 +1,4 @@
+import { EXIT_FAILURE, EXIT_USAGE } from "./contract/contract.generated.ts";
 import { ConfigError, REPOSITORY_DOCUMENT, type Inputs } from "./config.ts";
 import { DiscoveryError, renderDiagnostic } from "./discover.ts";
 import type { Host } from "./host.ts";
@@ -12,7 +13,7 @@ import { printRootsVerb } from "./verbs/print-roots.ts";
 import { ANALYZE_OPTIONS, analyzeVerb } from "./verbs/analyze.ts";
 import { describeVerb } from "./verbs/describe.ts";
 import { EXPLAIN_OPTIONS, explainVerb } from "./verbs/explain.ts";
-import { EXIT_FAILURE, EXIT_USAGE, type Verb, type VerbOptions } from "./verbs/verb.ts";
+import { type Verb, type VerbOptions } from "./verbs/verb.ts";
 import { versionVerb } from "./verbs/version.ts";
 
 /** One output stream of the command line. `process.stdout` and `process.stderr` satisfy it. */

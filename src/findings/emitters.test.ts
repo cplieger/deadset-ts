@@ -1,34 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { emitterInputOf } from "../../__test-helpers__/emitter-input.ts";
-import { contractDocument, fixture } from "../../__test-helpers__/fixtures.ts";
+import { fixture } from "../../__test-helpers__/fixtures.ts";
 import { resolve } from "../resolve.ts";
 import type { EmitterInput } from "./emitter.ts";
-import { decidedFindings, EMITTERS } from "./emitters.ts";
-
-interface Range {
-  readonly start: string;
-  readonly end: string;
-  readonly family: string;
-}
-
-interface Kind {
-  readonly code: string;
-  readonly languages: readonly string[];
-}
-
-describe("the findings emitter table", () => {
-  it("holds one emitter per family of the Contract's live TypeScript kinds, in code order", () => {
-    const vocabulary = contractDocument("kinds.json");
-    const ranges = vocabulary["ranges"] as Range[];
-    const kinds = (vocabulary["kinds"] as Kind[]).filter((kind) => kind.languages.includes("ts"));
-    const families = ranges
-      .filter((range) => kinds.some((kind) => kind.code >= range.start && kind.code <= range.end))
-      .sort((a, b) => (a.start < b.start ? -1 : 1))
-      .map((range) => range.family);
-
-    expect([...EMITTERS.keys()]).toEqual(families);
-  });
-});
+import { decidedFindings } from "./emitters.ts";
 
 describe("decidedFindings", () => {
   /** A library with no consumer declared, decided under the given configuration document. */
@@ -96,7 +71,7 @@ describe("the findings a gap or a component file's markup withholds", () => {
     expect(other).toBeDefined();
     expect(
       onlyTested({ ...input, swept: { ...input.swept, heldByUnanswered: [other?.id ?? ""] } }),
-    ).toEqual(["DS1004 a/catalog.ts"]);
+    ).toEqual(["DS1102 a/catalog.ts"]);
   });
 
   it("are the live component file's own, not those of a file another package of one name spells alike", () => {
@@ -104,7 +79,7 @@ describe("the findings a gap or a component file's markup withholds", () => {
 
     expect(
       onlyTested({ ...input, swept: { ...input.swept, componentFiles: ["b/catalog.ts"] } }),
-    ).toEqual(["DS1004 a/catalog.ts"]);
+    ).toEqual(["DS1102 a/catalog.ts"]);
   });
 
   it("include every one about a top-level declaration of a live component file", () => {

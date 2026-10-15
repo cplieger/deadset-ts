@@ -1,12 +1,4 @@
-/**
- * The exemption classes of the Contract's vocabulary, in its order: each class's name, its
- * languages and, for a TypeScript class, which private members it may retain. The rows are
- * written out, as the fixed severity codes are, and a test holds them equal to the Contract.
- * A class name is a type, so a table or a record naming a class outside the vocabulary, or
- * one of another language only, does not compile.
- */
-
-import type { Language } from "./config.ts";
+import { EXEMPTION_CLASSES, type Language } from "./contract/contract.generated.ts";
 
 /**
  * Whether a class may retain a member declared with the `private` modifier, and one
@@ -18,67 +10,6 @@ export interface TypeScriptVisibility {
   readonly private: boolean;
   readonly privateName: boolean;
 }
-
-/** One class of the vocabulary. */
-interface ExemptionClassRow {
-  readonly class: string;
-  readonly languages: readonly Language[];
-  /** Present exactly on a class that runs on TypeScript. */
-  readonly typescriptVisibility?: TypeScriptVisibility;
-}
-
-/** Every class of the vocabulary, in the order the Contract lists them. */
-export const EXEMPTION_CLASSES = [
-  {
-    class: "interface-satisfaction",
-    languages: ["go", "ts"],
-    typescriptVisibility: { private: false, privateName: false },
-  },
-  { class: "encoding-reflection", languages: ["go"] },
-  { class: "format-verb-contract", languages: ["go"] },
-  { class: "errors-duck-typing", languages: ["go"] },
-  {
-    class: "enum-group",
-    languages: ["go", "ts"],
-    typescriptVisibility: { private: false, privateName: false },
-  },
-  {
-    class: "generated-file",
-    languages: ["go", "ts"],
-    typescriptVisibility: { private: true, privateName: false },
-  },
-  { class: "linkname-cgo-asm-plugin", languages: ["go"] },
-  {
-    class: "template-field",
-    languages: ["go", "ts"],
-    typescriptVisibility: { private: true, privateName: false },
-  },
-  {
-    class: "reflective-lookup",
-    languages: ["go", "ts"],
-    typescriptVisibility: { private: true, privateName: false },
-  },
-  {
-    class: "decorator",
-    languages: ["ts"],
-    typescriptVisibility: { private: true, privateName: false },
-  },
-  {
-    class: "injection-container",
-    languages: ["ts"],
-    typescriptVisibility: { private: true, privateName: false },
-  },
-  {
-    class: "framework-lifecycle",
-    languages: ["ts"],
-    typescriptVisibility: { private: true, privateName: false },
-  },
-  {
-    class: "serialization-contract",
-    languages: ["ts"],
-    typescriptVisibility: { private: true, privateName: false },
-  },
-] as const satisfies readonly ExemptionClassRow[];
 
 type Row = (typeof EXEMPTION_CLASSES)[number];
 

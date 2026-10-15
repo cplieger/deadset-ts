@@ -255,14 +255,14 @@ describe("a question the checker does not answer", () => {
 
   it("leaves the answered library reporting what it reports", () => {
     expect(full.map((one) => `${one.code} ${one.ref}`)).toEqual([
-      "DS1005 ts://@example/partial/src/internal.test.ts#checksRecurse",
+      "DS1103 ts://@example/partial/src/internal.test.ts#checksRecurse",
       "DS1003 ts://@example/partial/src/internal.ts#Counter.unused",
-      "DS1103 ts://@example/partial/src/internal.ts#deadExported",
+      "DS1101 ts://@example/partial/src/internal.ts#deadExported",
       "DS1002 ts://@example/partial/src/internal.ts#deadLocal",
-      "DS1006 ts://@example/partial/src/internal.ts#retired",
-      "DS1103 ts://@example/partial/src/internal.ts#recurse",
+      "DS1104 ts://@example/partial/src/internal.ts#retired",
+      "DS1101 ts://@example/partial/src/internal.ts#recurse",
       "DS1201 ts://@example/partial/src/internal.ts#Shape",
-      "DS1103 ts://@example/partial/src/space.ts#outer",
+      "DS1101 ts://@example/partial/src/space.ts#outer",
     ]);
   });
 

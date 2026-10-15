@@ -370,7 +370,7 @@ describe("configured roots and patterns", () => {
 
   it("states each finding in the finding schema's shape, at the declaring document", () => {
     expect(CONFIGURED.findings[0]).toEqual({
-      code: "DS1704",
+      code: "DS9004",
       position: { path: "deadset.json", line: 1, column: 1, endLine: 1 },
       symbol: {
         ref: "ts://@example/configured-roots/a/gone.ts#gone",

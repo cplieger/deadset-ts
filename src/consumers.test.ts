@@ -1,3 +1,4 @@
+import { EXIT_CLEAN, EXIT_FAILURE, EXIT_FINDINGS } from "./contract/contract.generated.ts";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -6,7 +7,6 @@ import { nodeHost } from "../bin/node-host.ts";
 import { TSCONFIG } from "../__test-helpers__/projects.ts";
 import type { Host } from "./host.ts";
 import { run, type Writer } from "./run.ts";
-import { EXIT_CLEAN, EXIT_FAILURE, EXIT_FINDINGS } from "./verbs/verb.ts";
 
 /** The bound on one case, each of which loads a target and its consumers. */
 const LOAD_TIMEOUT = 60_000;
@@ -283,7 +283,7 @@ describe("a consumer the scope declares", () => {
       });
 
       expect(claims(analyze(root).report)).toEqual([
-        "DS1004 onlyTested certain",
+        "DS1102 onlyTested certain",
         "DS1002 helper probable",
       ]);
     },

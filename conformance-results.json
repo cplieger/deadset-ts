@@ -2,7 +2,7 @@
   "corpus_version": "6.0.0",
   "product": { "name": "deadset-ts", "version": "0.1.0", "language": "ts" },
   "result": "pass",
-  "totals": { "fixtures": 275, "pass": 275, "gap": 0, "fail": 0 },
+  "totals": { "fixtures": 284, "pass": 281, "gap": 0, "fail": 0, "pending": 3 },
   "fixtures": [
     {
       "fixture": "abstract-member-through-this",
@@ -52,7 +52,7 @@
           "symbol": "Free",
           "result": "pass",
           "actual": {
-            "report": "DS1801",
+            "report": "DS1401",
             "symbol_kind": "parameter",
             "confidence": "probable",
             "reachability_class": "probable",
@@ -74,7 +74,7 @@
           "symbol": "AwaitedNumber",
           "result": "pass",
           "actual": {
-            "report": "DS1803",
+            "report": "DS1403",
             "symbol_kind": "result",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -87,7 +87,7 @@
           "symbol": "DroppedPromise",
           "result": "pass",
           "actual": {
-            "report": "DS1803",
+            "report": "DS1403",
             "symbol_kind": "result",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -107,7 +107,7 @@
           "symbol": "OrphanFile",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -155,7 +155,7 @@
           "symbol": "First",
           "result": "pass",
           "actual": {
-            "report": "DS1801",
+            "report": "DS1401",
             "symbol_kind": "parameter",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -177,7 +177,7 @@
           "symbol": "BeforeReadPattern",
           "result": "pass",
           "actual": {
-            "report": "DS1801",
+            "report": "DS1401",
             "symbol_kind": "parameter",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -191,7 +191,7 @@
           "symbol": "BeforeReadRest",
           "result": "pass",
           "actual": {
-            "report": "DS1801",
+            "report": "DS1401",
             "symbol_kind": "parameter",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -205,7 +205,7 @@
           "symbol": "DeclaredPatternUnread",
           "result": "pass",
           "actual": {
-            "report": "DS1801",
+            "report": "DS1401",
             "symbol_kind": "parameter",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -220,7 +220,7 @@
           "symbol": "First",
           "result": "pass",
           "actual": {
-            "report": "DS1801",
+            "report": "DS1401",
             "symbol_kind": "parameter",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -235,7 +235,7 @@
           "symbol": "PatternNameUnread",
           "result": "pass",
           "actual": {
-            "report": "DS1801",
+            "report": "DS1401",
             "symbol_kind": "parameter",
             "confidence": "probable",
             "reachability_class": "probable",
@@ -250,7 +250,7 @@
           "symbol": "RestUnread",
           "result": "pass",
           "actual": {
-            "report": "DS1801",
+            "report": "DS1401",
             "symbol_kind": "parameter",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -264,7 +264,7 @@
           "symbol": "RestUnreadInPattern",
           "result": "pass",
           "actual": {
-            "report": "DS1801",
+            "report": "DS1401",
             "symbol_kind": "parameter",
             "confidence": "probable",
             "reachability_class": "probable",
@@ -280,7 +280,7 @@
           "symbol": "Third",
           "result": "pass",
           "actual": {
-            "report": "DS1801",
+            "report": "DS1401",
             "symbol_kind": "parameter",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -296,7 +296,7 @@
           "symbol": "Value",
           "result": "pass",
           "actual": {
-            "report": "DS1801",
+            "report": "DS1401",
             "symbol_kind": "parameter",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -352,7 +352,7 @@
           "symbol": "Unread",
           "result": "pass",
           "actual": {
-            "report": "DS1807",
+            "report": "DS1404",
             "symbol_kind": "store",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -409,7 +409,7 @@
           "symbol": "Store.reset",
           "result": "pass",
           "actual": {
-            "report": "DS1203",
+            "report": "DS1202",
             "symbol_kind": "interface-method",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -467,7 +467,7 @@
           "symbol": "Internal",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -492,7 +492,7 @@
           "symbol": "Published",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "function",
             "confidence": "possible",
             "reachability_class": "possible",
@@ -504,7 +504,7 @@
           "symbol": "TestInternal",
           "result": "pass",
           "actual": {
-            "report": "DS1005",
+            "report": "DS1103",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -615,7 +615,7 @@
           "symbol": "SiblingFile",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -645,7 +645,7 @@
           "symbol": "HelperFile",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -727,7 +727,7 @@
           "symbol": "ModulePlugin",
           "result": "pass",
           "actual": {
-            "report": "DS1601",
+            "report": "DS1701",
             "symbol_kind": "dependency",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -741,7 +741,7 @@
           "symbol": "SharedPlugin",
           "result": "pass",
           "actual": {
-            "report": "DS1601",
+            "report": "DS1701",
             "symbol_kind": "dependency",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -765,7 +765,7 @@
         {
           "symbol": "spareImport",
           "result": "pass",
-          "actual": { "report": "DS1002", "confidence": "certain" },
+          "actual": { "report": "DS1004", "confidence": "certain" },
           "suppression": { "suppressed": true, "stale": false }
         }
       ],
@@ -798,7 +798,7 @@
           "symbol": "UseFile",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -840,7 +840,7 @@
           "symbol": "UnusedTool",
           "result": "pass",
           "actual": {
-            "report": "DS1601",
+            "report": "DS1701",
             "symbol_kind": "dependency",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -862,7 +862,7 @@
           "symbol": "UnusedTool",
           "result": "pass",
           "actual": {
-            "report": "DS1601",
+            "report": "DS1701",
             "symbol_kind": "dependency",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -881,7 +881,7 @@
           "symbol": "GenFile",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -925,7 +925,7 @@
           "symbol": "UnusedKit",
           "result": "pass",
           "actual": {
-            "report": "DS1601",
+            "report": "DS1701",
             "symbol_kind": "dependency",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -944,7 +944,7 @@
           "symbol": "AbsentComputed",
           "result": "pass",
           "actual": {
-            "report": "DS1706",
+            "report": "DS9006",
             "symbol_kind": "configured-declaration",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -964,7 +964,7 @@
           "symbol": "Options.label",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "confidence": "certain",
             "reachability_class": "certain"
           },
@@ -1008,7 +1008,7 @@
           "symbol": "DefaultRoot",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -1038,7 +1038,7 @@
           "symbol": "DefaultRoot",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -1056,7 +1056,7 @@
           "symbol": "DefaultRoot",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -1074,7 +1074,7 @@
           "symbol": "CoverageIstanbul",
           "result": "pass",
           "actual": {
-            "report": "DS1601",
+            "report": "DS1701",
             "symbol_kind": "dependency",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -1095,7 +1095,7 @@
           "symbol": "DefaultRoot",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -1113,7 +1113,7 @@
           "symbol": "Page",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -1130,7 +1130,7 @@
           "symbol": "Orphan",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -1149,7 +1149,7 @@
           "symbol": "Draft",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -1221,7 +1221,7 @@
           "symbol": "Ignored",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -1245,7 +1245,7 @@
           "symbol": "JestRunner",
           "result": "pass",
           "actual": {
-            "report": "DS1601",
+            "report": "DS1701",
             "symbol_kind": "dependency",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -1267,7 +1267,7 @@
           "symbol": "Unused",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -1297,7 +1297,7 @@
           "symbol": "Unused",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -1330,7 +1330,7 @@
           "symbol": "UnreadConfig",
           "result": "pass",
           "actual": {
-            "report": "DS1601",
+            "report": "DS1701",
             "symbol_kind": "dependency",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -1349,7 +1349,7 @@
           "symbol": "DefaultRoot",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -1360,7 +1360,7 @@
           "symbol": "OtherRoot",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -1377,7 +1377,7 @@
           "symbol": "DefaultRoot",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -1400,7 +1400,7 @@
           "symbol": "UnreadPrefix",
           "result": "pass",
           "actual": {
-            "report": "DS1601",
+            "report": "DS1701",
             "symbol_kind": "dependency",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -1426,7 +1426,7 @@
           "symbol": "Beside",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -1444,7 +1444,7 @@
           "symbol": "Orphan",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -1463,7 +1463,7 @@
           "symbol": "NextPeer",
           "result": "pass",
           "actual": {
-            "report": "DS1601",
+            "report": "DS1701",
             "symbol_kind": "dependency",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -1475,7 +1475,7 @@
           "symbol": "Orphan",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -1485,7 +1485,7 @@
           "symbol": "Page",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -1495,7 +1495,7 @@
           "symbol": "Story",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -1519,7 +1519,7 @@
           "symbol": "Orphan",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -1537,7 +1537,7 @@
           "symbol": "Orphan",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -1547,7 +1547,7 @@
           "symbol": "Page",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -1564,7 +1564,7 @@
           "symbol": "Covered",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -1574,7 +1574,7 @@
           "symbol": "Excluded",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -1584,7 +1584,7 @@
           "symbol": "Mutated",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -1624,7 +1624,7 @@
           "symbol": "NeverNamed",
           "result": "pass",
           "actual": {
-            "report": "DS1601",
+            "report": "DS1701",
             "symbol_kind": "dependency",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -1646,7 +1646,7 @@
           "symbol": "Seen",
           "result": "pass",
           "actual": {
-            "report": "DS1807",
+            "report": "DS1404",
             "symbol_kind": "store",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -1667,7 +1667,7 @@
           "symbol": "ForIn",
           "result": "pass",
           "actual": {
-            "report": "DS1807",
+            "report": "DS1404",
             "symbol_kind": "store",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -1681,7 +1681,7 @@
           "symbol": "Key",
           "result": "pass",
           "actual": {
-            "report": "DS1807",
+            "report": "DS1404",
             "symbol_kind": "store",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -1706,7 +1706,7 @@
           "symbol": "Response",
           "result": "pass",
           "actual": {
-            "report": "DS1807",
+            "report": "DS1404",
             "symbol_kind": "store",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -1729,7 +1729,7 @@
           "symbol": "never",
           "result": "pass",
           "actual": {
-            "report": "DS1807",
+            "report": "DS1404",
             "symbol_kind": "store",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -1743,7 +1743,7 @@
           "symbol": "recursive",
           "result": "pass",
           "actual": {
-            "report": "DS1807",
+            "report": "DS1404",
             "symbol_kind": "store",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -1757,7 +1757,7 @@
           "symbol": "unused",
           "result": "pass",
           "actual": {
-            "report": "DS1807",
+            "report": "DS1404",
             "symbol_kind": "store",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -1771,6 +1771,20 @@
       "unexpected": []
     },
     {
+      "fixture": "dead-store-overwritten-on-every-branch",
+      "result": "pending",
+      "expectations": [
+        {
+          "symbol": "Initial",
+          "result": "fail",
+          "actual": { "report": "none" },
+          "message": "want DS1404 as the finding at target/main.ts:2, got none"
+        },
+        { "symbol": "OneBranch", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "dead-store-var",
       "result": "pass",
       "expectations": [
@@ -1779,7 +1793,7 @@
           "symbol": "Nested",
           "result": "pass",
           "actual": {
-            "report": "DS1807",
+            "report": "DS1404",
             "symbol_kind": "store",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -1793,7 +1807,7 @@
           "symbol": "Overwritten",
           "result": "pass",
           "actual": {
-            "report": "DS1807",
+            "report": "DS1404",
             "symbol_kind": "store",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -1819,7 +1833,7 @@
           "symbol": "Spare",
           "result": "pass",
           "actual": {
-            "report": "DS1203",
+            "report": "DS1202",
             "symbol_kind": "interface-method",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -1862,6 +1876,59 @@
       "unexpected": []
     },
     {
+      "fixture": "decode-only-member-through-a-generic-client",
+      "result": "pending",
+      "expectations": [
+        { "symbol": "Job.id", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Job.state",
+          "result": "fail",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "type-member",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false },
+          "message": "confidence want \"possible\" got \"certain\"; reachability_class want \"possible\" got \"certain\""
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "decoded-value-relayed-to-a-key-enumerating-sink",
+      "result": "pending",
+      "expectations": [
+        {
+          "symbol": "Local.unused",
+          "result": "pass",
+          "actual": {
+            "report": "DS1301",
+            "symbol_kind": "type-member",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "Settings.theme",
+          "result": "fail",
+          "actual": { "report": "DS1003", "confidence": "certain" },
+          "message": "want no finding at target/main.ts:2, got DS1003"
+        },
+        {
+          "symbol": "Settings.width",
+          "result": "fail",
+          "actual": { "report": "DS1003", "confidence": "certain" },
+          "message": "want no finding at target/main.ts:3, got DS1003"
+        }
+      ],
+      "unexpected": [
+        { "file": "target/main.ts", "line": 2, "report": "DS1003" },
+        { "file": "target/main.ts", "line": 3, "report": "DS1003" }
+      ]
+    },
+    {
       "fixture": "decorated-class-parameter-property",
       "result": "pass",
       "expectations": [
@@ -1888,7 +1955,7 @@
           "symbol": "Command",
           "result": "pass",
           "actual": {
-            "report": "DS1601",
+            "report": "DS1701",
             "symbol_kind": "dependency",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -1900,7 +1967,7 @@
           "symbol": "CycleA",
           "result": "pass",
           "actual": {
-            "report": "DS1601",
+            "report": "DS1701",
             "symbol_kind": "dependency",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -1912,7 +1979,7 @@
           "symbol": "CycleB",
           "result": "pass",
           "actual": {
-            "report": "DS1601",
+            "report": "DS1701",
             "symbol_kind": "dependency",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -1925,7 +1992,7 @@
           "symbol": "OrphanPeer",
           "result": "pass",
           "actual": {
-            "report": "DS1601",
+            "report": "DS1701",
             "symbol_kind": "dependency",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -1941,7 +2008,7 @@
           "symbol": "UnusedDev",
           "result": "pass",
           "actual": {
-            "report": "DS1601",
+            "report": "DS1701",
             "symbol_kind": "dependency",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -1953,7 +2020,7 @@
           "symbol": "UnusedPeer",
           "result": "pass",
           "actual": {
-            "report": "DS1601",
+            "report": "DS1701",
             "symbol_kind": "dependency",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -1965,7 +2032,7 @@
           "symbol": "UnusedRuntime",
           "result": "pass",
           "actual": {
-            "report": "DS1601",
+            "report": "DS1701",
             "symbol_kind": "dependency",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -1987,7 +2054,7 @@
           "symbol": "NeverLoaded",
           "result": "pass",
           "actual": {
-            "report": "DS1601",
+            "report": "DS1701",
             "symbol_kind": "dependency",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -2006,7 +2073,7 @@
           "symbol": "GhostLib",
           "result": "pass",
           "actual": {
-            "report": "DS1601",
+            "report": "DS1701",
             "symbol_kind": "dependency",
             "confidence": "possible",
             "reachability_class": "possible",
@@ -2025,7 +2092,7 @@
           "symbol": "NeverLoaded",
           "result": "pass",
           "actual": {
-            "report": "DS1601",
+            "report": "DS1701",
             "symbol_kind": "dependency",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -2045,7 +2112,7 @@
           "symbol": "NeverLoaded",
           "result": "pass",
           "actual": {
-            "report": "DS1601",
+            "report": "DS1701",
             "symbol_kind": "dependency",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -2067,7 +2134,7 @@
           "symbol": "NeverResolved",
           "result": "pass",
           "actual": {
-            "report": "DS1601",
+            "report": "DS1701",
             "symbol_kind": "dependency",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -2097,7 +2164,7 @@
           "symbol": "AbsentRowEntry",
           "result": "pass",
           "actual": {
-            "report": "DS1703",
+            "report": "DS9003",
             "symbol_kind": "suppression",
             "confidence": "certain",
             "details": { "mechanism": "ignore" }
@@ -2109,7 +2176,7 @@
           "symbol": "UnadjudicatedDependency",
           "result": "pass",
           "actual": {
-            "report": "DS1601",
+            "report": "DS1701",
             "symbol_kind": "dependency",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -2120,7 +2187,7 @@
           "symbol": "WrongCodeEntry",
           "result": "pass",
           "actual": {
-            "report": "DS1703",
+            "report": "DS9003",
             "symbol_kind": "suppression",
             "confidence": "certain",
             "details": { "mechanism": "ignore" }
@@ -2137,7 +2204,7 @@
           "symbol": "AbsentRowEntry",
           "result": "pass",
           "actual": {
-            "report": "DS1703",
+            "report": "DS9003",
             "symbol_kind": "suppression",
             "confidence": "certain",
             "details": { "mechanism": "ignore" }
@@ -2150,7 +2217,7 @@
           "symbol": "WrongCodeEntry",
           "result": "pass",
           "actual": {
-            "report": "DS1703",
+            "report": "DS9003",
             "symbol_kind": "suppression",
             "confidence": "certain",
             "details": { "mechanism": "ignore" }
@@ -2168,7 +2235,7 @@
           "symbol": "NeverRun",
           "result": "pass",
           "actual": {
-            "report": "DS1601",
+            "report": "DS1701",
             "symbol_kind": "dependency",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -2188,7 +2255,7 @@
           "symbol": "DeadFile",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -2199,7 +2266,7 @@
           "symbol": "DeadOnly",
           "result": "pass",
           "actual": {
-            "report": "DS1601",
+            "report": "DS1701",
             "symbol_kind": "dependency",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -2212,7 +2279,7 @@
           "symbol": "FileLevel",
           "result": "pass",
           "actual": {
-            "report": "DS1601",
+            "report": "DS1701",
             "symbol_kind": "dependency",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -2226,7 +2293,7 @@
           "symbol": "Reached",
           "result": "pass",
           "actual": {
-            "report": "DS1601",
+            "report": "DS1701",
             "symbol_kind": "dependency",
             "confidence": "probable",
             "reachability_class": "certain",
@@ -2286,7 +2353,7 @@
           "symbol": "Counter.Old",
           "result": "pass",
           "actual": {
-            "report": "DS1006",
+            "report": "DS1104",
             "confidence": "certain",
             "reachability_class": "certain",
             "liveness_relation": "reference-counting"
@@ -2299,7 +2366,7 @@
           "symbol": "Old",
           "result": "pass",
           "actual": {
-            "report": "DS1006",
+            "report": "DS1104",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -2311,7 +2378,7 @@
           "symbol": "Stale",
           "result": "pass",
           "actual": {
-            "report": "DS1006",
+            "report": "DS1104",
             "symbol_kind": "variable",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -2323,7 +2390,7 @@
           "symbol": "StaleToo",
           "result": "pass",
           "actual": {
-            "report": "DS1006",
+            "report": "DS1104",
             "symbol_kind": "variable",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -2361,7 +2428,7 @@
           "symbol": "AboveMarkerDirective",
           "result": "pass",
           "actual": {
-            "report": "DS1703",
+            "report": "DS9003",
             "symbol_kind": "suppression",
             "confidence": "certain",
             "details": { "mechanism": "inline" }
@@ -2371,7 +2438,7 @@
           "symbol": "BetweenDirective",
           "result": "pass",
           "actual": {
-            "report": "DS1703",
+            "report": "DS9003",
             "symbol_kind": "suppression",
             "confidence": "certain",
             "details": { "mechanism": "inline" }
@@ -2415,7 +2482,7 @@
           "symbol": "DemoProps",
           "result": "pass",
           "actual": {
-            "report": "DS1104",
+            "report": "DS1503",
             "symbol_kind": "type",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -2435,7 +2502,7 @@
           "symbol": "SampleFile",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -2686,7 +2753,7 @@
           "symbol": "ModeWrite",
           "result": "pass",
           "actual": {
-            "report": "DS1302",
+            "report": "DS1005",
             "confidence": "certain",
             "reachability_class": "certain",
             "liveness_relation": "reference-counting"
@@ -2714,13 +2781,13 @@
           "symbol": "Phase.Closed",
           "result": "pass",
           "actual": {
-            "report": "DS1302",
+            "report": "DS1005",
             "symbol_kind": "enum-member",
             "confidence": "certain",
             "reachability_class": "certain",
             "liveness_relation": "reference-counting",
-            "component": { "root": true, "symbol_count": 2, "deletable_lines": 2 },
-            "fixability": "deletable"
+            "fixability": "deletable",
+            "component": { "root": true, "symbol_count": 2, "deletable_lines": 2 }
           },
           "suppression": { "suppressed": true, "stale": false }
         },
@@ -2729,13 +2796,13 @@
           "symbol": "Phase.Idle",
           "result": "pass",
           "actual": {
-            "report": "DS1302",
+            "report": "DS1005",
             "symbol_kind": "enum-member",
             "confidence": "certain",
             "reachability_class": "certain",
             "liveness_relation": "reference-counting",
-            "component": { "root": true, "symbol_count": 1, "deletable_lines": 0 },
-            "fixability": "manual"
+            "fixability": "manual",
+            "component": { "root": true, "symbol_count": 1, "deletable_lines": 0 }
           },
           "suppression": { "suppressed": true, "stale": false }
         },
@@ -2743,13 +2810,13 @@
           "symbol": "Phase.Paused",
           "result": "pass",
           "actual": {
-            "report": "DS1302",
+            "report": "DS1005",
             "symbol_kind": "enum-member",
             "confidence": "certain",
             "reachability_class": "certain",
             "liveness_relation": "reference-counting",
-            "component": { "root": true, "symbol_count": 2, "deletable_lines": 2 },
-            "fixability": "deletable"
+            "fixability": "deletable",
+            "component": { "root": true, "symbol_count": 2, "deletable_lines": 2 }
           },
           "suppression": { "suppressed": true, "stale": false }
         },
@@ -2758,13 +2825,13 @@
           "symbol": "Phase.Stopped",
           "result": "pass",
           "actual": {
-            "report": "DS1302",
+            "report": "DS1005",
             "symbol_kind": "enum-member",
             "confidence": "certain",
             "reachability_class": "certain",
             "liveness_relation": "reference-counting",
-            "component": { "root": true, "symbol_count": 1, "deletable_lines": 1 },
-            "fixability": "deletable"
+            "fixability": "deletable",
+            "component": { "root": true, "symbol_count": 1, "deletable_lines": 1 }
           },
           "suppression": { "suppressed": true, "stale": false }
         },
@@ -2777,8 +2844,8 @@
             "confidence": "certain",
             "reachability_class": "certain",
             "liveness_relation": "reference-counting",
-            "component": { "root": true, "symbol_count": 3, "deletable_lines": 4 },
-            "fixability": "deletable"
+            "fixability": "deletable",
+            "component": { "root": true, "symbol_count": 3, "deletable_lines": 4 }
           },
           "suppression": { "suppressed": true, "stale": false }
         },
@@ -2786,13 +2853,13 @@
           "symbol": "Tier.Alias",
           "result": "pass",
           "actual": {
-            "report": "DS1302",
+            "report": "DS1005",
             "symbol_kind": "enum-member",
             "confidence": "certain",
             "reachability_class": "certain",
             "liveness_relation": "reference-counting",
-            "component": { "root": true, "symbol_count": 2, "deletable_lines": 0 },
-            "fixability": "manual"
+            "fixability": "manual",
+            "component": { "root": true, "symbol_count": 2, "deletable_lines": 0 }
           },
           "suppression": { "suppressed": true, "stale": false }
         },
@@ -2800,13 +2867,13 @@
           "symbol": "Tier.Base",
           "result": "pass",
           "actual": {
-            "report": "DS1302",
+            "report": "DS1005",
             "symbol_kind": "enum-member",
             "confidence": "certain",
             "reachability_class": "certain",
             "liveness_relation": "reference-counting",
-            "component": { "root": true, "symbol_count": 1, "deletable_lines": 0 },
-            "fixability": "manual"
+            "fixability": "manual",
+            "component": { "root": true, "symbol_count": 1, "deletable_lines": 0 }
           },
           "suppression": { "suppressed": true, "stale": false }
         },
@@ -2819,8 +2886,8 @@
             "confidence": "certain",
             "reachability_class": "certain",
             "liveness_relation": "reachability",
-            "component": { "root": false, "symbol_count": 2, "deletable_lines": 0 },
-            "fixability": "manual"
+            "fixability": "manual",
+            "component": { "root": false, "symbol_count": 2, "deletable_lines": 0 }
           },
           "suppression": { "suppressed": true, "stale": false }
         },
@@ -2856,7 +2923,7 @@
           "symbol": "DeadFile",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -2867,7 +2934,7 @@
           "symbol": "ZodFile",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "probable",
             "reachability_class": "certain",
@@ -2913,7 +2980,7 @@
           "symbol": "Orphan",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -2942,7 +3009,7 @@
           "symbol": "CalledName",
           "result": "pass",
           "actual": {
-            "report": "DS1801",
+            "report": "DS1401",
             "symbol_kind": "parameter",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -3060,7 +3127,7 @@
           "symbol": "ownGlobal",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "variable",
             "confidence": "possible",
             "reachability_class": "possible",
@@ -3102,7 +3169,7 @@
           "symbol": "orphan",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -3133,7 +3200,7 @@
           "symbol": "After",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -3153,7 +3220,7 @@
           "symbol": "orphan",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -3198,7 +3265,7 @@
           "symbol": "WindowsEntry",
           "result": "pass",
           "actual": {
-            "report": "DS1703",
+            "report": "DS9003",
             "symbol_kind": "suppression",
             "confidence": "certain",
             "details": { "mechanism": "ignore" }
@@ -3498,7 +3565,7 @@
           "symbol": "DeadStore",
           "result": "pass",
           "actual": {
-            "report": "DS1807",
+            "report": "DS1404",
             "symbol_kind": "store",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -3509,7 +3576,7 @@
           "symbol": "DroppedResult",
           "result": "pass",
           "actual": {
-            "report": "DS1803",
+            "report": "DS1403",
             "symbol_kind": "result",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -3524,7 +3591,7 @@
           "symbol": "UnreachableCase",
           "result": "pass",
           "actual": {
-            "report": "DS1809",
+            "report": "DS1406",
             "symbol_kind": "case",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -3535,7 +3602,7 @@
           "symbol": "UnreachableStatement",
           "result": "pass",
           "actual": {
-            "report": "DS1805",
+            "report": "DS1405",
             "symbol_kind": "statement",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -3546,7 +3613,7 @@
           "symbol": "UnreadParameter",
           "result": "pass",
           "actual": {
-            "report": "DS1801",
+            "report": "DS1401",
             "symbol_kind": "parameter",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -3674,7 +3741,7 @@
           "symbol": "UnusedFile",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -3754,7 +3821,7 @@
           "symbol": "IndexFile",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -3813,6 +3880,29 @@
           "suppression": { "suppressed": true, "stale": false }
         },
         { "symbol": "Source.id", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "member-nothing-writes-under-a-key-enumerating-helper",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "HttpTarget.body",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "type-member",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "HttpTarget.uri",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        }
       ],
       "unexpected": []
     },
@@ -3901,6 +3991,53 @@
       "unexpected": []
     },
     {
+      "fixture": "member-written-through-a-mapped-type-or-another-type",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "Rollout.build",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "Rollout.name",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "Rollout.notes",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "type-member",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "member-written-under-a-returned-type-and-never-read",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "Providers.oauth", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Providers.phone",
+          "result": "pass",
+          "actual": {
+            "report": "DS1301",
+            "symbol_kind": "type-member",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "members-reached-through-type-arguments",
       "result": "pass",
       "expectations": [
@@ -3923,7 +4060,7 @@
           "symbol": "ViewIdle",
           "result": "pass",
           "actual": {
-            "report": "DS1203",
+            "report": "DS1202",
             "symbol_kind": "interface-method",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -4090,7 +4227,7 @@
           "symbol": "Worker",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -4163,7 +4300,7 @@
           "symbol": "RootCharts",
           "result": "pass",
           "actual": {
-            "report": "DS1601",
+            "report": "DS1701",
             "symbol_kind": "dependency",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -4203,7 +4340,7 @@
           "symbol": "RootOnly",
           "result": "pass",
           "actual": {
-            "report": "DS1601",
+            "report": "DS1701",
             "symbol_kind": "dependency",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -4216,7 +4353,7 @@
           "symbol": "ScopedShared",
           "result": "pass",
           "actual": {
-            "report": "DS1601",
+            "report": "DS1701",
             "symbol_kind": "dependency",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -4248,7 +4385,7 @@
           "symbol": "OrphanFile",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -4258,7 +4395,7 @@
           "symbol": "ResetForTest",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -4269,7 +4406,7 @@
           "symbol": "StrykerDependency",
           "result": "pass",
           "actual": {
-            "report": "DS1601",
+            "report": "DS1701",
             "symbol_kind": "dependency",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -4291,7 +4428,7 @@
           "symbol": "ResetForTest",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -4302,7 +4439,7 @@
           "symbol": "StrykerDependency",
           "result": "pass",
           "actual": {
-            "report": "DS1601",
+            "report": "DS1701",
             "symbol_kind": "dependency",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -4323,7 +4460,7 @@
           "symbol": "other",
           "result": "pass",
           "actual": {
-            "report": "DS1807",
+            "report": "DS1404",
             "symbol_kind": "store",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -4472,7 +4609,7 @@
           "symbol": "Shape.area",
           "result": "pass",
           "actual": {
-            "report": "DS1203",
+            "report": "DS1202",
             "symbol_kind": "interface-method",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -4554,7 +4691,7 @@
           "symbol": "Element.describe",
           "result": "pass",
           "actual": {
-            "report": "DS1203",
+            "report": "DS1202",
             "symbol_kind": "interface-method",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -4679,7 +4816,7 @@
           "symbol": "orphan",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -4739,7 +4876,7 @@
           "symbol": "DialDirective",
           "result": "pass",
           "actual": {
-            "report": "DS1703",
+            "report": "DS9003",
             "symbol_kind": "suppression",
             "confidence": "certain",
             "details": { "mechanism": "inline" }
@@ -4760,7 +4897,7 @@
           "symbol": "Box.count",
           "result": "pass",
           "actual": {
-            "report": "DS1801",
+            "report": "DS1401",
             "symbol_kind": "parameter",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -4802,7 +4939,7 @@
           "symbol": "ArrayElementBeforeUsed",
           "result": "pass",
           "actual": {
-            "report": "DS1807",
+            "report": "DS1404",
             "symbol_kind": "store",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -4817,7 +4954,7 @@
           "symbol": "DeclaredAnnotated",
           "result": "pass",
           "actual": {
-            "report": "DS1801",
+            "report": "DS1401",
             "symbol_kind": "parameter",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -4831,7 +4968,7 @@
           "symbol": "DestructuredContextual",
           "result": "pass",
           "actual": {
-            "report": "DS1801",
+            "report": "DS1401",
             "symbol_kind": "parameter",
             "confidence": "probable",
             "reachability_class": "probable",
@@ -4845,7 +4982,7 @@
           "symbol": "UncontextualExpression",
           "result": "pass",
           "actual": {
-            "report": "DS1801",
+            "report": "DS1401",
             "symbol_kind": "parameter",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -4855,6 +4992,26 @@
           },
           "suppression": { "suppressed": true, "stale": false }
         }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "part-in-one-configuration",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "AfterReturn",
+          "result": "pass",
+          "actual": {
+            "report": "DS1405",
+            "symbol_kind": "statement",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "details": { "overlap": ["tsc allowUnreachableCode", "eslint no-unreachable"] }
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "AfterStop", "result": "pass", "actual": { "report": "none" } }
       ],
       "unexpected": []
     },
@@ -4902,7 +5059,7 @@
           "symbol": "CaseStale",
           "result": "pass",
           "actual": {
-            "report": "DS1703",
+            "report": "DS9003",
             "symbol_kind": "suppression",
             "confidence": "certain",
             "details": { "mechanism": "inline" }
@@ -4915,7 +5072,7 @@
           "symbol": "ParameterStale",
           "result": "pass",
           "actual": {
-            "report": "DS1703",
+            "report": "DS9003",
             "symbol_kind": "suppression",
             "confidence": "certain",
             "details": { "mechanism": "inline" }
@@ -4928,7 +5085,7 @@
           "symbol": "ResultStale",
           "result": "pass",
           "actual": {
-            "report": "DS1703",
+            "report": "DS9003",
             "symbol_kind": "suppression",
             "confidence": "certain",
             "details": { "mechanism": "inline" }
@@ -4941,7 +5098,7 @@
           "symbol": "StatementStale",
           "result": "pass",
           "actual": {
-            "report": "DS1703",
+            "report": "DS9003",
             "symbol_kind": "suppression",
             "confidence": "certain",
             "details": { "mechanism": "inline" }
@@ -4954,7 +5111,7 @@
           "symbol": "StoreStale",
           "result": "pass",
           "actual": {
-            "report": "DS1703",
+            "report": "DS9003",
             "symbol_kind": "suppression",
             "confidence": "certain",
             "details": { "mechanism": "inline" }
@@ -4976,7 +5133,7 @@
           "symbol": "StaleDirective",
           "result": "pass",
           "actual": {
-            "report": "DS1703",
+            "report": "DS9003",
             "symbol_kind": "suppression",
             "confidence": "certain",
             "details": { "mechanism": "inline" }
@@ -5417,7 +5574,7 @@
           "symbol": "LocalOnly",
           "result": "pass",
           "actual": {
-            "report": "DS1104",
+            "report": "DS1503",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -5438,7 +5595,7 @@
           "symbol": "Step",
           "result": "pass",
           "actual": {
-            "report": "DS1104",
+            "report": "DS1503",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -5685,6 +5842,38 @@
       "unexpected": []
     },
     {
+      "fixture": "require-the-target-declares",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "calledOnlyByDead",
+          "result": "pass",
+          "actual": {
+            "report": "DS1002",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reachability"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "deadCaller",
+          "result": "pass",
+          "actual": {
+            "report": "DS1002",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "require", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "route-file-paths",
       "result": "pass",
       "expectations": [
@@ -5704,7 +5893,7 @@
           "symbol": "PageFile",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -6300,7 +6489,7 @@
           "symbol": "ReadParameterDirective",
           "result": "pass",
           "actual": {
-            "report": "DS1703",
+            "report": "DS9003",
             "symbol_kind": "suppression",
             "confidence": "certain",
             "details": { "mechanism": "inline" }
@@ -6319,7 +6508,7 @@
           "symbol": "WrongCodeDirective",
           "result": "pass",
           "actual": {
-            "report": "DS1703",
+            "report": "DS9003",
             "symbol_kind": "suppression",
             "confidence": "certain",
             "details": { "mechanism": "inline" }
@@ -6386,7 +6575,7 @@
           "symbol": "Tone.Quiet",
           "result": "pass",
           "actual": {
-            "report": "DS1302",
+            "report": "DS1005",
             "symbol_kind": "enum-member",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -6405,7 +6594,7 @@
           "symbol": "inMocks",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -6416,7 +6605,7 @@
           "symbol": "inSpec",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -6427,7 +6616,7 @@
           "symbol": "inTests",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -6447,7 +6636,7 @@
           "symbol": "Decode",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -6460,7 +6649,7 @@
           "symbol": "Encode",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -6473,7 +6662,7 @@
           "symbol": "Format",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -6487,7 +6676,7 @@
           "symbol": "Parse",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -6500,7 +6689,7 @@
           "symbol": "TestDecode",
           "result": "pass",
           "actual": {
-            "report": "DS1005",
+            "report": "DS1103",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -6514,7 +6703,7 @@
           "symbol": "encodeAll",
           "result": "pass",
           "actual": {
-            "report": "DS1005",
+            "report": "DS1103",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -6540,7 +6729,7 @@
           "symbol": "mustParse",
           "result": "pass",
           "actual": {
-            "report": "DS1005",
+            "report": "DS1103",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -6571,7 +6760,7 @@
           "symbol": "Sample.Name",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "confidence": "certain",
             "reachability_class": "certain",
             "liveness_relation": "reference-counting"
@@ -6603,7 +6792,7 @@
           "symbol": "FirstStore",
           "result": "pass",
           "actual": {
-            "report": "DS1807",
+            "report": "DS1404",
             "symbol_kind": "store",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -6617,7 +6806,7 @@
           "symbol": "HelperUnread",
           "result": "pass",
           "actual": {
-            "report": "DS1801",
+            "report": "DS1401",
             "symbol_kind": "parameter",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -6639,7 +6828,7 @@
           "symbol": "fixtures",
           "result": "pass",
           "actual": {
-            "report": "DS1104",
+            "report": "DS1503",
             "symbol_kind": "variable",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -6672,7 +6861,7 @@
           "symbol": "Unused",
           "result": "pass",
           "actual": {
-            "report": "DS1807",
+            "report": "DS1404",
             "symbol_kind": "store",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -6686,7 +6875,7 @@
           "symbol": "forTests",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -6707,7 +6896,7 @@
           "symbol": "Unused",
           "result": "pass",
           "actual": {
-            "report": "DS1807",
+            "report": "DS1404",
             "symbol_kind": "store",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -6721,7 +6910,7 @@
           "symbol": "forTests",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -6741,7 +6930,7 @@
           "symbol": "Unused",
           "result": "pass",
           "actual": {
-            "report": "DS1807",
+            "report": "DS1404",
             "symbol_kind": "store",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -6766,7 +6955,7 @@
           "symbol": "Spare",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -6828,7 +7017,7 @@
           "symbol": "TestBoth",
           "result": "pass",
           "actual": {
-            "report": "DS1005",
+            "report": "DS1103",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -6841,7 +7030,7 @@
           "symbol": "TestDead",
           "result": "pass",
           "actual": {
-            "report": "DS1005",
+            "report": "DS1103",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -6855,7 +7044,7 @@
           "symbol": "Unused",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -6867,7 +7056,7 @@
           "symbol": "UnusedToo",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -6886,7 +7075,7 @@
           "symbol": "DeadOne",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -6899,7 +7088,7 @@
           "symbol": "DeadTwo",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -6913,7 +7102,7 @@
           "symbol": "TestDeadOnly",
           "result": "pass",
           "actual": {
-            "report": "DS1005",
+            "report": "DS1103",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -6936,7 +7125,7 @@
           "symbol": "TestUnused",
           "result": "pass",
           "actual": {
-            "report": "DS1005",
+            "report": "DS1103",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -6949,7 +7138,7 @@
           "symbol": "Unused",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -6969,7 +7158,7 @@
           "symbol": "unmarshal",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "function",
             "confidence": "possible",
             "reachability_class": "possible"
@@ -6987,7 +7176,7 @@
           "symbol": "OnlyTested",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -7020,7 +7209,7 @@
           "symbol": "fixedNow",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "variable",
             "confidence": "probable",
             "reachability_class": "certain",
@@ -7054,7 +7243,7 @@
           "symbol": "Unread",
           "result": "pass",
           "actual": {
-            "report": "DS1807",
+            "report": "DS1404",
             "symbol_kind": "store",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -7076,7 +7265,7 @@
           "symbol": "plain",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "function",
             "confidence": "possible",
             "reachability_class": "possible",
@@ -7097,7 +7286,7 @@
           "symbol": "Encode",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -7175,7 +7364,7 @@
           "symbol": "FakeRequest",
           "result": "pass",
           "actual": {
-            "report": "DS1104",
+            "report": "DS1503",
             "symbol_kind": "variable",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -7197,7 +7386,7 @@
           "symbol": "Seed",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -7232,7 +7421,7 @@
           "symbol": "Seed",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -7268,7 +7457,7 @@
           "symbol": "Seed",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -7368,7 +7557,7 @@
           "symbol": "Seed",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -7401,7 +7590,7 @@
           "symbol": "Dead",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -7424,7 +7613,7 @@
           "symbol": "Bare",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "function",
             "confidence": "possible",
             "reachability_class": "possible",
@@ -7438,7 +7627,7 @@
           "symbol": "Shared",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "function",
             "confidence": "possible",
             "reachability_class": "possible",
@@ -7457,7 +7646,7 @@
           "symbol": "Check",
           "result": "pass",
           "actual": {
-            "report": "DS1005",
+            "report": "DS1103",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -7470,7 +7659,7 @@
           "symbol": "Decode",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -7483,7 +7672,7 @@
           "symbol": "Encode",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -7499,7 +7688,7 @@
           "symbol": "TestEncode",
           "result": "pass",
           "actual": {
-            "report": "DS1005",
+            "report": "DS1103",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -7533,7 +7722,7 @@
           "symbol": "Make",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "function",
             "confidence": "possible",
             "reachability_class": "possible",
@@ -7559,7 +7748,7 @@
           "symbol": "TestMake",
           "result": "pass",
           "actual": {
-            "report": "DS1005",
+            "report": "DS1103",
             "symbol_kind": "function",
             "confidence": "possible",
             "reachability_class": "certain",
@@ -7630,7 +7819,7 @@
           "symbol": "load",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "function",
             "confidence": "possible",
             "reachability_class": "possible",
@@ -7657,7 +7846,7 @@
           "symbol": "testLoad",
           "result": "pass",
           "actual": {
-            "report": "DS1005",
+            "report": "DS1103",
             "symbol_kind": "function",
             "confidence": "possible",
             "reachability_class": "certain",
@@ -7690,7 +7879,7 @@
           "symbol": "load",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "function",
             "confidence": "possible",
             "reachability_class": "possible",
@@ -7716,7 +7905,7 @@
           "symbol": "testLoad",
           "result": "pass",
           "actual": {
-            "report": "DS1005",
+            "report": "DS1103",
             "symbol_kind": "function",
             "confidence": "possible",
             "reachability_class": "certain",
@@ -7737,7 +7926,7 @@
           "symbol": "CallTrailingDirective",
           "result": "pass",
           "actual": {
-            "report": "DS1703",
+            "report": "DS9003",
             "symbol_kind": "suppression",
             "confidence": "certain",
             "details": { "mechanism": "inline" }
@@ -7793,7 +7982,7 @@
           "symbol": "Unread",
           "result": "pass",
           "actual": {
-            "report": "DS1807",
+            "report": "DS1404",
             "symbol_kind": "store",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -7837,7 +8026,7 @@
           "symbol": "IdleTypes",
           "result": "pass",
           "actual": {
-            "report": "DS1601",
+            "report": "DS1701",
             "symbol_kind": "dependency",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -7849,7 +8038,7 @@
           "symbol": "ModularTypes",
           "result": "pass",
           "actual": {
-            "report": "DS1601",
+            "report": "DS1701",
             "symbol_kind": "dependency",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -7903,7 +8092,7 @@
           "symbol": "keep.T",
           "result": "pass",
           "actual": {
-            "report": "DS1303",
+            "report": "DS1006",
             "symbol_kind": "type-parameter",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -7934,7 +8123,7 @@
           "symbol": "shape.U",
           "result": "pass",
           "actual": {
-            "report": "DS1303",
+            "report": "DS1006",
             "symbol_kind": "type-parameter",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -7986,7 +8175,7 @@
           "symbol": "difference",
           "result": "pass",
           "actual": {
-            "report": "DS1005",
+            "report": "DS1103",
             "symbol_kind": "variable",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -7998,7 +8187,7 @@
           "symbol": "divide",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -8009,7 +8198,7 @@
           "symbol": "multiply",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -8020,7 +8209,7 @@
           "symbol": "product",
           "result": "pass",
           "actual": {
-            "report": "DS1005",
+            "report": "DS1103",
             "symbol_kind": "variable",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -8032,7 +8221,7 @@
           "symbol": "quotient",
           "result": "pass",
           "actual": {
-            "report": "DS1005",
+            "report": "DS1103",
             "symbol_kind": "variable",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -8044,7 +8233,7 @@
           "symbol": "subtract",
           "result": "pass",
           "actual": {
-            "report": "DS1004",
+            "report": "DS1102",
             "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -8064,7 +8253,7 @@
           "symbol": "Plain",
           "result": "pass",
           "actual": {
-            "report": "DS1801",
+            "report": "DS1401",
             "symbol_kind": "parameter",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -8086,7 +8275,7 @@
           "symbol": "AbsentGlobal",
           "result": "pass",
           "actual": {
-            "report": "DS1706",
+            "report": "DS9006",
             "symbol_kind": "configured-declaration",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -8096,7 +8285,7 @@
           "symbol": "AbsentModule",
           "result": "pass",
           "actual": {
-            "report": "DS1706",
+            "report": "DS9006",
             "symbol_kind": "configured-declaration",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -8106,7 +8295,7 @@
           "symbol": "AbsentSymbol",
           "result": "pass",
           "actual": {
-            "report": "DS1706",
+            "report": "DS9006",
             "symbol_kind": "configured-declaration",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -8130,7 +8319,7 @@
           "symbol": "AbsentBase",
           "result": "pass",
           "actual": {
-            "report": "DS1706",
+            "report": "DS9006",
             "symbol_kind": "configured-declaration",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -8140,7 +8329,7 @@
           "symbol": "AbsentComponent",
           "result": "pass",
           "actual": {
-            "report": "DS1706",
+            "report": "DS9006",
             "symbol_kind": "configured-declaration",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -8163,7 +8352,7 @@
           "symbol": "label",
           "result": "pass",
           "actual": {
-            "report": "DS1801",
+            "report": "DS1401",
             "symbol_kind": "parameter",
             "confidence": "certain",
             "reachability_class": "certain",
@@ -8275,7 +8464,7 @@
           "symbol": "Unread",
           "result": "pass",
           "actual": {
-            "report": "DS1002",
+            "report": "DS1004",
             "symbol_kind": "import",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -8286,7 +8475,7 @@
           "symbol": "Whole",
           "result": "pass",
           "actual": {
-            "report": "DS1002",
+            "report": "DS1004",
             "symbol_kind": "import",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -8305,7 +8494,7 @@
           "symbol": "Unread",
           "result": "pass",
           "actual": {
-            "report": "DS1303",
+            "report": "DS1006",
             "symbol_kind": "type-parameter",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -8383,7 +8572,7 @@
           "symbol": "RemoteFile",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -8401,7 +8590,7 @@
           "symbol": "Lint",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -8413,7 +8602,7 @@
           "symbol": "Upload",
           "result": "pass",
           "actual": {
-            "report": "DS1502",
+            "report": "DS1602",
             "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
@@ -8555,6 +8744,34 @@
           "suppression": { "suppressed": true, "stale": false }
         },
         { "symbol": "Settings.name", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "write-only-member-annotation-cascade",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "clock.last",
+          "result": "pass",
+          "actual": {
+            "report": "DS1301",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "stamp", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "stamp.at",
+          "result": "pass",
+          "actual": {
+            "report": "DS1301",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
       ],
       "unexpected": []
     },

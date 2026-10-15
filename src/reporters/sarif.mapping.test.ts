@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { Report, WireFinding } from "../report.ts";
+import type { Finding, Report } from "../contract/report.generated.ts";
 import type { RenderOptions } from "./reporter.ts";
 import { sarif } from "./sarif.ts";
 
-function finding(path: string, line: number): WireFinding {
+function finding(path: string, line: number): Finding {
   return {
-    code: "DS1104",
+    code: "DS1503",
     kind: "redundant-export-keyword",
     language: "ts",
     position: { path, line, column: 1, end_line: line },
@@ -30,7 +30,7 @@ function finding(path: string, line: number): WireFinding {
   };
 }
 
-function report(findings: readonly WireFinding[], languages: readonly string[]): Report {
+function report(findings: readonly Finding[], languages: Report["analyzer"]["languages"]): Report {
   return {
     schema_version: "6.0.0",
     contract_version: "3.2.0",

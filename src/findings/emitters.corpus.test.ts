@@ -125,10 +125,10 @@ describe("every corpus fixture with a TypeScript rendering, answered by every fa
     [
       "deprecated-and-unused",
       [
-        "Old DS1006: pass",
-        "Stale DS1006: pass",
-        "StaleToo DS1006: pass",
-        "Counter.Old DS1006: pass",
+        "Old DS1104: pass",
+        "Stale DS1104: pass",
+        "StaleToo DS1104: pass",
+        "Counter.Old DS1104: pass",
         "Kept none: pass",
         "Fresh none: pass",
         "Counter.Live none: pass",
@@ -138,19 +138,19 @@ describe("every corpus fixture with a TypeScript rendering, answered by every fa
     ["unused-exported-consumer", ["DeadExport DS1001: pass", "UsedByConsumer none: pass"]],
     [
       "redundant-export-keyword",
-      ["Published none: pass", "LocalOnly DS1104: pass", "Caller none: pass"],
+      ["Published none: pass", "LocalOnly DS1503: pass", "Caller none: pass"],
     ],
     [
       "enum-group-conversion",
-      ["TierMid none: pass", "TierHigh none: pass", "ModeWrite DS1302: pass"],
+      ["TierMid none: pass", "TierHigh none: pass", "ModeWrite DS1005: pass"],
     ],
-    ["test-only-reference", ["OnlyTested DS1004: pass", "Production none: pass"]],
+    ["test-only-reference", ["OnlyTested DS1102: pass", "Production none: pass"]],
     [
       "test-of-dead-code",
       [
-        "DeadOne DS1004: pass",
-        "DeadTwo DS1004: pass",
-        "TestDeadOnly DS1005: pass",
+        "DeadOne DS1102: pass",
+        "DeadTwo DS1102: pass",
+        "TestDeadOnly DS1103: pass",
         "Live none: pass",
         "TestMixed none: pass",
         "assertSum none: pass",

@@ -196,7 +196,7 @@ describe("an interface a file that is no module declares", () => {
           "interface ImportMeta {\n  glob(pattern: string): Record<string, unknown>;\n  spare(): void;\n}\n",
         "main.ts": 'export const files = import.meta.glob("./x/*");\n',
       }),
-    ).toEqual(["DS1203 ImportMeta.spare"]);
+    ).toEqual(["DS1202 ImportMeta.spare"]);
   });
 
   it("in a declaration file is used by a test file's read of a member it declares, as production code", () => {
@@ -224,7 +224,7 @@ describe("an interface a file that is no module declares", () => {
         "read.test.ts":
           "const value = ownGlobal.read();\n\nexport function check(): string {\n  return value;\n}\n",
       }),
-    ).toEqual(["DS1004 ownGlobal", "DS1201 OwnGlobal", "DS1502 env.d.ts"]);
+    ).toEqual(["DS1102 ownGlobal", "DS1201 OwnGlobal", "DS1602 env.d.ts"]);
   });
 });
 

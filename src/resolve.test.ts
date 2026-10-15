@@ -72,15 +72,15 @@ describe("a severity key", () => {
   it.each([
     {
       name: "a code whose severity the Contract fixes",
-      text: '{"target":{"kind":"library"},"severity":{"DS1703":"warn"}}',
-      setting: "severity.DS1703",
-      names: "DS1703",
+      text: '{"target":{"kind":"library"},"severity":{"DS9003":"warn"}}',
+      setting: "severity.DS9003",
+      names: "DS9003",
     },
     {
       name: "a family prefix whose range holds a fixed code",
-      text: '{"target":{"kind":"library"},"severity":{"DS17":"allow"}}',
-      setting: "severity.DS17",
-      names: "DS1703, DS1704 and DS1706",
+      text: '{"target":{"kind":"library"},"severity":{"DS90":"allow"}}',
+      setting: "severity.DS90",
+      names: "DS9003, DS9004 and DS9006",
     },
     {
       name: "a key that is neither a code nor a family prefix",
@@ -95,15 +95,15 @@ describe("a severity key", () => {
       names: "the code names no live issue kind",
     },
     {
-      name: "a retired code",
-      text: '{"target":{"kind":"library"},"severity":{"DS1202":"warn"}}',
-      setting: "severity.DS1202",
+      name: "a code of a reserved family",
+      text: '{"target":{"kind":"library"},"severity":{"DS1801":"warn"}}',
+      setting: "severity.DS1801",
       names: "the code names no live issue kind",
     },
     {
       name: "a family prefix whose range holds no live kind",
-      text: '{"target":{"kind":"library"},"severity":{"DS14":"allow"}}',
-      setting: "severity.DS14",
+      text: '{"target":{"kind":"library"},"severity":{"DS18":"allow"}}',
+      setting: "severity.DS18",
       names: "the family this prefix names holds no live issue kind",
     },
   ])("is refused when it names $name", ({ text, setting, names }) => {
@@ -123,11 +123,11 @@ describe("a severity key", () => {
   });
 
   it("names the one code it fixes on its own", () => {
-    const got = refuse(repository('{"target":{"kind":"library"},"severity":{"DS1703":"warn"}}'));
+    const got = refuse(repository('{"target":{"kind":"library"},"severity":{"DS9003":"warn"}}'));
 
     expect(got.message).toBe(
-      'deadset.json: key "severity.DS1703" is not implemented: ' +
-        "the Contract fixes the severity of DS1703, which this key names",
+      'deadset.json: key "severity.DS9003" is not implemented: ' +
+        "the Contract fixes the severity of DS9003, which this key names",
     );
   });
 
@@ -135,37 +135,37 @@ describe("a severity key", () => {
     const { config } = resolve({
       repository: '{"target":{"kind":"library"},"severity":{"DS1201":"warn"}}',
       repositoryLabel: "deadset.json",
-      central: '{"severity":{"DS1101":"deny"}}',
+      central: '{"severity":{"DS1501":"deny"}}',
       centralLabel: "central.json",
     });
 
-    expect([...config.severity.keys()]).toEqual(["DS1101", "DS1201"]);
+    expect([...config.severity.keys()]).toEqual(["DS1201", "DS1501"]);
   });
 
   it("resolves per code, so a code only the central configuration names keeps its value", () => {
     const { config, provenance } = resolve({
-      repository: '{"target":{"kind":"library"},"severity":{"DS1101":"allow"}}',
+      repository: '{"target":{"kind":"library"},"severity":{"DS1501":"allow"}}',
       repositoryLabel: "deadset.json",
-      central: '{"severity":{"DS1101":"deny","DS1201":"warn"}}',
+      central: '{"severity":{"DS1501":"deny","DS1201":"warn"}}',
       centralLabel: "central.json",
     });
 
     expect([...config.severity]).toEqual([
-      ["DS1101", "allow"],
       ["DS1201", "warn"],
+      ["DS1501", "allow"],
     ]);
-    expect(provenance.get("severity.DS1101")?.source).toBe("repository");
+    expect(provenance.get("severity.DS1501")?.source).toBe("repository");
     expect(provenance.get("severity.DS1201")?.source).toBe("central");
   });
 
   it("accepts a live kind of another language and a family prefix holding a live kind", () => {
     const { config } = resolve(
-      repository('{"target":{"kind":"library"},"severity":{"DS1605":"warn","DS18":"allow"}}'),
+      repository('{"target":{"kind":"library"},"severity":{"DS1702":"warn","DS14":"allow"}}'),
     );
 
     expect([...config.severity]).toEqual([
-      ["DS1605", "warn"],
-      ["DS18", "allow"],
+      ["DS14", "allow"],
+      ["DS1702", "warn"],
     ]);
   });
 
@@ -173,7 +173,7 @@ describe("a severity key", () => {
     const { provenance } = resolve(repository('{"target":{"kind":"library"},"severity":{}}'));
 
     expect(provenance.get("severity")).toEqual({ source: "repository", label: "deadset.json" });
-    expect(provenance.has("severity.DS1101")).toBe(false);
+    expect(provenance.has("severity.DS1501")).toBe(false);
   });
 });
 

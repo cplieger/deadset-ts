@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { nodeHost } from "../../bin/node-host.ts";
 import { contractDocument } from "../../__test-helpers__/fixtures.ts";
-import { schemaValidator } from "../../__test-helpers__/json-schema.ts";
+import { schemaRefusals } from "../report-schema.ts";
 import type { Host } from "../host.ts";
 import { run, type Writer } from "../run.ts";
 import { CONFORMANCE } from "../conformance.ts";
@@ -21,7 +21,7 @@ function invoke(args: readonly string[], host: Host): { code: number; out: strin
   return { code, out: out.text, err: err.text };
 }
 
-const validateDescribe = schemaValidator(
+const validateDescribe = schemaRefusals(
   { "describe.schema.json": contractDocument("describe.schema.json") },
   "describe.schema.json",
 );

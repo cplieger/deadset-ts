@@ -22,7 +22,7 @@ const CALLEES = [
   "",
 ].join("\n");
 
-/** Each DS1801 finding of `main` at the lowest minimum confidence, as `<name> <line> <confidence>: <message>`. */
+/** Each DS1401 finding of `main` at the lowest minimum confidence, as `<name> <line> <confidence>: <message>`. */
 function parameters(main: readonly string[]): string[] {
   const root = writeProject({
     "package.json": '{ "name": "@example/calls", "private": true, "type": "module" }\n',
@@ -39,7 +39,7 @@ function parameters(main: readonly string[]): string[] {
       repositoryLabel: "deadset.json",
     });
     return findingsOf(emitterInputOf(root, config))
-      .filter((finding) => finding.code === "DS1801")
+      .filter((finding) => finding.code === "DS1401")
       .map(
         (finding) =>
           `${finding.symbol.name} ${String(finding.position.line)} ${finding.confidence}: ${finding.message.split(";")[0] ?? ""}`,

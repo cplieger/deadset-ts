@@ -36,7 +36,7 @@ const APPLICATION = {
   "tsconfig.json": APP_TSCONFIG,
   "package.json": '{ "name": "@example/app", "private": true, "type": "module" }\n',
   "deadset.json":
-    '{ "target": { "kind": "application" }, "severity": { "DS1001": "allow", "DS1002": "allow", "DS1004": "allow" }, "ts": { "entry_files": ["src/main.ts"] } }\n',
+    '{ "target": { "kind": "application" }, "severity": { "DS1001": "allow", "DS1002": "allow", "DS1102": "allow" }, "ts": { "entry_files": ["src/main.ts"] } }\n',
   "src/main.ts":
     'import { far, parity } from "./chain.ts";\n\nexport function start(): number {\n  return far();\n}\n\nfunction scaled(value: number, factor: number): number {\n  return value * 2;\n}\n\nconsole.log(start(), scaled(1, 2), parity(2));\n',
   "src/chain.ts":
@@ -247,7 +247,7 @@ describe("explain's answer for a reported declaration", () => {
       ).toContain(
         [
           "answer: reported",
-          "  code: DS1502 file-never-imported",
+          "  code: DS1602 file-never-imported",
           "  message: no import reaches this file and no root names it or a declaration in it",
           "  class: certain",
           "  confidence: certain",
@@ -264,7 +264,7 @@ describe("explain's answer for a reported declaration", () => {
     "names each finding about a part of the declaration at its own position",
     () => {
       expect(explain(APPLICATION, "--target=.", "--why-live=scaled").out).toMatch(
-        /\n {2}reference: [^\n]+\nalso reported: DS1801 unused-parameter\tsrc\/main\.ts:7:32\tparameter factor\n$/u,
+        /\n {2}reference: [^\n]+\nalso reported: DS1401 unused-parameter\tsrc\/main\.ts:7:32\tparameter factor\n$/u,
       );
     },
     LOAD_TIMEOUT,

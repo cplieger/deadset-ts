@@ -5,6 +5,7 @@
  * write to a local that no read reaches, and each case an earlier case covers.
  */
 
+import { CODE } from "./contract/contract.generated.ts";
 import {
   isArrowFunction,
   isAwaitExpression,
@@ -178,13 +179,6 @@ export interface ProjectParts {
   /** Each name of {@link constructionNames}, by position, which uses no constructor as a value. */
   readonly constructions: ReadonlySet<string>;
 }
-
-/** The codes of the parts this module reads. */
-export const UNUSED_PARAMETER = "DS1801";
-export const UNUSED_RESULT = "DS1803";
-const UNREACHABLE_STATEMENT = "DS1805";
-const DEAD_STORE = "DS1807";
-const UNREACHABLE_CASE = "DS1809";
 
 /** The result types that carry no value, as the checker spells them. */
 const NO_VALUE: ReadonlySet<string> = new Set([
@@ -869,7 +863,7 @@ export function projectParts<Brand>(
     }
     walk.catches.forEach(({ name, holder }, at) => {
       parts.push({
-        code: DEAD_STORE,
+        code: CODE.deadStore,
         declaration: holder,
         kind: "store",
         name: name.text,
@@ -881,7 +875,7 @@ export function projectParts<Brand>(
     for (const { names, uses, holder } of loopVariables) {
       for (const name of names) {
         parts.push({
-          code: DEAD_STORE,
+          code: CODE.deadStore,
           declaration: holder,
           kind: "store",
           name: name.text,
@@ -899,7 +893,7 @@ export function projectParts<Brand>(
     });
     for (const { statement, holder } of walk.unreachable) {
       parts.push({
-        code: UNREACHABLE_STATEMENT,
+        code: CODE.unreachableStatement,
         declaration: holder,
         kind: "statement",
         name: "statement",
@@ -910,7 +904,7 @@ export function projectParts<Brand>(
     }
     for (const { clause, text, holder } of walk.cases) {
       parts.push({
-        code: UNREACHABLE_CASE,
+        code: CODE.unreachableCase,
         declaration: holder,
         kind: "case",
         name: text,
@@ -1176,7 +1170,7 @@ function parameterParts(
       return;
     }
     const part: PartFact = {
-      code: UNUSED_PARAMETER,
+      code: CODE.unusedParameter,
       declaration,
       kind: "parameter",
       name: name.text,
@@ -1353,7 +1347,7 @@ function deadStores(
 ): PartFact[] {
   const found: PartFact[] = [];
   const deadAt = (local: Local, target: Identifier): PartFact => ({
-    code: DEAD_STORE,
+    code: CODE.deadStore,
     declaration: holder,
     kind: "store",
     name: local.name.text,
@@ -1482,7 +1476,7 @@ function resultParts<Brand>(
     const valued = project.queries.nonNullable(result);
     const members = isAnswered(valued) ? project.queries.propertiesOf(valued) : UNANSWERED;
     found.push({
-      code: UNUSED_RESULT,
+      code: CODE.unusedResult,
       declaration: id,
       kind: "result",
       name: "result",

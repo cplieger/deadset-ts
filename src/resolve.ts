@@ -1,21 +1,28 @@
 import {
+  SEVERITIES,
+  LANGUAGES,
+  CONFIDENCES,
+  FORMATS,
+  type Confidence,
+  type Format,
+  type Language,
+  type Severity,
+  FAMILY_KEY_LENGTH,
+} from "./contract/contract.generated.ts";
+import {
   ConfigError,
   defaultConfig,
   type BuildConfiguration,
   type Cascade,
   type Config,
-  type Confidence,
   type ConsumerTests,
   type DeclarationEntry,
-  type Format,
   type GeneratedFiles,
   type Inputs,
-  type Language,
   type LifecycleContract,
   type Origin,
   type Provenance,
   type Provider,
-  type Severity,
   type Sort,
   type Source,
   type TargetKind,
@@ -35,9 +42,6 @@ import {
 
 /** Names the command-line flags in a refusal, where a document is named by its path. */
 const FLAGS_LABEL = "the command-line flags";
-
-/** The length of a severity key naming a whole family: the prefix and two digits. */
-export const FAMILY_KEY_LENGTH = 4;
 
 const SEVERITY_KEY = /^DS[0-9]{2}([0-9]{2})?$/u;
 const EXEMPTION_CLASS = /^[a-z][a-z0-9-]*$/u;
@@ -69,12 +73,8 @@ const PROJECT_SEGMENT = String.raw`(?:[^/.\x00-\x1f\x7f][^/\x00-\x1f\x7f]*|\.[^/
 const PROJECT_PATH = new RegExp(`^${PROJECT_SEGMENT}(?:/${PROJECT_SEGMENT})*$`, "u");
 
 const TARGET_KINDS: readonly TargetKind[] = ["application", "library"];
-const CONFIDENCES: readonly Confidence[] = ["certain", "probable", "possible"];
 const GENERATED_FILES: readonly GeneratedFiles[] = ["exclude", "include"];
 const CONSUMER_TESTS: readonly ConsumerTests[] = ["test", "production"];
-const LANGUAGES: readonly Language[] = ["go", "ts"];
-const SEVERITIES: readonly Severity[] = ["allow", "warn", "deny"];
-const FORMATS: readonly Format[] = ["text", "json", "github", "sarif", "template"];
 const SORTS: readonly Sort[] = ["position", "size"];
 const CASCADES: readonly Cascade[] = ["roots", "full"];
 

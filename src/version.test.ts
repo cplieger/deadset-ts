@@ -1,3 +1,4 @@
+import { CONTRACT_VERSION } from "./contract/contract.generated.ts";
 import { spawnSync } from "node:child_process";
 import {
   copyFileSync,
@@ -13,7 +14,6 @@ import { describe, expect, it } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
 import { corpusLock, ROOT } from "../__test-helpers__/fixtures.ts";
 import * as library from "./index.ts";
-import { CONTRACT_VERSION } from "./version.ts";
 
 const SEMANTIC_VERSION = /^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/u;
 

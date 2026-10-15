@@ -12,9 +12,9 @@ describe("the printed configuration", () => {
       ...defaultConfig(),
       severity: new Map([
         ["DS1301", "warn"],
-        ["DS1502", "deny"],
+        ["DS1602", "deny"],
         ["DS1001", "allow"],
-        ["DS1203", "warn"],
+        ["DS1202", "warn"],
       ] as const),
     };
     const provenance = new Map([
@@ -31,9 +31,9 @@ describe("the printed configuration", () => {
 
     expect(Object.entries(printed.severity)).toEqual([
       ["DS1001", "allow"],
-      ["DS1203", "warn"],
+      ["DS1202", "warn"],
       ["DS1301", "warn"],
-      ["DS1502", "deny"],
+      ["DS1602", "deny"],
     ]);
     expect(Object.entries(printed.provenance)).toEqual([
       ["analysis.languages", "default"],

@@ -73,11 +73,11 @@ function reported(findings: readonly Finding[]): string[] {
   return findings.map((finding) => `${finding.code} ${finding.position.path}`);
 }
 
-describe("DS1501 under the build matrix", () => {
+describe("DS1601 under the build matrix", () => {
   it("reports each source file no project of a complete matrix includes, at the scope of its own package", async () => {
     const findings = emit(inputFor(MATRIX, configOf(MATRIX)));
 
-    expect(reported(findings)).toEqual(["DS1501 src/legacy/old.ts", "DS1501 tools/build.ts"]);
+    expect(reported(findings)).toEqual(["DS1601 src/legacy/old.ts", "DS1601 tools/build.ts"]);
     await expect(
       goldenText(findings),
       "regenerate with `npx vitest --run -u src/findings/non-code-artifacts.test.ts` and review the diff",
@@ -110,7 +110,7 @@ describe("DS1501 under the build matrix", () => {
       const findings = emit(inputFor(root, config));
 
       expect(goldenText(findings)).toBe(
-        "unbuilt.ts:1:1-2\tDS1501\tfile\tunbuilt.ts\t2\tts://@example/written/unbuilt.ts#\t" +
+        "unbuilt.ts:1:1-2\tDS1601\tfile\tunbuilt.ts\t2\tts://@example/written/unbuilt.ts#\t" +
           "no project of the build matrix includes this file (only)\n",
       );
     } finally {
@@ -188,22 +188,22 @@ describe("DS1501 under the build matrix", () => {
         }),
       );
 
-      expect(reported(emit(inputFor(root, config)))).toEqual(["DS1501 unbuilt.ts"]);
+      expect(reported(emit(inputFor(root, config)))).toEqual(["DS1601 unbuilt.ts"]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
   });
 });
 
-describe("DS1502 over the import graph", () => {
+describe("DS1602 over the import graph", () => {
   it("reports each file no import from live code reaches and no root names, and keeps every file a program holds by inclusion", async () => {
     const findings = emit(inputFor(IMPORTS, configOf(IMPORTS)));
 
     expect(reported(findings)).toEqual([
-      "DS1502 src/dead-importer.ts",
-      "DS1502 src/imported-by-dead.ts",
-      "DS1502 src/lone.ts",
-      "DS1502 src/orphan.ts",
+      "DS1602 src/dead-importer.ts",
+      "DS1602 src/imported-by-dead.ts",
+      "DS1602 src/lone.ts",
+      "DS1602 src/orphan.ts",
     ]);
     expect(
       findings
@@ -220,9 +220,9 @@ describe("DS1502 over the import graph", () => {
     const findings = emit(inputFor(IMPORTS, configOf(IMPORTS), { marked: ["src/orphan.ts:1:17"] }));
 
     expect(reported(findings)).toEqual([
-      "DS1502 src/dead-importer.ts",
-      "DS1502 src/imported-by-dead.ts",
-      "DS1502 src/lone.ts",
+      "DS1602 src/dead-importer.ts",
+      "DS1602 src/imported-by-dead.ts",
+      "DS1602 src/lone.ts",
     ]);
   });
 
@@ -234,9 +234,9 @@ describe("DS1502 over the import graph", () => {
     );
 
     expect(reported(findings)).toEqual([
-      "DS1502 src/dead-importer.ts",
-      "DS1502 src/imported-by-dead.ts",
-      "DS1502 src/lone.ts",
+      "DS1602 src/dead-importer.ts",
+      "DS1602 src/imported-by-dead.ts",
+      "DS1602 src/lone.ts",
     ]);
   });
 
@@ -250,8 +250,8 @@ describe("DS1502 over the import graph", () => {
     );
 
     expect(reported(emit(inputFor(IMPORTS, config)))).toEqual([
-      "DS1502 src/lone.ts",
-      "DS1502 src/orphan.ts",
+      "DS1602 src/lone.ts",
+      "DS1602 src/orphan.ts",
     ]);
   });
 });
@@ -264,7 +264,7 @@ interface Branch {
   readonly if?: {
     readonly properties?: {
       readonly code?: { readonly const?: string };
-      readonly language?: { readonly const?: string };
+      readonly language?: { readonly enum?: readonly string[] };
     };
     readonly anyOf?: readonly {
       readonly properties?: {
@@ -277,7 +277,9 @@ interface Branch {
   readonly then?: { readonly allOf?: readonly Branch[] };
   readonly else?: {
     readonly properties?: {
-      readonly details?: { readonly not?: { readonly required?: string[] } };
+      readonly details?: {
+        readonly not?: { readonly anyOf?: readonly { readonly required?: readonly string[] }[] };
+      };
     };
   };
 }
@@ -325,12 +327,12 @@ describe("the corpus fixture entry-file-declaring-nothing", () => {
 describe("what the Contract leaves a TypeScript file finding to carry", () => {
   const branches = contractDocument("finding.schema.json")["allOf"] as readonly Branch[];
 
-  it("forbids excluded_by on a TypeScript DS1501, so the finding names its projects in its message", () => {
-    const branch = branches.find((one) => one.if?.properties?.code?.const === "DS1501");
+  it("forbids excluded_by on a TypeScript DS1601, so the finding names its projects in its message", () => {
+    const branch = branches.find((one) => one.if?.properties?.code?.const === "DS1601");
     const arm = branch?.then?.allOf?.[0];
 
-    expect(arm?.if?.properties?.language?.const).toBe("go");
-    expect(arm?.else?.properties?.details?.not?.required).toEqual(["excluded_by"]);
+    expect(arm?.if?.properties?.language?.enum).toEqual(["go"]);
+    expect(arm?.else?.properties?.details?.not?.anyOf).toEqual([{ required: ["excluded_by"] }]);
   });
 
   it("names a file among the subjects that carry no liveness relation", () => {

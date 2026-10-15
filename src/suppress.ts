@@ -7,6 +7,12 @@
  * withholds every such finding anyway, and stale otherwise.
  */
 
+import {
+  type CODE,
+  KIND_ROWS,
+  SYMBOL_SUBJECTS,
+  type Subject,
+} from "./contract/contract.generated.ts";
 import { ConfigError } from "./config.ts";
 import type { Finding } from "./finding.ts";
 import { positionKey, type Position } from "./position.ts";
@@ -14,15 +20,6 @@ import { isRef } from "./ref.ts";
 
 /** Which document a suppression is written in, spelled as a finding carries it. */
 export type Mechanism = "inline" | "ignore" | "baseline";
-
-/** The code a suppression that carries no reason is reported under. */
-export const SUPPRESSION_WITHOUT_REASON = "DS1701";
-
-/** The code an ignore entry or a baseline row that names no path is reported under. */
-export const UNSCOPED_ENTRY = "DS1702";
-
-/** The code a suppression that withholds nothing is reported under. */
-export const STALE_SUPPRESSION = "DS1703";
 
 /**
  * One suppression record: one code bound to one site. A directive naming two codes is two
@@ -49,7 +46,7 @@ export interface SuppressionRecord {
  * nothing, and its finding reports the suppression as written.
  */
 export interface Refusal {
-  readonly reported: typeof SUPPRESSION_WITHOUT_REASON | typeof UNSCOPED_ENTRY;
+  readonly reported: typeof CODE.suppressionWithoutReason | typeof CODE.unscopedIgnoreEntry;
   readonly code: string;
   /** The reference the entry names, empty for a directive. */
   readonly symbol: string;
@@ -158,48 +155,48 @@ export interface Ledger {
   readonly withheld: (finding: Finding) => boolean;
 }
 
-/**
- * The subject kinds that are a dependency row, each with the code that reports one. An
- * ignore entry or a baseline row naming the row's reference and file withholds its finding
- * and marks nothing, and an inline directive never binds one.
- */
-const DEPENDENCY_SUBJECTS: ReadonlyMap<string, readonly string[]> = new Map([
-  ["dependency", ["DS1601"]],
-  ["module-directive", ["DS1605"]],
-]);
+/** The subject of the kind each live code names. */
+const SUBJECT_OF_CODE: ReadonlyMap<string, Subject> = new Map(
+  KIND_ROWS.map((row): [string, Subject] => [row.code, row.subject]),
+);
+
+/** The subject a finding about one symbol kind is about. */
+function subjectOf(kind: string): Subject | undefined {
+  return Object.hasOwn(SYMBOL_SUBJECTS, kind)
+    ? SYMBOL_SUBJECTS[kind as keyof typeof SYMBOL_SUBJECTS]
+    : undefined;
+}
+
+/** Whether a subject is a row of a document rather than a declaration of the program. */
+function rowOf(subject: Subject | undefined): boolean {
+  return subject === "file" || subject === "dependency" || subject === "record";
+}
 
 /**
- * The subject kinds that are a row of a document rather than a declaration of the program,
- * each with the codes that report one. Apart from a dependency row, nothing withholds a
- * finding about one.
+ * Whether a finding's subject is a row of a document rather than a declaration. Apart
+ * from a dependency row, nothing withholds a finding about one.
  */
-const ROW_SUBJECTS: ReadonlyMap<string, readonly string[]> = new Map([
-  ["file", ["DS1501", "DS1502"]],
-  ...DEPENDENCY_SUBJECTS,
-  ["root", ["DS1704"]],
-  ["configured-declaration", ["DS1706"]],
-  ["suppression", ["DS1701", "DS1702", "DS1703"]],
-  ["edge", ["DS1705"]],
-]);
-
-/** Whether a finding's subject is a row of a document rather than a declaration. */
 export function isRowSubject(kind: string): boolean {
-  return ROW_SUBJECTS.has(kind);
+  return rowOf(subjectOf(kind));
 }
 
 /** Whether a code reports a row of a document. */
 export function isRowCode(code: string): boolean {
-  return [...ROW_SUBJECTS.values()].some((codes) => codes.includes(code));
+  return rowOf(SUBJECT_OF_CODE.get(code));
 }
 
-/** Whether a finding's subject is a dependency row. */
+/**
+ * Whether a finding's subject is a dependency row. An ignore entry or a baseline row
+ * naming the row's reference and file withholds its finding and marks nothing, and an
+ * inline directive never binds one.
+ */
 export function isDependencySubject(kind: string): boolean {
-  return DEPENDENCY_SUBJECTS.has(kind);
+  return subjectOf(kind) === "dependency";
 }
 
 /** Whether a code reports a dependency row, which only an ignore entry or a baseline row names. */
 export function isDependencyCode(code: string): boolean {
-  return [...DEPENDENCY_SUBJECTS.values()].some((codes) => codes.includes(code));
+  return SUBJECT_OF_CODE.get(code) === "dependency";
 }
 
 /** Whether a code reports a row of a document that no record of any mechanism can name. */
@@ -208,33 +205,20 @@ export function isUnsuppressibleCode(code: string): boolean {
 }
 
 /**
- * The subject kinds that are a part of a declaration rather than a declaration: a part
+ * Whether a finding's subject is a part of the declaration its reference names: a part
  * has no reference of its own, so a finding about one names the declaration that holds
  * it, and the part is decided inside that declaration whatever uses it.
  */
-const PART_SUBJECTS: ReadonlySet<string> = new Set([
-  "parameter",
-  "receiver",
-  "result",
-  "statement",
-  "case",
-  "store",
-]);
-
-/** Whether a finding's subject is a part of the declaration its reference names. */
 export function isPartSubject(kind: string): boolean {
-  return PART_SUBJECTS.has(kind);
+  return subjectOf(kind) === "part";
 }
-
-/** The prefix of the codes of the part kinds, the intra-function range. */
-const PART_KIND_PREFIX = "DS18";
 
 /**
  * Whether a code is a part kind, whose record withholds its finding and marks nothing:
  * the record says the part is wanted, not that the declaration holding it is.
  */
 export function isPartKind(code: string): boolean {
-  return code.startsWith(PART_KIND_PREFIX);
+  return SUBJECT_OF_CODE.get(code) === "part";
 }
 
 /** One finding's identity: its code and the position of the thing it names. */
@@ -254,14 +238,14 @@ export function pairs(record: SuppressionRecord, finding: Finding): boolean {
   if (record.code !== finding.code) {
     return false;
   }
-  if (DEPENDENCY_SUBJECTS.has(finding.symbol.kind)) {
+  if (isDependencySubject(finding.symbol.kind)) {
     return (
       record.mechanism !== "inline" &&
       record.symbol === finding.symbol.ref &&
       record.path === finding.position.path
     );
   }
-  if (ROW_SUBJECTS.has(finding.symbol.kind)) {
+  if (isRowSubject(finding.symbol.kind)) {
     return false;
   }
   if (record.bound !== "" && record.bound === positionKey(finding.position)) {

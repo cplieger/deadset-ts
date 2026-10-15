@@ -4,12 +4,6 @@ import type { Writer } from "../run.ts";
 import type { Scope } from "../scope.ts";
 import type { Engine } from "../session.ts";
 
-/** The exit codes the Contract's exit-code table names. */
-export const EXIT_CLEAN = 0;
-export const EXIT_FINDINGS = 1;
-export const EXIT_USAGE = 2;
-export const EXIT_FAILURE = 3;
-
 /**
  * What one verb is handed: the streams it writes, the platform it reads, and the
  * options that follow its name, read only when the verb asks for what they name, so

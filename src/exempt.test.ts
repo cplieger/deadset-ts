@@ -1,3 +1,4 @@
+import { EXEMPTION_CLASSES } from "./contract/contract.generated.ts";
 import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, expectTypeOf, it } from "vitest";
@@ -6,12 +7,7 @@ import { contractDocument, fixture } from "../__test-helpers__/fixtures.ts";
 import { writeProject } from "../__test-helpers__/projects.ts";
 import { runSweep, type RunSweep } from "./analysis.ts";
 import { ConfigError, defaultConfig } from "./config.ts";
-import {
-  EXEMPTION_CLASSES,
-  isExemptionClass,
-  TS_EXEMPTION_CLASSES,
-  type TSExemptionClass,
-} from "./exempt-classes.ts";
+import { isExemptionClass, TS_EXEMPTION_CLASSES, type TSExemptionClass } from "./exempt-classes.ts";
 import {
   disabledClasses,
   evidenceRecords,
@@ -55,23 +51,6 @@ describe("the class registry", () => {
     confidence: string;
     typescript_visibility?: { private: boolean; private_name: boolean };
   }[];
-
-  it("is the Contract's vocabulary, class for class and in its order", () => {
-    expect(EXEMPTION_CLASSES).toStrictEqual(
-      contract.map((row) => ({
-        class: row.class,
-        languages: row.languages,
-        ...(row.typescript_visibility === undefined
-          ? {}
-          : {
-              typescriptVisibility: {
-                private: row.typescript_visibility.private,
-                privateName: row.typescript_visibility.private_name,
-              },
-            }),
-      })),
-    );
-  });
 
   it("runs on TypeScript exactly the classes the vocabulary lists for it", () => {
     expect(TS_EXEMPTION_CLASSES).toEqual(

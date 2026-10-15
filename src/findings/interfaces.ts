@@ -1,11 +1,9 @@
+import { CODE } from "../contract/contract.generated.ts";
 import type { Finding, FindingPosition, PositionedSymbol } from "../finding.ts";
 import type { InventorySymbol } from "../inventory.ts";
 import { byPosition } from "../position.ts";
 import type { MatrixCandidate } from "../matrix.ts";
 import type { Emitter, EmitterInput } from "./emitter.ts";
-
-const UNUSED_INTERFACE = "DS1201";
-const UNCALLED_INTERFACE_METHOD = "DS1203";
 
 /** What each finding says, by what the sweep found about the subject's references. */
 const UNUSED_MESSAGE = "nothing in the target names the interface as a type";
@@ -69,7 +67,7 @@ function findingOf(
 
 /**
  * The findings of the interfaces family, `DS1200` to `DS1299`: `DS1201`, a dead
- * interface, whose members fall with it unreported; and `DS1203`, a method of a live
+ * interface, whose members fall with it unreported; and `DS1202`, a method of a live
  * interface no reference names, unless it is a marker, a method whose every
  * implementation has an empty body. A test file's declaration is neither kind's subject,
  * because a production sweep counts none of the references it can have, save an interface
@@ -86,7 +84,7 @@ export const interfaces: Emitter = (input) => {
     if (symbol.kind === "interface") {
       found.push(
         findingOf(
-          UNUSED_INTERFACE,
+          CODE.unusedInterface,
           symbol,
           unusedMessage(candidate),
           run.implementationsOf(candidate.id),
@@ -104,7 +102,7 @@ export const interfaces: Emitter = (input) => {
     }
     found.push(
       findingOf(
-        UNCALLED_INTERFACE_METHOD,
+        CODE.uncalledInterfaceMethod,
         symbol,
         UNCALLED_MESSAGE,
         run.implementationsOf(symbol.parent),

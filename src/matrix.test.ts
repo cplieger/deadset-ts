@@ -381,14 +381,14 @@ describe("a test of dead code across configurations", () => {
           "node_modules/vitest/package.json": '{ "name": "vitest", "types": "./index.d.ts" }\n',
           "node_modules/vitest/index.d.ts": "export {};\n",
           "src/support.ts":
-            'import "vitest";\n\n// deadset:ignore DS1004 -- Loaded by the test runner\'s setup.\nexport function helper(): number {\n  return 3;\n}\n',
+            'import "vitest";\n\n// deadset:ignore DS1102 -- Loaded by the test runner\'s setup.\nexport function helper(): number {\n  return 3;\n}\n',
           "src/a.test.ts":
             'import { dead } from "./a.ts";\nimport { runner } from "./runner.test.ts";\nimport { helper } from "./support.ts";\n\nfunction checks(): unknown {\n  return [dead(), runner(), helper(), import("./setup.ts")];\n}\n',
         }),
         "checks",
       );
 
-      expect(checks).toContain("answer: reported\n  code: DS1005 test-of-dead-code\n");
+      expect(checks).toContain("answer: reported\n  code: DS1103 test-of-dead-code\n");
     },
     LOAD_TIMEOUT,
   );

@@ -71,11 +71,11 @@ describe("test-support code", () => {
   });
 
   it("leaves out a file production code imports, so a declaration only a test references there is certain", () => {
-    expect(found).toContain("DS1004 shared certain");
+    expect(found).toContain("DS1102 shared certain");
   });
 
   it("leaves out a file only a test reaches that carries no test evidence, production code only tests use, at possible", () => {
-    expect(found).toContain("DS1004 plain possible");
+    expect(found).toContain("DS1102 plain possible");
   });
 });
 
@@ -122,11 +122,11 @@ describe("production code only tests use", () => {
       "DS1001 spare certain certain",
       "DS1001 warm possible possible",
       "DS1002 inner possible possible",
-      "DS1004 fixtures possible possible",
-      "DS1004 load possible possible",
-      "DS1005 testLoad certain possible",
+      "DS1102 fixtures possible possible",
+      "DS1102 load possible possible",
+      "DS1103 testLoad certain possible",
       "DS1201 Fixtures possible possible",
-      "DS1502 support/env.d.ts possible possible",
+      "DS1602 support/env.d.ts possible possible",
     ]);
   });
 
@@ -177,8 +177,8 @@ describe("a dead root beside production code only tests use", () => {
       "DS1001 viaHelper possible possible",
       "DS1002 only certain probable",
       "DS1002 shared possible possible",
-      "DS1004 make possible possible",
-      "DS1005 testMake certain possible",
+      "DS1102 make possible possible",
+      "DS1103 testMake certain possible",
     ]);
   });
 
@@ -218,7 +218,7 @@ describe("a test-support interface test code references", () => {
       findingsOf(emitterInputOf(root, config)).map(
         (finding) => `${finding.code} ${finding.symbol.name}`,
       ),
-    ).toEqual(["DS1104 Sink"]);
+    ).toEqual(["DS1503 Sink"]);
   });
 });
 
@@ -291,7 +291,7 @@ describe("a file the test runner's configuration names as a setup file", () => {
         'export default { root: process.cwd(), test: { setupFiles: "./test/registry-setup.ts" } };\n',
         "test/registry-setup.ts",
       ),
-    ).toEqual(["DS1004 record certain"]);
+    ).toEqual(["DS1102 record certain"]);
   });
 });
 

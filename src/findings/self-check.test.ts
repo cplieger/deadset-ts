@@ -31,23 +31,23 @@ describe("a suppression site that matches no current finding", () => {
   it("names two codes and two reports each joined by and, in code order whatever the order written", () => {
     expect(
       messages(
-        { record: entry("DS1003"), reports: ["DS1302"] },
-        { record: entry("DS1001"), reports: ["DS1301", "DS1302"] },
+        { record: entry("DS1003"), reports: ["DS1005"] },
+        { record: entry("DS1001"), reports: ["DS1301", "DS1005"] },
       ),
     ).toEqual([
-      "ignore entry for DS1001 and DS1003 matches no current finding, and its declaration reports DS1301 and DS1302",
+      "ignore entry for DS1001 and DS1003 matches no current finding, and its declaration reports DS1005 and DS1301",
     ]);
   });
 
   it("names three codes as a list ending in and, and leaves out a report that is one of them", () => {
     expect(
       messages(
-        { record: entry("DS1006"), reports: ["DS1004"] },
+        { record: entry("DS1104"), reports: ["DS1102"] },
         { record: entry("DS1002"), reports: ["DS1001", "DS1003"] },
-        { record: entry("DS1004"), reports: [] },
+        { record: entry("DS1102"), reports: [] },
       ),
     ).toEqual([
-      "ignore entry for DS1002, DS1004 and DS1006 matches no current finding, and its declaration reports DS1001 and DS1003",
+      "ignore entry for DS1002, DS1102 and DS1104 matches no current finding, and its declaration reports DS1001 and DS1003",
     ]);
   });
 

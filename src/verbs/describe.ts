@@ -1,7 +1,13 @@
+import {
+  CONTRACT_VERSION,
+  EXIT_CLEAN,
+  EXIT_FAILURE,
+  EXIT_USAGE,
+  SCHEMA_VERSIONS,
+} from "../contract/contract.generated.ts";
 import { CONFORMANCE, type Conformance } from "../conformance.ts";
-import { ANALYZER_NAME, LANGUAGE, SCHEMA_VERSIONS_ACCEPTED } from "../report.ts";
-import { CONTRACT_VERSION } from "../version.ts";
-import { EXIT_CLEAN, EXIT_FAILURE, EXIT_USAGE, type Verb } from "./verb.ts";
+import { ANALYZER_NAME, LANGUAGE } from "../report.ts";
+import { type Verb } from "./verb.ts";
 
 /**
  * The document `describe` writes: the analyzer, the Contract version it implements, the
@@ -13,7 +19,7 @@ export function describeDocument(version: string, recorded: Conformance | undefi
     name: ANALYZER_NAME,
     version,
     contract_version: CONTRACT_VERSION,
-    schema_versions_accepted: SCHEMA_VERSIONS_ACCEPTED,
+    schema_versions_accepted: SCHEMA_VERSIONS,
     languages: [LANGUAGE],
     ...(recorded === undefined
       ? {}

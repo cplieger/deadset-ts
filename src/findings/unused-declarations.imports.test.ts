@@ -15,11 +15,11 @@ const LIB = [
   "",
 ].join("\n");
 
-/** The DS1002 findings of an application tree, as `<name> <path>:<line>`. */
+/** The DS1004 findings of an application tree, as `<name> <path>:<line>`. */
 function unusedImports(files: Readonly<Record<string, string>>): readonly string[] {
   return treeFindings(files)
-    .filter((one) => one.startsWith("DS1002 "))
-    .map((one) => one.slice("DS1002 ".length));
+    .filter((one) => one.startsWith("DS1004 "))
+    .map((one) => one.slice("DS1004 ".length));
 }
 
 /** Each finding about an import binding of a tree analysed under `document`, as `<code> <ref>`. */
@@ -105,8 +105,8 @@ describe("an import binding", () => {
         "lib.ts": LIB,
         "main.ts": "console.log(1);\n",
         "orphan.ts": 'import { a } from "./lib.js";\nexport const unused = 1;\n',
-      }).filter((one) => one.startsWith("DS1002")),
-    ).toEqual(["DS1002 a"]);
+      }).filter((one) => one.startsWith("DS1004")),
+    ).toEqual(["DS1004 a"]);
   });
 
   it("is not reported in a generated file, whose generator owns its imports", () => {
@@ -139,8 +139,8 @@ describe("an import binding", () => {
           { target: { kind: "application" } },
         ),
       ).toEqual([
-        "DS1002 ts://@example/cjs/src/main.ts#lib:import deletable certain",
-        "DS1002 ts://@example/cjs/src/main.ts#a:import deletable certain",
+        "DS1004 ts://@example/cjs/src/main.ts#lib:import deletable certain",
+        "DS1004 ts://@example/cjs/src/main.ts#a:import deletable certain",
       ]);
     },
     LOAD_TIMEOUT,
@@ -166,7 +166,7 @@ describe("an import binding", () => {
       const document = { target: { kind: "application" } };
       expect(importFindings(files("react"), document)).toEqual([]);
       expect(importFindings(files("react-jsx"), document)).toEqual([
-        "DS1002 ts://@example/jsx/main.tsx#React:import deletable certain",
+        "DS1004 ts://@example/jsx/main.tsx#React:import deletable certain",
       ]);
     },
     LOAD_TIMEOUT,

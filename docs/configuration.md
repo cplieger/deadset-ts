@@ -21,15 +21,15 @@ deadset-ts reads up to three JSON documents. A command-line option wins over `de
 | `target.kind` | required | `application` or `library`, or an object naming the kind of `go` and of `ts` |
 | `contract_version` | `8.0.0` | The Contract version the file is written against |
 | `analysis.configurations` | `[]` | Entries shaped `{id, project}`, each naming a `tsconfig`. With none, every `tsconfig` project under the target. Platform entries are for the Go analyzer |
-| `analysis.matrix.complete` | `false` | Declares that `configurations` lists every build, so a file no configuration builds is reported as `DS1501` |
+| `analysis.matrix.complete` | `false` | Declares that `configurations` lists every build, so a file no configuration builds is reported as `DS1601` |
 | `analysis.min_confidence` | `probable` | The lowest confidence reported: `certain`, `probable` or `possible` |
 | `analysis.generated_files` | `exclude` | Whether a declaration in a generated file is reported. `exclude` holds it back, and `include` reports it as a finding no edit may act on |
 | `analysis.consumer_tests` | `test` | How a reference from a consumer's test file counts: `test` or `production` |
 | `analysis.template_dirs` | `[]` | Directories below the target whose templates the `template-field` exemption reads for member names |
 | `analysis.template_delimiters` | `{{` and `}}` | The action delimiters those templates use, as `left` and `right` |
 | `consumers.complete` | `false` | Declares that the scope document lists every consumer of a library's published API |
-| `roots.patterns` | `[]` | Symbol references, or patterns over them, kept live without a reference. An entry that matches nothing is `DS1704` and fails the run |
-| `severity` | `{}` | A severity per code (`DS1101`) or family (`DS18`): `allow`, `warn` or `deny` |
+| `roots.patterns` | `[]` | Symbol references, or patterns over them, kept live without a reference. An entry that matches nothing is `DS9004` and fails the run |
+| `severity` | `{}` | A severity per code (`DS1501`) or family (`DS18`): `allow`, `warn` or `deny` |
 | `exemptions.disabled` | `[]` | Exemption classes switched off, to test whether one hides a defect |
 | `reporters.formats` | `["text"]` | The renderings `analyze` writes beside the report |
 | `reporters.sort` | `position` | `position` for path, line and column order, or `size` for deletable lines |
@@ -52,8 +52,8 @@ The Contract's [configuration schema](https://github.com/cplieger/deadset-spec) 
 
 Three mechanisms keep a finding out of a run. Each one needs a reason.
 
-- An inline directive on the line above the declaration, or after the code on the line where the declaration begins: `// deadset:ignore DS1001 -- kept for the next release`. Several codes are written `DS1001,DS1003`. A directive with no reason is reported as `DS1701`.
-- `deadset-ignore.json` at the target root, whose `ignore` array a maintainer writes. Each entry names `code`, `symbol`, `path` and `reason`. An entry that names no path is reported as `DS1702`. An entry can also keep a `DS1601` dependency, named by the `symbol.ref` and `position.path` its finding carries. An entry whose `symbol` starts with `go://` is left to the Go analyzer.
+- An inline directive on the line above the declaration, or after the code on the line where the declaration begins: `// deadset:ignore DS1001 -- kept for the next release`. Several codes are written `DS1001,DS1003`. A directive with no reason is reported as `DS9001`.
+- `deadset-ignore.json` at the target root, whose `ignore` array a maintainer writes. Each entry names `code`, `symbol`, `path` and `reason`. An entry that names no path is reported as `DS9002`. An entry can also keep a `DS1701` dependency, named by the `symbol.ref` and `position.path` its finding carries. An entry whose `symbol` starts with `go://` is left to the Go analyzer.
 - `deadset-baseline.json` at the target root, whose `baseline` rows `analyze --baseline-write` writes. A row has the same four members, so it moves into the ignore file by gaining a maintainer's reason.
 
 ```json
@@ -69,9 +69,9 @@ Three mechanisms keep a finding out of a run. Each one needs a reason.
 }
 ```
 
-A suppression that matches nothing is stale. It is reported as `DS1703` and fails the run with exit code 1, so a suppression is removed when the code it covered goes.
+A suppression that matches nothing is stale. It is reported as `DS9003` and fails the run with exit code 1, so a suppression is removed when the code it covered goes.
 
-A suppression names a declaration, so none can cover a finding about a file or a configuration entry: `DS1501`, `DS1502` and `DS1701` to `DS1706`. A suppression naming one of those codes is always stale. A `DS1601` finding about a manifest dependency is kept only by an ignore entry or a baseline row, as above, and never by an inline directive. Fix what the finding names, or set the code's severity under `severity`. `DS1703`, `DS1704` and `DS1706` have a fixed severity, so for those the only fix is the one the finding names.
+A suppression names a declaration, so none can cover a finding about a file or a configuration entry: `DS1601`, `DS1602` and `DS9001` to `DS9006`. A suppression naming one of those codes is always stale. A `DS1701` finding about a manifest dependency is kept only by an ignore entry or a baseline row, as above, and never by an inline directive. Fix what the finding names, or set the code's severity under `severity`. `DS9003`, `DS9004` and `DS9006` have a fixed severity, so for those the only fix is the one the finding names.
 
 ## The scope document
 

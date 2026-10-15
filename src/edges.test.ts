@@ -233,7 +233,7 @@ describe("the evaluation of declared sides", () => {
   const other = declaration("Other", 9);
   const symbols = [dead, live, other];
   const deadFinding = findingAbout(dead, "DS1001");
-  const otherFinding = findingAbout(other, "DS1104");
+  const otherFinding = findingAbout(other, "DS1503");
   const findings = [deadFinding, otherFinding];
 
   it("is the findings unchanged and no evaluation where no side is declared", () => {
@@ -274,14 +274,14 @@ describe("the evaluation of declared sides", () => {
     );
 
     expect(evaluated.evaluations.map((one) => `${one.state} ${one.finding?.code ?? "-"}`)).toEqual([
-      "dead DS1104",
+      "dead DS1503",
     ]);
     expect(evaluated.findings).toEqual([deadFinding]);
   });
 
   it("holds no part finding pending, though the part sits at its declaration's position", () => {
     const discarded: Finding = {
-      ...findingAbout(live, "DS1803"),
+      ...findingAbout(live, "DS1403"),
       symbol: { ref: live.ref, kind: "result", name: "result", sizeLines: 1 },
     };
     const evaluated = evaluateEdges(

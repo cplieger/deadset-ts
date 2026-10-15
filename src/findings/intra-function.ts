@@ -1,8 +1,8 @@
-import type { Confidence } from "../config.ts";
+import { CODE, type Confidence } from "../contract/contract.generated.ts";
 import type { Finding } from "../finding.ts";
 import { KINDS } from "../kinds.ts";
 import { parameterRef } from "../ref.ts";
-import { UNUSED_PARAMETER, UNUSED_RESULT, type PartFact } from "../intra-function-parts.ts";
+import { type PartFact } from "../intra-function-parts.ts";
 import { reachedWithTheTests } from "../sweep.ts";
 import type { Emitter, EmitterInput } from "./emitter.ts";
 
@@ -85,9 +85,9 @@ function reported(
   }
   const { free, freeButValued, discardedEverywhere } = input.intraFunction;
   switch (part.code) {
-    case UNUSED_PARAMETER:
+    case CODE.unusedParameter:
       return parameterVerdict(part, free, freeButValued) !== undefined;
-    case UNUSED_RESULT:
+    case CODE.unusedResult:
       return (
         free.has(part.declaration) &&
         discardedEverywhere.has(part.declaration) &&
@@ -99,7 +99,7 @@ function reported(
 }
 
 /**
- * The findings of the intra-function family, `DS1800` to `DS1899`, each about a part of
+ * The findings of the inside-functions family, `DS1401` to `DS1406`, each about a part of
  * the declaration its reference names, at the part's own position, whatever the sweep
  * decided about a production declaration. A part of test code is reported only where the
  * run that counts test references reaches its declaration and that is no test of dead
@@ -146,12 +146,12 @@ export const intraFunction: Emitter = (input) => {
   const found: Finding[] = [];
   for (const part of input.intraFunction.parts) {
     const declaration = byId.get(part.declaration);
-    const overlap = KINDS.get(part.code)?.overlap ?? [];
+    const overlap = KINDS.get(part.code)?.overlap?.ts ?? [];
     if (declaration === undefined || !judged(declaration.id) || !reported(input, part, unknown)) {
       continue;
     }
     const verdict =
-      part.code === UNUSED_PARAMETER
+      part.code === CODE.unusedParameter
         ? parameterVerdict(part, input.intraFunction.free, input.intraFunction.freeButValued)
         : undefined;
     const message =
@@ -162,7 +162,7 @@ export const intraFunction: Emitter = (input) => {
       code: part.code,
       position: part.position,
       symbol: {
-        ...(part.code === UNUSED_PARAMETER
+        ...(part.code === CODE.unusedParameter
           ? { ref: parameterRef(declaration.ref, part.name), holder: declaration.ref }
           : { ref: declaration.ref }),
         kind: part.kind,

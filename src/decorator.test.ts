@@ -138,7 +138,7 @@ describe("print-retained over a project whose classes carry decorators", () => {
       0,
     );
     expect(out.text.split("\n").filter((line) => line.includes("\tdecorator\t"))).toEqual([
-      "ts://@example/boxes/src/main.ts#Box.held\tdecorator\tsrc/main.ts:4:1\tdecorated by @component",
+      "ts://@example/boxes/src/main.ts#Box.held\tsrc/main.ts:6:3\tdecorator\tsrc/main.ts:4:1\tdecorated by @component",
     ]);
   });
   it("prints each decorated member with the decorator that holds it back, and exits 0", async () => {

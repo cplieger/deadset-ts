@@ -1,3 +1,4 @@
+import { EXIT_CLEAN, EXIT_USAGE } from "../contract/contract.generated.ts";
 import { runAnalysis, type RunAnalysis } from "../analysis.ts";
 import { listing } from "../components.ts";
 import type { Cascade } from "../config.ts";
@@ -12,7 +13,7 @@ import { positionKey } from "../position.ts";
 import type { Reference } from "../references.ts";
 import { resolve } from "../resolve.ts";
 import type { Root } from "../roots.ts";
-import { EXIT_CLEAN, EXIT_USAGE, type Verb, type VerbOptions } from "./verb.ts";
+import { type Verb, type VerbOptions } from "./verb.ts";
 
 /**
  * The three spellings of an explanation request, each naming the symbol to explain. They are

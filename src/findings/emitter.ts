@@ -11,7 +11,7 @@ import type { SelfCheckFacts } from "./self-check.ts";
 
 /**
  * What every emitter reads: the configuration the run resolved, the run's sweep, and
- * the facts about the run each kind family reads beside the sweep.
+ * the facts about the run each emitter reads beside the sweep.
  */
 export interface EmitterInput {
   readonly config: Config;
@@ -29,18 +29,17 @@ export interface EmitterInput {
   readonly files: FileFacts;
   /** What can reach the target from outside it: consumers, declared edges, and `exports`. */
   readonly boundary: Boundary;
-  /** The run's suppression outcomes and configured roots, which the self-check family reports. */
+  /** The run's suppression outcomes and configured roots, which the configuration family reports. */
   readonly selfCheck: SelfCheckFacts;
-  /** The parts of the run's declarations, which the intra-function family reports. */
+  /** The parts of the run's declarations, which the inside-functions family reports. */
   readonly intraFunction: IntraFunctionFacts;
 }
 
 /**
- * One kind family's rule over one run: every finding of the codes in its family's range
- * of the Contract's code space, whatever severity and minimum confidence the
- * configuration sets, in no particular order.
+ * One emitter's rule over one run: every finding of the codes it reports, whatever
+ * severity and minimum confidence the configuration sets, in no particular order.
  */
 export type Emitter = (input: EmitterInput) => readonly Finding[];
 
-/** The emitter of each kind family, by the family's name in the Contract, in code order. */
+/** Every emitter this analyzer runs, by the name its tests select it by. */
 export type Emitters = ReadonlyMap<string, Emitter>;

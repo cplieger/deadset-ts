@@ -46,7 +46,7 @@ function storesOf(files: Readonly<Record<string, string>>, document: object): st
     }[];
   };
   return findings
-    .filter((one) => one.code === "DS1807")
+    .filter((one) => one.code === "DS1404")
     .map(
       (one) =>
         `${one.position.path}:${String(one.position.line)} [${one.configurations.join(",")}]`,

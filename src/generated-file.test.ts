@@ -41,7 +41,7 @@ describe("the generated-file class", () => {
 
     expect(
       findingsOf(input)
-        .filter((finding) => finding.code !== "DS1601")
+        .filter((finding) => finding.code !== "DS1701")
         .map((finding) => `${finding.code} ${finding.symbol.name}`),
     ).toEqual(["DS1001 unusedWritten"]);
     expect(
@@ -56,7 +56,7 @@ describe("the generated-file class", () => {
 
   it("reports a declaration in a generated file once generated files are included, marked as one no edit may act on", () => {
     const found = findingsOf(analyzed("include"))
-      .filter((finding) => finding.code !== "DS1601")
+      .filter((finding) => finding.code !== "DS1701")
       .map(
         ({ code, symbol, generated, fixability }) =>
           `${code} ${symbol.name} generated=${String(generated)} ${fixability}`,
@@ -87,7 +87,7 @@ describe("an export a generated file references only inside itself", () => {
       repositoryLabel: "deadset.json",
     });
     return findingsOf(emitterInputOf(root, config))
-      .filter((finding) => finding.code === "DS1104")
+      .filter((finding) => finding.code === "DS1503")
       .map(({ symbol, generated }) => `${symbol.name} generated=${String(generated)}`);
   }
 
@@ -203,6 +203,6 @@ describe("a file whose leading comments mark it generated", () => {
       findingsOf(emitterInputOf(root, config)).map(
         (finding) => `${finding.code} ${finding.symbol.name}`,
       ),
-    ).toEqual(["DS1001 helper", "DS1502 util.ts", "DS1502 wire.ts"]);
+    ).toEqual(["DS1001 helper", "DS1602 util.ts", "DS1602 wire.ts"]);
   });
 });

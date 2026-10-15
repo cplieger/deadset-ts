@@ -174,7 +174,7 @@ describe("a module namespace object", () => {
   it("references only the export paramed reads, beside a parameter of its name", () => {
     expect(reported().filter((line) => line.includes(" paramed"))).toEqual([
       "DS1001 paramedSpare",
-      "DS1801 paramed",
+      "DS1401 paramed",
     ]);
   });
 
@@ -346,6 +346,6 @@ describe("a module namespace object in a project of its own", () => {
       reported(beside("called", ['hold("./called.js");'])).filter((line) =>
         line.includes(" called"),
       ),
-    ).toEqual(["DS1001 calledSpare", "DS1001 calledUsed", "DS1502 called.ts"]);
+    ).toEqual(["DS1001 calledSpare", "DS1001 calledUsed", "DS1602 called.ts"]);
   });
 });

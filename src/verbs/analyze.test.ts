@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { nodeHost } from "../../bin/node-host.ts";
 import { contractDocument, fixture, readFixture, ROOT } from "../../__test-helpers__/fixtures.ts";
-import { schemaValidator } from "../../__test-helpers__/json-schema.ts";
+import { schemaRefusals } from "../report-schema.ts";
 import { TSCONFIG, writeProject } from "../../__test-helpers__/projects.ts";
 import type { Host } from "../host.ts";
 import { run, type Writer } from "../run.ts";
@@ -13,7 +13,7 @@ import { openEngine, type Engine, type EngineOptions } from "../session.ts";
 /** The bound on one case, each of which loads a whole target. */
 const LOAD_TIMEOUT = 60_000;
 
-const validate = schemaValidator(
+const validate = schemaRefusals(
   {
     "report.schema.json": contractDocument("report.schema.json"),
     "finding.schema.json": contractDocument("finding.schema.json"),
@@ -432,8 +432,8 @@ describe("the exit code", () => {
   });
 
   it.each([
-    ["the stale-suppression code", '"DS1703": "warn"'],
-    ["the family that holds it", '"DS17": "allow"'],
+    ["the stale-suppression code", '"DS9003": "warn"'],
+    ["the family that holds it", '"DS90": "allow"'],
   ])("is 2 for a severity key naming %s, and writes no report", (_what, key) => {
     const got = analyze(
       project({
@@ -445,7 +445,7 @@ describe("the exit code", () => {
     );
 
     expect(got.code).toBe(2);
-    expect(got.err).toContain("severity.DS17");
+    expect(got.err).toContain("severity.DS90");
     expect(readdirSync(got.dir)).toEqual([]);
   });
 
@@ -830,7 +830,7 @@ describe("a configured declaration", () => {
       const got = analyze(root, [], root);
       expect(got.err).toBe("");
       const unmatched = findingsOf(got)
-        .filter((one) => one["code"] === "DS1706")
+        .filter((one) => one["code"] === "DS9006")
         .map((one) => ({
           ref: (one["symbol"] as Record<string, unknown>)["ref"],
           kind: (one["symbol"] as Record<string, unknown>)["kind"],
@@ -878,7 +878,7 @@ describe("an unused parameter", () => {
           (one["symbol"] as Record<string, unknown>)["name"],
           one["severity"],
         ]),
-      ).toEqual([["DS1801", "factor", "warn"]]);
+      ).toEqual([["DS1401", "factor", "warn"]]);
     },
     LOAD_TIMEOUT,
   );

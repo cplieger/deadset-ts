@@ -12,7 +12,7 @@ import type { EmitterInput } from "./emitter.ts";
 import { EMITTERS } from "./emitters.ts";
 
 /** The codes of this family. */
-const FAMILY = /^DS10[0-9]{2}$/u;
+const FAMILY = /^DS(?:100[1-4]|110[2-4])$/u;
 
 /** An installed test runner, whose import is the test evidence a test-support file carries. */
 const RUNNER: Readonly<Record<string, string>> = {
@@ -131,7 +131,7 @@ describe("the unused-declarations emitter over an application", () => {
     const findings = family(sweepProject("unused-declarations"));
     const tested = findings.find((finding) => finding.symbol.name === "onlyTested");
 
-    expect(tested?.code).toBe("DS1004");
+    expect(tested?.code).toBe("DS1102");
     expect(tested?.testOnly).toBe(true);
     expect(named(findings).filter((one) => one.endsWith(" used"))).toEqual([]);
   });
@@ -140,7 +140,7 @@ describe("the unused-declarations emitter over an application", () => {
     const findings = family(sweepProject("unused-declarations"));
     const reported = named(findings);
 
-    expect(reported).toContain("DS1005 testOfDeadCode");
+    expect(reported).toContain("DS1103 testOfDeadCode");
     expect(reported.filter((one) => one.includes("testOfLiveCode"))).toEqual([]);
     expect(reported.filter((one) => one.endsWith(" check"))).toEqual([]);
   });
@@ -151,16 +151,16 @@ describe("the unused-declarations emitter over an application", () => {
 
     expect(reported).toEqual(
       expect.arrayContaining([
-        "DS1006 deprecatedUnused",
-        "DS1006 deprecatedTestedOnly",
-        "DS1006 Counter.legacy",
-        "DS1006 staleFirst",
-        "DS1006 staleSecond",
+        "DS1104 deprecatedUnused",
+        "DS1104 deprecatedTestedOnly",
+        "DS1104 Counter.legacy",
+        "DS1104 staleFirst",
+        "DS1104 staleSecond",
       ]),
     );
     expect(reported.filter((one) => one.includes("deprecatedButUsed"))).toEqual([]);
     expect(reported.filter((one) => one.endsWith(" deprecatedUnused"))).toEqual([
-      "DS1006 deprecatedUnused",
+      "DS1104 deprecatedUnused",
     ]);
   });
 
@@ -198,7 +198,9 @@ describe("the dials over the unused-declarations family", () => {
   it("reads a code's key before its family's", () => {
     const findings = family({
       ...sweepProject("unused-declarations"),
-      config: configOf(application(`, "severity": { "DS10": "warn", "DS1003": "allow" }`)),
+      config: configOf(
+        application(`, "severity": { "DS10": "warn", "DS11": "warn", "DS1003": "allow" }`),
+      ),
     });
 
     expect(new Set(findings.map((finding) => finding.severity))).toEqual(new Set(["warn"]));
@@ -249,7 +251,7 @@ describe("the unused-declarations emitter over a library", () => {
 
     expect(named(findings).filter((one) => one.endsWith(" internalUnused"))).toEqual([]);
     expect(unreachable.map((one) => `${one.code} ${one.symbol.name}`)).toContain(
-      "DS1103 internalUnused",
+      "DS1101 internalUnused",
     );
   });
 
@@ -258,7 +260,7 @@ describe("the unused-declarations emitter over a library", () => {
     const findings = family(input);
     const unreachable = EMITTERS.get("visibility-narrowing")?.(input) ?? [];
 
-    expect(named(findings)).toContain("DS1006 internalRetired");
+    expect(named(findings)).toContain("DS1104 internalRetired");
     expect(unreachable.map((one) => one.symbol.name)).not.toContain("internalRetired");
   });
 
@@ -273,7 +275,7 @@ describe("the unused-declarations emitter over a library", () => {
     expect(named(certain)).toEqual([
       "DS1003 Published.#secret",
       "DS1003 Published.hidden",
-      "DS1006 internalRetired",
+      "DS1104 internalRetired",
     ]);
   });
 });
@@ -290,7 +292,7 @@ describe("an export a root names that nothing references", () => {
     expect(
       named(findingsOf(input)),
       "the member of a rooted interface and the export no root names are still reported",
-    ).toEqual(["DS1003 MainShape.name", "DS1103 unused"]);
+    ).toEqual(["DS1003 MainShape.name", "DS1101 unused"]);
   });
 
   it("stays a candidate in a library where the published API roots it, and nowhere else", () => {
@@ -303,7 +305,7 @@ describe("an export a root names that nothing references", () => {
 
     expect(named(findingsOf(input))).toEqual([
       "DS1001 fromMain",
-      "DS1103 unused",
+      "DS1101 unused",
       "DS1201 MainShape",
     ]);
   });
@@ -412,23 +414,23 @@ describe("the corpus fixtures naming a code of the family", () => {
     [
       "deprecated-and-unused",
       [
-        "Old DS1006: pass",
-        "Stale DS1006: pass",
-        "StaleToo DS1006: pass",
-        "Counter.Old DS1006: pass",
+        "Old DS1104: pass",
+        "Stale DS1104: pass",
+        "StaleToo DS1104: pass",
+        "Counter.Old DS1104: pass",
         "Kept none: pass",
         "Fresh none: pass",
         "Counter.Live none: pass",
       ],
     ],
-    ["test-only-reference", ["OnlyTested DS1004: pass", "Production none: pass"]],
+    ["test-only-reference", ["OnlyTested DS1102: pass", "Production none: pass"]],
     ["unused-exported-consumer", ["DeadExport DS1001: pass", "UsedByConsumer none: pass"]],
     [
       "test-of-dead-code",
       [
-        "DeadOne DS1004: pass",
-        "DeadTwo DS1004: pass",
-        "TestDeadOnly DS1005: pass",
+        "DeadOne DS1102: pass",
+        "DeadTwo DS1102: pass",
+        "TestDeadOnly DS1103: pass",
         "Live none: pass",
         "TestMixed none: pass",
         "assertSum none: pass",
@@ -601,7 +603,7 @@ describe("a file only a test reaches through a module specifier with a query", (
       findingsOf(emitterInputOf(root, configOf('{ "target": { "kind": "application" } }')))
         .filter((finding) => ["src/page.ts", "src/inner.ts"].includes(finding.position.path))
         .map((finding) => `${finding.code} ${finding.symbol.name}`),
-    ).toEqual(["DS1001 inner", "DS1001 page", "DS1502 src/inner.ts", "DS1502 src/page.ts"]);
+    ).toEqual(["DS1001 inner", "DS1001 page", "DS1602 src/inner.ts", "DS1602 src/page.ts"]);
   });
 });
 
@@ -664,7 +666,7 @@ describe("a test file no configuration of a declared matrix holds", () => {
       findingsOf(emitterInputOf(root, configOf(DECLARED_MATRIX))).map(
         (finding) => `${finding.code} ${finding.symbol.name}`,
       ),
-    ).toEqual(["DS1001 page", "DS1502 src/page.ts"]);
+    ).toEqual(["DS1001 page", "DS1602 src/page.ts"]);
   });
 
   it("references a named default export through a default import", () => {
@@ -899,7 +901,7 @@ describe("an enum member of a test file nothing names", () => {
       findingsOf(emitterInputOf(root, config, { mode: { production: false } })).map(
         (finding) => `${finding.code} ${finding.symbol.name}`,
       ),
-    ).toEqual(["DS1302 Mode.Spare"]);
+    ).toEqual(["DS1005 Mode.Spare"]);
     rmSync(root, { recursive: true, force: true });
   });
 });
@@ -994,7 +996,7 @@ describe("the code a dead declaration is reported under", () => {
           "export enum Mode {\n  Read,\n  Write,\n  Gone,\n}\n\nconsole.log(Mode.Read);\n",
         "src/main.test.ts": 'import { Mode } from "./main.js";\n\nconsole.log(Mode.Write);\n',
       }),
-    ).toEqual(["DS1004 Mode.Write"]);
+    ).toEqual(["DS1102 Mode.Write"]);
   });
 });
 
@@ -1028,7 +1030,7 @@ describe("a member naming a type parameter of its type beside another member", (
   it("is reported once a test file reads the other, which is then no brand", () => {
     expect(
       reported(PAIR, 'import { pair } from "./main.js";\n\nconsole.log(pair.second);\n'),
-    ).toEqual(["DS1003 Pair.first", "DS1004 Pair.second"]);
+    ).toEqual(["DS1003 Pair.first", "DS1102 Pair.second"]);
   });
 
   it("is reported once dead code and a test file read the other as often, the test keeping the other as test-only use", () => {
@@ -1037,7 +1039,7 @@ describe("a member naming a type parameter of its type beside another member", (
         `${PAIR}function deadReader(): string | undefined {\n  return pair.second;\n}\n`,
         'import { pair } from "./main.js";\n\nconsole.log(pair.second);\n',
       ),
-    ).toEqual(["DS1003 Pair.first", "DS1004 Pair.second", "DS1002 deadReader"]);
+    ).toEqual(["DS1003 Pair.first", "DS1102 Pair.second", "DS1002 deadReader"]);
   });
 
   it("is reported deprecated though both are brands, the deprecated code naming no brand", () => {
@@ -1048,7 +1050,7 @@ describe("a member naming a type parameter of its type beside another member", (
           "  /** @deprecated */\n  readonly first?: P;",
         ).replace("  readonly second?: P;", "  /** @deprecated */\n  readonly second?: P;"),
       ),
-    ).toEqual(["DS1006 Pair.first", "DS1006 Pair.second"]);
+    ).toEqual(["DS1104 Pair.first", "DS1104 Pair.second"]);
   });
 });
 
@@ -1082,7 +1084,7 @@ describe("a declaration only dead code references in production", () => {
         'import { fixedNow, now } from "./clock.js";\n\nexport function testClock(): boolean {\n  return now() > fixedNow;\n}\n',
       ),
     ).toEqual([
-      "DS1004 fixedNow: variable is referenced only from test files and from declarations that are themselves dead",
+      "DS1102 fixedNow: variable is referenced only from test files and from declarations that are themselves dead",
       "DS1001 stale: exported function has no reference in the target and none from any loaded consumer",
     ]);
   });
@@ -1093,7 +1095,7 @@ describe("a declaration only dead code references in production", () => {
         'import { fixedNow } from "./clock.js";\n\nexport function testFixed(): boolean {\n  return fixedNow > 0;\n}\n',
       ),
     ).toEqual([
-      "DS1005 testFixed: every target symbol this test references is reported dead",
+      "DS1103 testFixed: every target symbol this test references is reported dead",
       "DS1001 fixedNow: exported variable is referenced only from declarations that are themselves dead",
       "DS1001 stale: exported function has no reference in the target and none from any loaded consumer",
     ]);
@@ -1122,14 +1124,14 @@ describe("a test of a library's published API", () => {
   };
 
   it("is no test of dead code where the run declares no consumer, which outside programs may be", () => {
-    expect(reported("unmarshal", "./index.js")).toEqual(["DS1004 unmarshal"]);
+    expect(reported("unmarshal", "./index.js")).toEqual(["DS1102 unmarshal"]);
   });
 
   it("is a test of dead code where it calls a declaration outside the published API", () => {
     expect(reported("internal", "./internal.js")).toEqual([
       "DS1001 unmarshal",
-      "DS1004 internal",
-      "DS1005 testIt",
+      "DS1102 internal",
+      "DS1103 testIt",
     ]);
   });
 });

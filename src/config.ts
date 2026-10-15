@@ -1,4 +1,10 @@
-import { CONTRACT_VERSION } from "./version.ts";
+import {
+  CONTRACT_VERSION,
+  type Confidence,
+  type Format,
+  type Language,
+  type Severity,
+} from "./contract/contract.generated.ts";
 
 /**
  * The name of the repository configuration at the target root, which is also the
@@ -21,20 +27,11 @@ export function kindOf(setting: TargetKindSetting, language: Language): TargetKi
   return typeof setting === "string" ? setting : setting[language];
 }
 
-/** The lowest reachability class a finding must reach to be reported. */
-export type Confidence = "certain" | "probable" | "possible";
-
 /** Whether declarations in generated files are analyzed. */
 export type GeneratedFiles = "exclude" | "include";
 
 /** How a reference from a consumer's test file counts. */
 export type ConsumerTests = "test" | "production";
-
-/** One language an analysis covers. */
-export type Language = "go" | "ts";
-
-/** What a finding of one issue kind does to a run. */
-export type Severity = "allow" | "warn" | "deny";
 
 /** The severities ranked, the strongest highest. */
 const SEVERITY_RANK: Readonly<Record<Severity, number>> = { allow: 0, warn: 1, deny: 2 };
@@ -43,9 +40,6 @@ const SEVERITY_RANK: Readonly<Record<Severity, number>> = { allow: 0, warn: 1, d
 export function fails(severity: Severity, failOn: Severity): boolean {
   return SEVERITY_RANK[severity] >= SEVERITY_RANK[failOn];
 }
-
-/** One rendering of the finding list. */
-export type Format = "text" | "json" | "github" | "sarif" | "template";
 
 /** The order findings are rendered in. */
 export type Sort = "position" | "size";

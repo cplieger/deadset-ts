@@ -90,6 +90,6 @@ describe("an output path a library exports", () => {
         exports: { ".": { types: "./dist/a.d.ts" }, "./b": "./dist/b.js" },
         files: { "src/a.ts": exporting("a"), "src/b.ts": exporting("b") },
       }),
-    ).toEqual(["DS1103 a", "DS1502 src/a.ts"]);
+    ).toEqual(["DS1101 a", "DS1602 src/a.ts"]);
   });
 });

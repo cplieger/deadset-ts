@@ -1,5 +1,5 @@
-import type { Format } from "../config.ts";
-import type { Report } from "../report.ts";
+import type { Format } from "../contract/contract.generated.ts";
+import type { Report } from "../contract/report.generated.ts";
 import type { Template } from "./template.ts";
 
 /** What a rendering reads beside the report. */

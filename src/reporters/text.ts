@@ -1,5 +1,5 @@
 import { coalesced } from "../json-chunks.ts";
-import type { Report, WireTotals } from "../report.ts";
+import type { Report, Totals } from "../contract/report.generated.ts";
 
 /** The kind token and the confidence a stale suppression is rendered with, both fixed. */
 const STALE_KIND = "suppression";
@@ -11,7 +11,7 @@ function counted(n: number, one: string, many: string): string {
 }
 
 /** The report's totals in one line, in the order the report declares them. */
-function summary(totals: WireTotals): string {
+function summary(totals: Totals): string {
   const { allow, warn, deny } = totals.by_severity;
   return [
     `summary: ${counted(totals.findings, "finding", "findings")} (${String(allow)} allow, ${String(warn)} warn, ${String(deny)} deny)`,
@@ -31,7 +31,7 @@ const WITHHELD_ORDER = ["probable", "possible"] as const;
  * The line naming what the minimum confidence withheld and the setting that shows it all,
  * or undefined where it withheld nothing.
  */
-export function withheldLine(totals: WireTotals): string | undefined {
+export function withheldLine(totals: Totals): string | undefined {
   const named = WITHHELD_ORDER.filter((confidence) => totals.withheld[confidence] > 0);
   const lowest = named.at(-1);
   if (lowest === undefined) {

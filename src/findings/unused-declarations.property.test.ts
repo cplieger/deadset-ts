@@ -4,6 +4,16 @@ import { describe, expect, it } from "vitest";
 import { emitterInputOf, findingsOf } from "../../__test-helpers__/emitter-input.ts";
 import { writeProject } from "../../__test-helpers__/projects.ts";
 import { resolve } from "../resolve.ts";
+
+/** The codes of the unused-declaration kinds a drawn declaration is reported under. */
+const DECLARATION_CODES: ReadonlySet<string> = new Set([
+  "DS1001",
+  "DS1002",
+  "DS1003",
+  "DS1102",
+  "DS1103",
+  "DS1104",
+]);
 import { openEngine, type Engine } from "../session.ts";
 
 /**
@@ -162,7 +172,7 @@ describe("an unreferenced declaration with no exemption", () => {
           const root = writeProject(projectOf(declarations));
           try {
             const reported = findingsOf(emitterInputOf(root, config, { engine: shared }))
-              .filter((finding) => finding.code.startsWith("DS10"))
+              .filter((finding) => DECLARATION_CODES.has(finding.code))
               .map(
                 (finding) =>
                   `${finding.code} ${finding.symbol.name} ${finding.livenessRelation ?? "-"} ${finding.confidence} ${finding.component.root ? "root" : "falls"}`,

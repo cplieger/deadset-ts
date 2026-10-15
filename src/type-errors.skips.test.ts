@@ -115,7 +115,7 @@ describe("a type error in an own file", () => {
       });
 
       expect(got.skipped).toEqual([{ path: "src/main.ts", fromLine: 6, toLine: 9 }]);
-      expect(got.findings).toEqual(["DS1807 ts://./src/main.ts# src/main.ts:4"]);
+      expect(got.findings).toEqual(["DS1404 ts://./src/main.ts# src/main.ts:4"]);
     },
     LOAD_TIMEOUT,
   );
@@ -151,7 +151,7 @@ describe("a type error in an own file", () => {
       });
 
       expect(got.skips).toEqual([]);
-      expect(got.findings).toEqual(["DS1807 ts://./src/main.ts#compute src/main.ts:2"]);
+      expect(got.findings).toEqual(["DS1404 ts://./src/main.ts#compute src/main.ts:2"]);
     },
     LOAD_TIMEOUT,
   );

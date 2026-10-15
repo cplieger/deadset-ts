@@ -49,7 +49,7 @@
     }
   },
   {
-    "code": "DS1203",
+    "code": "DS1202",
     "position": {
       "path": "src/contracts.ts",
       "line": 28,
@@ -89,7 +89,7 @@
     }
   },
   {
-    "code": "DS1203",
+    "code": "DS1202",
     "position": {
       "path": "src/contracts.ts",
       "line": 48,
@@ -129,7 +129,7 @@
     }
   },
   {
-    "code": "DS1203",
+    "code": "DS1202",
     "position": {
       "path": "src/contracts.ts",
       "line": 53,

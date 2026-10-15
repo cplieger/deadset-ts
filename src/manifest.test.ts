@@ -176,7 +176,7 @@ describe("a package whose browser member alone names an entry", () => {
     };
 
     expect(findings.map((one) => `${one.code} ${one.position.path}`)).toEqual([
-      "DS1502 src/unused.ts",
+      "DS1602 src/unused.ts",
       "DS1001 src/unused.ts",
     ]);
   });

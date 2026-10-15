@@ -10,6 +10,9 @@ import type { CompletedFinding } from "../finding.ts";
 import { resolve } from "../resolve.ts";
 import { run, type Writer } from "../run.ts";
 import type { Mode } from "../sweep.ts";
+
+/** The codes of the reads-and-writes kinds. */
+const FAMILY: ReadonlySet<string> = new Set(["DS1301", "DS1005", "DS1006"]);
 import type { EmitterInput } from "./emitter.ts";
 
 const TARGET = fixture("projects", "reads-and-writes");
@@ -22,7 +25,7 @@ function configOf(document: string): Config {
 
 /** The run's reported findings of the reads-and-writes family, completed and dialed. */
 function emitted(input: EmitterInput): readonly CompletedFinding[] {
-  return reportedOf(input).filter((finding) => finding.code.startsWith("DS13"));
+  return reportedOf(input).filter((finding) => FAMILY.has(finding.code));
 }
 
 /** One target's findings, swept and emitted under one configuration document. */
@@ -123,15 +126,15 @@ describe("the reads-and-writes emitter", () => {
   });
 
   it("reports the enum member nothing names and none of an enum a conversion produces or a dead enum holds", () => {
-    expect(named(fixtureFindings().filter((finding) => finding.code === "DS1302"))).toEqual([
-      "DS1302 Mode.Write",
+    expect(named(fixtureFindings().filter((finding) => finding.code === "DS1005"))).toEqual([
+      "DS1005 Mode.Write",
     ]);
   });
 
   it("reports the type parameters of functions, methods and type aliases nothing names, and none of a class or an interface", () => {
-    const unused = fixtureFindings().filter((finding) => finding.code === "DS1303");
+    const unused = fixtureFindings().filter((finding) => finding.code === "DS1006");
 
-    expect(named(unused)).toEqual(["DS1303 first<T>", "DS1303 Box.open<V>", "DS1303 ID<Phantom>"]);
+    expect(named(unused)).toEqual(["DS1006 first<T>", "DS1006 Box.open<V>", "DS1006 ID<Phantom>"]);
     expect(unused.map((finding) => finding.confidence)).toEqual(["certain", "certain", "certain"]);
   });
 
@@ -151,26 +154,26 @@ describe("the reads-and-writes emitter", () => {
       fixtureDocument({ exemptions: { disabled: ["enum-group"] } }),
     );
 
-    expect(named(unexempt.filter((finding) => finding.code === "DS1302"))).toEqual([
-      "DS1302 Tier.Mid",
-      "DS1302 Tier.High",
-      "DS1302 Flag.On",
-      "DS1302 Flag.Off",
-      "DS1302 Wire.Binary",
-      "DS1302 Mode.Write",
+    expect(named(unexempt.filter((finding) => finding.code === "DS1005"))).toEqual([
+      "DS1005 Tier.Mid",
+      "DS1005 Tier.High",
+      "DS1005 Flag.On",
+      "DS1005 Flag.Off",
+      "DS1005 Wire.Binary",
+      "DS1005 Mode.Write",
     ]);
   });
 
   it("reports nothing of a code the severity map allows, by its own key or its family's", () => {
-    const own = findingsOf(TARGET, fixtureDocument({ severity: { DS1302: "allow" } }));
+    const own = findingsOf(TARGET, fixtureDocument({ severity: { DS1005: "allow" } }));
     const family = findingsOf(
       TARGET,
-      fixtureDocument({ severity: { DS13: "allow", DS1303: "warn" } }),
+      fixtureDocument({ severity: { DS13: "allow", DS10: "allow", DS1006: "warn" } }),
     );
 
-    expect(own.some((finding) => finding.code === "DS1302")).toBe(false);
+    expect(own.some((finding) => finding.code === "DS1005")).toBe(false);
     expect(own.some((finding) => finding.code === "DS1301")).toBe(true);
-    expect(named(family)).toEqual(["DS1303 first<T>", "DS1303 Box.open<V>", "DS1303 ID<Phantom>"]);
+    expect(named(family)).toEqual(["DS1006 first<T>", "DS1006 Box.open<V>", "DS1006 ID<Phantom>"]);
     expect(family.map((finding) => finding.severity)).toEqual(["warn", "warn", "warn"]);
   });
 });
@@ -275,7 +278,7 @@ describe.each(["enum-group-conversion", "private-member-unread"])(
   (name) => {
     const { rows, at } = corpusFixture(name);
 
-    it.each(rows.filter((row) => row.report.startsWith("DS13")))(
+    it.each(rows.filter((row) => FAMILY.has(row.report)))(
       "reports $symbol under $report as the row states",
       (row) => {
         const found = corpusRun(name).findingAt(row.symbol);
@@ -313,7 +316,7 @@ describe.each(["enum-group-conversion", "private-member-unread"])(
 
     it("reports no finding of this family the rows do not name", () => {
       const rowed = new Set(
-        rows.filter((row) => row.report.startsWith("DS13")).map((row) => at.get(row.symbol)),
+        rows.filter((row) => FAMILY.has(row.report)).map((row) => at.get(row.symbol)),
       );
 
       expect(corpusRun(name).placed.filter((place) => !rowed.has(place))).toEqual([]);
@@ -578,6 +581,6 @@ describe("an enum member only a test file names", () => {
           "src/main.test.ts": 'import { Mode } from "./main.js";\n\nconsole.log(Mode.Write);\n',
         }),
       ),
-    ).toEqual(["DS1302 Mode.Gone"]);
+    ).toEqual(["DS1005 Mode.Gone"]);
   });
 });

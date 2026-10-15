@@ -15,7 +15,7 @@ import { generate, STARTERS, versionsFor, type Mode } from "./starters.ts";
 
 const MODE: Mode = process.env["DEADSET_STARTERS"] === "latest" ? "latest" : "pinned";
 const KEEP = process.env["DEADSET_STARTERS_KEEP"];
-const ENTRY_CODES = new Set(["DS1502", "DS1001"]);
+const ENTRY_CODES = new Set(["DS1602", "DS1001"]);
 
 class MemoryWriter implements Writer {
   text = "";

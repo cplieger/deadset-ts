@@ -47,7 +47,10 @@ function retainedBy(template: string, delimiters?: { left: string; right: string
   return out.text
     .split("\n")
     .filter((line) => line !== "")
-    .map((line) => line.replace(/^[^#]*#/u, ""));
+    .map((line) => {
+      const [ref = "", , ...records] = line.split("\t");
+      return [ref.replace(/^[^#]*#/u, ""), ...records].join("\t");
+    });
 }
 
 describe("a template action", () => {

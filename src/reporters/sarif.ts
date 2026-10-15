@@ -1,8 +1,13 @@
-import type { Confidence, Severity } from "../config.ts";
 import { jsonChunks } from "../json-chunks.ts";
-import { KINDS, type KindRow } from "../kinds.ts";
+import type { KindRow, Confidence, Severity } from "../contract/contract.generated.ts";
+import { KINDS } from "../kinds.ts";
 import { declarationKey } from "../ref.ts";
-import type { Report, WireComponent, WireFinding, WireStaleSuppression } from "../report.ts";
+import type {
+  ComponentsEntry,
+  Finding,
+  Report,
+  StaleSuppressionsEntry,
+} from "../contract/report.generated.ts";
 import { lineHashes, symbolFingerprint } from "./fingerprint.ts";
 import { RenderError, type RenderOptions } from "./reporter.ts";
 import { utf8Bytes } from "./sha256.ts";
@@ -152,10 +157,10 @@ interface Related {
 }
 
 /** The members the report lists for one component, none where it lists none. */
-type MembersOf = (id: string) => WireComponent["members"];
+type MembersOf = (id: string) => ComponentsEntry["members"];
 
 /** Every position a finding names beyond its own, in the mapping's order, the first hundred. */
-function relatedOf(found: WireFinding, members: MembersOf): readonly Related[] {
+function relatedOf(found: Finding, members: MembersOf): readonly Related[] {
   const related: Related[] = [];
   for (const one of found.details.implementations ?? []) {
     related.push({ label: "implementation", at: one.position, endLine: one.position.end_line });
@@ -192,7 +197,7 @@ function messageWithLinks(message: string, related: readonly Related[]): string 
 
 /** Every member of the finding the mapping places nowhere else, under its schema name. */
 /** A result's member bag, its component holding the members the report lists for it once. */
-function propertiesOf(found: WireFinding, members: MembersOf): Record<string, unknown> {
+function propertiesOf(found: Finding, members: MembersOf): Record<string, unknown> {
   const listed = members(found.component.id);
   return {
     language: found.language,
@@ -222,7 +227,7 @@ function ruleIndex(index: ReadonlyMap<string, number>, code: string): number {
 }
 
 function findingResult(
-  found: WireFinding,
+  found: Finding,
   index: ReadonlyMap<string, number>,
   hashOf: (at: Located) => string,
   members: MembersOf,
@@ -253,7 +258,7 @@ function findingResult(
 
 /** A stale suppression at the failing level, at its own site; it is no finding, so it carries no member bag. */
 function staleResult(
-  stale: WireStaleSuppression,
+  stale: StaleSuppressionsEntry,
   index: ReadonlyMap<string, number>,
   hashOf: (at: Located) => string,
 ): Record<string, unknown> {

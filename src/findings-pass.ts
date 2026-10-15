@@ -4,6 +4,7 @@
  * verdict a report carries beside them.
  */
 
+import { EXIT_CLEAN, EXIT_FINDINGS, EXIT_PENDING } from "./contract/contract.generated.ts";
 import type { AnalysisInputs } from "./analysis.ts";
 import { fails, type Config } from "./config.ts";
 import type { EdgeEvaluation } from "./edges.ts";
@@ -23,7 +24,6 @@ import {
   type Ledger,
 } from "./suppress.ts";
 import type { Provenance, Recorded } from "./suppress-file.ts";
-import { EXIT_CLEAN, EXIT_FINDINGS } from "./verbs/verb.ts";
 
 /** The counts a report's totals carry beside its findings. */
 interface PassTotals {
@@ -48,9 +48,6 @@ export interface PassResult {
   /** What every suppression record did, in reading order. */
   readonly ledger: Ledger;
 }
-
-/** The exit code of a report holding at least one pending finding. */
-export const EXIT_PENDING = 4;
 
 /** Two strings ordered bytewise. */
 function compare(a: string, b: string): number {

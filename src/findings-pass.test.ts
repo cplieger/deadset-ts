@@ -1,4 +1,10 @@
 import {
+  EXIT_CLEAN,
+  EXIT_FAILURE,
+  EXIT_FINDINGS,
+  EXIT_PENDING,
+} from "./contract/contract.generated.ts";
+import {
   cpSync,
   existsSync,
   mkdtempSync,
@@ -16,7 +22,6 @@ import { writeProject } from "../__test-helpers__/projects.ts";
 import { runAnalysis } from "./analysis.ts";
 import { ConfigError } from "./config.ts";
 import {
-  EXIT_PENDING,
   analyzerProvenance,
   recordedFindings,
   verdictOf,
@@ -28,7 +33,6 @@ import { scopeForDir } from "./scope.ts";
 import { isRowCode, isRowSubject } from "./suppress.ts";
 import { openEngine } from "./session.ts";
 import { BASELINE_FILE, otherSchemeRows, writeBaseline } from "./suppress-file.ts";
-import { EXIT_CLEAN, EXIT_FAILURE, EXIT_FINDINGS } from "./verbs/verb.ts";
 import { whole } from "../__test-helpers__/whole.ts";
 
 const SUPPRESSIONS = fixture("projects", "suppressions");
@@ -84,10 +88,10 @@ describe("the suppressions of a target", () => {
 
   it("withhold what each record names, keep its dependents live, and report every refusal", () => {
     expect(named(result)).toEqual([
-      "DS1702 ts://@example/suppressions/src/lib.ts#inBlock",
-      "DS1104 stillUsed",
+      "DS9002 ts://@example/suppressions/src/lib.ts#inBlock",
+      "DS1503 stillUsed",
       "DS1002 separated",
-      "DS1701 ts://@example/suppressions/src/lib.ts#",
+      "DS9001 ts://@example/suppressions/src/lib.ts#",
       "DS1002 reasonless",
       "DS1002 inBlock",
     ]);
@@ -95,7 +99,7 @@ describe("the suppressions of a target", () => {
 
   it("report every record that withheld nothing at its own site, naming the code its declaration reports", () => {
     expect(stale(result)).toEqual([
-      "src/lib.ts:14:1 inline: inline directive for DS1002 matches no current finding, and its declaration reports DS1104",
+      "src/lib.ts:14:1 inline: inline directive for DS1002 matches no current finding, and its declaration reports DS1503",
       "src/lib.ts:17:1 inline: inline directive for DS1001 matches no current finding, and its declaration reports DS1002",
       "src/lib.ts:20:1 inline: inline directive for DS1002 matches no current finding",
       "deadset-ignore.json:10:5 ignore: ignore entry for DS1002 matches no current finding",
@@ -130,13 +134,13 @@ describe("a record naming a row of a document", () => {
     JSON.stringify({
       ignore: [
         {
-          code: "DS1601",
+          code: "DS1701",
           symbol: "ts://@example/suppressions/package.json#left-pad:dev-dependency",
           path: "package.json",
           reason: "loaded by a tool configuration",
         },
         {
-          code: "DS1704",
+          code: "DS9004",
           symbol: "ts://@example/suppressions/src/lib.ts#entryNamed",
           path: "src/lib.ts",
           reason: "a root kept for later",
@@ -146,27 +150,27 @@ describe("a record naming a row of a document", () => {
   );
   writeFileSync(
     join(root, "src/lib.ts"),
-    `${readFileSync(join(root, "src/lib.ts"), "utf8")}\n// deadset:ignore DS1601,DS1704 -- kept for a tool\nfunction rowsNamed(): void {}\n\n// deadset:ignore DS1001,DS1601 -- kept for a tool\nfunction mixedNamed(): void {}\n`,
+    `${readFileSync(join(root, "src/lib.ts"), "utf8")}\n// deadset:ignore DS1701,DS9004 -- kept for a tool\nfunction rowsNamed(): void {}\n\n// deadset:ignore DS1001,DS1701 -- kept for a tool\nfunction mixedNamed(): void {}\n`,
   );
   const { result } = passOver(root);
 
   it("withholds a dependency row an ignore entry names, and only that row", () => {
     expect(
-      result.findings.filter((one) => one.code === "DS1601").map((one) => one.symbol.name),
+      result.findings.filter((one) => one.code === "DS1701").map((one) => one.symbol.name),
     ).toEqual(["right-pad"]);
     expect(result.ledger.verdicts.filter((one) => one === "in-effect").length).toBeGreaterThan(0);
   });
 
   it("is stale where the row is no dependency row, and its message names the remedy", () => {
     expect(stale(result).filter((one) => one.includes("ignore:"))).toEqual([
-      "deadset-ignore.json:1:169 ignore: ignore entry for DS1704 matches no current finding, because DS1704 reports a row of a document, which no suppression can name; fix what the finding names instead; its declaration reports DS1002",
+      "deadset-ignore.json:1:169 ignore: ignore entry for DS9004 matches no current finding, because DS9004 reports a row of a document, which no suppression can name; fix what the finding names instead; its declaration reports DS1002",
     ]);
   });
 
   it("is stale inline, and its message names every row code and what its declaration reports", () => {
     expect(stale(result).filter((one) => /^src\/lib\.ts:3[69]:/u.test(one))).toEqual([
-      "src/lib.ts:36:1 inline: inline directive for DS1601 and DS1704 matches no current finding, because DS1704 reports a row of a document, which no suppression can name; fix what the finding names instead; DS1601 reports a dependency row, which only an ignore entry or a baseline row can name; its declaration reports DS1002",
-      "src/lib.ts:39:1 inline: inline directive for DS1001 and DS1601 matches no current finding, because DS1601 reports a dependency row, which only an ignore entry or a baseline row can name; its declaration reports DS1002",
+      "src/lib.ts:36:1 inline: inline directive for DS1701 and DS9004 matches no current finding, because DS9004 reports a row of a document, which no suppression can name; fix what the finding names instead; DS1701 reports a dependency row, which only an ignore entry or a baseline row can name; its declaration reports DS1002",
+      "src/lib.ts:39:1 inline: inline directive for DS1001 and DS1701 matches no current finding, because DS1701 reports a dependency row, which only an ignore entry or a baseline row can name; its declaration reports DS1002",
     ]);
   });
 
@@ -174,7 +178,7 @@ describe("a record naming a row of a document", () => {
     const codes = result.findings.map(
       (one) => `${one.code} ${String(isRowCode(one.code) === isRowSubject(one.symbol.kind))}`,
     );
-    expect(codes).toContain("DS1601 true");
+    expect(codes).toContain("DS1701 true");
     expect(codes.filter((one) => one.endsWith("false"))).toEqual([]);
   });
 });
@@ -256,7 +260,7 @@ describe("a suppression of a finding only the marked sweep reports", () => {
       }),
       "src/main.ts": 'import "./plugin.ts";\n',
       "src/plugin.ts":
-        "// deadset:ignore DS1001 -- Called by name from the plugin loader.\nexport function loaded(): void {\n  helper();\n}\n\n// deadset:ignore DS1104 -- Part of the public plugin surface.\nexport function helper(): void {}\n",
+        "// deadset:ignore DS1001 -- Called by name from the plugin loader.\nexport function loaded(): void {\n  helper();\n}\n\n// deadset:ignore DS1503 -- Part of the public plugin surface.\nexport function helper(): void {}\n",
     });
     scratch.push(root);
     const { result, exit } = passOver(
@@ -287,25 +291,25 @@ function libraryWith(lib: string, ignore: readonly Readonly<Record<string, strin
 
 describe("a suppression of a part of a published declaration", () => {
   const lib = [
-    "// deadset:ignore DS1801 -- The signature is the published callback shape.",
+    "// deadset:ignore DS1401 -- The signature is the published callback shape.",
     "export function above(a: number, b: number): number {",
     "  return 1;",
     "}",
     "export class Store {",
-    "  note(committed: number): number { // deadset:ignore DS1801 -- Kept for the next minor.",
+    "  note(committed: number): number { // deadset:ignore DS1401 -- Kept for the next minor.",
     "    return 1;",
     "  }",
     "}",
     "export function wrapped(",
     "  first: number,",
-    "  second: number, // deadset:ignore DS1801 -- Kept for the next minor.",
+    "  second: number, // deadset:ignore DS1401 -- Kept for the next minor.",
     "): number {",
     "  return first;",
     "}",
     "export function entry(x: number): number {",
     "  return 1;",
     "}",
-    "// deadset:ignore DS1801 -- Nothing here is unused.",
+    "// deadset:ignore DS1401 -- Nothing here is unused.",
     "export function read(a: number): number {",
     "  return a;",
     "}",
@@ -313,7 +317,7 @@ describe("a suppression of a part of a published declaration", () => {
   ].join("\n");
   const root = libraryWith(lib, [
     {
-      code: "DS1801",
+      code: "DS1401",
       symbol: "ts://@example/parts/src/lib.ts#entry",
       path: "src/lib.ts",
       reason: "The signature is the published callback shape.",
@@ -322,7 +326,7 @@ describe("a suppression of a part of a published declaration", () => {
   const { result } = passOver(root, JSON.stringify({ target: { kind: "library" } }));
 
   it("is in effect at the default minimum confidence, one record holding every part of its code", () => {
-    expect(result.findings.filter((one) => one.code === "DS1801")).toEqual([]);
+    expect(result.findings.filter((one) => one.code === "DS1401")).toEqual([]);
     expect(result.totals.suppressionsInEffect).toBe(4);
   });
 
@@ -408,7 +412,7 @@ describe("a stale suppression", () => {
       resolve({
         repository: JSON.stringify({
           target: { kind: "application" },
-          severity: { DS1703: "warn" },
+          severity: { DS9003: "warn" },
         }),
         repositoryLabel: "deadset.json",
       }),
@@ -473,7 +477,7 @@ describe("a configured root that names nothing", () => {
 
     expect(
       result.findings
-        .filter((finding) => finding.code === "DS1704")
+        .filter((finding) => finding.code === "DS9004")
         .map(
           (finding) =>
             `${finding.position.path}:${String(finding.position.line)} ${finding.symbol.name}`,
@@ -505,7 +509,7 @@ describe("a baseline", () => {
   it("records every finding of the run but the document rows, with the analyzer's provenance as its reason", () => {
     const rows = (JSON.parse(written) as { baseline: { code: string; reason: string }[] }).baseline;
 
-    expect(rows.map((row) => row.code)).toEqual(["DS1104", "DS1002", "DS1002", "DS1002", "DS1002"]);
+    expect(rows.map((row) => row.code)).toEqual(["DS1503", "DS1002", "DS1002", "DS1002", "DS1002"]);
     expect(new Set(rows.map((row) => row.reason))).toEqual(
       new Set(["recorded by deadset-ts 1.2.3"]),
     );
@@ -513,7 +517,7 @@ describe("a baseline", () => {
 
   it("read back on the unchanged tree suppresses every row and exits 0", () => {
     expect(first.exit).toBe(EXIT_FINDINGS);
-    expect(named(again.result)).toEqual(["DS1701 ts://@example/suppressions/src/lib.ts#"]);
+    expect(named(again.result)).toEqual(["DS9001 ts://@example/suppressions/src/lib.ts#"]);
     expect(
       again.result.staleSuppressions.filter((record) => record.mechanism === "baseline"),
     ).toEqual([]);
@@ -593,8 +597,8 @@ describe("a declared edge naming a symbol a narrowing kind reports", () => {
         (one) => `${one.edge} ${one.side} ${one.state} ${one.finding?.code ?? "-"}`,
       ),
     ).toEqual([
-      "wire/provided-to-generated provides dead DS1103",
-      "wire/used-by-generated used_by dead DS1104",
+      "wire/provided-to-generated provides dead DS1101",
+      "wire/used-by-generated used_by dead DS1503",
     ]);
     expect(exit).toBe(EXIT_PENDING);
   });
@@ -717,7 +721,7 @@ describe("a suppression of an unused import binding", () => {
       }),
       "src/lib.ts": "export const a = 1;\nexport const b = 2;\nexport const c = 3;\n",
       "src/main.ts": [
-        "// deadset:ignore DS1002 -- Loaded for the side effect review.",
+        "// deadset:ignore DS1004 -- Loaded for the side effect review.",
         'import { a } from "./lib.js";',
         'import { b, c } from "./lib.js";',
         "console.log(c);",
@@ -726,7 +730,7 @@ describe("a suppression of an unused import binding", () => {
       "deadset-ignore.json": JSON.stringify({
         ignore: [
           {
-            code: "DS1002",
+            code: "DS1004",
             symbol: "ts://@example/imports/src/main.ts#b:import",
             path: "src/main.ts",
             reason: "Kept for the next change.",
@@ -737,7 +741,7 @@ describe("a suppression of an unused import binding", () => {
     scratch.push(root);
     const { result } = passOver(root, JSON.stringify({ target: { kind: "application" } }));
 
-    expect(named(result).filter((one) => one.startsWith("DS1002"))).toEqual([]);
+    expect(named(result).filter((one) => one.startsWith("DS1004"))).toEqual([]);
     expect(result.ledger.verdicts).toEqual(["in-effect", "in-effect"]);
     expect(stale(result)).toEqual([]);
   });

@@ -1,7 +1,7 @@
-import type { Severity } from "../config.ts";
+import type { Severity } from "../contract/contract.generated.ts";
 import { coalesced } from "../json-chunks.ts";
 import { KINDS } from "../kinds.ts";
-import type { Report } from "../report.ts";
+import type { Report } from "../contract/report.generated.ts";
 
 /** The escapes a workflow command's message needs, so a line break does not end the command. */
 const DATA_ESCAPES: Readonly<Record<string, string>> = { "%": "%25", "\r": "%0D", "\n": "%0A" };

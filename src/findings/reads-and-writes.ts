@@ -1,3 +1,4 @@
+import { CODE } from "../contract/contract.generated.ts";
 import type { Finding, FindingDetails, FindingPosition } from "../finding.ts";
 import type { InventorySymbol } from "../inventory.ts";
 import type { MatrixCandidate } from "../matrix.ts";
@@ -5,13 +6,14 @@ import { positionKey } from "../position.ts";
 import { declarationKey } from "../ref.ts";
 import type { Emitter, EmitterInput } from "./emitter.ts";
 
-/** The codes of this family. */
-type ReadsAndWritesCode = "DS1301" | "DS1302" | "DS1303";
+/** The codes this emitter reports. */
+type ReadsAndWritesCode =
+  typeof CODE.writeOnlySymbol | typeof CODE.unusedEnumMember | typeof CODE.unusedTypeParameter;
 
-/** The containers whose type parameters `DS1303` reports: a function, a class method and a type alias. */
+/** The containers whose type parameters `DS1006` reports: a function, a class method and a type alias. */
 const SIGNATURES: ReadonlySet<string> = new Set(["function", "method", "type"]);
 
-/** What the family reads of one run, indexed by declaration. */
+/** What this emitter reads of one run, indexed by declaration. */
 interface Run {
   readonly input: EmitterInput;
   readonly symbols: ReadonlyMap<string, InventorySymbol>;
@@ -185,7 +187,7 @@ function writeOnlySymbols(run: Run): readonly Finding[] {
       continue;
     }
     found.push(
-      findingAbout(symbol, "DS1301", writeOnlyMessage(run, namedBy, symbol, held), {
+      findingAbout(symbol, CODE.writeOnlySymbol, writeOnlyMessage(run, namedBy, symbol, held), {
         writePositions: held.writes,
       }),
     );
@@ -214,18 +216,18 @@ function unnamed(run: Run, kind: InventorySymbol["kind"]): readonly InventorySym
 }
 
 /**
- * `DS1302`: a member of an enum declaration that nothing names. A member an enum-group
+ * `DS1005`: a member of an enum declaration that nothing names. A member an enum-group
  * record holds back is no candidate, so a member a conversion can produce never reaches
  * this kind.
  */
 function unusedEnumMembers(run: Run): readonly Finding[] {
   return unnamed(run, "enum-member").map((symbol) =>
-    findingAbout(symbol, "DS1302", `enum member ${symbol.name} is named nowhere`),
+    findingAbout(symbol, CODE.unusedEnumMember, `enum member ${symbol.name} is named nowhere`),
   );
 }
 
 /**
- * `DS1303`: a type parameter of a function, a class method or a type alias that neither
+ * `DS1006`: a type parameter of a function, a class method or a type alias that neither
  * the declaration's signature nor its body names. An alias names no type of its own, so
  * a parameter its type never names makes no two instantiations distinct. One of a class,
  * an interface or a method signature is never reported: a class or an interface merges
@@ -237,7 +239,7 @@ function unusedTypeParameters(run: Run): readonly Finding[] {
     .map((symbol) =>
       findingAbout(
         symbol,
-        "DS1303",
+        CODE.unusedTypeParameter,
         `type parameter ${symbol.name} is named in neither its signature nor its body`,
       ),
     );
@@ -257,8 +259,8 @@ export function writeOnlyDeclarations(input: EmitterInput): ReadonlySet<string> 
 }
 
 /**
- * The findings of the reads-and-writes family, `DS1300` to `DS1399`, in code order and
- * each code's in site order.
+ * The findings of the reads-and-writes kinds, `DS1301`, `DS1005` and `DS1006`, in that
+ * order and each code's in site order.
  */
 export const readsAndWrites: Emitter = (input) => {
   const run = indexed(input);

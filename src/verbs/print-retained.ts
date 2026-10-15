@@ -1,9 +1,10 @@
+import { EXIT_CLEAN } from "../contract/contract.generated.ts";
 import { runSweep } from "../analysis.ts";
 import { retainedLines } from "../exempt.ts";
 import { partialNotes } from "../partial.ts";
 import { resolvePath } from "../paths.ts";
 import { resolve } from "../resolve.ts";
-import { EXIT_CLEAN, type Verb } from "./verb.ts";
+import { type Verb } from "./verb.ts";
 
 /**
  * Writes every declaration an exemption held back in the production sweep a report is

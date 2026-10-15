@@ -953,7 +953,7 @@ describe("the convention rows over a project", () => {
     expect(answer.applied).toEqual([
       { name: "next", package: "next", version: "16.3.8", manifest: "package.json" },
     ]);
-    expect(answer.findings).toEqual(["DS1001 lib/orphan.ts", "DS1502 lib/orphan.ts"]);
+    expect(answer.findings).toEqual(["DS1001 lib/orphan.ts", "DS1602 lib/orphan.ts"]);
   });
 
   it("name the row as each root's evidence in print-roots", () => {
@@ -970,19 +970,19 @@ describe("the convention rows over a project", () => {
   it("read the moved directories of a second and a third framework", () => {
     expect(analyzed("nuxt").findings).toEqual([
       "DS1001 app/utils/orphan.ts",
-      "DS1502 app/utils/orphan.ts",
+      "DS1602 app/utils/orphan.ts",
     ]);
     expect(analyzed("astro").findings).toEqual([
       "DS1001 site/pages/_lib/helper.ts",
       "DS1001 site/pages/_partial.ts",
       "DS1001 src/pages/moved-away.ts",
-      "DS1502 site/pages/_lib/helper.ts",
-      "DS1502 site/pages/_partial.ts",
-      "DS1502 src/pages/moved-away.ts",
+      "DS1602 site/pages/_lib/helper.ts",
+      "DS1602 site/pages/_partial.ts",
+      "DS1602 src/pages/moved-away.ts",
     ]);
     expect(analyzed("moved-literal").findings).toEqual([
       "DS1001 app/root.tsx",
-      "DS1502 app/root.tsx",
+      "DS1602 app/root.tsx",
     ]);
   });
 
@@ -1011,21 +1011,21 @@ describe("the convention rows over a project", () => {
   it("root SvelteKit 3's parameter file and no parameter directory", () => {
     expect(analyzed("other-plugin-not-literal").findings).toEqual([
       "DS1001 src/params/legacy.ts",
-      "DS1502 src/params/legacy.ts",
+      "DS1602 src/params/legacy.ts",
     ]);
   });
 
   it("root SvelteKit 2's parameter directory and no parameter file", () => {
     expect(analyzed("params-directory").findings).toEqual([
       "DS1001 src/params.ts",
-      "DS1502 src/params.ts",
+      "DS1602 src/params.ts",
     ]);
   });
 
   it("read the directory a framework plugin's options move", () => {
     expect(analyzed("plugin-call-moved").findings).toEqual([
       "DS1001 src/routes/+page.ts",
-      "DS1502 src/routes/+page.ts",
+      "DS1602 src/routes/+page.ts",
     ]);
   });
 
@@ -1040,7 +1040,7 @@ describe("the convention rows over a project", () => {
     const answer = analyzed("out-of-range");
 
     expect(answer.applied).toEqual([]);
-    expect(answer.findings).toEqual(["DS1001 app/page.tsx", "DS1502 app/page.tsx"]);
+    expect(answer.findings).toEqual(["DS1001 app/page.tsx", "DS1602 app/page.tsx"]);
   });
 
   it("apply no disabled row and raise no setup failure for it", () => {
@@ -1049,8 +1049,8 @@ describe("the convention rows over a project", () => {
     expect(answer.code).toBe(1);
     expect(answer.findings).toEqual([
       "DS1001 app/layout.tsx",
-      "DS1502 app/layout.tsx",
-      "DS1601 package.json",
+      "DS1602 app/layout.tsx",
+      "DS1701 package.json",
     ]);
   });
 
@@ -1058,7 +1058,7 @@ describe("the convention rows over a project", () => {
     const answer = analyzed("entry-files");
 
     expect(answer.applied).toHaveLength(1);
-    expect(answer.findings).toEqual(["DS1001 lib/orphan.ts", "DS1502 lib/orphan.ts"]);
+    expect(answer.findings).toEqual(["DS1001 lib/orphan.ts", "DS1602 lib/orphan.ts"]);
   });
 
   it("read a member's row against the member's directory alone", () => {
@@ -1067,7 +1067,7 @@ describe("the convention rows over a project", () => {
     expect(answer.applied).toEqual([
       { name: "next", package: "next", version: "16.3.8", manifest: "apps/web/package.json" },
     ]);
-    expect(answer.findings).toEqual(["DS1001 app/page.tsx", "DS1502 app/page.tsx"]);
+    expect(answer.findings).toEqual(["DS1001 app/page.tsx", "DS1602 app/page.tsx"]);
   });
 
   it("root a tool's configuration in a directory that holds no manifest", () => {
@@ -1085,7 +1085,7 @@ describe("the convention rows over a project", () => {
         manifest: "package.json",
       },
     ]);
-    expect(answer.findings).toEqual(["DS1601 package.json"]);
+    expect(answer.findings).toEqual(["DS1701 package.json"]);
   });
 
   it.each([
@@ -1106,7 +1106,7 @@ describe("the convention rows over a project", () => {
   it("root a stryker.conf module and read the runner its default export names", () => {
     const answer = analyzed("stryker-conf");
 
-    expect(answer.findings).toEqual(["DS1601 package.json"]);
+    expect(answer.findings).toEqual(["DS1701 package.json"]);
   });
 });
 

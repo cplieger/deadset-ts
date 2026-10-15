@@ -1,3 +1,4 @@
+import { CODE } from "../contract/contract.generated.ts";
 import { REPOSITORY_DOCUMENT } from "../config.ts";
 import type { Finding, FindingDetails, SuppressionEntry } from "../finding.ts";
 import type { InventorySymbol } from "../inventory.ts";
@@ -6,19 +7,11 @@ import type { Position } from "../position.ts";
 import {
   isDependencyCode,
   isUnsuppressibleCode,
-  STALE_SUPPRESSION,
-  SUPPRESSION_WITHOUT_REASON,
   type Mechanism,
   type Refusal,
   type SuppressionRecord,
 } from "../suppress.ts";
 import type { Emitter } from "./emitter.ts";
-
-/** The code a configured root that matches nothing is reported under. */
-const UNMATCHED_ROOT = "DS1704";
-
-/** The code a configured declaration that names nothing is reported under. */
-const UNMATCHED_DECLARATION = "DS1706";
 
 /** The subject kind of a finding about a configured declaration. */
 const DECLARATION_SUBJECT = "configured-declaration";
@@ -39,7 +32,7 @@ export interface StaleRecord {
   readonly reports: readonly string[];
 }
 
-/** What the self-check family reads: the run's refused suppressions and its configured roots. */
+/** What the configuration family reads: the run's refused suppressions and its configured roots. */
 export interface SelfCheckFacts {
   /** The suppressions the grammar refused with a finding, in reading order. */
   readonly refusals: readonly Refusal[];
@@ -135,7 +128,7 @@ function refusedSuppressions(refusals: readonly Refusal[], files: FileRefs): rea
       suppressionRef(refused.symbol, refused.path, files),
       refused.site,
       `${WRITTEN[refused.mechanism]} for ${refused.code} ${
-        refused.reported === SUPPRESSION_WITHOUT_REASON
+        refused.reported === CODE.suppressionWithoutReason
           ? "carries no reason"
           : "names a symbol and no path"
       }`,
@@ -146,7 +139,7 @@ function refusedSuppressions(refusals: readonly Refusal[], files: FileRefs): rea
 
 /** One stale suppression as the report's stale-suppression record carries it. */
 export interface StaleSuppression {
-  readonly code: typeof STALE_SUPPRESSION;
+  readonly code: typeof CODE.staleSuppression;
   readonly mechanism: Mechanism;
   readonly entry: {
     readonly code: string;
@@ -209,7 +202,7 @@ export function staleSuppressions(
           ? ""
           : `, and ${declared}`;
     return {
-      code: STALE_SUPPRESSION,
+      code: CODE.staleSuppression,
       mechanism: first.mechanism,
       entry: {
         code: first.code,
@@ -242,7 +235,7 @@ function unmatchedDeclarationFindings(
   unmatched: readonly UnmatchedDeclaration[],
 ): readonly Finding[] {
   return unmatched.map((one) => ({
-    code: UNMATCHED_DECLARATION,
+    code: CODE.unmatchedConfiguredDeclaration,
     position: documentPosition(one.document),
     symbol: { ref: one.ref, kind: DECLARATION_SUBJECT, name: one.ref, sizeLines: 1 },
     message: `${one.key} entry names no declaration in any project`,
@@ -262,7 +255,7 @@ export function unmatchedRootFindings(
 ): readonly Finding[] {
   const position = documentPosition(document);
   return sources.map((source) => ({
-    code: UNMATCHED_ROOT,
+    code: CODE.unmatchedRoot,
     position,
     symbol: { ref: source, kind: ROOT_SUBJECT, name: source, sizeLines: 1 },
     message:
@@ -273,7 +266,7 @@ export function unmatchedRootFindings(
 }
 
 /**
- * The findings of the self-check family, `DS1700` to `DS1799`: a suppression refused for
+ * The findings of the configuration family, `DS9000` to `DS9099`: a suppression refused for
  * carrying no reason or naming no path, and a configured root or declaration that named
  * nothing. A
  * suppression that matched nothing is a record of the report's stale suppressions, which
