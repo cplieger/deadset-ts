@@ -76,7 +76,7 @@ The `angular` and `angular-devkit` rows also read `angular.json`. A package that
 | `eslint` | `eslint` | `>=4.0.0 <10.0.0` | Nothing. A plugin or shareable configuration that `plugins` or `extends` of `.eslintrc`, `.eslintrc.json`, `.eslintrc.js`, `.eslintrc.cjs`, `.eslintrc.yml` or `.eslintrc.yaml` names by its short name, such as `plugin:react/recommended` or `airbnb`, counts as used, and so does the package `parser` names |
 | `eslint` | `eslint` | `>=10.0.0 <11.0.0` | Every `eslint.config.*` file |
 | `expo` | `expo` | `>=44.0.0 <60.0.0` | The `index` and `App` modules beside the manifest |
-| `expo-router` | `expo-router` | `>=3.0.0 <58.0.0` | Every module below `app` or `src/app` |
+| `expo-router` | `expo-router` | `>=3.0.0 <59.0.0` | Every module below `app` or `src/app` |
 | `next` | `next` | `>=13.4.0 <17.0.0` | The App Router's special and metadata files, `pages`, and `proxy`, `middleware`, `instrumentation` and `mdx-components`, at the root or below `src` |
 | `nuxt` | `nuxt` | `>=3.0.0 <5.0.0` | The app, error, app configuration and router options files, pages, layouts, middleware, plugins, modules and server routes, which `srcDir`, `serverDir` and `dir` move |
 | `oclif` | `@oclif/core` | `>=1.0.0 <5.0.0` | Every module below `src/commands` and `src/hooks`, every module below the directory `oclif.commands` in `package.json` names, and each file `oclif.hooks` names |
