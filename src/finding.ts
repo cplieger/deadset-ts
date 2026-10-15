@@ -1,8 +1,8 @@
-import type { Confidence, Severity } from "./config.ts";
-import type { Fixability } from "./kinds.ts";
+import type { Fixability, Confidence, Severity } from "./contract/contract.generated.ts";
 import type { DependencySection } from "./ref.ts";
 import type { Mechanism } from "./suppress.ts";
 import type { Relation } from "./sweep.ts";
+import type { FindingSymbol } from "./contract/report.generated.ts";
 
 /**
  * The finding: what an emitter decides about one subject, and every member the
@@ -29,7 +29,7 @@ interface FindingSubject {
   /** The stable symbol reference, or for a configured root the root as written. */
   readonly ref: string;
   /** The subject kind, from the closed vocabulary of the finding schema. */
-  readonly kind: string;
+  readonly kind: FindingSymbol["kind"];
   /** The display name a text line renders. */
   readonly name: string;
   /** The number of source lines the subject spans. */
@@ -55,19 +55,19 @@ export interface PositionedSymbol {
  */
 export interface FindingDetails {
   /**
-   * On `DS1101` and `DS1104`: the widest scope that holds every reference to the
+   * On `DS1501` and `DS1503`: the widest scope that holds every reference to the
    * subject, which is the visibility its references support.
    */
   readonly narrowerVisibility?: "file" | "package";
-  /** On `DS1201` and `DS1203`: the classes implementing the interface, in site order. */
+  /** On `DS1201` and `DS1202`: the classes implementing the interface, in site order. */
   readonly implementations?: readonly PositionedSymbol[];
-  /** On `DS1301` and `DS1807`: every position the subject is written at, in site order. */
+  /** On `DS1301` and `DS1404`: every position the subject is written at, in site order. */
   readonly writePositions?: readonly FindingPosition[];
-  /** On `DS1601`: the manifest section that declares the dependency. */
+  /** On `DS1701`: the manifest section that declares the dependency. */
   readonly dependencyClass?: DependencySection;
-  /** On `DS1701` and `DS1702`: the document that holds the refused suppression. */
+  /** On `DS9001` and `DS9002`: the document that holds the refused suppression. */
   readonly mechanism?: Mechanism;
-  /** On `DS1701` and `DS1702`: the refused suppression as written, a member absent where it lacks one. */
+  /** On `DS9001` and `DS9002`: the refused suppression as written, a member absent where it lacks one. */
   readonly entry?: SuppressionEntry;
   /** On the intra-function kinds: the external rules that report the same kind, as the vocabulary lists them. */
   readonly overlap?: readonly string[];

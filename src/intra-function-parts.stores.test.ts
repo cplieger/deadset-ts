@@ -25,7 +25,7 @@ describe("a local whose writes are judged", () => {
           "",
           "console.log(hoisted(true), captured(true));",
         ]),
-      ).toEqual(["DS1807 value src/main.ts:3"]);
+      ).toEqual(["DS1404 value src/main.ts:3"]);
     },
     LOAD_TIMEOUT,
   );
@@ -105,7 +105,7 @@ describe("a read of a local", () => {
           "",
           "console.log(packed());",
         ]),
-      ).toEqual(["DS1807 value src/main.ts:3"]);
+      ).toEqual(["DS1404 value src/main.ts:3"]);
     },
     LOAD_TIMEOUT,
   );
@@ -127,7 +127,7 @@ describe("a read of a local", () => {
           "",
           "console.log(shadowed());",
         ]),
-      ).toEqual(["DS1807 value src/main.ts:2"]);
+      ).toEqual(["DS1404 value src/main.ts:2"]);
     },
     LOAD_TIMEOUT,
   );
@@ -191,7 +191,7 @@ describe("a write to a local no read reaches", () => {
           "",
           "console.log(discarded());",
         ]),
-      ).toEqual(["DS1807 value src/main.ts:4"]);
+      ).toEqual(["DS1404 value src/main.ts:4"]);
     },
     LOAD_TIMEOUT,
   );
@@ -212,7 +212,7 @@ describe("a local a declaration's pattern, a loop or the function's body declare
           "",
           "console.log(pick({ request: 1, response: 2, extra: 3 }));",
         ]),
-      ).toEqual(["DS1807 response src/main.ts:2"]);
+      ).toEqual(["DS1404 response src/main.ts:2"]);
     },
     LOAD_TIMEOUT,
   );
@@ -233,7 +233,7 @@ describe("a local a declaration's pattern, a loop or the function's body declare
           "",
           "console.log(sum(new Map(), {}));",
         ]),
-      ).toEqual(["DS1807 key src/main.ts:3", "DS1807 k src/main.ts:4"]);
+      ).toEqual(["DS1404 key src/main.ts:3", "DS1404 k src/main.ts:4"]);
     },
     LOAD_TIMEOUT,
   );
@@ -251,7 +251,7 @@ describe("a local a declaration's pattern, a loop or the function's body declare
           "",
           "console.log(hoisted());",
         ]),
-      ).toEqual(["DS1807 value src/main.ts:2"]);
+      ).toEqual(["DS1404 value src/main.ts:2"]);
     },
     LOAD_TIMEOUT,
   );
@@ -276,7 +276,7 @@ describe("a local a declaration's pattern, a loop or the function's body declare
           "",
           "setup()();",
         ]),
-      ).toEqual(["DS1807 seen src/main.ts:5"]);
+      ).toEqual(["DS1404 seen src/main.ts:5"]);
     },
     LOAD_TIMEOUT,
   );
@@ -297,7 +297,7 @@ describe("a local that nothing reads and nothing initializes", () => {
           "",
           "console.log(bare());",
         ]),
-      ).toEqual(["DS1807 never src/main.ts:2", "DS1807 assigned src/main.ts:4"]);
+      ).toEqual(["DS1404 never src/main.ts:2", "DS1404 assigned src/main.ts:4"]);
     },
     LOAD_TIMEOUT,
   );
@@ -327,7 +327,7 @@ describe("a function declaration of a function's body", () => {
           "",
           "console.log(outer(1));",
         ]),
-      ).toEqual(["DS1807 unused src/main.ts:2", "DS1807 recursive src/main.ts:5"]);
+      ).toEqual(["DS1404 unused src/main.ts:2", "DS1404 recursive src/main.ts:5"]);
     },
     LOAD_TIMEOUT,
   );
@@ -365,7 +365,7 @@ describe("a local typed never", () => {
           "",
           'console.log(assigned("a"), initialized("b"));',
         ]),
-      ).toEqual(["DS1807 other src/main.ts:21"]);
+      ).toEqual(["DS1404 other src/main.ts:21"]);
     },
     LOAD_TIMEOUT,
   );

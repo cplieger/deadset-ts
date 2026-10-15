@@ -69,8 +69,8 @@ function declaration(ref: string, path: string, line = 3): InventorySymbol {
 
 /** The refusal outcome the grammar page's rule vocabulary gives a refused entry or row. */
 const REFUSED: Readonly<Record<string, string>> = {
-  "reason-required": "DS1701",
-  "path-required": "DS1702",
+  "reason-required": "DS9001",
+  "path-required": "DS9002",
   "path-form": "exit 2",
   "symbol-form": "exit 2",
   "code-form": "exit 2",
@@ -212,7 +212,7 @@ describe("an ignore entry", () => {
     const held = readIgnoreFile(
       hostWith({
         [IGNORE_FILE]: JSON.stringify({
-          ignore: [{ ...ENTRY, code: "DS1801", symbol: `${ENTRY.symbol}(unread)` }],
+          ignore: [{ ...ENTRY, code: "DS1401", symbol: `${ENTRY.symbol}(unread)` }],
         }),
       }),
       ROOT,

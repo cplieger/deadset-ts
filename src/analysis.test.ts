@@ -803,8 +803,8 @@ describe("the findings of a run", () => {
     expect(
       analysis.result.findings.map((one) => `${one.code} ${one.symbol.ref} ${one.position.path}`),
     ).toEqual([
-      "DS1706 ts://./src/codec.ts#absent deadset.json",
-      "DS1502 ts://./tools/main.ts# tools/main.ts",
+      "DS9006 ts://./src/codec.ts#absent deadset.json",
+      "DS1602 ts://./tools/main.ts# tools/main.ts",
     ]);
   });
 
@@ -812,7 +812,7 @@ describe("the findings of a run", () => {
     const root = written({
       "src/main.ts": "console.log(1);\n",
       "src/hooks.ts": [
-        "// deadset:ignore DS1801 -- the hook signature is fixed",
+        "// deadset:ignore DS1401 -- the hook signature is fixed",
         "export function hook(event: number): number {",
         "  return helper();",
         "}",
@@ -835,7 +835,7 @@ describe("the findings of a run", () => {
     );
 
     expect(analysis.result.findings.map((one) => `${one.code} ${one.symbol.ref}`)).toEqual([
-      "DS1502 ts://./src/hooks.ts#",
+      "DS1602 ts://./src/hooks.ts#",
       "DS1001 ts://./src/hooks.ts#hook",
       "DS1001 ts://./src/hooks.ts#helper",
     ]);
@@ -1170,8 +1170,8 @@ describe("a baseline write", () => {
         ].join("\n"),
       }),
     ).toEqual([
-      "DS1801 ts://./src/scale.ts#scaled(value) src/scale.ts",
-      "DS1801 ts://./src/scale.ts#scaled(factor) src/scale.ts",
+      "DS1401 ts://./src/scale.ts#scaled(value) src/scale.ts",
+      "DS1401 ts://./src/scale.ts#scaled(factor) src/scale.ts",
     ]);
   });
 });

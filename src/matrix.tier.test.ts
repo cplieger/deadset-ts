@@ -50,7 +50,7 @@ function loaderFindings(importing: string): string[] {
 
 const EXPECTED = [
   "DS1001 spare certain certain",
-  "DS1004 load possible possible",
+  "DS1102 load possible possible",
   "DS1201 Extra certain certain",
 ];
 

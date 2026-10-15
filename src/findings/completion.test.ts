@@ -31,15 +31,15 @@ describe("the placement of every family's findings in their components", () => {
     expect(input.swept.sweep.components).toHaveLength(7);
     expect(placements(findingsOf(input))).toEqual([
       "DS1002 Unused deadset-ts/c-0007 root 3 4",
-      "DS1104 Flag deadset-ts/c-0008 root 1 0",
+      "DS1503 Flag deadset-ts/c-0008 root 1 0",
       "DS1301 written deadset-ts/c-0009 root 1 0",
       "DS1301 shared deadset-ts/c-0010 root 1 0",
       "DS1301 Gauge.#samples deadset-ts/c-0011 root 1 0",
       "DS1301 slots deadset-ts/c-0012 root 1 0",
-      "DS1302 Mode.Write deadset-ts/c-0006 root 1 1",
-      "DS1303 first<T> deadset-ts/c-0001 root 1 1",
-      "DS1303 Box.open<V> deadset-ts/c-0003 root 1 1",
-      "DS1303 ID<Phantom> deadset-ts/c-0004 root 1 1",
+      "DS1005 Mode.Write deadset-ts/c-0006 root 1 1",
+      "DS1006 first<T> deadset-ts/c-0001 root 1 1",
+      "DS1006 Box.open<V> deadset-ts/c-0003 root 1 1",
+      "DS1006 ID<Phantom> deadset-ts/c-0004 root 1 1",
     ]);
   });
 
@@ -61,15 +61,15 @@ describe("the placement of every family's findings in their components", () => {
 
     it("gives each unused dependency a component of its own that deletes no declaration line, and one only dead code uses that code's", () => {
       const input = emitterInputOf(root, configOf(root));
-      const rows = findingsOf(input).filter((finding) => finding.code === "DS1601");
+      const rows = findingsOf(input).filter((finding) => finding.code === "DS1701");
 
       expect(input.swept.sweep.components).toHaveLength(1);
       expect(placements(rows)).toEqual([
-        "DS1601 left-pad deadset-ts/c-0001 1 3",
-        "DS1601 unused-runtime deadset-ts/c-0002 root 1 0",
-        "DS1601 @types/bundled deadset-ts/c-0003 root 1 0",
-        "DS1601 unused-dev deadset-ts/c-0004 root 1 0",
-        "DS1601 peer-unused deadset-ts/c-0005 root 1 0",
+        "DS1701 left-pad deadset-ts/c-0001 1 3",
+        "DS1701 unused-runtime deadset-ts/c-0002 root 1 0",
+        "DS1701 @types/bundled deadset-ts/c-0003 root 1 0",
+        "DS1701 unused-dev deadset-ts/c-0004 root 1 0",
+        "DS1701 peer-unused deadset-ts/c-0005 root 1 0",
       ]);
     });
   });
@@ -110,18 +110,18 @@ describe("the completion of every family's findings", () => {
 
     expect(rows).toEqual([
       "DS1201 unused-interface deletable deny",
-      "DS1203 uncalled-interface-method manual warn",
+      "DS1202 uncalled-interface-method manual warn",
     ]);
   });
 
   it("gives a dead subject its candidate's relation and a live one none, each in the configurations holding it", () => {
     const rows = claims(reportedUnder("reads-and-writes")).filter((row) =>
-      /^DS130[12] (written|Mode\.Write) /u.test(row),
+      /^(DS1301 written|DS1005 Mode\.Write) /u.test(row),
     );
 
     expect(rows).toEqual([
       "DS1301 written certain/certain - - [tsconfig.json]",
-      "DS1302 Mode.Write certain/certain reference-counting - [tsconfig.json]",
+      "DS1005 Mode.Write certain/certain reference-counting - [tsconfig.json]",
     ]);
   });
 
@@ -132,7 +132,7 @@ describe("the completion of every family's findings", () => {
           (finding) => finding.symbol.name === "onlyTested",
         ),
       ),
-    ).toEqual(["DS1004 onlyTested certain/certain reference-counting test-only [a/tsconfig.json]"]);
+    ).toEqual(["DS1102 onlyTested certain/certain reference-counting test-only [a/tsconfig.json]"]);
   });
 
   it("reads each subject's facts from its own position where two declarations of one file spell one reference", () => {
@@ -209,17 +209,17 @@ describe("the dials over every family's findings", () => {
 
     expect(allowed).toContain("DS1002 orphan");
     expect(allowed).toEqual(
-      everything.filter((one) => !one.startsWith("DS1201") && one !== "DS1005 testProbe"),
+      everything.filter((one) => !one.startsWith("DS1201") && one !== "DS1103 testProbe"),
     );
   });
 
   it("withhold every root of a component with one of them, whichever family reports each", () => {
     const everything = named(reportedUnder("interfaces"));
-    const allowed = named(reportedUnder("interfaces", { severity: { DS1005: "allow" } }));
+    const allowed = named(reportedUnder("interfaces", { severity: { DS1103: "allow" } }));
 
-    expect(everything).toEqual(expect.arrayContaining(["DS1005 testProbe", "DS1201 Probe"]));
+    expect(everything).toEqual(expect.arrayContaining(["DS1103 testProbe", "DS1201 Probe"]));
     expect(allowed).not.toContain("DS1201 Probe");
-    expect(allowed).not.toContain("DS1005 testProbe");
+    expect(allowed).not.toContain("DS1103 testProbe");
   });
 });
 
@@ -275,7 +275,7 @@ describe("the defaults of a library", () => {
     ).map((finding) => `${finding.code} ${finding.symbol.name} ${finding.confidence}`);
 
   it("withholds the published API and narrows only where no manifest export reaches, with no consumer information", () => {
-    expect(reported({})).toEqual(["DS1104 helperLocal certain"]);
+    expect(reported({})).toEqual(["DS1503 helperLocal certain"]);
   });
 
   it("reports the published API at possible where the configuration lowers the minimum confidence", () => {
@@ -283,7 +283,7 @@ describe("the defaults of a library", () => {
       "DS1001 unusedPublished possible",
       "DS1001 viaLocal possible",
       "DS1001 viaInternal possible",
-      "DS1104 helperLocal certain",
+      "DS1503 helperLocal certain",
     ]);
   });
 
@@ -294,8 +294,8 @@ describe("the defaults of a library", () => {
       "DS1001 unusedPublished possible",
       "DS1001 viaLocal possible",
       "DS1001 viaInternal possible",
-      "DS1104 localPublished possible",
-      "DS1104 helperLocal certain",
+      "DS1503 localPublished possible",
+      "DS1503 helperLocal certain",
     ]);
   });
 });
@@ -337,7 +337,7 @@ describe("the confidence of a dead component", () => {
   it("withholds the export under the default minimum, and reports no test of it where no consumer judges it", () => {
     expect(reported({})).toEqual([]);
     expect(reported({ analysis: { min_confidence: "possible" } })).toEqual([
-      "DS1004 testedOnly possible",
+      "DS1102 testedOnly possible",
     ]);
   });
 });
@@ -362,12 +362,12 @@ describe("a test of dead code in a library", () => {
         repositoryLabel: "deadset.json",
       });
       const found = findingsOf(emitterInputOf(root, config)).filter(
-        (finding) => finding.code === "DS1005" || finding.symbol.name === "reset",
+        (finding) => finding.code === "DS1103" || finding.symbol.name === "reset",
       );
 
       expect(
         found.map((finding) => `${finding.code} ${finding.symbol.name} ${finding.confidence}`),
-      ).toEqual(["DS1004 reset possible"]);
+      ).toEqual(["DS1102 reset possible"]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -422,8 +422,8 @@ describe("the configurations a finding holds in", () => {
       ),
     ).toEqual([
       "DS1301 written [tsconfig.json] -",
-      "DS1502 src/orphan.ts [tsconfig.json,tsconfig.tools.json] -",
-      "DS1801 unused [tsconfig.json] -",
+      "DS1602 src/orphan.ts [tsconfig.json,tsconfig.tools.json] -",
+      "DS1401 unused [tsconfig.json] -",
     ]);
   });
 });
@@ -446,7 +446,7 @@ describe("a part of test-support code only test code calls", () => {
 
     expect(
       found.map((finding) => `${finding.code} ${finding.symbol.name} ${String(finding.testOnly)}`),
-    ).toEqual(["DS1801 ignored false"]);
+    ).toEqual(["DS1401 ignored false"]);
   });
 });
 
@@ -547,7 +547,7 @@ describe("a component listed in full", () => {
       },
       { target: { kind: "application" }, reporters: { cascade: "full" } },
     );
-    const part = found.find((finding) => finding.code === "DS1801");
+    const part = found.find((finding) => finding.code === "DS1401");
 
     expect(part?.component.members).toEqual([
       { ref: part?.symbol.ref, name: part?.symbol.name, position: part?.position },

@@ -4,6 +4,7 @@
  * below it, or on its own line where it trails a token there.
  */
 
+import { CODE } from "./contract/contract.generated.ts";
 import {
   isConstructorDeclaration,
   SyntaxKind,
@@ -18,7 +19,6 @@ import type { ProjectView } from "./session.ts";
 import { signatureOf } from "./signatures.ts";
 import {
   isPartKind,
-  SUPPRESSION_WITHOUT_REASON,
   SuppressionError,
   siteText,
   type Refusal,
@@ -354,7 +354,7 @@ export function inlineSuppressions(
       case "no-reason":
         for (const code of directive.codes) {
           refusals.push({
-            reported: SUPPRESSION_WITHOUT_REASON,
+            reported: CODE.suppressionWithoutReason,
             code,
             symbol: "",
             path: site.path,

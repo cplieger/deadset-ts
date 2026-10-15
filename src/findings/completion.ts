@@ -4,39 +4,38 @@
  * together with every finding that falls with a root they withhold.
  */
 
+import {
+  CODE,
+  FAMILY_KEY_LENGTH,
+  type Confidence,
+  type Severity,
+  KIND_ROWS,
+  type KindRow,
+} from "../contract/contract.generated.ts";
 import type { RunSweep } from "../analysis.ts";
 import { componentId, type Component } from "../components.ts";
 import { deadComponents } from "../matrix.ts";
-import type { Cascade, Confidence, Severity } from "../config.ts";
+import type { Cascade } from "../config.ts";
 import type { CompletedFinding, Finding, FindingComponent, PositionedSymbol } from "../finding.ts";
 import { OUTSIDE, type Graph } from "../graph.ts";
 import type { SymbolKind } from "../inventory.ts";
-import { KINDS, type KindRow } from "../kinds.ts";
+import { KINDS } from "../kinds.ts";
 import { byPosition, positionKey } from "../position.ts";
 import { declarationKey } from "../ref.ts";
-import { FAMILY_KEY_LENGTH } from "../resolve.ts";
 import { isPartSubject, isRowSubject, type Dials } from "../suppress.ts";
 import type { Candidate } from "../sweep.ts";
 import type { Boundary } from "./boundary.ts";
 import type { EmitterInput } from "./emitter.ts";
 
-/** The unused-file code, whose deletion removes every use its file writes. */
-const FILE_NEVER_IMPORTED = "DS1502";
-
 /**
- * The codes whose subject the run that counts test references holds live, as
- * finding.schema.json lists them, so a test file's candidate reported under one carries
- * none of a dead declaration's sweep facts.
+ * The codes whose subject the run that counts test references holds live, so a test
+ * file's candidate reported under one carries none of a dead declaration's sweep facts.
  */
-const LIVE_SUBJECT: ReadonlySet<string> = new Set([
-  "DS1101",
-  "DS1102",
-  "DS1104",
-  "DS1204",
-  "DS1301",
-]);
+const LIVE_SUBJECT: ReadonlySet<string> = new Set(
+  KIND_ROWS.filter((row) => row.holdsLive).map((row) => row.code),
+);
 
-/** The fixability grammar/analysis.md "Fixability" gives a finding about a held declaration. */
+/** The fixability grammar/analysis/fixability.md gives a finding about a held declaration. */
 const MANUAL = "manual";
 
 /** The member kinds an object property can declare, which an `in` expression tests by name. */
@@ -186,7 +185,7 @@ function testCeilings(
 
 /**
  * The subjects dead only because production code only tests use is: each declaration the
- * sweep marks test-used, each `DS1502` file of such code, and each test of dead code every
+ * sweep marks test-used, each `DS1602` file of such code, and each test of dead code every
  * target of which is one. Nothing they hold references a dead declaration outside them, so
  * the rest of a component they share is reported without them.
  */
@@ -286,7 +285,7 @@ function membersListed(
 }
 
 /**
- * The run's dead components with each file a `DS1502` finding reports dead among them, so
+ * The run's dead components with each file a `DS1602` finding reports dead among them, so
  * the file's declarations fall with it, and with the components each subject that is no
  * declaration falls with joined into one.
  */
@@ -300,7 +299,7 @@ function runComponents(
 } {
   const union = swept.matrix.union;
   const reported = new Set(
-    findings.filter((one) => one.code === FILE_NEVER_IMPORTED).map((one) => one.position.path),
+    findings.filter((one) => one.code === CODE.fileNeverImported).map((one) => one.position.path),
   );
   const files = new Map(
     union.symbols.flatMap((symbol, at) =>
@@ -419,7 +418,7 @@ export function completed(
     const fallsWith = finding.fallsWith?.[0];
     const joined = fallsWith === undefined ? undefined : componentOf(fallsWith);
     const file =
-      finding.code === FILE_NEVER_IMPORTED ? files.get(finding.position.path) : undefined;
+      finding.code === CODE.fileNeverImported ? files.get(finding.position.path) : undefined;
     const found =
       joined !== undefined
         ? { ...joined, root: false }
@@ -471,7 +470,7 @@ export function completed(
     const used =
       judged !== undefined
         ? candidate !== undefined && testUsed.declarations.has(judged.id)
-        : finding.code === FILE_NEVER_IMPORTED && testUsed.files.has(finding.position.path);
+        : finding.code === CODE.fileNeverImported && testUsed.files.has(finding.position.path);
     const reachabilityClass = used && candidate?.testOfDeadCode !== true ? "possible" : ownClass;
     const configurations =
       candidate?.configurations ??
@@ -499,7 +498,7 @@ export function completed(
         ? undefined
         : candidate !== undefined
           ? input.dependencies.lastUses.get(candidate.id)
-          : finding.code === FILE_NEVER_IMPORTED
+          : finding.code === CODE.fileNeverImported
             ? input.dependencies.fileLastUses.get(finding.position.path)
             : undefined;
     return {

@@ -39,7 +39,7 @@ function library(): string {
     "package.json":
       '{ "name": "@example/subjects", "private": true, "type": "module", "main": "./lib.ts" }\n',
     "deadset.json":
-      '{ "target": { "kind": "library" }, "severity": { "DS1002": "allow", "DS1502": "allow" } }\n',
+      '{ "target": { "kind": "library" }, "severity": { "DS1002": "allow", "DS1602": "allow" } }\n',
     "lib.ts": "export default function renderPanel(): number {\n  return 2;\n}\n",
     "w.ts":
       "function gammaWidget(): number {\n  return 1;\n}\n\nfunction alphaWidget(): number {\n  return 2;\n}\n\nfunction betaWidget(): number {\n  return 3;\n}\n",

@@ -817,7 +817,7 @@ describe("a module URL", () => {
   ])("loads no file through %s.ts, named by %s", (name) => {
     expect(found.filter((line) => line.includes(name))).toEqual([
       `DS1001 ${name}Value`,
-      `DS1502 ${name}.ts`,
+      `DS1602 ${name}.ts`,
     ]);
   });
 });

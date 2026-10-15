@@ -135,7 +135,7 @@ function partsOf(
   return findingsOf(
     consumers === undefined ? input : { ...input, boundary: { ...input.boundary, consumers } },
   )
-    .filter((finding) => finding.code.startsWith("DS18"))
+    .filter((finding) => finding.code.startsWith("DS14"))
     .sort((a, b) => a.position.line - b.position.line)
     .map((finding) => ({
       code: finding.code,
@@ -161,12 +161,12 @@ describe("the intra-function family", () => {
       expect(
         partsOf(APPLICATION, ENTRY).map(({ code, name, line }) => ({ code, name, line })),
       ).toEqual([
-        { code: "DS1801", name: "unread", line: 11 },
-        { code: "DS1801", name: "ignored", line: 15 },
-        { code: "DS1803", name: "result", line: 31 },
-        { code: "DS1805", name: "statement", line: 46 },
-        { code: "DS1807", name: "value", line: 57 },
-        { code: "DS1809", name: '"a"', line: 83 },
+        { code: "DS1401", name: "unread", line: 11 },
+        { code: "DS1401", name: "ignored", line: 15 },
+        { code: "DS1403", name: "result", line: 31 },
+        { code: "DS1405", name: "statement", line: 46 },
+        { code: "DS1404", name: "value", line: 57 },
+        { code: "DS1406", name: '"a"', line: 83 },
       ]);
     },
     LOAD_TIMEOUT,
@@ -187,7 +187,7 @@ describe("the intra-function family", () => {
 
       expect(found).toEqual([
         {
-          code: "DS1801",
+          code: "DS1401",
           kind: "parameter",
           ref: "ts://@example/parts/src/main.ts#partial(unread)",
           message:
@@ -197,7 +197,7 @@ describe("the intra-function family", () => {
           writes: undefined,
         },
         {
-          code: "DS1801",
+          code: "DS1401",
           kind: "parameter",
           ref: "ts://@example/parts/src/main.ts#onEvent(ignored)",
           message:
@@ -207,7 +207,7 @@ describe("the intra-function family", () => {
           writes: undefined,
         },
         {
-          code: "DS1803",
+          code: "DS1403",
           kind: "result",
           ref: "ts://@example/parts/src/main.ts#compute",
           message: "result is discarded at every call site; no other rule is known to report it",
@@ -216,7 +216,7 @@ describe("the intra-function family", () => {
           writes: undefined,
         },
         {
-          code: "DS1805",
+          code: "DS1405",
           kind: "statement",
           ref: "ts://@example/parts/src/main.ts#early",
           message:
@@ -226,7 +226,7 @@ describe("the intra-function family", () => {
           writes: undefined,
         },
         {
-          code: "DS1807",
+          code: "DS1404",
           kind: "store",
           ref: "ts://@example/parts/src/main.ts#overwritten",
           message:
@@ -236,7 +236,7 @@ describe("the intra-function family", () => {
           writes: [57],
         },
         {
-          code: "DS1809",
+          code: "DS1406",
           kind: "case",
           ref: "ts://@example/parts/src/main.ts#label",
           message:
@@ -369,7 +369,7 @@ describe("the intra-function family", () => {
       );
 
       expect(found.map(({ code, name, line }) => ({ code, name, line }))).toEqual([
-        { code: "DS1801", name: "unit", line: 1 },
+        { code: "DS1401", name: "unit", line: 1 },
       ]);
     },
     LOAD_TIMEOUT,
@@ -394,9 +394,9 @@ describe("the intra-function family", () => {
       };
 
       expect(partsOf(files, ENTRY).map(({ code, line }) => ({ code, line }))).toEqual([
-        { code: "DS1801", line: 1 },
-        { code: "DS1807", line: 2 },
-        { code: "DS1805", line: 5 },
+        { code: "DS1401", line: 1 },
+        { code: "DS1404", line: 2 },
+        { code: "DS1405", line: 5 },
       ]);
     },
     LOAD_TIMEOUT,
@@ -435,8 +435,8 @@ describe("the intra-function family", () => {
     "withholds the one kind a severity key turns off and leaves the other four reported",
     () => {
       expect(
-        partsOf(APPLICATION, { ...ENTRY, severity: { DS1805: "allow" } }).map(({ code }) => code),
-      ).toEqual(["DS1801", "DS1801", "DS1803", "DS1807", "DS1809"]);
+        partsOf(APPLICATION, { ...ENTRY, severity: { DS1405: "allow" } }).map(({ code }) => code),
+      ).toEqual(["DS1401", "DS1401", "DS1403", "DS1404", "DS1406"]);
     },
     LOAD_TIMEOUT,
   );
@@ -444,7 +444,7 @@ describe("the intra-function family", () => {
   it(
     "withholds the whole family under the range prefix",
     () => {
-      expect(partsOf(APPLICATION, { ...ENTRY, severity: { DS18: "allow" } })).toEqual([]);
+      expect(partsOf(APPLICATION, { ...ENTRY, severity: { DS14: "allow" } })).toEqual([]);
     },
     LOAD_TIMEOUT,
   );
@@ -535,28 +535,28 @@ describe("a constructor's parameters", () => {
         })),
       ).toEqual([
         {
-          code: "DS1801",
+          code: "DS1401",
           name: "unused",
           line: 6,
           kind: "parameter",
           ref: "ts://@example/parts/src/main.ts#Typed(unused)",
         },
         {
-          code: "DS1801",
+          code: "DS1401",
           name: "spare",
           line: 12,
           kind: "parameter",
           ref: "ts://@example/parts/src/main.ts#Base(spare)",
         },
         {
-          code: "DS1801",
+          code: "DS1401",
           name: "spare",
           line: 43,
           kind: "parameter",
           ref: "ts://@example/parts/src/main.ts#Held(spare)",
         },
         {
-          code: "DS1801",
+          code: "DS1401",
           name: "spare",
           line: 55,
           kind: "parameter",
@@ -603,7 +603,7 @@ describe("a result every call site awaits as a statement", () => {
           },
           ENTRY,
         ).map(({ code, line }) => `${code} ${String(line)}`),
-      ).toEqual(["DS1803 9", "DS1803 13"]);
+      ).toEqual(["DS1403 9", "DS1403 13"]);
     },
     LOAD_TIMEOUT,
   );
@@ -637,7 +637,7 @@ describe("a parameter of a function expression a free function holds", () => {
             ENTRY,
           ),
         ),
-      ).toEqual(["DS1801 unused src/main.ts:2", "DS1801 position src/main.ts:2"]);
+      ).toEqual(["DS1401 unused src/main.ts:2", "DS1401 position src/main.ts:2"]);
     },
     LOAD_TIMEOUT,
   );
@@ -667,7 +667,7 @@ describe("an unreachable statement written over several lines", () => {
 
       expect(
         found.map(({ finding }) => [finding.code, finding.position.line, finding.symbol.sizeLines]),
-      ).toEqual([["DS1805", 3, 3]]);
+      ).toEqual([["DS1405", 3, 3]]);
     },
     LOAD_TIMEOUT,
   );
@@ -735,9 +735,9 @@ describe("a part of test code", () => {
           ),
         ),
       ).toEqual([
-        "DS1801 ignored src/fakes/fake.ts:2",
-        "DS1801 unused src/main.test.ts:4",
-        "DS1801 dropped src/main.test.ts:16",
+        "DS1401 ignored src/fakes/fake.ts:2",
+        "DS1401 unused src/main.test.ts:4",
+        "DS1401 dropped src/main.test.ts:16",
       ]);
     },
     LOAD_TIMEOUT,
@@ -775,7 +775,7 @@ describe("a part of test code", () => {
             ENTRY,
           ),
         ),
-      ).toEqual(["DS1801 unused src/main.test.ts:7"]);
+      ).toEqual(["DS1401 unused src/main.test.ts:7"]);
     },
     LOAD_TIMEOUT,
   );
@@ -812,7 +812,7 @@ describe("a part of test code", () => {
             { production: false },
           ),
         ),
-      ).toEqual(["DS1807 kept src/main.test.ts:7", "DS1807 kept src/main.test.ts:8"]);
+      ).toEqual(["DS1404 kept src/main.test.ts:7", "DS1404 kept src/main.test.ts:8"]);
     },
     LOAD_TIMEOUT,
   );
@@ -860,7 +860,7 @@ describe("a result every call discards", () => {
   it(
     "is reported only of a declaration no module exports, a member of an exported class included, while the consumer set is open",
     () => {
-      expect(placed(partsOf(LIBRARY, ENTRY))).toEqual(["DS1803 result src/lib.ts:11"]);
+      expect(placed(partsOf(LIBRARY, ENTRY))).toEqual(["DS1403 result src/lib.ts:11"]);
     },
     LOAD_TIMEOUT,
   );
@@ -869,9 +869,9 @@ describe("a result every call discards", () => {
     "is reported of an exported declaration too once the consumer set is declared complete and every declared consumer loaded",
     () => {
       const reported = [
-        "DS1803 result src/lib.ts:1",
-        "DS1803 result src/lib.ts:6",
-        "DS1803 result src/lib.ts:11",
+        "DS1403 result src/lib.ts:1",
+        "DS1403 result src/lib.ts:6",
+        "DS1403 result src/lib.ts:11",
       ];
 
       expect(placed(partsOf(LIBRARY, COMPLETE))).toEqual(reported);
@@ -892,7 +892,7 @@ describe("a result every call discards", () => {
             loaded: ["@example/c"],
           }),
         ),
-      ).toEqual(["DS1803 result src/lib.ts:11"]);
+      ).toEqual(["DS1403 result src/lib.ts:11"]);
     },
     LOAD_TIMEOUT,
   );
@@ -971,14 +971,14 @@ describe("a name spelled without being a reference", () => {
           ENTRY,
         ).map(({ code, name, line }) => `${code} ${name} ${String(line)}`),
       ).toEqual([
-        "DS1801 first 9",
-        "DS1801 first 15",
-        "DS1801 first 19",
-        "DS1801 first 23",
-        "DS1801 unused 29",
-        "DS1807 kept 37",
-        "DS1801 first 45",
-        "DS1801 first 51",
+        "DS1401 first 9",
+        "DS1401 first 15",
+        "DS1401 first 19",
+        "DS1401 first 23",
+        "DS1401 unused 29",
+        "DS1404 kept 37",
+        "DS1401 first 45",
+        "DS1401 first 51",
       ]);
     },
     LOAD_TIMEOUT,

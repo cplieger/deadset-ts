@@ -118,8 +118,8 @@ const COMPLETE = JSON.stringify({
 describe("the visibility-narrowing family with the consumer set not declared complete", () => {
   it("reports an export used only inside its own file that no manifest export reaches, and nothing in a published or an entry file", () => {
     expect(
-      named(emitted(inputOf(NARROWING))).filter((entry) => entry.startsWith("DS1104")),
-    ).toEqual(["DS1104 Labels", "DS1104 helperLocal"]);
+      named(emitted(inputOf(NARROWING))).filter((entry) => entry.startsWith("DS1503")),
+    ).toEqual(["DS1503 Labels", "DS1503 helperLocal"]);
   });
 
   it.each([
@@ -135,17 +135,17 @@ describe("the visibility-narrowing family with the consumer set not declared com
 
   it("reports no unnecessary export, because no published declaration is in a closed world", () => {
     expect(
-      named(emitted(inputOf(NARROWING))).filter((entry) => entry.startsWith("DS1101")),
+      named(emitted(inputOf(NARROWING))).filter((entry) => entry.startsWith("DS1501")),
     ).toEqual([]);
   });
 
   it("reports each unused export of a file outside code cannot import, by the relation that found it", async () => {
     const findings = emitted(inputOf(NARROWING));
 
-    expect(named(findings).filter((entry) => entry.startsWith("DS1103"))).toEqual([
-      "DS1103 forgotten",
-      "DS1103 behindForgotten",
-      "DS1103 deadCaller",
+    expect(named(findings).filter((entry) => entry.startsWith("DS1101"))).toEqual([
+      "DS1101 forgotten",
+      "DS1101 behindForgotten",
+      "DS1101 deadCaller",
     ]);
     await expect(
       `${findings.map(line).join("\n")}\n`,
@@ -171,11 +171,11 @@ describe("the visibility-narrowing family with the consumer set declared complet
   it("reports the published export used only in its own file and the one used only inside the package", async () => {
     const findings = emitted(inputOf(NARROWING, { document: COMPLETE }));
 
-    expect(named(findings).filter((entry) => !entry.startsWith("DS1103"))).toEqual([
-      "DS1104 Labels",
-      "DS1104 helperLocal",
-      "DS1104 publishedLocal",
-      "DS1101 publishedShared",
+    expect(named(findings).filter((entry) => !entry.startsWith("DS1101"))).toEqual([
+      "DS1503 Labels",
+      "DS1503 helperLocal",
+      "DS1503 publishedLocal",
+      "DS1501 publishedShared",
     ]);
     await expect(
       `${findings.map(line).join("\n")}\n`,
@@ -191,9 +191,9 @@ describe("the visibility-narrowing family with the consumer set declared complet
       }),
     );
 
-    expect(named(findings).filter((entry) => !entry.startsWith("DS1103"))).toEqual([
-      "DS1104 Labels",
-      "DS1104 helperLocal",
+    expect(named(findings).filter((entry) => !entry.startsWith("DS1101"))).toEqual([
+      "DS1503 Labels",
+      "DS1503 helperLocal",
     ]);
   });
 
@@ -279,7 +279,7 @@ describe("the references a narrowing reads", () => {
   };
 
   it("make an export its own file alone references a redundant export keyword", () => {
-    expect(over([use(caller.id, "a.ts")])).toEqual(["DS1104 target"]);
+    expect(over([use(caller.id, "a.ts")])).toEqual(["DS1503 target"]);
   });
 
   it("are what a narrowing needs, so an export a suppression holds live with none is not narrowed", () => {
@@ -308,8 +308,8 @@ describe("a declared cross-language edge", () => {
     const found = evaluated(inputOf(NARROWING));
 
     expect(held(found.evaluations)).toEqual([
-      "wire/provided-to-generated provides DS1103 wiredUnused",
-      "wire/used-by-generated used_by DS1104 wired",
+      "wire/provided-to-generated provides DS1101 wiredUnused",
+      "wire/used-by-generated used_by DS1503 wired",
     ]);
     expect(named(found.findings).filter((entry) => entry.includes("wired"))).toEqual([]);
   });
@@ -318,8 +318,8 @@ describe("a declared cross-language edge", () => {
     const findings = emitted(inputOf(NARROWING, { edges: false }));
 
     expect(named(findings).filter((entry) => / wired/u.test(entry))).toEqual([
-      "DS1104 wired",
-      "DS1103 wiredUnused",
+      "DS1503 wired",
+      "DS1101 wiredUnused",
     ]);
   });
 });
@@ -345,7 +345,7 @@ describe("an export the write-only kind reports", () => {
       findings
         .filter((finding) => finding.symbol.name === "hits")
         .map((finding) => `${finding.code} ${finding.position.path}`),
-    ).toEqual(["DS1104 a/state.ts", "DS1301 b/state.ts"]);
+    ).toEqual(["DS1503 a/state.ts", "DS1301 b/state.ts"]);
   });
 });
 
@@ -360,8 +360,8 @@ describe("the table's visibility-narrowing emitter", () => {
     const input = inputOf(NARROWING);
 
     expect(named(tableEmitter()(input)).filter((entry) => / wired/u.test(entry))).toEqual([
-      "DS1104 wired",
-      "DS1103 wiredUnused",
+      "DS1503 wired",
+      "DS1101 wiredUnused",
     ]);
   });
 });
@@ -370,7 +370,7 @@ describe("a manifest that declares no `exports`", () => {
   it("leaves every file importable from outside, so no unused export is unreachable", () => {
     const findings = emitted(inputOf(NARROWING, { encapsulation: false, edges: false }));
 
-    expect(named(findings).filter((entry) => entry.startsWith("DS1103"))).toEqual([]);
+    expect(named(findings).filter((entry) => entry.startsWith("DS1101"))).toEqual([]);
   });
 });
 
@@ -387,7 +387,7 @@ describe("the TypeScript rendering of the corpus case redundant-export-keyword",
     );
 
     expect(findings.map(line)).toEqual([
-      "lib.ts:9:17: function local: exported function is referenced only inside the file that declares it (DS1104)",
+      "lib.ts:9:17: function local: exported function is referenced only inside the file that declares it (DS1503)",
     ]);
   });
 
@@ -453,7 +453,7 @@ describe("an export of a project written for the case", () => {
         },
         { target: { kind: "library" } },
       ),
-    ).toEqual(["DS1103 retired", "DS1103 deadCaller"]);
+    ).toEqual(["DS1101 retired", "DS1101 deadCaller"]);
   });
 });
 
@@ -479,7 +479,7 @@ describe("an export used only in a file a script token or a configuration string
       });
       expect(
         findingsOf(emitterInputOf(root, config))
-          .filter((finding) => finding.code === "DS1104")
+          .filter((finding) => finding.code === "DS1503")
           .map((finding) => `${finding.symbol.name} ${finding.position.path}`),
       ).toEqual(["step src/run.ts"]);
     } finally {
@@ -509,7 +509,7 @@ describe("an export of a file a document imports", () => {
         findingsOf(emitterInputOf(root, config)).map(
           (finding) => `${finding.code} ${finding.symbol.name}`,
         ),
-      ).toEqual(["DS1104 DemoProps"]);
+      ).toEqual(["DS1503 DemoProps"]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

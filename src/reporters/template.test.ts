@@ -17,7 +17,7 @@ const DOCUMENT = {
       retained_by: [],
     },
     {
-      code: "DS1104",
+      code: "DS1503",
       position: { path: "src/b.ts", line: 10 },
       symbol: { name: "beta" },
       retained_by: [],
@@ -37,7 +37,7 @@ describe("a template over the report document", () => {
       render(
         "{{range .findings}}{{.position.path}}:{{.position.line}} {{.code}} {{.symbol.name}}\n{{end}}{{.totals.findings}} findings\n",
       ),
-    ).toBe("src/a.ts:3 DS1001 alpha\nsrc/b.ts:10 DS1104 beta\n2 findings\n");
+    ).toBe("src/a.ts:3 DS1001 alpha\nsrc/b.ts:10 DS1503 beta\n2 findings\n");
   });
 
   it("trims the white space a trim marker faces and drops a comment", () => {
@@ -53,7 +53,7 @@ describe("a template over the report document", () => {
 
   it("binds a range's index and element, and a with's value as the dot", () => {
     expect(render("{{range $i, $f := .findings}}{{$i}}={{$f.code}} {{end}}")).toBe(
-      "0=DS1001 1=DS1104 ",
+      "0=DS1001 1=DS1503 ",
     );
     expect(render("{{with .totals.by_severity}}{{.deny}}/{{.warn}}{{end}}")).toBe("1/1");
   });
@@ -65,13 +65,13 @@ describe("a template over the report document", () => {
     expect(render("{{range .findings}}{{.code}}{{break}}{{end}}")).toBe("DS1001");
     expect(
       render('{{range .findings}}{{if eq .code "DS1001"}}{{continue}}{{end}}{{.code}}{{end}}'),
-    ).toBe("DS1104");
+    ).toBe("DS1503");
   });
 
   it("calls the comparison, logic, length, index and formatting functions", () => {
     expect(
       render('{{len .findings}} {{index .findings 1 "code"}} {{printf "%s:%d" .schema_version 7}}'),
-    ).toBe("2 DS1104 6.0.0:7");
+    ).toBe("2 DS1503 6.0.0:7");
     expect(
       render('{{and .findings .totals.omitted}}|{{or .totals.omitted "none"}}|{{not .findings}}'),
     ).toBe("0|none|false");

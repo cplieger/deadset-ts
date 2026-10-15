@@ -5,6 +5,7 @@
  * ignore file by gaining a maintainer's reason.
  */
 
+import { CODE } from "./contract/contract.generated.ts";
 import type { Host } from "./host.ts";
 import type { InventorySymbol } from "./inventory.ts";
 import { jsonChunks } from "./json-chunks.ts";
@@ -14,9 +15,7 @@ import type { Position } from "./position.ts";
 import { declarationKey } from "./ref.ts";
 import {
   CODE_FORM,
-  SUPPRESSION_WITHOUT_REASON,
   SuppressionError,
-  UNSCOPED_ENTRY,
   blankReason,
   isEntryPath,
   isPartKind,
@@ -148,10 +147,10 @@ function readRecord(value: unknown, site: Position, byReference: ByReference, sh
   };
   const refusals: Refusal[] = [];
   if (blankReason(reason)) {
-    refusals.push({ ...written, reported: SUPPRESSION_WITHOUT_REASON });
+    refusals.push({ ...written, reported: CODE.suppressionWithoutReason });
   }
   if (written.path === "") {
-    refusals.push({ ...written, reported: UNSCOPED_ENTRY });
+    refusals.push({ ...written, reported: CODE.unscopedIgnoreEntry });
   }
   if (refusals.length > 0) {
     return { records: [], refusals };

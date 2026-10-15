@@ -34,7 +34,7 @@ describe("an unreachable statement", () => {
           "",
           "console.log(inBlock(), bothBranches(true), thenOnly(true));",
         ]),
-      ).toEqual(["DS1805 statement src/main.ts:6", "DS1805 statement src/main.ts:15"]);
+      ).toEqual(["DS1405 statement src/main.ts:6", "DS1405 statement src/main.ts:15"]);
     },
     LOAD_TIMEOUT,
   );
@@ -60,7 +60,7 @@ describe("an unreachable statement", () => {
           "",
           "console.log(twice(), nested(true));",
         ]),
-      ).toEqual(["DS1805 statement src/main.ts:3", "DS1805 statement src/main.ts:9"]);
+      ).toEqual(["DS1405 statement src/main.ts:3", "DS1405 statement src/main.ts:9"]);
     },
     LOAD_TIMEOUT,
   );
@@ -94,14 +94,14 @@ describe("an unreachable statement", () => {
           "console.log(hoistedVar(), initializedVar(), partlyInitialized(), blockScoped());",
         ]),
       ).toEqual([
-        "DS1807 spare src/main.ts:3",
-        "DS1805 statement src/main.ts:8",
-        "DS1807 set src/main.ts:8",
-        "DS1805 statement src/main.ts:13",
-        "DS1807 first src/main.ts:13",
-        "DS1807 second src/main.ts:14",
-        "DS1805 statement src/main.ts:19",
-        "DS1807 later src/main.ts:19",
+        "DS1404 spare src/main.ts:3",
+        "DS1404 set src/main.ts:8",
+        "DS1405 statement src/main.ts:8",
+        "DS1404 first src/main.ts:13",
+        "DS1405 statement src/main.ts:13",
+        "DS1404 second src/main.ts:14",
+        "DS1404 later src/main.ts:19",
+        "DS1405 statement src/main.ts:19",
       ]);
     },
     LOAD_TIMEOUT,
@@ -124,9 +124,9 @@ describe("an unreachable statement", () => {
           "console.log(early());",
         ]),
       ).toEqual([
-        "DS1801 unused src/main.ts:1",
-        "DS1803 result src/main.ts:1",
-        "DS1805 statement src/main.ts:7",
+        "DS1401 unused src/main.ts:1",
+        "DS1403 result src/main.ts:1",
+        "DS1405 statement src/main.ts:7",
       ]);
     },
     LOAD_TIMEOUT,
@@ -159,7 +159,7 @@ describe("an unreachable statement", () => {
           "",
           'console.log(silenced("a"));',
         ]),
-      ).toEqual(["DS1805 statement src/main.ts:3"]);
+      ).toEqual(["DS1405 statement src/main.ts:3"]);
     },
     LOAD_TIMEOUT,
   );
@@ -192,7 +192,7 @@ describe("a case an earlier case of the same switch covers", () => {
           "",
           "console.log(classify(1));",
         ]),
-      ).toEqual(["DS1809 1.0 src/main.ts:5", "DS1809 -1 src/main.ts:9"]);
+      ).toEqual(["DS1406 1.0 src/main.ts:5", "DS1406 -1 src/main.ts:9"]);
     },
     LOAD_TIMEOUT,
   );
@@ -217,7 +217,7 @@ describe("a case an earlier case of the same switch covers", () => {
           "",
           "console.log(classify(1n));",
         ]),
-      ).toEqual(["DS1809 0x1n src/main.ts:7"]);
+      ).toEqual(["DS1406 0x1n src/main.ts:7"]);
     },
     LOAD_TIMEOUT,
   );
@@ -251,9 +251,9 @@ describe("a case an earlier case of the same switch covers", () => {
           "console.log(classify(1));",
         ]),
       ).toEqual([
-        "DS1809 true src/main.ts:7",
-        "DS1809 false src/main.ts:9",
-        "DS1809 null src/main.ts:11",
+        "DS1406 true src/main.ts:7",
+        "DS1406 false src/main.ts:9",
+        "DS1406 null src/main.ts:11",
       ]);
     },
     LOAD_TIMEOUT,
@@ -279,7 +279,7 @@ describe("a parameter of a free function", () => {
           "",
           "console.log(pack(1, 'a'), shadowed(1, 2));",
         ]),
-      ).toEqual(["DS1801 unused src/main.ts:5"]);
+      ).toEqual(["DS1401 unused src/main.ts:5"]);
     },
     LOAD_TIMEOUT,
   );
@@ -299,7 +299,7 @@ describe("a parameter of a free function", () => {
           "",
           "console.log(forwarded(1, { arguments: [] }));",
         ]),
-      ).toEqual(["DS1801 unused src/main.ts:5"]);
+      ).toEqual(["DS1401 unused src/main.ts:5"]);
     },
     LOAD_TIMEOUT,
   );
@@ -347,10 +347,10 @@ describe("a method's signature", () => {
           "console.log(new Child().handle(1, 2), new Implemented().run(1, 2), new Mock().run(1, 2));",
         ]),
       ).toEqual([
-        "DS1801 unused src/main.ts:2",
-        "DS1801 unused src/main.ts:6",
-        "DS1801 unused src/main.ts:18",
-        "DS1801 unused src/main.ts:22",
+        "DS1401 unused src/main.ts:2",
+        "DS1401 unused src/main.ts:6",
+        "DS1401 unused src/main.ts:18",
+        "DS1401 unused src/main.ts:22",
       ]);
     },
     LOAD_TIMEOUT,
@@ -421,9 +421,9 @@ describe("an imported function", () => {
           },
         ),
       ).toEqual([
-        "DS1801 unused src/lib.ts:1",
-        "DS1801 unused src/lib.ts:5",
-        "DS1801 unused src/lib.ts:11",
+        "DS1401 unused src/lib.ts:1",
+        "DS1401 unused src/lib.ts:5",
+        "DS1401 unused src/lib.ts:11",
       ]);
     },
     LOAD_TIMEOUT,
@@ -469,9 +469,9 @@ describe("an imported function", () => {
           },
         ),
       ).toEqual([
-        "DS1801 unused src/lib.ts:1",
-        "DS1801 unused src/lib.ts:5",
-        "DS1801 unused src/scale.ts:1",
+        "DS1401 unused src/lib.ts:1",
+        "DS1401 unused src/lib.ts:5",
+        "DS1401 unused src/scale.ts:1",
       ]);
     },
     LOAD_TIMEOUT,
@@ -511,7 +511,7 @@ describe("a result every call discards", () => {
           "branchOnly(true);",
           "outer();",
         ]),
-      ).toEqual(["DS1803 result src/main.ts:6", "DS1803 result src/main.ts:8"]);
+      ).toEqual(["DS1403 result src/main.ts:6", "DS1403 result src/main.ts:8"]);
     },
     LOAD_TIMEOUT,
   );
@@ -532,7 +532,7 @@ describe("a write to a local", () => {
           "",
           "console.log(overwritten());",
         ]),
-      ).toEqual(["DS1807 value src/main.ts:2"]);
+      ).toEqual(["DS1404 value src/main.ts:2"]);
     },
     LOAD_TIMEOUT,
   );
@@ -636,7 +636,7 @@ describe("a catch binding", () => {
           "logged();",
           "spelled();",
         ]),
-      ).toEqual(["DS1807 error src/main.ts:4", "DS1807 error src/main.ts:20"]);
+      ).toEqual(["DS1404 error src/main.ts:4", "DS1404 error src/main.ts:20"]);
     },
     LOAD_TIMEOUT,
   );

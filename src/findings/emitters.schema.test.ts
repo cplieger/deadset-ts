@@ -14,12 +14,12 @@ import { basename, dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { emitterInputOf, findingsOf } from "../../__test-helpers__/emitter-input.ts";
 import { contractDocument, fixture, ROOT } from "../../__test-helpers__/fixtures.ts";
-import { schemaValidator } from "../../__test-helpers__/json-schema.ts";
+import { schemaRefusals } from "../report-schema.ts";
 import type { CompletedFinding } from "../finding.ts";
 import { wireFinding } from "../report.ts";
 import { resolve } from "../resolve.ts";
 
-const validate = schemaValidator(
+const validate = schemaRefusals(
   { "finding.schema.json": contractDocument("finding.schema.json") },
   "finding.schema.json",
 );
@@ -53,7 +53,7 @@ describe("the finding schema's validator", () => {
 
   it.each([
     ["a required member is missing", { ...ADMITTED, severity: undefined }],
-    ["a live subject's code carries a relation", { ...ADMITTED, code: "DS1104" }],
+    ["a live subject's code carries a relation", { ...ADMITTED, code: "DS1503" }],
     [
       "a code carries a details member another code owns",
       { ...ADMITTED, details: { write_positions: [ADMITTED.position] } },

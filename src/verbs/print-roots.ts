@@ -1,8 +1,9 @@
+import { EXIT_CLEAN, EXIT_FINDINGS } from "../contract/contract.generated.ts";
 import { runRoots, type RunRoot } from "../analysis.ts";
 import { partialNotes } from "../partial.ts";
 import { resolvePath } from "../paths.ts";
 import { resolve } from "../resolve.ts";
-import { EXIT_CLEAN, EXIT_FINDINGS, type Verb } from "./verb.ts";
+import { type Verb } from "./verb.ts";
 
 /**
  * One root as a line: the declaration's reference, why it is a root, and the string

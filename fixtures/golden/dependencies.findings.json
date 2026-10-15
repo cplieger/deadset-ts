@@ -1,6 +1,6 @@
 [
   {
-    "code": "DS1601",
+    "code": "DS1701",
     "position": {
       "path": "package.json",
       "line": 12,
@@ -22,7 +22,7 @@
     ]
   },
   {
-    "code": "DS1601",
+    "code": "DS1701",
     "position": {
       "path": "package.json",
       "line": 13,
@@ -41,7 +41,7 @@
     }
   },
   {
-    "code": "DS1601",
+    "code": "DS1701",
     "position": {
       "path": "package.json",
       "line": 17,
@@ -60,7 +60,7 @@
     }
   },
   {
-    "code": "DS1601",
+    "code": "DS1701",
     "position": {
       "path": "package.json",
       "line": 27,
@@ -79,7 +79,7 @@
     }
   },
   {
-    "code": "DS1601",
+    "code": "DS1701",
     "position": {
       "path": "package.json",
       "line": 30,

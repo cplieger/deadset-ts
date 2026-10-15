@@ -1,3 +1,4 @@
+import { CONTRACT_VERSION } from "./contract/contract.generated.ts";
 import { describe, expect, it } from "vitest";
 import {
   configVectorCases,
@@ -10,7 +11,6 @@ import {
 import { ConfigError, type Inputs } from "./config.ts";
 import { printConfig } from "./print.ts";
 import { resolve } from "./resolve.ts";
-import { CONTRACT_VERSION } from "./version.ts";
 
 /** The exit code every refusal configuration resolution makes maps to. */
 const USAGE_EXIT_CODE = 2;

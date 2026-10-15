@@ -1,12 +1,9 @@
+import { CODE } from "../contract/contract.generated.ts";
 import { declarationKey, type Dependencies } from "../dependencies.ts";
 import type { Finding } from "../finding.ts";
 import { renderRef, type DependencySection } from "../ref.ts";
 import type { Emitter, EmitterInput } from "./emitter.ts";
 import { nonCodeArtifacts } from "./non-code-artifacts.ts";
-
-const UNUSED_DEPENDENCY = "DS1601";
-
-const FILE_NEVER_IMPORTED = "DS1502";
 
 const MESSAGES: Readonly<Record<DependencySection, string>> = {
   dependency: "no import in the target needs the declared dependency",
@@ -46,7 +43,7 @@ function deadCode(input: EmitterInput): DeadCode {
   );
   for (const finding of nonCodeArtifacts(input)) {
     const id = files.get(finding.position.path);
-    if (finding.code === FILE_NEVER_IMPORTED && id !== undefined) {
+    if (finding.code === CODE.fileNeverImported && id !== undefined) {
       dead.add(id);
       if (finding.unreachableOnly === true) {
         reachedOnly.add(id);
@@ -81,7 +78,7 @@ function unusedDependencies(input: EmitterInput, dependencies: Dependencies): Fi
     const atPossible = unbuilt || users?.some((id) => published.has(id)) === true;
     return [
       {
-        code: UNUSED_DEPENDENCY,
+        code: CODE.unusedDependency,
         position: dependency.position,
         symbol: {
           ref: renderRef(dependency.manifest, {
@@ -105,6 +102,6 @@ function unusedDependencies(input: EmitterInput, dependencies: Dependencies): Fi
   });
 }
 
-/** The findings of the dependencies-and-module-machinery family, `DS1600` to `DS1699`. */
+/** The findings of the dependencies family, `DS1700` to `DS1799`. */
 export const dependenciesAndModuleMachinery: Emitter = (input) =>
   unusedDependencies(input, input.dependencies);

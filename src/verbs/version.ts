@@ -1,5 +1,5 @@
-import { CONTRACT_VERSION } from "../version.ts";
-import { EXIT_CLEAN, type Verb } from "./verb.ts";
+import { CONTRACT_VERSION, EXIT_CLEAN } from "../contract/contract.generated.ts";
+import { type Verb } from "./verb.ts";
 
 /** Writes the version the host reports and the Contract version this analyzer implements. */
 export const versionVerb: Verb = ({ out, host }) => {

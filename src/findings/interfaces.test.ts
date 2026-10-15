@@ -74,9 +74,9 @@ describe("the interfaces emitter", () => {
     expect(lines(family(emitterInput()))).toEqual([
       "DS1201 Unused [Runner]",
       "DS1201 OnlyDead []",
-      "DS1203 Channel.close [Wire, Pipe]",
-      "DS1203 Signal.raise [Flag, Arrowed]",
-      "DS1203 Listener.notify []",
+      "DS1202 Channel.close [Wire, Pipe]",
+      "DS1202 Signal.raise [Flag, Arrowed]",
+      "DS1202 Listener.notify []",
       "DS1201 Probe []",
       "DS1201 TestDouble []",
     ]);
@@ -206,7 +206,7 @@ describe("an uncalled method of an interface a class matches by shape", () => {
   it("is reported with the class that implements it", () => {
     expect(
       reportedOver(`${CHANNEL}const channel: Channel = new Wire();\nchannel.send();\n`),
-    ).toEqual(["DS1203 Channel.close [Wire]"]);
+    ).toEqual(["DS1202 Channel.close [Wire]"]);
   });
 
   it("is not reported where the checker could not say which classes implement the interface", () => {
@@ -236,7 +236,7 @@ describe("an uncalled method of an interface a class matches by shape", () => {
           "",
         ].join("\n"),
       ),
-    ).toEqual(["DS1203 Channel.close [Wire, Declared]"]);
+    ).toEqual(["DS1202 Channel.close [Wire, Declared]"]);
   });
 
   it("names no implementation in a package the run reads only through an import", () => {
@@ -288,7 +288,7 @@ describe("an uncalled method of an interface a class matches by shape", () => {
         }),
         repositoryLabel: "deadset.json",
       });
-      expect(lines(family(emitterInputOf(root, config)))).toEqual(["DS1203 Channel.close [Pipe]"]);
+      expect(lines(family(emitterInputOf(root, config)))).toEqual(["DS1202 Channel.close [Pipe]"]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

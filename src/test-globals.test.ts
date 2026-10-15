@@ -51,8 +51,8 @@ describe("a test runner's injected globals", () => {
 
     expect(answer.skips).toEqual([]);
     expect(answer.findings).toEqual([
-      "DS1004 tests/callbacks.ts each",
-      "DS1807 tests/a.test.ts unread",
+      "DS1102 tests/callbacks.ts each",
+      "DS1404 tests/a.test.ts unread",
     ]);
   });
 
@@ -60,6 +60,6 @@ describe("a test runner's injected globals", () => {
     const answer = analyzed("unset");
 
     expect(answer.skips).toEqual(["tests/a.test.ts", "tests/helper.ts"]);
-    expect(answer.findings).toEqual(["DS1601 package.json vitest"]);
+    expect(answer.findings).toEqual(["DS1701 package.json vitest"]);
   });
 });

@@ -38,8 +38,8 @@ const REFUSED: Readonly<Record<string, string>> = {
   "directive-name": "exit 2",
   "reason-separator": "exit 2",
   "code-list": "exit 2",
-  "reason-required": "DS1701",
-  "line-above": "DS1703",
+  "reason-required": "DS9001",
+  "line-above": "DS9003",
 };
 
 /** What the grammar declares one inline case to be. */
@@ -60,9 +60,9 @@ function outcome(one: CorpusCase): string {
     case "malformed":
       return "exit 2";
     case "no-reason":
-      return directive.codes.map(() => "DS1701").join(" ");
+      return directive.codes.map(() => "DS9001").join(" ");
     case "directive":
-      return one.input.line_offset === -1 || one.input.line_offset === 0 ? "accepted" : "DS1703";
+      return one.input.line_offset === -1 || one.input.line_offset === 0 ? "accepted" : "DS9003";
   }
 }
 
@@ -98,10 +98,10 @@ describe("every inline case of the published token corpus", () => {
 describe("a well-formed directive", () => {
   it("carries every code it names and its reason, trailing whitespace trimmed", () => {
     expect(
-      classifyComment("// deadset:ignore DS1001,DS1101 -- kept -- for the plugin loader.   "),
+      classifyComment("// deadset:ignore DS1001,DS1501 -- kept -- for the plugin loader.   "),
     ).toEqual({
       is: "directive",
-      codes: ["DS1001", "DS1101"],
+      codes: ["DS1001", "DS1501"],
       reason: "kept -- for the plugin loader.",
     });
   });
@@ -167,13 +167,13 @@ describe("the inline directives of a project", () => {
       inlineOf({
         "a.ts": [
           "export class Box {",
-          "  // deadset:ignore DS1101 -- read by the plugin loader",
+          "  // deadset:ignore DS1501 -- read by the plugin loader",
           "  open(): void {}",
           "}",
           "",
         ].join("\n"),
       }).records,
-    ).toEqual(["DS1101 2 Box.open"]);
+    ).toEqual(["DS1501 2 Box.open"]);
   });
 
   it("are not read inside a string, a template, a regular expression or a block comment", () => {
@@ -259,7 +259,7 @@ describe("the inline directives of a project", () => {
         "a.ts": [
           "export function wrapped(",
           "  first: number,",
-          "  // deadset:ignore DS1801 -- the published callback shape",
+          "  // deadset:ignore DS1401 -- the published callback shape",
           "  second: number,",
           "): number {",
           "  return first;",
@@ -267,7 +267,7 @@ describe("the inline directives of a project", () => {
           "",
         ].join("\n"),
       }).records,
-    ).toEqual(["DS1801 3 wrapped"]);
+    ).toEqual(["DS1401 3 wrapped"]);
   });
 
   it("bind a variable written on a later line of its statement from the line above the keyword", () => {

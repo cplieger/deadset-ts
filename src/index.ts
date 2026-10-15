@@ -19,4 +19,4 @@ export {
   type Fragment,
   type Module,
 } from "./ref.ts";
-export { CONTRACT_VERSION } from "./version.ts";
+export { CONTRACT_VERSION } from "./contract/contract.generated.ts";

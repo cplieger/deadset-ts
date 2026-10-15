@@ -117,7 +117,7 @@ describe("declaresSetting", () => {
     { path: "analysis.template_delimiters", declared: true },
     { path: "analysis.template_delimiters.left", declared: false },
     { path: "analysis", declared: false },
-    { path: "severity.DS1101", declared: true },
+    { path: "severity.DS1501", declared: true },
     { path: "severity.DS9999", declared: true },
     { path: "severity", declared: false },
     { path: "severity.DS11.extra", declared: false },
@@ -156,7 +156,7 @@ describe("the document walk", () => {
   }
 
   it("names a member one object writes twice, which a parse cannot report", () => {
-    const text = '{"target":{"kind":"library"},"severity":{"DS1101":"warn"},"severity":{}}';
+    const text = '{"target":{"kind":"library"},"severity":{"DS1501":"warn"},"severity":{}}';
 
     expect(JSON.parse(text), "a parse keeps the last value and reports nothing").toMatchObject({
       severity: {},

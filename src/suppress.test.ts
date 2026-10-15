@@ -56,7 +56,12 @@ describe("the forms an entry's values take", () => {
 });
 
 /** A finding about the declaration at one line of one file. */
-function finding(code: string, name: string, line: number, kind = "function"): Finding {
+function finding(
+  code: string,
+  name: string,
+  line: number,
+  kind: Finding["symbol"]["kind"] = "function",
+): Finding {
   return {
     code,
     position: { path: "src/lib.ts", line, column: 1, endLine: line },
@@ -131,7 +136,7 @@ describe("the ledger over a run's records", () => {
 
   it("reaches a finding about a part of a declaration through the reference and the file", () => {
     const part = {
-      ...finding("DS1801", "helper", 4, "parameter"),
+      ...finding("DS1401", "helper", 4, "parameter"),
       position: { path: "src/lib.ts", line: 4, column: 17, endLine: 4 },
     };
     const ledger = ledgerOf([{ ...recordOf(part, "ignore"), bound: "" }], [part], OPEN);
@@ -141,7 +146,7 @@ describe("the ledger over a run's records", () => {
 
   it("withholds every finding of a part kind about one declaration through one record", () => {
     const at = (column: number): Finding => ({
-      ...finding("DS1801", "helper", 4, "parameter"),
+      ...finding("DS1401", "helper", 4, "parameter"),
       position: { path: "src/lib.ts", line: 4, column, endLine: 4 },
     });
     const [first, second] = [at(17), at(24)];
@@ -157,7 +162,7 @@ describe("the ledger over a run's records", () => {
 
   it("tells two parameters of one declaration apart by their own references", () => {
     const parameter = (name: string, column: number): Finding => ({
-      ...finding("DS1801", "helper", 4, "parameter"),
+      ...finding("DS1401", "helper", 4, "parameter"),
       position: { path: "src/lib.ts", line: 4, column, endLine: 4 },
       symbol: {
         ref: `ts://@example/app/src/lib.ts#helper(${name})`,
@@ -182,7 +187,7 @@ describe("the ledger over a run's records", () => {
 
   it("withholds through one entry the parameters of one name that two functions of one holder declare", () => {
     const callback = (line: number): Finding => ({
-      ...finding("DS1801", "", line, "parameter"),
+      ...finding("DS1401", "", line, "parameter"),
       position: { path: "src/lib.ts", line, column: 20, endLine: line },
       symbol: {
         ref: "ts://@example/app/src/lib.ts#(value)",
@@ -200,7 +205,7 @@ describe("the ledger over a run's records", () => {
 
   it("is dormant for a part kind only when the dials withhold every part finding it claims", () => {
     const at = (column: number): Finding => ({
-      ...finding("DS1801", "helper", 4, "parameter"),
+      ...finding("DS1401", "helper", 4, "parameter"),
       position: { path: "src/lib.ts", line: 4, column, endLine: 4 },
     });
     const [first, second] = [at(17), at(24)];
@@ -217,7 +222,7 @@ describe("the ledger over a run's records", () => {
 
   it("withholds a dependency row through an entry or a row naming it, never a directive", () => {
     const row: Finding = {
-      code: "DS1601",
+      code: "DS1701",
       position: { path: "package.json", line: 7, column: 5, endLine: 7 },
       symbol: {
         ref: "ts://@example/app/package.json#left-pad:dependency",
@@ -266,7 +271,7 @@ describe("the ledger over a run's records", () => {
   });
 
   it("withholds no finding about a row of a document, which no record binds", () => {
-    const row = finding("DS1501", "file", 1, "file");
+    const row = finding("DS1601", "file", 1, "file");
     const ledger = ledgerOf([recordOf(row, "ignore")], [row], OPEN);
 
     expect(ledger.verdicts).toEqual(["stale"]);

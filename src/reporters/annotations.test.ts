@@ -1,12 +1,7 @@
+import type { Severity } from "../contract/contract.generated.ts";
 import { describe, expect, it } from "vitest";
-import type { Severity } from "../config.ts";
-import type {
-  Report,
-  ReportNote,
-  TypeErrorSkip,
-  WireFinding,
-  WireStaleSuppression,
-} from "../report.ts";
+import type { ReportNote, TypeErrorSkip } from "../report.ts";
+import type { Finding, Report, StaleSuppressionsEntry } from "../contract/report.generated.ts";
 import { annotations } from "./annotations.ts";
 
 /** The annotations one report renders to, as the file holds them. */
@@ -14,7 +9,7 @@ function annotationsOf(of: Report): string {
   return [...annotations(of)].join("");
 }
 
-function finding(severity: Severity, message = "exported function has no reference"): WireFinding {
+function finding(severity: Severity, message = "exported function has no reference"): Finding {
   return {
     code: "DS1001",
     kind: "unused-exported",
@@ -42,8 +37,8 @@ function finding(severity: Severity, message = "exported function has no referen
   };
 }
 
-const STALE: WireStaleSuppression = {
-  code: "DS1703",
+const STALE: StaleSuppressionsEntry = {
+  code: "DS9003",
   mechanism: "ignore",
   entry: {
     code: "DS1001",
@@ -58,8 +53,8 @@ const STALE: WireStaleSuppression = {
 
 /** A report holding only what an annotation reads: the findings, stale suppressions, skips and notes. */
 function report(
-  findings: readonly WireFinding[],
-  stale: readonly WireStaleSuppression[] = [],
+  findings: readonly Finding[],
+  stale: readonly StaleSuppressionsEntry[] = [],
   skips: readonly TypeErrorSkip[] = [],
   notes: readonly ReportNote[] = [],
 ): Report {
@@ -112,12 +107,12 @@ describe("annotations", () => {
     const lines = annotationsOf(report([finding("warn")], [STALE])).split("\n");
 
     expect(lines[1]).toBe(
-      "::error file=deadset-ignore.json,line=4,col=5,endLine=4,title=DS1703 stale-suppression::ignore entry for DS1001 matches no current finding",
+      "::error file=deadset-ignore.json,line=4,col=5,endLine=4,title=DS9003 stale-suppression::ignore entry for DS1001 matches no current finding",
     );
   });
 
   it("escapes what would end the command or split the property list", () => {
-    const odd: WireFinding = {
+    const odd: Finding = {
       ...finding("deny", "100% dead\nsee: a, b"),
       position: { path: "src/a:b,c%.ts", line: 1, column: 1, end_line: 1 },
     };

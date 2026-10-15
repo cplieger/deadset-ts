@@ -1437,7 +1437,7 @@ function nearestManifestDir(host: Host, root: string, file: string): string {
 
 /**
  * The input every emitter reads over one sweep of a read run: the facts beside the sweep
- * each kind family reads, every per-project one read in the same session as the sweep.
+ * each emitter reads, every per-project one read in the same session as the sweep.
  */
 export function emitterInputOver(
   host: Host,
@@ -1523,7 +1523,7 @@ interface AnalysisReader {
  * directives, the ignore file's entries and the baseline's rows are bound before any
  * sweep, and the run is swept once under every bound record's mark and once under none,
  * so a record is decided against the finding its code would have produced. The
- * self-check family reports the refused suppressions and the roots that named nothing.
+ * configuration family reports the refused suppressions and the roots that named nothing.
  * Beside the inputs it answers the projects and test-file rules a report names.
  */
 function readAnalysis(
@@ -1698,7 +1698,7 @@ export interface RunAnalysis {
 
 /**
  * The analysis of the run the scope and the configuration describe: the run read with its
- * suppressions bound, every family's findings with the suppressions applied and the
+ * suppressions bound, every emitter's findings with the suppressions applied and the
  * declared edges evaluated, the projects and test-file rules the report names, and the sweep
  * an explanation reads.
  */

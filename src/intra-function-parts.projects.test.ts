@@ -65,7 +65,7 @@ describe("a part two projects hold", () => {
           ],
           { files: { "tsconfig.other.json": TSCONFIG } },
         ),
-      ).toEqual(["DS1801 unused src/main.ts:1"]);
+      ).toEqual(["DS1401 unused src/main.ts:1"]);
     },
     LOAD_TIMEOUT,
   );
@@ -75,7 +75,7 @@ describe("a part two projects hold", () => {
     () => {
       const main = `${SHADOWED.join("\n")}\n`;
       expect(partsOf(SHADOWED, { files: { "tsconfig.other.json": TSCONFIG } })).toEqual([
-        "DS1801 extra src/main.ts:3",
+        "DS1401 extra src/main.ts:3",
       ]);
       expect(
         partsOf(SHADOWED, {

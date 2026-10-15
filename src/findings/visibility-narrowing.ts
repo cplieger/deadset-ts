@@ -1,3 +1,4 @@
+import { CODE } from "../contract/contract.generated.ts";
 import type { Finding } from "../finding.ts";
 import { OUTSIDE, type Graph } from "../graph.ts";
 import type { InventorySymbol, SymbolKind } from "../inventory.ts";
@@ -7,10 +8,6 @@ import type { RootKind } from "../roots.ts";
 import { runnerCalls } from "../sweep.ts";
 import type { Emitter, EmitterInput } from "./emitter.ts";
 import { writeOnlyDeclarations } from "./reads-and-writes.ts";
-
-const UNNECESSARY_EXPORT = "DS1101";
-const UNREACHABLE_EXPORT = "DS1103";
-const REDUNDANT_EXPORT_KEYWORD = "DS1104";
 
 /** How far the references to one declaration reach, from the narrowest. */
 type Reach = "file" | "package" | "outside";
@@ -22,7 +19,7 @@ type Reach = "file" | "package" | "outside";
  */
 const PUBLISHING: ReadonlySet<RootKind> = new Set<RootKind>(["manifest-entry", "published-api"]);
 
-/** The reader's word for each kind of declaration this family reports. */
+/** The reader's word for each kind of declaration this emitter reports. */
 const WORDS: Partial<Readonly<Record<SymbolKind, string>>> = {
   function: "function",
   class: "class",
@@ -151,8 +148,8 @@ function wordOf(symbol: InventorySymbol): string {
 
 /** The visibility each narrowing code names, which only the narrowing codes carry. */
 const NARROWER: Readonly<Record<string, "file" | "package">> = {
-  [REDUNDANT_EXPORT_KEYWORD]: "file",
-  [UNNECESSARY_EXPORT]: "package",
+  [CODE.redundantExportKeyword]: "file",
+  [CODE.unnecessaryExport]: "package",
 };
 
 function findingOf(symbol: InventorySymbol, code: string, message: string): Finding {
@@ -206,7 +203,7 @@ function narrowing(
       }
       return findingOf(
         symbol,
-        REDUNDANT_EXPORT_KEYWORD,
+        CODE.redundantExportKeyword,
         `exported ${word} is referenced only inside the file that declares it`,
       );
     case "package":
@@ -215,7 +212,7 @@ function narrowing(
       }
       return findingOf(
         symbol,
-        UNNECESSARY_EXPORT,
+        CODE.unnecessaryExport,
         `exported ${word} is referenced only inside the package that declares it`,
       );
     default:
@@ -254,13 +251,13 @@ function unreachable(
       : "has no reference in the target";
   return findingOf(
     symbol,
-    UNREACHABLE_EXPORT,
+    CODE.unreachableExport,
     `exported ${wordOf(symbol)} ${found}, and nothing outside can import the file that declares it`,
   );
 }
 
 /**
- * The visibility-narrowing family over one run: `DS1101`, `DS1103` and `DS1104`. A finding
+ * The visibility-narrowing kinds over one run: `DS1501`, `DS1101` and `DS1503`. A finding
  * about a symbol a declared cross-language edge names is reported here like any other, and
  * the edge's evaluation then holds it pending, because the edge stands for a reference from
  * outside the file and the package whose use is decided in the other language. A
@@ -316,5 +313,5 @@ export function unreachableExports(input: EmitterInput): ReadonlySet<string> {
   return found;
 }
 
-/** The findings of the visibility-narrowing family, `DS1100` to `DS1199`. */
+/** The findings of the visibility-narrowing kinds, `DS1501`, `DS1101` and `DS1503`. */
 export const visibilityNarrowing: Emitter = narrowings;

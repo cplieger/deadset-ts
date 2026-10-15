@@ -1,5 +1,5 @@
 import { jsonChunks } from "../json-chunks.ts";
-import type { Report } from "../report.ts";
+import type { Report } from "../contract/report.generated.ts";
 
 /** The indentation of the report document, which with the schema's member order fixes its bytes. */
 const INDENT = 2;

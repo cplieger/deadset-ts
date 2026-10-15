@@ -1,4 +1,4 @@
-import type { Confidence } from "../config.ts";
+import type { Confidence } from "../contract/contract.generated.ts";
 import { evaluateEdges, type EdgeEvaluation } from "../edges.ts";
 import type { CompletedFinding } from "../finding.ts";
 import { liveFilesAt } from "../matrix.ts";
@@ -16,7 +16,7 @@ import { selfCheck } from "./self-check.ts";
 import { fallenMembers, unusedDeclarations } from "./unused-declarations.ts";
 import { visibilityNarrowing } from "./visibility-narrowing.ts";
 
-/** Every kind family this analyzer reports, each by its emitter, in code order. */
+/** Every emitter this analyzer runs, by the name its tests select it by. */
 export const EMITTERS: Emitters = new Map<string, Emitter>([
   ["unused-declarations", unusedDeclarations],
   ["visibility-narrowing", visibilityNarrowing],
@@ -76,7 +76,7 @@ interface Suppressed {
 
 /** What the emitter table answers about one run. */
 interface DecidedFindings {
-  /** Every finding the run reports, each family's in table order. */
+  /** Every finding the run reports, each emitter's in table order. */
   readonly findings: readonly CompletedFinding[];
   /** One evaluation per declared edge side of this language, ordered by edge, then by side. */
   readonly evaluations: readonly EdgeEvaluation<CompletedFinding>[];
@@ -91,7 +91,7 @@ interface DecidedFindings {
 /** How many findings the minimum confidence withheld at each confidence. */
 export type Withheld = Readonly<Record<Confidence, number>>;
 
-/** Every family's findings over one sweep, and those of any further emitter, completed by one step. */
+/** Every emitter's findings over one sweep, and those of any further emitter, completed by one step. */
 function completedOver(
   input: EmitterInput,
   ...more: readonly Emitter[]
@@ -124,8 +124,8 @@ function dialsOver(
 
 /**
  * Every finding of one run swept under its suppressions' marks, decided in one pass: each
- * family's findings completed by one step, so every component number is minted once, the
- * finding each record claims withheld, the rest withheld by the dials, so a root one family
+ * emitter's findings completed by one step, so every component number is minted once, the
+ * finding each record claims withheld, the rest withheld by the dials, so a root one emitter
  * reports withholds what another reports in its component, and every declared edge
  * evaluated over what remains, so a pending finding is in its evaluation alone.
  */

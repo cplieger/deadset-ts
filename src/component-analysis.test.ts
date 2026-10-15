@@ -112,14 +112,14 @@ describe("component files, read through the compiler's content mapper", () => {
     expect(answered.findings).toEqual([
       "DS1301 src/Crlf.vue:7:3-7 Row.unread",
       "DS1301 src/Crlf.vue:8:3-8 Row.note",
-      "DS1502 src/Half.vue:1:1-1 src/Half.vue",
-      "DS1502 src/Orphan.vue:1:1-4 src/Orphan.vue",
+      "DS1602 src/Half.vue:1:1-1 src/Half.vue",
+      "DS1602 src/Orphan.vue:1:1-4 src/Orphan.vue",
       "DS1002 src/Orphan.vue:3:7-3 lonely",
       "DS1301 src/Wide.vue:2:56-2 Shape.side",
       "DS1001 src/helpers.ts:9:17-9 unusedHelper",
-      "DS1302 src/level.ts:5:3-5 Level.Unused",
-      "DS1302 src/level.ts:6:3-6 Level.HalfOnly",
-      "DS1502 src/unreached.ts:1:1-3 src/unreached.ts",
+      "DS1005 src/level.ts:5:3-5 Level.Unused",
+      "DS1005 src/level.ts:6:3-6 Level.HalfOnly",
+      "DS1602 src/unreached.ts:1:1-3 src/unreached.ts",
       "DS1001 src/unreached.ts:3:14-3 half",
     ]);
     expect(answered.skips).toEqual([]);
@@ -139,10 +139,10 @@ describe("component files, read through the compiler's content mapper", () => {
       workingDirectory: () => TARGET,
     });
     expect(out.text.split("\n")).toEqual([
-      "ts://@example/app/src/Crlf.vue#Row.label\ttemplate-field\tsrc/Crlf.vue:2:13\tnamed by {{ row.label }}",
-      "ts://@example/app/src/level.ts#Level.Low\ttemplate-field\tsrc/Status.vue:1:51\tnamed by {{ Level.Low }}",
-      'ts://@example/app/src/level.ts#Level.High\ttemplate-field\tsrc/Status.vue:1:36\tnamed by v-if="state === Level.High"',
-      'ts://@example/app/src/level.ts#Level.Templated\ttemplate-field\tsrc/Status.vue:2:27\tnamed by :title="`level ${Level.Templated}`"',
+      "ts://@example/app/src/Crlf.vue#Row.label\tsrc/Crlf.vue:6:3\ttemplate-field\tsrc/Crlf.vue:2:13\tnamed by {{ row.label }}",
+      "ts://@example/app/src/level.ts#Level.Low\tsrc/level.ts:2:3\ttemplate-field\tsrc/Status.vue:1:51\tnamed by {{ Level.Low }}",
+      'ts://@example/app/src/level.ts#Level.High\tsrc/level.ts:4:3\ttemplate-field\tsrc/Status.vue:1:36\tnamed by v-if="state === Level.High"',
+      'ts://@example/app/src/level.ts#Level.Templated\tsrc/level.ts:7:3\ttemplate-field\tsrc/Status.vue:2:27\tnamed by :title="`level ${Level.Templated}`"',
       "",
     ]);
   });
@@ -180,7 +180,7 @@ describe("component files, read through the compiler's content mapper", () => {
     const none = analyze('{"target":{"kind":"application"},"ts":{"component_extensions":[]}}\n');
     expect(none.made).toEqual([]);
     expect(none.skips).toHaveLength(10);
-    expect(none.findings).not.toContain("DS1502 src/Orphan.vue:1:1-4 src/Orphan.vue");
+    expect(none.findings).not.toContain("DS1602 src/Orphan.vue:1:1-4 src/Orphan.vue");
   });
 });
 
@@ -320,7 +320,7 @@ describe("content mappers a configuration declares", () => {
     expect(ran()).toEqual([]);
     expect(analyzed.code).toBe(1);
     expect(analyzed.findings).toEqual([
-      "DS1502 sub/B.vue:1:1-4 sub/B.vue",
+      "DS1602 sub/B.vue:1:1-4 sub/B.vue",
       "DS1002 sub/B.vue:3:7-3 y",
     ]);
   });
@@ -377,14 +377,14 @@ describe("component files read by their own framework's parser", () => {
 
   it("reads a markup substitution left open to the end of its value", () => {
     expect(retained.filter((line) => line.includes("View.vue"))).toEqual([
-      'ts://app/src/View.vue#Row.note\ttemplate-field\tsrc/View.vue:1:29\tnamed by :title="`${row.note"',
-      'ts://app/src/View.vue#Row.not\ttemplate-field\tsrc/View.vue:1:55\tnamed by :alt="`${row.not"',
+      'ts://app/src/View.vue#Row.note\tsrc/View.vue:4:3\ttemplate-field\tsrc/View.vue:1:29\tnamed by :title="`${row.note"',
+      'ts://app/src/View.vue#Row.not\tsrc/View.vue:5:3\ttemplate-field\tsrc/View.vue:1:55\tnamed by :alt="`${row.not"',
     ]);
   });
 
   it("reads a .svelte comment as Svelte does, holding back nothing it hides and warning on no script in it", () => {
     expect(retained.filter((line) => line.includes("Card.svelte"))).toEqual([
-      "ts://app/src/Card.svelte#Item.shown\ttemplate-field\tsrc/Card.svelte:13:10\tnamed by {item.shown}",
+      "ts://app/src/Card.svelte#Item.shown\tsrc/Card.svelte:3:3\ttemplate-field\tsrc/Card.svelte:13:10\tnamed by {item.shown}",
     ]);
     expect(got.findings.filter((line) => line.includes("Card.svelte"))).toEqual([
       "DS1301 src/Card.svelte:4:3-4 Item.hidden",

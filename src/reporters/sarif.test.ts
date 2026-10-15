@@ -1,7 +1,8 @@
+import { KIND_ROWS } from "../contract/contract.generated.ts";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { fixture } from "../../__test-helpers__/fixtures.ts";
-import type { Report, WireFinding, WireStaleSuppression } from "../report.ts";
+import type { Finding, Report, StaleSuppressionsEntry } from "../contract/report.generated.ts";
 import { RenderError, type RenderOptions } from "./reporter.ts";
 import { sarif } from "./sarif.ts";
 
@@ -10,7 +11,7 @@ function sarifText(of: Report, with_: RenderOptions): string {
   return [...sarif(of, with_)].join("");
 }
 
-const WRITE_ONLY: WireFinding = {
+const WRITE_ONLY: Finding = {
   code: "DS1301",
   kind: "write-only-symbol",
   language: "ts",
@@ -41,9 +42,9 @@ const WRITE_ONLY: WireFinding = {
   },
 };
 
-const NARROWING: WireFinding = {
+const NARROWING: Finding = {
   ...WRITE_ONLY,
-  code: "DS1104",
+  code: "DS1503",
   kind: "redundant-export-keyword",
   position: { path: "a:b/x.ts", line: 1, column: 1, end_line: 2 },
   symbol: { ref: "ts://@example/app/a:b/x.ts#x", kind: "function", name: "x", size_lines: 2 },
@@ -52,8 +53,8 @@ const NARROWING: WireFinding = {
   details: { narrower_visibility: "file" },
 };
 
-const STALE: WireStaleSuppression = {
-  code: "DS1703",
+const STALE: StaleSuppressionsEntry = {
+  code: "DS9003",
   mechanism: "inline",
   entry: { code: "DS1001", path: "a:b/x.ts", reason: "kept" },
   position: { path: "a:b/x.ts", line: 2, column: 1 },
@@ -68,7 +69,7 @@ const SOURCES: Readonly<Record<string, string>> = {
   "a:b/x.ts": "function x() {}\n// deadset:ignore DS1001 -- kept\n",
 };
 
-function report(findings: readonly WireFinding[], stale: readonly WireStaleSuppression[]): Report {
+function report(findings: readonly Finding[], stale: readonly StaleSuppressionsEntry[]): Report {
   return {
     schema_version: "6.0.0",
     contract_version: "3.2.0",
@@ -138,10 +139,12 @@ describe("the SARIF rendering", () => {
   it("lists one rule per live TypeScript kind in code order, whatever the results name", () => {
     const rules = onlyRun(rendered(report([], []))).tool.driver.rules;
 
-    expect(rules.map((rule) => rule.id)).toHaveLength(28);
+    expect(rules.map((rule) => rule.id)).toHaveLength(
+      KIND_ROWS.filter((row) => (row.languages as readonly string[]).includes("ts")).length,
+    );
     expect(rules.map((rule) => rule.id)).toEqual(rules.map((rule) => rule.id).sort());
-    expect(rules.map((rule) => rule.id)).not.toContain("DS1102");
-    expect(rules.map((rule) => rule.id)).toContain("DS1706");
+    expect(rules.map((rule) => rule.id)).not.toContain("DS1502");
+    expect(rules.map((rule) => rule.id)).toContain("DS9006");
     expect(rules[0]).toEqual({
       id: "DS1001",
       name: "unused-exported",
@@ -159,7 +162,7 @@ describe("the SARIF rendering", () => {
 
   it("appends a kind's precondition to its help after a blank line", () => {
     const rule = onlyRun(rendered(report([], []))).tool.driver.rules.find(
-      (one) => one.id === "DS1104",
+      (one) => one.id === "DS1503",
     ) as unknown as {
       help: { text: string };
       fullDescription: { text: string };
@@ -173,11 +176,11 @@ describe("the SARIF rendering", () => {
 
   it("renders a finding as a result at its rule, its level, its location and both fingerprint keys", () => {
     const run = onlyRun(rendered(report([NARROWING], [])));
-    const index = run.tool.driver.rules.findIndex((rule) => rule.id === "DS1104");
+    const index = run.tool.driver.rules.findIndex((rule) => rule.id === "DS1503");
 
     expect(run.results).toEqual([
       {
-        ruleId: "DS1104",
+        ruleId: "DS1503",
         ruleIndex: index,
         level: "warning",
         message: { text: "exported function is used only inside its own file" },
@@ -266,7 +269,7 @@ describe("the SARIF rendering", () => {
   it("renders a stale suppression after the findings, at error, with no member bag", () => {
     const results = onlyRun(rendered(report([NARROWING], [STALE]))).results;
 
-    expect(results.map((one) => one["ruleId"])).toEqual(["DS1104", "DS1703"]);
+    expect(results.map((one) => one["ruleId"])).toEqual(["DS1503", "DS9003"]);
     expect(results[1]).toMatchObject({
       level: "error",
       message: { text: STALE.message },
@@ -283,11 +286,11 @@ describe("the SARIF rendering", () => {
   });
 
   it("joins a baseline on the symbol key, which a line move leaves unchanged while the line key moves", () => {
-    const moved: WireFinding = {
+    const moved: Finding = {
       ...NARROWING,
       position: { ...NARROWING.position, line: 2, end_line: 2 },
     };
-    const keys = (of: WireFinding): unknown =>
+    const keys = (of: Finding): unknown =>
       onlyRun(rendered(report([of], []))).results[0]?.["partialFingerprints"];
 
     const before = keys(NARROWING) as Record<string, string>;
@@ -308,7 +311,7 @@ describe("the SARIF rendering", () => {
   });
 
   it("refuses to render a result at a line its file does not hold", () => {
-    const past: WireFinding = { ...NARROWING, position: { ...NARROWING.position, line: 9 } };
+    const past: Finding = { ...NARROWING, position: { ...NARROWING.position, line: 9 } };
 
     expect(() => sarifText(report([past], []), options())).toThrow(
       new RenderError("a:b/x.ts holds 3 lines and a record names line 9"),

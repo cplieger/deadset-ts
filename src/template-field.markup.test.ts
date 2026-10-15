@@ -65,7 +65,7 @@ function retainedByMarkup(markup: string): string[] {
     .split("\n")
     .filter((line) => line !== "")
     .map((line) => {
-      const [ref = "", , site = "", detail = ""] = line.split("\t");
+      const [ref = "", , , site = "", detail = ""] = line.split("\t");
       return `${ref.replace(/^[^#]*#/u, "")} ${site.replace(/^src\/View\.vue:/u, "")} ${detail}`;
     });
 }

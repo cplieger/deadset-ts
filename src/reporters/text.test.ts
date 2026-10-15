@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFixture } from "../../__test-helpers__/fixtures.ts";
-import type { Report, WireFinding, WireStaleSuppression } from "../report.ts";
+import type { Finding, Report, StaleSuppressionsEntry } from "../contract/report.generated.ts";
 import { text } from "./text.ts";
 
 /** The text rendering of one report, as the file holds it. */
@@ -21,7 +21,7 @@ function publishedExpression(): RegExp {
 
 const LINE = publishedExpression();
 
-const FINDING: WireFinding = {
+const FINDING: Finding = {
   code: "DS1301",
   kind: "write-only",
   language: "ts",
@@ -47,8 +47,8 @@ const FINDING: WireFinding = {
   details: {},
 };
 
-const STALE: WireStaleSuppression = {
-  code: "DS1703",
+const STALE: StaleSuppressionsEntry = {
+  code: "DS9003",
   mechanism: "inline",
   entry: { code: "DS1001", path: "src/catalog.ts", reason: "reached through a plugin" },
   position: { path: "src/catalog.ts", line: 213, column: 1 },
@@ -56,7 +56,7 @@ const STALE: WireStaleSuppression = {
   message: "inline directive for DS1001 matches no current finding",
 };
 
-function report(findings: readonly WireFinding[], stale: readonly WireStaleSuppression[]): Report {
+function report(findings: readonly Finding[], stale: readonly StaleSuppressionsEntry[]): Report {
   return {
     schema_version: "6.0.0",
     contract_version: "3.2.0",
@@ -111,11 +111,11 @@ describe("the text reporter", () => {
     });
   });
 
-  it("renders a stale suppression after the findings, as the suppression kind at certain under DS1703", () => {
+  it("renders a stale suppression after the findings, as the suppression kind at certain under DS9003", () => {
     const lines = textOf(report([FINDING], [STALE])).split("\n");
 
     expect(lines[1]).toBe(
-      "src/catalog.ts:213:1: suppression ts://@example/app/src/catalog.ts#Catalog.resolveAlias: inline directive for DS1001 matches no current finding [certain] (DS1703)",
+      "src/catalog.ts:213:1: suppression ts://@example/app/src/catalog.ts#Catalog.resolveAlias: inline directive for DS1001 matches no current finding [certain] (DS9003)",
     );
     expect(LINE.test(lines[1] ?? "")).toBe(true);
   });

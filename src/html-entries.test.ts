@@ -59,7 +59,7 @@ function neverImported(): string[] {
   const repository = JSON.stringify({ target: { kind: "application" } });
   const { config } = resolve({ repository, repositoryLabel: "deadset.json" });
   return findingsOf(emitterInputOf(root, config))
-    .filter((finding) => finding.code === "DS1502")
+    .filter((finding) => finding.code === "DS1602")
     .map((finding) => finding.position.path)
     .sort();
 }
@@ -111,7 +111,7 @@ describe("a page that loads a configuration's compiled output", () => {
 
     expect(
       findingsOf(emitterInputOf(root, config))
-        .filter((finding) => finding.code === "DS1502")
+        .filter((finding) => finding.code === "DS1602")
         .map((finding) => finding.position.path),
     ).toEqual(["web/orphan.ts"]);
   });

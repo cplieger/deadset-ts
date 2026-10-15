@@ -46,7 +46,7 @@ export function partsOf(main: readonly string[], options: PartsOptions = {}): st
     return findingsOf(
       emitterInputOf(root, config, options.engine === undefined ? {} : { engine: options.engine }),
     )
-      .filter((finding) => finding.code.startsWith("DS18"))
+      .filter((finding) => finding.code.startsWith("DS14"))
       .toSorted(
         (a, b) =>
           a.position.path.localeCompare(b.position.path) ||

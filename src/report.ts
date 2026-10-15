@@ -4,7 +4,9 @@
  * renders this document, so no two renderings disagree about which findings exist.
  */
 
-import type { Severity, Sort, TargetKind } from "./config.ts";
+import { SCHEMA_VERSION, SCHEMA_VERSIONS } from "./contract/contract.generated.ts";
+import type * as wire from "./contract/report.generated.ts";
+import type { Sort, TargetKind } from "./config.ts";
 import type { Conformance, DeclaredGap } from "./conformance.ts";
 import type { EdgeEvaluation } from "./edges.ts";
 import type {
@@ -18,133 +20,11 @@ import type { PassResult } from "./findings-pass.ts";
 import type { StaleSuppression } from "./findings/self-check.ts";
 import type { TestFileRule } from "./references.ts";
 
-/** The version of the report schema this analyzer writes a report to. */
-const SCHEMA_VERSION = "9.0.0";
-
-/** Every report schema version this analyzer reads: the one the Contract it implements admits. */
-export const SCHEMA_VERSIONS_ACCEPTED: readonly string[] = [SCHEMA_VERSION];
-
 /** The name this analyzer writes every document under and mints every identifier with. */
 export const ANALYZER_NAME = "deadset-ts";
 
 /** The language this analyzer claims. */
 export const LANGUAGE = "ts";
-
-interface WirePosition {
-  readonly path: string;
-  readonly line: number;
-  readonly column: number;
-  readonly end_line: number;
-}
-
-interface WireDetails {
-  readonly narrower_visibility?: string;
-  readonly implementations?: readonly {
-    readonly ref: string;
-    readonly name: string;
-    readonly position: WirePosition;
-  }[];
-  readonly write_positions?: readonly WirePosition[];
-  /** Set under the name-literal rule, which no finding of this analyzer meets; SARIF still maps it. */
-  readonly name_literal?: WirePosition;
-  readonly dependency_class?: string;
-  readonly mechanism?: string;
-  readonly entry?: {
-    readonly code: string;
-    readonly symbol?: string;
-    readonly path?: string;
-    readonly reason?: string;
-  };
-  readonly overlap?: readonly string[];
-  readonly removes_last_use_of?: readonly string[];
-}
-
-/** One finding as the finding schema spells it. */
-export interface WireFinding {
-  readonly code: string;
-  readonly kind: string;
-  readonly language: string;
-  readonly position: WirePosition;
-  readonly symbol: {
-    readonly ref: string;
-    readonly kind: string;
-    readonly name: string;
-    readonly size_lines: number;
-  };
-  readonly reachability_class: string;
-  readonly confidence: string;
-  readonly liveness_relation?: string;
-  readonly test_only: boolean;
-  readonly generated: boolean;
-  readonly component: {
-    readonly id: string;
-    readonly root: boolean;
-    readonly symbol_count: number;
-    readonly deletable_lines: number;
-  };
-  readonly retained_by: readonly string[];
-  readonly configurations: readonly string[];
-  readonly consumers_loaded: readonly string[];
-  readonly fixability: string;
-  readonly severity: Severity;
-  readonly message: string;
-  readonly details: WireDetails;
-}
-
-/** One dead component a finding names, with its members, as the report lists it once. */
-export interface WireComponent {
-  readonly id: string;
-  readonly members: readonly {
-    readonly ref: string;
-    readonly name: string;
-    readonly position: WirePosition;
-  }[];
-}
-
-interface WireEdgeEvaluation {
-  readonly edge: string;
-  readonly side: string;
-  readonly symbol: string;
-  readonly state: string;
-  readonly finding?: WireFinding;
-}
-
-export interface WireStaleSuppression {
-  readonly code: string;
-  readonly mechanism: string;
-  readonly entry: {
-    readonly code: string;
-    readonly symbol?: string;
-    readonly path: string;
-    readonly reason: string;
-  };
-  readonly position: { readonly path: string; readonly line: number; readonly column: number };
-  readonly symbol: string;
-  readonly message: string;
-}
-
-interface WireDeclaredGap {
-  readonly fixture: string;
-  readonly symbol?: string;
-  readonly capability: string;
-  readonly reason: string;
-}
-
-export interface WireTotals {
-  readonly findings: number;
-  readonly by_severity: { readonly allow: number; readonly warn: number; readonly deny: number };
-  readonly deletable_lines: number;
-  readonly suppressions_in_effect: number;
-  readonly reasons_recorded: number;
-  readonly stale_suppressions: number;
-  readonly pending: number;
-  readonly omitted: number;
-  readonly withheld: {
-    readonly certain: number;
-    readonly probable: number;
-    readonly possible: number;
-  };
-}
 
 /** One project configuration of the matrix a run analyzed. */
 export interface ReportConfiguration {
@@ -189,52 +69,6 @@ interface ReportConsumer {
 interface UnavailableConsumer {
   readonly id: string;
   readonly reason: string;
-}
-
-/** The report document. */
-export interface Report {
-  readonly schema_version: string;
-  readonly contract_version: string;
-  readonly analyzer: {
-    readonly name: string;
-    readonly version: string;
-    readonly languages: readonly string[];
-    readonly schema_versions_accepted: readonly string[];
-    readonly conformance: {
-      readonly corpus_version: string;
-      readonly result: string;
-      readonly digest: string;
-    };
-  };
-  readonly target: { readonly kind: TargetKind; readonly root: string; readonly identity: string };
-  readonly configurations: readonly ReportConfiguration[];
-  readonly configurations_not_built: readonly ReportNotBuilt[];
-  readonly consumers: {
-    readonly declared: number;
-    readonly loaded: readonly {
-      readonly id: string;
-      readonly role: "consumer";
-      readonly path: string;
-    }[];
-    readonly unavailable: readonly {
-      readonly id: string;
-      readonly role: "consumer";
-      readonly reason: string;
-    }[];
-  };
-  readonly findings: readonly WireFinding[];
-  /** Present where the run lists each component in full. */
-  readonly components?: readonly WireComponent[];
-  readonly edge_evaluations: readonly WireEdgeEvaluation[];
-  readonly stale_suppressions: readonly WireStaleSuppression[];
-  readonly declared_gaps: readonly WireDeclaredGap[];
-  readonly excluded_by_cgo: readonly never[];
-  readonly test_file_rules: readonly TestFileRule[];
-  readonly type_error_skips: readonly TypeErrorSkip[];
-  readonly notes: readonly ReportNote[];
-  readonly unanswered_questions: readonly UnansweredCount[];
-  readonly conventions_applied: readonly AppliedConvention[];
-  readonly totals: WireTotals;
 }
 
 /** One hint about the run's setup, as the report schema's `notes` spells it. */
@@ -282,13 +116,16 @@ export interface ReportInput {
  * sorted, then the edge evaluations' findings.
  */
 function componentsOf(
-  findings: readonly (readonly [WireFinding, CompletedFinding])[],
-): readonly WireComponent[] {
-  const listed = new Map<string, WireComponent>();
-  for (const [wire, finding] of findings) {
+  findings: readonly (readonly [wire.Finding, CompletedFinding])[],
+): readonly wire.ComponentsEntry[] {
+  const listed = new Map<string, wire.ComponentsEntry>();
+  for (const [written, finding] of findings) {
     const { members } = finding.component;
-    if (members !== undefined && !listed.has(wire.component.id)) {
-      listed.set(wire.component.id, { id: wire.component.id, members: members.map(wireSymbol) });
+    if (members !== undefined && !listed.has(written.component.id)) {
+      listed.set(written.component.id, {
+        id: written.component.id,
+        members: members.map(wireSymbol),
+      });
     }
   }
   return [...listed.values()];
@@ -302,7 +139,7 @@ function compare(a: string, b: string): number {
   return a < b ? -1 : 1;
 }
 
-function wirePosition(position: FindingPosition): WirePosition {
+function wirePosition(position: FindingPosition): wire.Position {
   return {
     path: position.path,
     line: position.line,
@@ -314,13 +151,13 @@ function wirePosition(position: FindingPosition): WirePosition {
 function wireSymbol(symbol: PositionedSymbol): {
   ref: string;
   name: string;
-  position: WirePosition;
+  position: wire.Position;
 } {
   return { ref: symbol.ref, name: symbol.name, position: wirePosition(symbol.position) };
 }
 
 /** The details one code carries, in the order the finding schema lists them. */
-function wireDetails(details: FindingDetails): WireDetails {
+function wireDetails(details: FindingDetails): wire.Details {
   const { entry } = details;
   return {
     ...(details.narrowerVisibility === undefined
@@ -352,7 +189,7 @@ function wireDetails(details: FindingDetails): WireDetails {
 }
 
 /** One finding as the finding schema spells it, member for member in its order. */
-export function wireFinding(finding: CompletedFinding): WireFinding {
+export function wireFinding(finding: CompletedFinding): wire.Finding {
   return {
     code: finding.code,
     kind: finding.kind,
@@ -387,7 +224,7 @@ export function wireFinding(finding: CompletedFinding): WireFinding {
   };
 }
 
-function wireEvaluation(evaluation: EdgeEvaluation<CompletedFinding>): WireEdgeEvaluation {
+function wireEvaluation(evaluation: EdgeEvaluation<CompletedFinding>): wire.EdgeEvaluationsEntry {
   return {
     edge: evaluation.edge,
     side: evaluation.side,
@@ -397,7 +234,7 @@ function wireEvaluation(evaluation: EdgeEvaluation<CompletedFinding>): WireEdgeE
   };
 }
 
-function wireStale(stale: StaleSuppression): WireStaleSuppression {
+function wireStale(stale: StaleSuppression): wire.StaleSuppressionsEntry {
   return {
     code: stale.code,
     mechanism: stale.mechanism,
@@ -418,7 +255,7 @@ function wireStale(stale: StaleSuppression): WireStaleSuppression {
 }
 
 /** The canonical key over two findings: path, line, column, code, then the symbol reference. */
-function canonical(a: WireFinding, b: WireFinding): number {
+function canonical(a: wire.Finding, b: wire.Finding): number {
   return (
     compare(a.position.path, b.position.path) ||
     a.position.line - b.position.line ||
@@ -429,7 +266,7 @@ function canonical(a: WireFinding, b: WireFinding): number {
 }
 
 /** The canonical key over two stale suppressions, each component from the record's own member. */
-function canonicalStale(a: WireStaleSuppression, b: WireStaleSuppression): number {
+function canonicalStale(a: wire.StaleSuppressionsEntry, b: wire.StaleSuppressionsEntry): number {
   return (
     compare(a.position.path, b.position.path) ||
     a.position.line - b.position.line ||
@@ -440,7 +277,7 @@ function canonicalStale(a: WireStaleSuppression, b: WireStaleSuppression): numbe
 }
 
 /** One declared gap as a report carries it, its members in the schema's order. */
-function wireGap(gap: DeclaredGap): WireDeclaredGap {
+function wireGap(gap: DeclaredGap): wire.DeclaredGapsEntry {
   return {
     fixture: gap.fixture,
     ...(gap.symbol === undefined ? {} : { symbol: gap.symbol }),
@@ -450,7 +287,7 @@ function wireGap(gap: DeclaredGap): WireDeclaredGap {
 }
 
 /** Edge evaluations by edge, then side, then their compact encodings. */
-function byEdge(a: WireEdgeEvaluation, b: WireEdgeEvaluation): number {
+function byEdge(a: wire.EdgeEvaluationsEntry, b: wire.EdgeEvaluationsEntry): number {
   return (
     compare(a.edge, b.edge) ||
     compare(a.side, b.side) ||
@@ -462,7 +299,7 @@ function byEdge(a: WireEdgeEvaluation, b: WireEdgeEvaluation): number {
  * The lines a reader deletes by acting on every finding: each distinct component a root
  * finding names, counted once however many of its roots the findings hold.
  */
-function deletableLines(findings: readonly WireFinding[]): number {
+function deletableLines(findings: readonly wire.Finding[]): number {
   const counted = new Map<string, number>();
   for (const finding of findings) {
     if (finding.component.root) {
@@ -477,7 +314,7 @@ function deletableLines(findings: readonly WireFinding[]): number {
 }
 
 /** The totals of one finding set, counted over the whole set. */
-function totalsOf(findings: readonly WireFinding[], result: PassResult): WireTotals {
+function totalsOf(findings: readonly wire.Finding[], result: PassResult): wire.Totals {
   const bySeverity = { allow: 0, warn: 0, deny: 0 };
   for (const finding of findings) {
     bySeverity[finding.severity] += 1;
@@ -500,7 +337,7 @@ function totalsOf(findings: readonly WireFinding[], result: PassResult): WireTot
 }
 
 /** Builds the report of one run, every array in the order the Contract fixes for it. */
-export function buildReport(input: ReportInput): Report {
+export function buildReport(input: ReportInput): wire.Report {
   const paired = input.result.findings
     .map((finding) => [wireFinding(finding), finding] as const)
     .sort(([a], [b]) => canonical(a, b));
@@ -521,7 +358,7 @@ export function buildReport(input: ReportInput): Report {
       name: ANALYZER_NAME,
       version: input.version,
       languages: [LANGUAGE],
-      schema_versions_accepted: SCHEMA_VERSIONS_ACCEPTED,
+      schema_versions_accepted: SCHEMA_VERSIONS,
       conformance: {
         corpus_version: input.conformance.corpusVersion,
         result: input.conformance.result,
@@ -590,8 +427,8 @@ export function buildReport(input: ReportInput): Report {
  * whose component a deletion shrinks more comes first, then one whose subject is larger,
  * then the canonical key, so the order stays total; by position it is the canonical key.
  */
-export function sortFindings(report: Report, by: Sort): Report {
-  const bySize = (a: WireFinding, b: WireFinding): number =>
+export function sortFindings(report: wire.Report, by: Sort): wire.Report {
+  const bySize = (a: wire.Finding, b: wire.Finding): number =>
     b.component.deletable_lines - a.component.deletable_lines ||
     b.symbol.size_lines - a.symbol.size_lines ||
     canonical(a, b);
@@ -599,16 +436,26 @@ export function sortFindings(report: Report, by: Sort): Report {
 }
 
 /**
- * The report holding the first `most` findings of its order, the rest counted as omitted.
- * Every other total keeps describing the whole set. Zero keeps every finding.
+ * The report holding the first `most` findings of its order, the rest counted as omitted,
+ * and listing only the components those findings name. Every other total keeps describing
+ * the whole set. Zero keeps every finding.
  */
-export function capFindings(report: Report, most: number): Report {
+export function capFindings(report: wire.Report, most: number): wire.Report {
   if (most <= 0 || report.findings.length <= most) {
     return report;
   }
+  const findings = report.findings.slice(0, most);
+  const named = new Set(
+    [...findings, ...report.edge_evaluations.flatMap((one) => one.finding ?? [])].map(
+      (finding) => finding.component.id,
+    ),
+  );
   return {
     ...report,
-    findings: report.findings.slice(0, most),
+    findings,
+    ...(report.components === undefined
+      ? {}
+      : { components: report.components.filter((listed) => named.has(listed.id)) }),
     totals: { ...report.totals, omitted: report.findings.length - most },
   };
 }

@@ -244,7 +244,7 @@ describe("a value reaching a position of another type", () => {
           "interface Holder {\n  tick(): void;\n}\ninterface View {\n  tick(): void;\n  idle(): void;\n}\nfunction hold(holder: Holder): void {\n  holder.tick();\n}\nexport function mount(view: View): void {\n  hold(view);\n}\n",
       }),
     ).toEqual([
-      "DS1203 View.idle 6: no call site invokes or selects the method through the interface",
+      "DS1202 View.idle 6: no call site invokes or selects the method through the interface",
     ]);
   });
 
@@ -256,7 +256,7 @@ describe("a value reaching a position of another type", () => {
       }),
     ).toEqual([
       "DS1003 Result.extra 3: type member has no reference in the target",
-      "DS1203 View.idle 13: no call site invokes or selects the method through the interface",
+      "DS1202 View.idle 13: no call site invokes or selects the method through the interface",
     ]);
   });
 });
@@ -354,7 +354,7 @@ describe("the members a literal writes", () => {
         ),
       }),
     ).toEqual([
-      "DS1203 View.idle 3: no call site invokes or selects the method through the interface",
+      "DS1202 View.idle 3: no call site invokes or selects the method through the interface",
     ]);
   });
 });

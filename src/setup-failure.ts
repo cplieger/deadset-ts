@@ -1,15 +1,13 @@
+import { SETUP_FAILURE_PREFIX, type SETUP_CLASSES } from "./contract/contract.generated.ts";
+
 /**
  * A setup failure: a file or a component the analysis needs and the project does not
  * provide. Each one names what is missing and the fix, on one line of the error stream
  * that starts with its class.
  */
 
-/** The classes of setup failure this analyzer meets. */
-type SetupClass =
-  | "missing-module"
-  | "missing-consumer"
-  | "workspace-member-without-source"
-  | "convention-not-literal";
+/** A class of setup failure the Contract names. */
+type SetupClass = (typeof SETUP_CLASSES)[number]["class"];
 
 export interface SetupFailure {
   readonly setupClass: SetupClass;
@@ -19,7 +17,7 @@ export interface SetupFailure {
 
 /** The failure as the one line of the error stream that names it. */
 export function setupLine(failure: SetupFailure): string {
-  return `setup failure: ${failure.setupClass}: ${failure.detail}`;
+  return `${SETUP_FAILURE_PREFIX}${failure.setupClass}: ${failure.detail}`;
 }
 
 /**

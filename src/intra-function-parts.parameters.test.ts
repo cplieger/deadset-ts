@@ -19,7 +19,7 @@ describe("a function written in place", () => {
           "",
           "console.log(make()(1, 2), makeExpression()(1, 2));",
         ]),
-      ).toEqual(["DS1801 unused src/main.ts:2", "DS1801 unused src/main.ts:6"]);
+      ).toEqual(["DS1401 unused src/main.ts:2", "DS1401 unused src/main.ts:6"]);
     },
     LOAD_TIMEOUT,
   );
@@ -45,7 +45,7 @@ describe("a function written in place", () => {
           "",
           "console.log(outer(), typeof ambient);",
         ]),
-      ).toEqual(["DS1801 unused src/main.ts:4"]);
+      ).toEqual(["DS1401 unused src/main.ts:4"]);
     },
     LOAD_TIMEOUT,
   );
@@ -63,7 +63,7 @@ describe("a function written in place", () => {
           "",
           "console.log(box.run(1, 2));",
         ]),
-      ).toEqual(["DS1801 unused src/main.ts:2"]);
+      ).toEqual(["DS1401 unused src/main.ts:2"]);
     },
     LOAD_TIMEOUT,
   );
@@ -88,7 +88,7 @@ describe("the names a parameter binds", () => {
           "",
           "console.log(pick({ a: 1, b: 2 }), nested({ inner: { c: 1, d: 2 } }, [1, 2]));",
         ]),
-      ).toEqual(["DS1801 b src/main.ts:1", "DS1801 d src/main.ts:6", "DS1801 f src/main.ts:7"]);
+      ).toEqual(["DS1401 b src/main.ts:1", "DS1401 d src/main.ts:6", "DS1401 f src/main.ts:7"]);
     },
     LOAD_TIMEOUT,
   );
@@ -108,7 +108,7 @@ describe("the names a parameter binds", () => {
           "",
           "console.log(rest({ dropped: 1, kept: 2 }), restUnread({ a: 1, b: 2 }));",
         ]),
-      ).toEqual(["DS1801 others src/main.ts:5"]);
+      ).toEqual(["DS1401 others src/main.ts:5"]);
     },
     LOAD_TIMEOUT,
   );
@@ -124,7 +124,7 @@ describe("the names a parameter binds", () => {
           "",
           "console.log(show(1));",
         ]),
-      ).toEqual(["DS1801 value src/main.ts:1"]);
+      ).toEqual(["DS1401 value src/main.ts:1"]);
     },
     LOAD_TIMEOUT,
   );
@@ -149,7 +149,7 @@ describe("the names a parameter binds", () => {
           ],
           { files: { "tsconfig.json": tsconfigWith({ experimentalDecorators: true }) } },
         ),
-      ).toEqual(["DS1801 spare src/main.ts:6"]);
+      ).toEqual(["DS1401 spare src/main.ts:6"]);
     },
     LOAD_TIMEOUT,
   );
@@ -172,7 +172,7 @@ describe("whether a function reads a parameter", () => {
           "",
           "console.log(variadic(1), outer(1));",
         ]),
-      ).toEqual(["DS1801 second src/main.ts:6"]);
+      ).toEqual(["DS1401 second src/main.ts:6"]);
     },
     LOAD_TIMEOUT,
   );
@@ -188,7 +188,7 @@ describe("whether a function reads a parameter", () => {
           "",
           "console.log(pack(1, 2));",
         ]),
-      ).toEqual(["DS1801 unused src/main.ts:1"]);
+      ).toEqual(["DS1401 unused src/main.ts:1"]);
     },
     LOAD_TIMEOUT,
   );
@@ -216,10 +216,10 @@ describe("an unread parameter of a declared function used as a value", () => {
           "console.log(table.length);",
         ]),
       ).toEqual([
-        "DS1801 unused src/main.ts:1",
-        "DS1801 unused src/main.ts:5",
-        "DS1801 first src/main.ts:9",
-        "DS1801 second src/main.ts:9",
+        "DS1401 unused src/main.ts:1",
+        "DS1401 unused src/main.ts:5",
+        "DS1401 first src/main.ts:9",
+        "DS1401 second src/main.ts:9",
       ]);
     },
     LOAD_TIMEOUT,
@@ -237,7 +237,7 @@ describe("an unread parameter of a declared function used as a value", () => {
           "const table: ((x: never, y: never) => number)[] = [pick];",
           "console.log(table.length);",
         ]),
-      ).toEqual(["DS1801 b src/main.ts:1"]);
+      ).toEqual(["DS1401 b src/main.ts:1"]);
     },
     LOAD_TIMEOUT,
   );
@@ -266,7 +266,7 @@ describe("a decorated method's signature", () => {
           ],
           { repository: { exemptions: { disabled: ["decorator"] } } },
         ),
-      ).toEqual(["DS1801 unused src/main.ts:8"]);
+      ).toEqual(["DS1401 unused src/main.ts:8"]);
     },
     LOAD_TIMEOUT,
   );

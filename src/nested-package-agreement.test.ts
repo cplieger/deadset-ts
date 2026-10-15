@@ -61,7 +61,7 @@ describe("a nested package", () => {
     { timeout: LOAD_TIMEOUT },
     () => {
       expect(atRoot).toEqual(findingsAt("web", ""));
-      expect(atRoot).toContain("package.json:11 DS1601 certain");
+      expect(atRoot).toContain("package.json:11 DS1701 certain");
       expect(atRoot).toContain("package.json applies vitest");
     },
   );
@@ -71,7 +71,7 @@ describe("a nested package", () => {
     { timeout: LOAD_TIMEOUT },
     () => {
       expect(findingsAt("", "tools")).toEqual([]);
-      expect(findingsAt("tools", "")).toEqual(["package.json:8 DS1601 certain"]);
+      expect(findingsAt("tools", "")).toEqual(["package.json:8 DS1701 certain"]);
     },
   );
 });

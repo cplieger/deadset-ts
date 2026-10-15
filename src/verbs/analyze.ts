@@ -1,4 +1,10 @@
 import {
+  CONTRACT_VERSION,
+  EXIT_CLEAN,
+  EXIT_FAILURE,
+  type Format,
+} from "../contract/contract.generated.ts";
+import {
   runAnalysis,
   runBaselineWrite,
   unansweredCounts,
@@ -6,7 +12,7 @@ import {
   type RunAnalysis,
   type RunProject,
 } from "../analysis.ts";
-import { ConfigError, kindOf, type Format } from "../config.ts";
+import { ConfigError, kindOf } from "../config.ts";
 import { CONFORMANCE, DECLARED_GAPS } from "../conformance.ts";
 import { moduleIdentity } from "../consumers.ts";
 import { analyzerProvenance, verdictOf } from "../findings-pass.ts";
@@ -20,19 +26,19 @@ import {
   LANGUAGE,
   capFindings,
   sortFindings,
-  type Report,
   type ReportConfiguration,
   type ReportNotBuilt,
   type ReportNote,
 } from "../report.ts";
+import type { Report } from "../contract/report.generated.ts";
+import { reportRefusals } from "../report-schema.ts";
 import { json } from "../reporters/json.ts";
 import { RENDERINGS } from "../reporters/reporters.ts";
 import { parseTemplate, TemplateError, type Template } from "../reporters/template.ts";
 import { resolve } from "../resolve.ts";
 import { otherSchemeRows, rowReason, writeBaseline, type Recorded } from "../suppress-file.ts";
 import type { UnseenLoad } from "../unseen-loads.ts";
-import { CONTRACT_VERSION } from "../version.ts";
-import { EXIT_CLEAN, EXIT_FAILURE, type Verb, type VerbOptions } from "./verb.ts";
+import { type Verb, type VerbOptions } from "./verb.ts";
 
 /** The options `analyze` takes beside the ones every verb takes. */
 export const ANALYZE_OPTIONS: VerbOptions = {
@@ -348,6 +354,12 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
   }
 
   try {
+    const [refused] = reportRefusals(report);
+    if (refused !== undefined) {
+      throw new Error(
+        `the report breaks the report schema at ${refused.pointer || "the document"}: ${refused.keyword}: ${refused.reason}`,
+      );
+    }
     host.writeDocument(documents.report, json(report));
     const options = {
       readSource: (path: string) => host.readFile(joinPath(targetRoot, path)),

@@ -53,7 +53,7 @@ describe("a diagnostic about where the configuration places a file", () => {
       });
 
       expect(got.skips).toEqual([]);
-      expect(got.findings).toContain("DS1002 spare");
+      expect(got.findings).toContain("DS1004 spare");
     },
     LOAD_TIMEOUT,
   );

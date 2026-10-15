@@ -1,4 +1,4 @@
-import type { Format } from "../config.ts";
+import type { Format } from "../contract/contract.generated.ts";
 import { annotations } from "./annotations.ts";
 import { json } from "./json.ts";
 import { RenderError, type Rendering, type Renderings } from "./reporter.ts";

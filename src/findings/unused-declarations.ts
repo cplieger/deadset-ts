@@ -1,3 +1,4 @@
+import { CODE } from "../contract/contract.generated.ts";
 import type { Finding } from "../finding.ts";
 import type { InventorySymbol, SymbolKind } from "../inventory.ts";
 import type { MatrixCandidate } from "../matrix.ts";
@@ -14,18 +15,18 @@ const MEMBERS: ReadonlySet<SymbolKind> = new Set([
 ]);
 
 /**
- * The kinds of declaration no code of this family reports: an interface and a method an
+ * The kinds of declaration no code of this emitter reports: an interface and a method an
  * interface declares are the interface kinds' subjects, and a type parameter is the
  * subject of the unused-type-parameter kind or of none.
  */
-const NOT_THIS_FAMILY: ReadonlySet<SymbolKind> = new Set([
+const NOT_REPORTED_HERE: ReadonlySet<SymbolKind> = new Set([
   "file",
   "interface",
   "interface-method",
   "type-parameter",
 ]);
 
-/** The reader's word for each kind of declaration a finding of the family names. */
+/** The reader's word for each kind of declaration a finding of this emitter names. */
 const WORDS: Readonly<Record<SymbolKind, string>> = {
   file: "file",
   function: "function",
@@ -71,9 +72,9 @@ interface Judged {
 function codeOf(judged: Judged): string | undefined {
   const { candidate, symbol } = judged;
   if (candidate.testOfDeadCode) {
-    return judged.testsUnseenAPI ? undefined : "DS1005";
+    return judged.testsUnseenAPI ? undefined : CODE.testOfDeadCode;
   }
-  if ((judged.test && !candidate.unreferencedTest) || NOT_THIS_FAMILY.has(symbol.kind)) {
+  if ((judged.test && !candidate.unreferencedTest) || NOT_REPORTED_HERE.has(symbol.kind)) {
     return undefined;
   }
   const referenced = candidate.productionRefs + candidate.testRefs > 0;
@@ -84,33 +85,33 @@ function codeOf(judged: Judged): string | undefined {
     return unreferencedCode(symbol);
   }
   if (candidate.heldByTests === candidate.id) {
-    return "DS1004";
+    return CODE.testOnlyUse;
   }
   if (candidate.productionRefs === 0 && judged.deprecated) {
-    return "DS1006";
+    return CODE.deprecatedUnused;
   }
   if (
     candidate.testRefs > 0 &&
     (candidate.productionRefs === 0 ||
       (candidate.relation === "reachability" && candidate.keptByTests))
   ) {
-    return "DS1004";
+    return CODE.testOnlyUse;
   }
   if (MEMBERS.has(symbol.kind)) {
-    return "DS1003";
+    return CODE.unusedMember;
   }
   if (!symbol.exported) {
-    return "DS1002";
+    return CODE.unusedUnexported;
   }
-  return judged.unreachable ? undefined : "DS1001";
+  return judged.unreachable ? undefined : CODE.unusedExported;
 }
 
 /** The code a declaration nothing references carries, by its shape and its visibility. */
 function unreferencedCode(symbol: InventorySymbol): string {
   if (MEMBERS.has(symbol.kind)) {
-    return "DS1003";
+    return CODE.unusedMember;
   }
-  return symbol.exported ? "DS1001" : "DS1002";
+  return symbol.exported ? CODE.unusedExported : CODE.unusedUnexported;
 }
 
 /** The visibility a member's message names, where it narrows the member's reach. */
@@ -135,17 +136,17 @@ function messageOf(code: string, judged: Judged): string {
   const { candidate, symbol } = judged;
   const word = WORDS[symbol.kind];
   switch (code) {
-    case "DS1005":
+    case CODE.testOfDeadCode:
       return TEST_OF_DEAD_CODE;
-    case "DS1006":
+    case CODE.deprecatedUnused:
       return `deprecated ${word} has no production reference`;
-    case "DS1004":
+    case CODE.testOnlyUse:
       return candidate.productionRefs === 0
         ? `${word} is referenced only from test files and never from production code`
         : `${word} is referenced only from test files and from declarations that are themselves dead`;
   }
   const subject =
-    code === "DS1003"
+    code === CODE.unusedMember
       ? `${visibilityWord(symbol)}${word}`
       : symbol.kind === "export-alias"
         ? word
@@ -153,7 +154,7 @@ function messageOf(code: string, judged: Judged): string {
   if (candidate.relation === "reachability") {
     return `${subject} is referenced only from declarations that are themselves dead`;
   }
-  if (code === "DS1001") {
+  if (code === CODE.unusedExported) {
     return `${subject} has no reference in the target and none from any loaded consumer`;
   }
   return `${subject} has no reference in the target`;
@@ -205,15 +206,15 @@ function brandMembers(input: EmitterInput): ReadonlySet<string> {
 /** The kinds of member a brand is: a data member of a type or of a class. */
 const BRANDS: ReadonlySet<SymbolKind> = new Set(["type-member", "class-member"]);
 
-/** The findings of the unused-declarations family, `DS1000` to `DS1099`. */
+/** The findings of the unused-declaration kinds, `DS1001` to `DS1004` and `DS1102` to `DS1104`. */
 export const unusedDeclarations: Emitter = (input) => [
-  ...familyFindings(input, false),
+  ...emitterFindings(input, false),
   ...unusedImports(input),
 ];
 
 /**
- * The import bindings their file never reads, under the unexported code. A generated
- * file's are the generator's to remove unless the run includes generated files.
+ * The import bindings their file never reads. A generated file's are the generator's to
+ * remove unless the run includes generated files.
  */
 function unusedImports(input: EmitterInput): Finding[] {
   const generated =
@@ -223,7 +224,7 @@ function unusedImports(input: EmitterInput): Finding[] {
       ? []
       : [
           {
-            code: "DS1002",
+            code: CODE.unusedImport,
             position: binding.position,
             symbol: { ref: binding.ref, kind: "import", name: binding.name, sizeLines: 1 },
             message: `import binding ${binding.name} is never read in its file`,
@@ -237,10 +238,10 @@ function unusedImports(input: EmitterInput): Finding[] {
  * a record on such a member is matched against, since the report carries the container's
  * finding rather than one of the member's own.
  */
-export const fallenMembers: Emitter = (input) => familyFindings(input, true);
+export const fallenMembers: Emitter = (input) => emitterFindings(input, true);
 
-/** The family's findings, or, where `fallen` is set, its dead containers' members' alone. */
-function familyFindings(input: EmitterInput, fallen: boolean): Finding[] {
+/** This emitter's findings, or, where `fallen` is set, its dead containers' members' alone. */
+function emitterFindings(input: EmitterInput, fallen: boolean): Finding[] {
   const union = input.swept.matrix.union;
   const dead = new Set(input.swept.sweep.candidates.map((candidate) => candidate.id));
   const unreachable = unreachableExports(input);
@@ -269,7 +270,7 @@ function familyFindings(input: EmitterInput, fallen: boolean): Finding[] {
     const code = codeOf(judged);
     if (
       code === undefined ||
-      (code === "DS1003" && (brands ??= brandMembers(input)).has(symbol.id))
+      (code === CODE.unusedMember && (brands ??= brandMembers(input)).has(symbol.id))
     ) {
       continue;
     }

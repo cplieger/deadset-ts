@@ -116,7 +116,7 @@ describe("the dependencies-and-module-machinery emitter", () => {
     const message = new RegExp(schema.properties.message.pattern, "u");
     const classes = schema.properties.details.properties.dependency_class.enum;
     for (const finding of swept.findings) {
-      expect(finding.code).toBe("DS1601");
+      expect(finding.code).toBe("DS1701");
       expect(finding.symbol.kind).toBe("dependency");
       expect(isRef(finding.symbol.ref), finding.symbol.ref).toBe(true);
       expect(finding.message).toMatch(message);
@@ -186,11 +186,11 @@ describe("the dependencies-and-module-machinery emitter", () => {
     const allow = (severity: Record<string, string>): readonly Finding[] =>
       findingsOf(
         sweepFixture(TARGET, JSON.stringify({ target: { kind: "application" }, severity })).input,
-      ).filter((finding) => finding.code === "DS1601");
+      ).filter((finding) => finding.code === "DS1701");
 
-    expect(allow({ DS1601: "allow" })).toEqual([]);
-    expect(allow({ DS16: "allow" })).toEqual([]);
-    expect(names(allow({ DS16: "allow", DS1601: "warn" }))).toEqual(names(swept.findings));
+    expect(allow({ DS1701: "allow" })).toEqual([]);
+    expect(allow({ DS17: "allow" })).toEqual([]);
+    expect(names(allow({ DS17: "allow", DS1701: "warn" }))).toEqual(names(swept.findings));
   });
 });
 
@@ -366,7 +366,7 @@ describe("a nested package whose configurations the run could not build", () => 
     try {
       expect(
         findingsOf(emitterInputOf(root, config))
-          .filter((finding) => finding.code === "DS1601")
+          .filter((finding) => finding.code === "DS1701")
           .map((finding) => `${finding.symbol.name} ${finding.reachabilityClass}`),
       ).toEqual(["typescript possible"]);
     } finally {
@@ -408,7 +408,7 @@ describe("a file no import reaches", () => {
     try {
       expect(
         findingsOf(emitterInputOf(root, config))
-          .filter((finding) => finding.code === "DS1502")
+          .filter((finding) => finding.code === "DS1602")
           .map((finding) => `${finding.symbol.name} ${JSON.stringify(finding.details)}`),
       ).toEqual(['src/orphan.ts {"removesLastUseOf":["solo"]}']);
     } finally {

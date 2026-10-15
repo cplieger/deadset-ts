@@ -324,7 +324,7 @@ describe("a module augmentation whose name is relative", () => {
       "DS1201 src/extend.ts:4 './util.js'.Util",
       "DS1201 src/sub/extend.ts:4 '../util.js'.Util",
       "DS1201 src/util.ts:1 Util",
-      "DS1502 src/util.ts:1 src/util.ts",
+      "DS1602 src/util.ts:1 src/util.ts",
     ]);
   });
 
@@ -343,7 +343,7 @@ describe("a module augmentation whose name is relative", () => {
       "DS1001 src/other/index.ts:1 other",
       "DS1201 src/dot/extend.ts:4 '.'.Dot",
       "DS1201 src/dot/index.ts:1 Dot",
-      "DS1502 src/dot/index.ts:1 src/dot/index.ts",
+      "DS1602 src/dot/index.ts:1 src/dot/index.ts",
     ]);
   });
 });

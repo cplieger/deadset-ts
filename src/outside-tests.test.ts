@@ -39,10 +39,10 @@ function findingsBeside(files: Readonly<Record<string, string>>): string[] {
 
 const HOOKS = "export function forTests(): number {\n  return 1;\n}\n";
 
-const UNREFERENCED = ["DS1001 forTests", "DS1502 src/hooks.ts"];
+const UNREFERENCED = ["DS1001 forTests", "DS1602 src/hooks.ts"];
 
 /** What a test's reference leaves of HOOKS, which carries no test evidence and so is production code. */
-const TEST_ONLY = ["DS1004 forTests"];
+const TEST_ONLY = ["DS1102 forTests"];
 
 describe("a test file no configuration of the run holds", () => {
   it.each([
@@ -129,7 +129,7 @@ describe("a test file no configuration of the run holds", () => {
         "src/main.test.ts":
           'import { "a:aliased" as value } from "./hooks.js";\n\nconsole.log(value);\n',
       }),
-    ).toEqual(["DS1002 value", "DS1004 'a:aliased'"]);
+    ).toEqual(["DS1002 value", "DS1102 'a:aliased'"]);
   });
 
   it("makes an export production code also imports used only by tests, with what only it calls", () => {
@@ -140,6 +140,6 @@ describe("a test file no configuration of the run holds", () => {
         "src/main.ts": 'import { a } from "./lib.js";\n\nconsole.log(a());\n',
         "src/main.test.ts": 'import { b } from "./lib.js";\n\nconsole.log(b());\n',
       }),
-    ).toEqual(["DS1002 c", "DS1004 b"]);
+    ).toEqual(["DS1002 c", "DS1102 b"]);
   });
 });
