@@ -110,7 +110,7 @@ function report(findings: readonly WireFinding[], stale: readonly WireStaleSuppr
 function options(
   readSource: (path: string) => string = (path) => SOURCES[path] ?? "",
 ): RenderOptions {
-  return { failOn: "deny", readSource, template: undefined };
+  return { readSource, template: undefined };
 }
 
 interface Log {

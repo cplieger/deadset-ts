@@ -1,10 +1,11 @@
 /**
  * The uses contextual types make of the target's members, which no name node resolves to.
  * An object-literal property writes the member of its name on each constituent of the
- * literal's contextual type that declares one. A value reaching a position typed by another
- * object type reads each of its members that type declares, through array elements and
- * the parameters and results of functions and constructors too; a class instance there is
- * the interface-satisfaction class's evidence instead.
+ * literal's contextual type that declares one, and so does a property of a literal whose
+ * type is inferred, where a value of that type reaches such a position. A value reaching a
+ * position typed by another object type reads each of its members that type declares,
+ * through array elements and the parameters and results of functions and constructors
+ * too; a class instance there is the interface-satisfaction class's evidence instead.
  */
 
 import {
@@ -109,10 +110,12 @@ interface Checked {
   readonly source: Type;
   readonly targets: readonly Type[];
   /**
-   * Whether the source is declared outside the target, so code the analysis does not
-   * hold reads the members of the target's types it declares.
+   * What the source is: a type whose members the target declares, which the position
+   * reads; one declared outside the target, so code the analysis does not hold reads the
+   * members of the target's types it declares; or an object literal's own type, whose
+   * properties write the position's members of their names.
    */
-  readonly outside: boolean;
+  readonly sourceKind: "members" | "outside" | "literal";
 }
 
 /** One member of an object type, by the inventory's declarations and the checker's declaration handles. */
@@ -287,6 +290,37 @@ export function contextualUses<Brand>(
     return members.length > 0 && members.every((member) => !member.own);
   };
 
+  const literalTypes = new Map<number, boolean>();
+  /**
+   * Whether an object type is an object literal's own, inferred where no contextual type
+   * names it: every member a property an object literal of the target writes.
+   */
+  const literalTyped = (part: Type): boolean => {
+    let known = literalTypes.get(part.id);
+    if (known === undefined) {
+      const members = [...membersOf(part).values()];
+      known =
+        members.length > 0 &&
+        members.every(
+          (member) =>
+            member.ids.length === 0 &&
+            member.declarations.length > 0 &&
+            member.declarations.every((handle) => literalProperty(handle) !== undefined),
+        );
+      literalTypes.set(part.id, known);
+    }
+    return known;
+  };
+  /** The name node of the object literal property one declaration handle names, if it is one. */
+  const literalProperty = (handle: NodeHandle): Node | undefined => {
+    const node = project.declarationAt(handle)?.node;
+    return node !== undefined &&
+      (isPropertyAssignment(node) || isShorthandPropertyAssignment(node)) &&
+      isObjectLiteralExpression(node.parent)
+      ? node.name
+      : undefined;
+  };
+
   const elements = new Map<number, Type | undefined>();
   /** The element type of an array type, read once per type. */
   const elementOf = (type: Type): Type | undefined => {
@@ -379,9 +413,11 @@ export function contextualUses<Brand>(
     const sources = partsOf(source).filter((one) => !targets.some((part) => part.id === one.id));
     for (const one of sources) {
       if (carries(one)) {
-        into.push({ source: one, targets, outside: false });
+        into.push({ source: one, targets, sourceKind: "members" });
       } else if (outside(one)) {
-        into.push({ source: one, targets, outside: true });
+        into.push({ source: one, targets, sourceKind: "outside" });
+      } else if (literalTyped(one)) {
+        into.push({ source: one, targets, sourceKind: "literal" });
       }
       const element = elementOf(one);
       const called = element === undefined ? callsOf(one) : [];
@@ -423,7 +459,7 @@ export function contextualUses<Brand>(
     }
     seen.add(type.id);
     return partsOf(type).some((part) => {
-      if (carries(part) || outside(part)) {
+      if (carries(part) || outside(part) || literalTyped(part)) {
         return true;
       }
       const element = elementOf(part);
@@ -444,6 +480,8 @@ export function contextualUses<Brand>(
     cap,
   );
   const reads: ContextualUse[] = [];
+  // A literal property writes a position's members once, however many values carry it there.
+  const carriedWrites = new Set<string>();
   sourced.forEach(({ flow, type }, index) => {
     const position = positions[index];
     if (position === undefined || !isAnswered(position)) {
@@ -452,10 +490,24 @@ export function contextualUses<Brand>(
     const checked: Checked[] = [];
     compared(type, position, checked, new Set());
     const ids = new Set<string>();
-    for (const { source, targets, outside: held } of checked) {
+    for (const { source, targets, sourceKind } of checked) {
       const tables = targets.map(membersOf);
       const sourceMembers = membersOf(source);
-      if (held) {
+      if (sourceKind === "literal") {
+        for (const [name, member] of sourceMembers) {
+          const written = [...new Set(tables.flatMap((table) => table.get(name)?.ids ?? []))];
+          for (const at of written.length === 0 ? [] : member.declarations) {
+            const node = literalProperty(at);
+            const key = `${at.path}#${String(at.index)}>${written.join(",")}`;
+            if (node !== undefined && !carriedWrites.has(key)) {
+              carriedWrites.add(key);
+              writes.push({ at: node, from: flow.from, ids: written });
+            }
+          }
+        }
+        continue;
+      }
+      if (sourceKind === "outside") {
         for (const table of tables) {
           for (const [name, member] of table) {
             if (sourceMembers.has(name)) {

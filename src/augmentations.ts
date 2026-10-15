@@ -21,7 +21,7 @@ import type { SourceFiles } from "./source-files.ts";
 import type { NodeHandle } from "@typescript/native/sync";
 
 /** Whether one declaration is a `declare global` block: a module-level namespace named `global`. */
-function isGlobalBlock(
+export function isGlobalBlock(
   symbol: InventorySymbol,
   held: Inventory,
   files: ReadonlySet<string>,

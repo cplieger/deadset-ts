@@ -37,6 +37,8 @@ export interface Evidence {
   readonly whileLive?: string;
   /** Where the evidence is an implementation of interface methods, which and how. */
   readonly implementing?: Implementing;
+  /** Whether the evidence holds only where a write the mode counts stores into the declaration. */
+  readonly whileWritten?: true;
 }
 
 /** What a detector reads of one project, while the project's view is open. */
@@ -193,10 +195,24 @@ export function evidenceRecords<Brand>(
         site: evidence.site,
         ...(evidence.whileLive === undefined ? {} : { whileLive: evidence.whileLive }),
         ...(evidence.implementing === undefined ? {} : { implementing: evidence.implementing }),
+        ...(evidence.whileWritten === undefined ? {} : { whileWritten: evidence.whileWritten }),
       });
     }
   }
   return found;
+}
+
+/**
+ * The records that hold given the declarations a write the mode counts stores into: one
+ * that holds only while written holds where its declaration is among them.
+ */
+export function writtenRecords(
+  records: readonly Exemption[],
+  written: ReadonlySet<string>,
+): readonly Exemption[] {
+  return records.flatMap(({ whileWritten, ...record }) =>
+    whileWritten === undefined || written.has(record.id) ? [record] : [],
+  );
 }
 
 /** The records that hold under one mode, beside the evidence a production mode found in a test file. */

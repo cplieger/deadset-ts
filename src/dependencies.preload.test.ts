@@ -13,8 +13,16 @@ function hostWith(files: Readonly<Record<string, string>>): Host {
       }
       return text;
     },
-    readDirectory: () => [],
-    kindOf: () => "absent",
+    readDirectory: (path) =>
+      Object.keys(files)
+        .filter((one) => one.startsWith(`${path}/`) && !one.slice(path.length + 1).includes("/"))
+        .map((one) => ({ name: one.slice(path.length + 1), directory: false })),
+    kindOf: (path) =>
+      files[path] !== undefined
+        ? "file"
+        : Object.keys(files).some((one) => one.startsWith(`${path}/`))
+          ? "directory"
+          : "absent",
     realPath: (path) => path,
     analyzerVersion: () => "0.0.0",
     temporaryDirectory: () => {
@@ -80,5 +88,43 @@ describe("a module a script preloads by a runtime flag", () => {
       "ts-node",
       "tsx",
     ]);
+  });
+
+  it("runs the declared dependency a flag names in nodemon's exec command, a workflow step or a makefile recipe", () => {
+    const names = ["ts-node", "tsx", "dotenv", "@scope/recipe", "unflagged"];
+    const declared = { devDependencies: Object.fromEntries(names.map((name) => [name, "1.0.0"])) };
+    const ran = (files: Readonly<Record<string, string>>): readonly string[] => {
+      const found = dependenciesOf(hostWith(files), "/repo", [], []);
+      return found.declared
+        .filter((one) => found.ran.has(declarationKey(one)))
+        .map((one) => one.name)
+        .sort();
+    };
+
+    expect(
+      ran({
+        "/repo/package.json": JSON.stringify({
+          ...declared,
+          nodemonConfig: { exec: "node --no-warnings --loader ts-node/esm" },
+        }),
+      }),
+      "nodemonConfig.exec",
+    ).toEqual(["ts-node"]);
+    expect(
+      ran({
+        "/repo/package.json": JSON.stringify(declared),
+        "/repo/nodemon.json": JSON.stringify({ exec: "node --import tsx" }),
+      }),
+      "nodemon.json exec",
+    ).toEqual(["tsx"]);
+    expect(
+      ran({
+        "/repo/package.json": JSON.stringify(declared),
+        "/repo/.github/workflows/ci.yaml":
+          "jobs:\n  test:\n    steps:\n      - run: node -r dotenv/config src/main.js unflagged\n",
+        "/repo/Makefile": "check:\n\tnode --require @scope/recipe src/check.js\n",
+      }),
+      "a workflow step and a recipe line",
+    ).toEqual(["@scope/recipe", "dotenv"]);
   });
 });

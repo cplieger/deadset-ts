@@ -97,12 +97,11 @@ export function runCommands(text: string, key: RegExp = RUN_LINE): readonly stri
 }
 
 /**
- * Every token the recipe lines of the target root's makefile hold, each with the directory
- * below the root it is read against: a recipe line is one that starts with a tab, joined
- * with the lines a trailing `\` continues it onto, and make runs each in a shell of its
- * own, so a `cd` moves the directory of the later commands of its line alone.
+ * The commands of the recipe lines of the target root's makefile, each line's in order: a
+ * recipe line is one that starts with a tab, joined with the lines a trailing `\`
+ * continues it onto.
  */
-function recipeTokens(host: Host, root: string): readonly { token: string; dir: string }[] {
+function recipeLines(host: Host, root: string): readonly (readonly string[])[] {
   const path = MAKEFILES.map((name) => joinPath(root, name)).find(
     (candidate) => host.kindOf(candidate) === "file",
   );
@@ -110,15 +109,23 @@ function recipeTokens(host: Host, root: string): readonly { token: string; dir: 
   if (text === undefined) {
     return [];
   }
+  return text
+    .replace(/\\\r?\n/gu, " ")
+    .split(/\r?\n/u)
+    .filter((line) => line.startsWith("\t"))
+    .map((line) => withoutComment(line.slice(1).replace(/^[@+-]+/u, "")).split(COMMAND_SEPARATORS));
+}
+
+/**
+ * Every token the recipe lines of the target root's makefile hold, each with the directory
+ * below the root it is read against: make runs each line in a shell of its own, so a `cd`
+ * moves the directory of the later commands of its line alone.
+ */
+function recipeTokens(host: Host, root: string): readonly { token: string; dir: string }[] {
   const found: { token: string; dir: string }[] = [];
-  for (const line of text.replace(/\\\r?\n/gu, " ").split(/\r?\n/u)) {
-    if (!line.startsWith("\t")) {
-      continue;
-    }
+  for (const line of recipeLines(host, root)) {
     let dir = root;
-    for (const command of withoutComment(line.slice(1).replace(/^[@+-]+/u, "")).split(
-      COMMAND_SEPARATORS,
-    )) {
+    for (const command of line) {
       const tokens = scriptTokens(command);
       const [first, target, ...rest] = tokens;
       if (first === "cd" && target !== undefined && rest.length === 0 && !COMPUTED.test(target)) {
@@ -156,13 +163,27 @@ function withoutComment(line: string): string {
 }
 
 /**
- * Every token the target root's workflow steps, git hooks and makefile hold: the `run:`
+ * Every command the target root's workflow steps, git hooks and makefile run: the `run:`
  * steps of the workflow files in `.github/workflows`, every line of each file in `.husky`
  * and `.githooks`, the `entry:` commands of `.pre-commit-config.yaml`, the `run:` commands
  * of a lefthook file and the makefile's recipe lines.
  */
+export function workflowCommands(host: Host, targetRoot: string): readonly string[] {
+  const root = resolvePath(host.workingDirectory(), targetRoot);
+  return [...stepCommands(host, root), ...recipeLines(host, root).flat()];
+}
+
+/** Every token the commands {@link workflowCommands} reads hold. */
 export function workflowTokens(host: Host, targetRoot: string): readonly string[] {
   const root = resolvePath(host.workingDirectory(), targetRoot);
+  return [
+    ...stepCommands(host, root).flatMap((command) => scriptTokens(command)),
+    ...recipeTokens(host, root).map(({ token }) => token),
+  ];
+}
+
+/** The commands of the workflow steps, git hooks and hook managers at one root. */
+function stepCommands(host: Host, root: string): readonly string[] {
   const commands: string[] = [];
   for (const path of filesIn(host, joinPath(root, WORKFLOWS), (name) => /\.ya?ml$/u.test(name))) {
     commands.push(...runCommands(readText(host, path) ?? ""));
@@ -175,10 +196,7 @@ export function workflowTokens(host: Host, targetRoot: string): readonly string[
   for (const [name, key] of HOOK_MANAGERS) {
     commands.push(...runCommands(readText(host, joinPath(root, name)) ?? "", key));
   }
-  return [
-    ...commands.flatMap((command) => scriptTokens(command)),
-    ...recipeTokens(host, root).map(({ token }) => token),
-  ];
+  return commands;
 }
 
 /**

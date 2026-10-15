@@ -25,4 +25,6 @@ export interface Boundary {
   readonly encapsulated: boolean;
   /** Every side of a declared cross-language edge that names a symbol of this language. */
   readonly edges: readonly EdgeSide[];
+  /** The members a function outside the analysis fills, which it may read unseen. */
+  readonly filledOutside?: ReadonlySet<string>;
 }

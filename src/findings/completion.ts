@@ -112,10 +112,12 @@ function testedByIn(input: EmitterInput): ReadonlySet<string> {
  * published API, a public member of a published type included, is `certain` where the
  * run loaded every consumer the scope declared and declared one, `probable` where one did
  * not load, and `possible` where it declared none, whatever the configuration says of the
- * consumer set. A member an `in` expression tests by name is `possible`.
+ * consumer set. A member an `in` expression tests by name, and one a function outside the
+ * analysis fills, is `possible`.
  */
 function reachabilityClasses(input: EmitterInput): (id: string) => Confidence {
   const tested = testedByIn(input);
+  const filled = input.boundary.filledOutside ?? new Set<string>();
   const published = publishedIds(input.swept.matrix.union);
   const { declared } = input.boundary.consumers;
   const outside: Confidence =
@@ -125,7 +127,7 @@ function reachabilityClasses(input: EmitterInput): (id: string) => Confidence {
         ? "certain"
         : "probable";
   return (id) => {
-    if (tested.has(id)) {
+    if (tested.has(id) || filled.has(id)) {
       return "possible";
     }
     return published.has(id) ? outside : "certain";

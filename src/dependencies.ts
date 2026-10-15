@@ -48,7 +48,7 @@ import type { DependencySection, Module } from "./ref.ts";
 import { UNANSWERED } from "./query.ts";
 import type { Handle, ProjectView } from "./session.ts";
 import { sourceFilesOf, type SourceFiles } from "./source-files.ts";
-import { workflowTokens } from "./workflow-steps.ts";
+import { workflowCommands, workflowTokens } from "./workflow-steps.ts";
 
 const MANIFEST = "package.json";
 const MODULES_DIR = "node_modules";
@@ -908,20 +908,32 @@ const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/u;
 const COMMAND_SEPARATORS = /&&|\|\||;|\||&/u;
 
 /**
- * The packages one manifest's scripts preload by a runtime flag's bare module specifier,
- * a flag counting only in a command whose program passes it to the runtime, and for Node
- * only before the script it runs, whose own arguments come after it.
+ * The command strings one manifest runs: each of its `scripts`, and the `exec` command of
+ * nodemon's configuration, in the manifest's `nodemonConfig` or the `nodemon.json` beside
+ * it, which nodemon runs the watched script with:
+ * https://github.com/remy/nodemon#config-files
  */
-function scriptPreloadsOf(manifest: Record<string, unknown>): ReadonlySet<string> {
+function manifestCommands(
+  host: Host,
+  dir: string,
+  manifest: Record<string, unknown>,
+): readonly string[] {
   const scripts = manifest["scripts"];
+  const nodemon = [manifest["nodemonConfig"], readJSON(host, joinPath(dir, "nodemon.json"))?.value];
+  return [
+    ...(isRecord(scripts) ? Object.values(scripts) : []),
+    ...nodemon.map((config) => (isRecord(config) ? config["exec"] : undefined)),
+  ].filter((command): command is string => typeof command === "string");
+}
+
+/**
+ * The packages `scripts` preload by a runtime flag's bare module specifier, a flag
+ * counting only in a command whose program passes it to the runtime, and for Node only
+ * before the script it runs, whose own arguments come after it.
+ */
+function preloadsOf(scripts: readonly string[]): ReadonlySet<string> {
   const found = new Set<string>();
-  if (!isRecord(scripts)) {
-    return found;
-  }
-  for (const script of Object.values(scripts)) {
-    if (typeof script !== "string") {
-      continue;
-    }
+  for (const script of scripts) {
     for (const command of script.split(COMMAND_SEPARATORS)) {
       const tokens = scriptTokens(command);
       let at = 0;
@@ -1058,6 +1070,7 @@ export function dependenciesOf(
     }
   }
   const workflow = new Set(workflowTokens(host, targetRoot));
+  const workflowPreloads = preloadsOf(workflowCommands(host, targetRoot));
   const declared: DeclaredDependency[] = [];
   const ran = new Set<string>();
   const peers = new Map<string, readonly string[]>();
@@ -1068,14 +1081,14 @@ export function dependenciesOf(
       continue;
     }
     const tokens = scriptTokensOf(read.value);
-    const preloads = scriptPreloadsOf(read.value);
+    const preloads = preloadsOf(manifestCommands(host, dir, read.value));
     for (const dependency of declaredIn(read.text, read.value, path, scopeOf(path))) {
       const found = installedOf(host, dir, dependency.name);
       if (found === undefined && uninstalledHere.has(dir)) {
         continue;
       }
       declared.push(dependency);
-      if (preloads.has(dependency.name)) {
+      if (preloads.has(dependency.name) || workflowPreloads.has(dependency.name)) {
         ran.add(declarationKey(dependency));
       }
       if (found === undefined) {

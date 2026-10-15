@@ -6,7 +6,7 @@
  * another project's checker, which holds only for views the session hands out.
  */
 
-import { isStringLiteralLikeNode } from "@typescript/native/ast";
+import { isStringLiteralLikeNode, type SourceFile } from "@typescript/native/ast";
 import { lineOf, readComponent } from "./component-files.ts";
 import { kindOf, type Config, type Provenance } from "./config.ts";
 import {
@@ -56,6 +56,7 @@ import {
   holdingWhile,
   isUnansweredRecord,
   retainedIn,
+  writtenRecords,
   type Detector,
   type Detectors,
 } from "./exempt.ts";
@@ -113,7 +114,7 @@ import {
   type Roots,
 } from "./roots.ts";
 import type { Scope } from "./scope.ts";
-import { serializationContract } from "./serialization-contract.ts";
+import { decodedMembers, serializationContract, type Decoded } from "./serialization-contract.ts";
 import { outsideTestReferences, testFilesAt, type OutsideTest } from "./outside-tests.ts";
 import { mergedGlobalInterfaces } from "./augmentations.ts";
 import { unseenLoadsOf, type UnseenLoad } from "./unseen-loads.ts";
@@ -794,6 +795,8 @@ interface SweptProject<Extra> {
   readonly exempt: readonly Exemption[];
   /** The declarations of the project an unanswered question could have kept live. */
   readonly unanswered: readonly string[];
+  /** The data members a generic declared outside the analysis fills, which it may read. */
+  readonly filledOutside: readonly string[];
   readonly typeErrorSkips: readonly TypeErrorSkip[];
   readonly skipped: readonly SkippedUnit[];
   /** The component files the project holds of its own, by path below the target root. */
@@ -816,6 +819,8 @@ interface ReadProject<Extra> {
   readonly imports: ReadonlyMap<string, readonly string[]>;
   /** The global augmentations a declaration outside the project names. */
   readonly augmented: readonly Root[];
+  /** The data members its production code decodes into. */
+  readonly decoded: Decoded;
   readonly extra: Extra;
 }
 
@@ -993,6 +998,12 @@ function readRun<Extra>(
           reason: warning.reason,
         })),
       ),
+      decoded: decodedMembers(
+        project,
+        projectRead.held,
+        productionFiles(project, targetRoot, resolved.testFilePaths),
+        consumers,
+      ),
       extra: extra(project, projectRead, resolved.references, resolved.testFilePaths),
     };
   });
@@ -1014,14 +1025,31 @@ function readRun<Extra>(
     withOutside.flatMap((one) => one.testFiles),
     testEvidence(host, targetRoot, withOutside),
   );
+  // A member a decode fills or a copy carries is written: a value decoded and sent again carries it on.
+  const written = new Set([
+    ...countedWrites(
+      [...withOutside.flatMap((one) => one.references), ...read.consumers.references],
+      support,
+      mode,
+    ),
+    ...withOutside.flatMap((one) => [
+      ...one.decoded.filled,
+      ...one.decoded.parsed,
+      ...one.decoded.copied,
+    ]),
+  ]);
+  const evidence = withOutside.map((one) => writtenRecords(one.evidence, written));
   const settled = settledSatisfaction(
-    withOutside.map((one) => ({ evidence: one.evidence, held: one.projectRead.held })),
+    withOutside.map((one, index) => ({
+      evidence: evidence[index] ?? [],
+      held: one.projectRead.held,
+    })),
     [...withOutside.flatMap((one) => one.references), ...read.consumers.references],
   );
   const answers = withOutside.map((one, index): SweptProject<Extra> => {
     const { projectRead } = one;
     const satisfied = settled[index];
-    const detected = heldRecords(satisfied?.evidence ?? one.evidence, {
+    const detected = heldRecords(satisfied?.evidence ?? evidence[index] ?? [], {
       mode,
       testFiles: new Set([...one.testFiles, ...support]),
     });
@@ -1059,7 +1087,9 @@ function readRun<Extra>(
           .filter((reference) => reference.resolution === "by-name")
           .map((reference) => reference.to),
         ...exempt.filter(isUnansweredRecord).map((record) => record.id),
+        ...one.decoded.unanswered,
       ],
+      filledOutside: one.decoded.filled,
       typeErrorSkips: projectRead.typeErrorSkips,
       unmappedEntries: projectRead.rooted.unmappedEntries,
       skipped: projectRead.skipped,
@@ -1160,6 +1190,22 @@ function evidenceReferences(
           },
         ];
   });
+}
+
+/**
+ * The declarations a write the mode counts stores into, a write a test-support file
+ * makes being a test's.
+ */
+function countedWrites(
+  references: readonly Reference[],
+  support: ReadonlySet<string>,
+  mode: Mode,
+): ReadonlySet<string> {
+  return new Set(
+    supportReferences(references, support).flatMap((reference) =>
+      reference.use === "write" && !(mode.production && reference.test) ? [reference.to] : [],
+    ),
+  );
 }
 
 /**
@@ -1281,6 +1327,18 @@ interface EmitterExtra {
   readonly unseenLoads: readonly UnseenLoad[];
 }
 
+/** The project's own files below the target root that are no test file. */
+function productionFiles<Brand>(
+  project: ProjectView<Brand>,
+  targetRoot: string,
+  testFiles: readonly string[],
+): readonly SourceFile[] {
+  const tests = new Set(testFiles);
+  return [...sourceFilesOf(project, targetRoot).byPath].flatMap(([path, file]) =>
+    tests.has(path) ? [] : [file],
+  );
+}
+
 /** Reads a run's projects with every per-project fact an emitter reads. */
 export function readEmitterRun(
   engine: Engine,
@@ -1317,7 +1375,7 @@ export function readEmitterRun(
       unseenLoads: unseenLoadsOf(project, read.configuration, targetRoot, testFiles),
     }),
   );
-  // Whether a declaration carries the marker decides its code, so one whose marker went
+  // Whether a declaration carries the marker decides its code, so one whose answer went
   // unread is reported by nothing.
   const unread = run.projects.flatMap((one) => one.extra.deprecation.unanswered);
   return unread.length === 0
@@ -1429,6 +1487,7 @@ export function emitterInputOver(
       },
       encapsulated: readManifest(host, targetRoot).declaresExports,
       edges: readEdgeSides(host, targetRoot),
+      filledOutside: new Set(projects.flatMap((one) => one.filledOutside)),
     },
     selfCheck,
     intraFunction: intraFunctionFacts(

@@ -2,7 +2,7 @@
   "corpus_version": "6.0.0",
   "product": { "name": "deadset-ts", "version": "0.1.0", "language": "ts" },
   "result": "pass",
-  "totals": { "fixtures": 267, "pass": 267, "gap": 0, "fail": 0 },
+  "totals": { "fixtures": 275, "pass": 275, "gap": 0, "fail": 0 },
   "fixtures": [
     {
       "fixture": "abstract-member-through-this",
@@ -794,6 +794,16 @@
       "fixture": "configuration-extends-cycle-not-built",
       "result": "pass",
       "expectations": [
+        {
+          "symbol": "UseFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1502",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
         { "symbol": "made", "result": "pass", "actual": { "report": "none" } },
         {
           "symbol": "orphan",
@@ -807,7 +817,18 @@
           },
           "suppression": { "suppressed": true, "stale": false }
         },
-        { "symbol": "used", "result": "pass", "actual": { "report": "none" } }
+        {
+          "symbol": "used",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "variable",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
       ],
       "unexpected": []
     },
@@ -1810,6 +1831,37 @@
       "unexpected": []
     },
     {
+      "fixture": "decode-only-member-confidence",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "Fetched.unread",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "type-member",
+            "confidence": "possible",
+            "reachability_class": "possible",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "Parsed.unread",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "type-member",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "decorated-class-parameter-property",
       "result": "pass",
       "expectations": [
@@ -1982,6 +2034,27 @@
           "suppression": { "suppressed": true, "stale": false }
         },
         { "symbol": "TsNode", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "dependency-preloaded-by-other-command-strings",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "NeverLoaded",
+          "result": "pass",
+          "actual": {
+            "report": "DS1601",
+            "symbol_kind": "dependency",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "details": { "dependency_class": "dev-dependency" }
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "TsNode", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Tsx", "result": "pass", "actual": { "report": "none" } }
       ],
       "unexpected": []
     },
@@ -5109,6 +5182,61 @@
       "unexpected": []
     },
     {
+      "fixture": "published-global-augmentation-members",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "Window.fromEntry",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "type-member",
+            "confidence": "possible",
+            "reachability_class": "possible",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "Window.fromImport",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "type-member",
+            "confidence": "possible",
+            "reachability_class": "possible",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "Window.unpublished",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "type-member",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "area",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "possible",
+            "reachability_class": "possible",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "published-namespace-value",
       "result": "pass",
       "expectations": [
@@ -5367,6 +5495,61 @@
           "suppression": { "suppressed": true, "stale": false }
         },
         { "symbol": "unusedShared", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "relayed-member-live-where-decoded",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "Event.kind",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "Event.seq",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "Status.spare",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "relayed-member-live-where-filled-outside",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "Kept.unread",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "confidence": "possible",
+            "reachability_class": "possible"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "Made.label",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "Row.title",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        }
       ],
       "unexpected": []
     },
@@ -5650,6 +5833,30 @@
       "unexpected": []
     },
     {
+      "fixture": "serialization-contract-enumerated-named-and-index-parameter",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "port", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "seed",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "unread",
+          "result": "pass",
+          "actual": {
+            "report": "DS1301",
+            "symbol_kind": "type-member",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "serialization-contract-enumerated-parameter",
       "result": "pass",
       "expectations": [
@@ -5828,6 +6035,113 @@
         },
         {
           "symbol": "SmallTiny",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "serialized-member-live-where-written",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "Stamp.at",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "Stamp.set",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "Stamp.unset",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "class-member",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "Target.body",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "type-member",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "Target.method",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "Target.uri",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "serialized-member-written-by-copy-or-untyped-read",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "Assigned.label",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "Assigned.note",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "type-member",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "Checked.ghost",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "type-member",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "Line.id",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "Listed.tag",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "Saved.name",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "Spread.kind",
           "result": "pass",
           "actual": { "report": "none", "retained_by": ["serialization-contract"] }
         }
