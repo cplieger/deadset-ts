@@ -352,7 +352,7 @@ export const CONVENTION_ROWS: readonly ConventionRow[] = [
   {
     name: "expo-router",
     package: "expo-router",
-    range: ">=3.0.0 <58.0.0",
+    range: ">=3.0.0 <59.0.0",
     entries: [`{,src/}app/**/*.${SCRIPT}`],
     moves: [],
   },
