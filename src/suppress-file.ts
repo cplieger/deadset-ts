@@ -8,9 +8,9 @@
 import { CODE } from "./contract/contract.generated.ts";
 import type { Host } from "./host.ts";
 import type { InventorySymbol } from "./inventory.ts";
+import { readTargetDocument } from "./fs/document.ts";
 import { jsonChunks } from "./json-chunks.ts";
-import { joinPath } from "./paths.ts";
-import { isRecord, positionAt, walkDocument } from "./json-document.ts";
+import { isRecord, positionAt, readStrict, StrictJSONError } from "./json-document.ts";
 import type { Position } from "./position.ts";
 import { declarationKey } from "./ref.ts";
 import {
@@ -185,29 +185,25 @@ function readDocument(
   symbols: readonly InventorySymbol[],
   shape: Shape,
 ): Suppressions {
-  const file = joinPath(targetRoot, shape.file);
-  if (host.kindOf(file) === "absent") {
+  const text = readTargetDocument(host, targetRoot, shape.file);
+  if (text === undefined) {
     return { records: [], refusals: [] };
   }
-  const text = host.readFile(file);
   const malformed = (detail: string, site = documentSite(shape)): never => {
     throw new SuppressionError(shape.mechanism, siteText(site), detail, shape.documentWant);
   };
-  let parsed: unknown;
+  let document;
   try {
-    parsed = JSON.parse(text);
+    document = readStrict(text, shape.array);
   } catch (error: unknown) {
-    return malformed(`${shape.file}: ${message(error)}`);
+    if (!(error instanceof StrictJSONError)) {
+      throw error;
+    }
+    return malformed(error.message, positionAt(text, shape.file, error.offset));
   }
+  const parsed = document.value;
   if (!isRecord(parsed)) {
     return malformed(shape.file);
-  }
-  const walk = walkDocument(text, shape.array);
-  if (walk.twice !== undefined) {
-    malformed(
-      `the member ${JSON.stringify(walk.twice.name)} is written twice, so neither value is chosen`,
-      positionAt(text, shape.file, walk.twice.offset),
-    );
   }
   for (const key of Object.keys(parsed)) {
     if (key !== "description" && key !== shape.array) {
@@ -224,7 +220,7 @@ function readDocument(
   const records: SuppressionRecord[] = [];
   const refusals: Refusal[] = [];
   (held as readonly unknown[]).forEach((value, index) => {
-    const offset = walk.starts[index];
+    const offset = document.starts.get(index);
     const site = offset === undefined ? documentSite(shape) : positionAt(text, shape.file, offset);
     const read = readRecord(value, site, byReference, shape);
     records.push(...read.records);
@@ -382,10 +378,9 @@ function* separatorsEscaped(pieces: Iterable<string>): Generator<string, void, u
  * A baseline holding one row per finding, in the order given, which is the report's, and
  * the other language's rows `kept`, Go's rows ahead of TypeScript's and each scheme's in
  * the order given, so two analyzers writing one document in either order write the same
- * bytes, in the form grammar/suppression.md fixes. Every recorded row carries the
- * provenance as its reason. A finding
- * missing a value a row needs, and an identity missing its name or version, are refused
- * rather than written, because the grammar requires a reason on every row.
+ * bytes, in the form grammar/suppression.md fixes. Every row carries the provenance as
+ * its reason, so a finding missing a value a row needs, or an identity missing its name
+ * or version, is refused rather than written.
  */
 export function writeBaseline(
   findings: readonly Recorded[],

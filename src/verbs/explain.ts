@@ -2,7 +2,6 @@ import { EXIT_CLEAN, EXIT_USAGE } from "../contract/contract.generated.ts";
 import { runAnalysis, type RunAnalysis } from "../analysis.ts";
 import { listing } from "../components.ts";
 import type { Cascade } from "../config.ts";
-import { ConfigError } from "../config.ts";
 import type { CompletedFinding } from "../finding.ts";
 import { OUTSIDE, swept as judged } from "../graph.ts";
 import type { InventorySymbol } from "../inventory.ts";
@@ -14,6 +13,7 @@ import type { Reference } from "../references.ts";
 import { resolve } from "../resolve.ts";
 import type { Root } from "../roots.ts";
 import { type Verb, type VerbOptions } from "./verb.ts";
+import { UsageError } from "../usage.ts";
 import { bytewise } from "../text/compare.ts";
 import { diagnose } from "../product.ts";
 
@@ -47,16 +47,12 @@ function namedSymbol(option: (name: string) => string | undefined): string {
   });
   const [only, ...more] = named;
   if (only === undefined) {
-    throw new ConfigError(
-      "malformed",
-      "",
+    throw new UsageError(
       "explain explains the symbol --why, --why-live or --why-not names, and none was named",
     );
   }
   if (more.length > 0) {
-    throw new ConfigError(
-      "malformed",
-      "",
+    throw new UsageError(
       `explain explains one symbol, and ${named.map((one) => `--${one.name}`).join(", ")} each name one`,
     );
   }

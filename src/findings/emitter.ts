@@ -1,5 +1,5 @@
 import type { RunSweep } from "../analysis.ts";
-import type { Config } from "../config.ts";
+import type { ResolvedConfig } from "../config.ts";
 import type { Dependencies } from "../dependencies.ts";
 import type { FileFacts } from "../file-facts.ts";
 import type { Finding } from "../finding.ts";
@@ -14,7 +14,7 @@ import type { SelfCheckFacts } from "./self-check.ts";
  * the facts about the run each emitter reads beside the sweep.
  */
 export interface EmitterInput {
-  readonly config: Config;
+  readonly config: ResolvedConfig;
   /** The production sweep a report is built from, beside the matrix it judged. */
   readonly swept: RunSweep;
   /** The declarations carrying the deprecation marker in any configuration of the run. */

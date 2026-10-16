@@ -16,8 +16,7 @@ const TARGET = fixture("projects", "injection-container");
 function sweepFixture(document?: string): RunSweep {
   const path = join(TARGET, "deadset.json");
   const { config } = resolve({
-    repository: document ?? readFileSync(path, "utf8"),
-    repositoryLabel: path,
+    repository: { text: document ?? readFileSync(path, "utf8"), label: path },
   });
   const host = nodeHost();
   return runSweep(openEngine({ collectTiming: false }), host, scopeForDir(host, TARGET), config, {
@@ -70,12 +69,14 @@ function injectedIn(
   });
   try {
     const { config } = resolve({
-      repository: JSON.stringify({
-        target: { kind: "application" },
-        exemptions: { disabled: ["decorator"] },
-        ts: { injection_registrations: registrations },
-      }),
-      repositoryLabel: join(root, "deadset.json"),
+      repository: {
+        text: JSON.stringify({
+          target: { kind: "application" },
+          exemptions: { disabled: ["decorator"] },
+          ts: { injection_registrations: registrations },
+        }),
+        label: join(root, "deadset.json"),
+      },
     });
     const host = nodeHost();
     return injected(

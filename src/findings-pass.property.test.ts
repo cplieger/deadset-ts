@@ -100,8 +100,7 @@ describe("a suppression document written from a run's findings", () => {
     "as %s suppresses exactly those findings and what only they reach, with no stale entry",
     (mechanism) => {
       const { config, provenance } = resolve({
-        repository: '{ "target": { "kind": "application" } }',
-        repositoryLabel: "deadset.json",
+        repository: { text: '{ "target": { "kind": "application" } }', label: "deadset.json" },
       });
       const host = nodeHost();
       // One client serves every run, each in its own snapshot: a run closes the client it

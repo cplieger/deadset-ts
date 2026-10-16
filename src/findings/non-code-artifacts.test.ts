@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { emitterInputOf } from "../../__test-helpers__/emitter-input.ts";
 import { contractDocument, fixture, readFixture } from "../../__test-helpers__/fixtures.ts";
 import { writeProject } from "../../__test-helpers__/projects.ts";
-import type { Config } from "../config.ts";
+import type { ResolvedConfig } from "../config.ts";
 import type { Finding } from "../finding.ts";
 import { resolve } from "../resolve.ts";
 import type { EmitterInput } from "./emitter.ts";
@@ -15,11 +15,10 @@ const IMPORTS = fixture("projects", "non-code-artifacts-imports");
 const CORPUS = fixture("corpus", "entry-file-declaring-nothing");
 
 /** The configuration a target's own document resolves to, or the one given. */
-function configOf(target: string, document?: string): Config {
+function configOf(target: string, document?: string): ResolvedConfig {
   const path = join(target, "deadset.json");
   return resolve({
-    repository: document ?? readFileSync(path, "utf8"),
-    repositoryLabel: path,
+    repository: { text: document ?? readFileSync(path, "utf8"), label: path },
   }).config;
 }
 
@@ -29,7 +28,7 @@ function configOf(target: string, document?: string): Config {
  */
 function inputFor(
   target: string,
-  config: Config,
+  config: ResolvedConfig,
   extra: { readonly marked?: readonly string[]; readonly edgeSides?: readonly string[] } = {},
 ): EmitterInput {
   const input = emitterInputOf(target, config, { marked: extra.marked ?? [] });

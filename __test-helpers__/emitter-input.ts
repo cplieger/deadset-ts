@@ -1,6 +1,6 @@
 import { nodeHost } from "../bin/node-host.ts";
 import { DETECTORS, emitterInputOver, readEmitterRun, type RunSweep } from "../src/analysis.ts";
-import type { Config } from "../src/config.ts";
+import type { ResolvedConfig } from "../src/config.ts";
 import type { CompletedFinding } from "../src/finding.ts";
 import type { EmitterInput } from "../src/findings/emitter.ts";
 import { decidedFindings } from "../src/findings/emitters.ts";
@@ -32,7 +32,11 @@ interface SweptBy {
  * What every emitter reads of one target, swept under one configuration. The run reads
  * no suppression document, so the self-check family has nothing to report.
  */
-export function emitterInputOf(target: string, config: Config, by: SweptBy = {}): EmitterInput {
+export function emitterInputOf(
+  target: string,
+  config: ResolvedConfig,
+  by: SweptBy = {},
+): EmitterInput {
   const host = nodeHost();
   const scope = {
     ...scopeForDir(host, target),
@@ -60,7 +64,7 @@ export function findingsOf(input: EmitterInput): readonly CompletedFinding[] {
  * The input of a sweep built by hand, with no fact beside it: no deprecation marker,
  * store, dependency, implementation or file, and a boundary naming nothing.
  */
-export function sweepOnly(config: Config, swept: RunSweep): EmitterInput {
+export function sweepOnly(config: ResolvedConfig, swept: RunSweep): EmitterInput {
   return {
     config,
     swept,

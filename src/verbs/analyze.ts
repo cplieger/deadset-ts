@@ -12,7 +12,7 @@ import {
   type RunAnalysis,
   type RunProject,
 } from "../analysis.ts";
-import { ConfigError, kindOf } from "../config.ts";
+import { kindOf } from "../config.ts";
 import { CONFORMANCE, DECLARED_GAPS } from "../conformance.ts";
 import { moduleIdentity } from "../consumers.ts";
 import { analyzerProvenance, verdictOf } from "../findings-pass.ts";
@@ -38,8 +38,9 @@ import { resolve } from "../resolve.ts";
 import { otherSchemeRows, rowReason, writeBaseline, type Recorded } from "../suppress-file.ts";
 import type { UnseenLoad } from "../unseen-loads.ts";
 import { type Verb, type VerbOptions } from "./verb.ts";
+import { UsageError } from "../usage.ts";
 import { bytewise } from "../text/compare.ts";
-import { diagnose, LANGUAGE, message } from "../product.ts";
+import { diagnose, message } from "../product.ts";
 
 /** The options `analyze` takes beside the ones every verb takes. */
 export const ANALYZE_OPTIONS: VerbOptions = {
@@ -70,14 +71,12 @@ function formatsOf(named: readonly string[], configured: readonly Format[]): rea
   const seen = new Set<string>();
   for (const format of formats) {
     if (!RENDERINGS.has(format as Format)) {
-      throw new ConfigError(
-        "malformed",
-        "",
+      throw new UsageError(
         `${JSON.stringify(format)} is not a format this analyzer renders: the formats are ${formatNames()}`,
       );
     }
     if (seen.has(format)) {
-      throw new ConfigError("malformed", "", `the format ${JSON.stringify(format)} is named twice`);
+      throw new UsageError(`the format ${JSON.stringify(format)} is named twice`);
     }
     seen.add(format);
   }
@@ -189,9 +188,7 @@ function templateOf(
 ): Template | undefined {
   if (named === undefined || named === "") {
     if (formats.includes("template")) {
-      throw new ConfigError(
-        "malformed",
-        "",
+      throw new UsageError(
         "the template format renders the template --template names, and none was named",
       );
     }
@@ -201,7 +198,7 @@ function templateOf(
   try {
     source = host.readFile(resolvePath(invoked, named));
   } catch (error: unknown) {
-    throw new ConfigError("malformed", "", `--template=${named}: ${message(error)}`);
+    throw new UsageError(`--template=${named}: ${message(error)}`);
   }
   try {
     return parseTemplate(source);
@@ -209,7 +206,7 @@ function templateOf(
     if (!(error instanceof TemplateError)) {
       throw error;
     }
-    throw new ConfigError("malformed", "", `--template=${named}: ${error.message}`);
+    throw new UsageError(`--template=${named}: ${error.message}`);
   }
 }
 
@@ -231,25 +228,17 @@ interface Documents {
 export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option, repeated }) => {
   const reportPath = option("report");
   if (reportPath === undefined || reportPath === "") {
-    throw new ConfigError(
-      "malformed",
-      "",
+    throw new UsageError(
       "analyze writes its report to the path --report names, and no path was named",
     );
   }
   const exitCode = option("exit-code") ?? EXIT_CODE_ON;
   if (exitCode !== EXIT_CODE_ON && exitCode !== EXIT_CODE_OFF) {
-    throw new ConfigError(
-      "malformed",
-      "",
+    throw new UsageError(
       `--exit-code=${JSON.stringify(exitCode)}: the values are ${EXIT_CODE_ON} and ${EXIT_CODE_OFF}`,
     );
   }
   const { config, provenance } = resolve(inputs());
-  const kind = config.targetKind;
-  if (kind === "") {
-    throw new ConfigError("missing-target-kind", "target.kind", "target.kind is not set");
-  }
   const invoked = host.workingDirectory();
   const baseline = option("baseline-write");
   const documents: Documents = {
@@ -318,7 +307,7 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
       conformance: CONFORMANCE,
       declaredGaps: DECLARED_GAPS,
       target: {
-        kind: kindOf(kind, LANGUAGE),
+        kind: kindOf(config.target.kind),
         root,
         identity: moduleIdentity(host, scoped.target),
       },
@@ -340,7 +329,7 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
         ...unseenLoadNotes(run.unseenLoads),
       ],
     });
-    report = capFindings(sortFindings(built, config.reporters.sort), config.reporters.maxFindings);
+    report = capFindings(sortFindings(built, config.reporters.sort), config.reporters.max_findings);
     verdict = verdictOf(result, config);
   } catch (error: unknown) {
     if (!(error instanceof ReportPathError)) {

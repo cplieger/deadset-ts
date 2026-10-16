@@ -20,7 +20,7 @@ import { nodeHost } from "../bin/node-host.ts";
 import { fixture } from "../__test-helpers__/fixtures.ts";
 import { writeProject } from "../__test-helpers__/projects.ts";
 import { runAnalysis } from "./analysis.ts";
-import { ConfigError } from "./config.ts";
+import { UsageError } from "./usage.ts";
 import {
   analyzerProvenance,
   recordedFindings,
@@ -45,8 +45,7 @@ function passOver(root: string, document?: string): { result: PassResult; exit: 
   const host = nodeHost();
   const path = join(root, "deadset.json");
   const { config, provenance } = resolve({
-    repository: document ?? readFileSync(path, "utf8"),
-    repositoryLabel: path,
+    repository: { text: document ?? readFileSync(path, "utf8"), label: path },
   });
   const engine = openEngine({ collectTiming: false });
   const { result } = runAnalysis(engine, host, scopeForDir(host, root), config, provenance, {
@@ -410,13 +409,15 @@ describe("a stale suppression", () => {
   it("has no severity a configuration may set", () => {
     expect(() =>
       resolve({
-        repository: JSON.stringify({
-          target: { kind: "application" },
-          severity: { DS9003: "warn" },
-        }),
-        repositoryLabel: "deadset.json",
+        repository: {
+          text: JSON.stringify({
+            target: { kind: "application" },
+            severity: { DS9003: "warn" },
+          }),
+          label: "deadset.json",
+        },
       }),
-    ).toThrow(ConfigError);
+    ).toThrow(UsageError);
   });
 
   it("fails a run that reports nothing else, under a configuration that silences every code it could name", () => {
@@ -491,7 +492,7 @@ describe("a configured root that names nothing", () => {
 
 describe("a malformed inline directive", () => {
   it("ends the run with a usage refusal naming the first one written", () => {
-    expect(() => passOver(MALFORMED)).toThrow(ConfigError);
+    expect(() => passOver(MALFORMED)).toThrow(UsageError);
     expect(() => passOver(MALFORMED)).toThrow(/^inline src\/main\.ts:3:1: /u);
   });
 });

@@ -1,5 +1,5 @@
 import { CODE } from "../contract/contract.generated.ts";
-import type { Config } from "../config.ts";
+import type { ResolvedConfig } from "../config.ts";
 import type { Finding } from "../finding.ts";
 import type { Emitter, EmitterInput } from "./emitter.ts";
 
@@ -15,10 +15,10 @@ const FILE_START = 1;
  * completeness and listing no project declares it of a matrix the run derived, and a
  * derived matrix is never complete.
  */
-function completeMatrix(config: Config): boolean {
+function completeMatrix(config: ResolvedConfig): boolean {
   return (
-    config.analysis.matrixComplete &&
-    config.analysis.configurations.some((entry) => entry.shape === "project")
+    config.analysis.matrix.complete &&
+    config.analysis.configurations.some((entry) => "project" in entry)
   );
 }
 

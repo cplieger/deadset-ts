@@ -145,7 +145,7 @@ function atPossible(input: EmitterInput): EmitterInput {
   const { config } = input;
   return {
     ...input,
-    config: { ...config, analysis: { ...config.analysis, minConfidence: "possible" } },
+    config: { ...config, analysis: { ...config.analysis, min_confidence: "possible" } },
   };
 }
 

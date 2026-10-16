@@ -128,8 +128,7 @@ function partsOf(
   const root = writeProject(files);
   roots.push(root);
   const { config } = resolve({
-    repository: JSON.stringify(document),
-    repositoryLabel: "deadset.json",
+    repository: { text: JSON.stringify(document), label: "deadset.json" },
   });
   const input = emitterInputOf(root, config, { mode });
   return findingsOf(

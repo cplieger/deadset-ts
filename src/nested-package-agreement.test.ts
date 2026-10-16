@@ -21,11 +21,13 @@ afterAll(() => {
 function findingsAt(dir: string, under: string): string[] {
   const host = nodeHost();
   const { config, provenance } = resolve({
-    repository: JSON.stringify({
-      target: { kind: "application" },
-      analysis: { min_confidence: "possible" },
-    }),
-    repositoryLabel: "deadset.json",
+    repository: {
+      text: JSON.stringify({
+        target: { kind: "application" },
+        analysis: { min_confidence: "possible" },
+      }),
+      label: "deadset.json",
+    },
   });
   const target = join(root, "target", dir);
   const { result, run } = runAnalysis(

@@ -15,7 +15,7 @@ const TARGET = fixture("projects", "two-configurations");
 /** The fixture's configuration document, resolved. */
 function fixtureConfig(): ReturnType<typeof resolve> {
   const document = join(TARGET, "deadset.json");
-  return resolve({ repository: readFileSync(document, "utf8"), repositoryLabel: document });
+  return resolve({ repository: { text: readFileSync(document, "utf8"), label: document } });
 }
 
 /** One sweep of the fixture, with each declaration spelled by its file and display name. */
@@ -142,7 +142,7 @@ describe("a run over two compiler configurations", () => {
       openEngine({ collectTiming: false }),
       host,
       scopeForDir(host, target),
-      resolve({ repository: readFileSync(document, "utf8"), repositoryLabel: document }).config,
+      resolve({ repository: { text: readFileSync(document, "utf8"), label: document } }).config,
       { marked: [], mode: { production: true } },
     );
     const names = new Map(swept.matrix.union.symbols.map((symbol) => [symbol.id, symbol.name]));

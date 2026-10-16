@@ -4,11 +4,11 @@ This page lists where deadset-ts reads its settings, every setting it reads, the
 
 ## Where settings live
 
-deadset-ts reads up to three JSON documents. A command-line option wins over `deadset.json` at the target root, which wins over a central configuration that `--central=FILE` names. `--config=FILE` reads another file in place of `deadset.json`. A key the Contract does not declare, or a value of the wrong type, is refused with exit code 2. So is an `exemptions.disabled` entry that names no exemption class, and an `analysis.template_dirs` entry that is not a directory below the target. So is a `ts.disabled_conventions` entry that names no convention row.
+deadset-ts reads up to three JSON documents. A command-line option wins over `deadset.json` at the target root, which wins over a central configuration that `--central=FILE` names. `--config=FILE` reads another file in place of `deadset.json`. A document larger than 1 MiB is refused with exit code 2, and so is one that a file option names and that cannot be read. So is a `deadset.json` that is a link resolving outside the target root, or anything but a regular file. A key the Contract does not declare, or a value of the wrong type, is refused with exit code 2. So is an `exemptions.disabled` entry that names no exemption class, and an `analysis.template_dirs` entry that is not a directory below the target. So is a `ts.disabled_conventions` entry that names no convention row.
 
 `print-config` prints the resolved configuration and the source of each setting.
 
-`target.kind` is the one required setting, and it has no default. Write `application` when every caller is inside the analyzed projects, and `library` when the published API has callers outside them. A target that holds Go and TypeScript code can name a kind per language instead, as an object naming both: `{"go": "application", "ts": "library"}`. deadset-ts reads the `ts` member and writes it to its report as its one kind.
+`target.kind` is the one required setting, and it has no default. Write `application` when every caller is inside the analyzed projects, and `library` when the published API has callers outside them. A target that holds Go and TypeScript code can name a kind per language instead, as an object naming both: `{"go": "application", "ts": "library"}`. deadset-ts reads the `ts` member alone, writes it to its report as its one kind, and prints it as `{"ts": "library"}`. It checks nothing of the `go` member.
 
 ```json
 { "target": { "kind": "library" } }
@@ -44,7 +44,7 @@ deadset-ts reads up to three JSON documents. A command-line option wins over `de
 | `ts.lifecycle_contracts` | `[]` | Per framework, the decorators, calls or base classes that make a component, and the members the framework calls |
 | `ts.serializers` | `[]` | Declarations whose call reads its arguments' data members by name, such as a schema validator's `parse` |
 
-`analysis.languages`, `providers` and `go` are accepted and printed, and deadset-ts reads nothing else from them. The [deadset](https://github.com/cplieger/deadset) command and the Go analyzer read them.
+`analysis.languages`, `providers` and `go` are accepted without being checked, and `print-config` leaves them out. The [deadset](https://github.com/cplieger/deadset) command and the Go analyzer read and check them.
 
 The Contract's [configuration schema](https://github.com/cplieger/deadset-spec) defines every key in full.
 
@@ -55,6 +55,8 @@ Three mechanisms keep a finding out of a run. Each one needs a reason.
 - An inline directive on the line above the declaration, or after the code on the line where the declaration begins: `// deadset:ignore DS1001 -- kept for the next release`. Several codes are written `DS1001,DS1003`. A directive with no reason is reported as `DS9001`.
 - `deadset-ignore.json` at the target root, whose `ignore` array a maintainer writes. Each entry names `code`, `symbol`, `path` and `reason`. An entry that names no path is reported as `DS9002`. An entry can also keep a `DS1701` dependency, named by the `symbol.ref` and `position.path` its finding carries. An entry whose `symbol` starts with `go://` is left to the Go analyzer.
 - `deadset-baseline.json` at the target root, whose `baseline` rows `analyze --baseline-write` writes. A row has the same four members, so it moves into the ignore file by gaining a maintainer's reason.
+
+An ignore file or a baseline larger than 1 MiB is refused with exit code 2. One that is a link resolving outside the target root, or anything but a regular file, ends the run with exit code 3, and nothing is read from it.
 
 ```json
 {
@@ -84,8 +86,8 @@ A library's published API has callers outside the target. `--scope=FILE` names a
 }
 ```
 
-Each consumer's compiler configurations open in the same session as the target's, and the report names every consumer it loaded. A consumer that is absent or does not load ends the run with exit code 3. [How deadset-ts works](how-it-works.md#libraries-and-their-consumers) explains how consumers change the confidence of a finding.
+Each consumer's compiler configurations open in the same session as the target's, and the report names every consumer it loaded. A scope document that cannot be read ends the run with exit code 2, and one the scope schema refuses with exit code 3. A consumer that is absent or does not load ends the run with exit code 3. [How deadset-ts works](how-it-works.md#libraries-and-their-consumers) explains how consumers change the confidence of a finding.
 
 ## Cross-language edges
 
-`deadset-edges.json` at the target root declares edges between a TypeScript declaration and a declaration in another language, such as a generated client type and the Go server type it stands for. Each edge names `id`, `provides` and `used_by`, and an optional `because`. deadset-ts never decides the other side. When the TypeScript side of an edge is dead, its finding is pending, and the run exits 4 until the [deadset](https://github.com/cplieger/deadset) merge reads both sides.
+`deadset-edges.json` at the target root declares edges between a TypeScript declaration and a declaration in another language, such as a generated client type and the Go server type it stands for. Its `edges` object holds each edge under its identifier, which names one edge, with `provides`, `used_by` and an optional `because`. deadset-ts never decides the other side. When the TypeScript side of an edge is dead, its finding is pending, and the run exits 4 until the [deadset](https://github.com/cplieger/deadset) merge reads both sides. The document is refused with exit code 2 when it is larger than 1 MiB, and the run ends with exit code 3 when it is a link resolving outside the target root, or anything but a regular file.

@@ -117,8 +117,7 @@ function reported(
   });
   roots.push(root);
   const { config } = resolve({
-    repository: '{ "target": { "kind": "application" } }',
-    repositoryLabel: "deadset.json",
+    repository: { text: '{ "target": { "kind": "application" } }', label: "deadset.json" },
   });
   return findingsOf(emitterInputOf(root, config)).map(
     (one) => `${one.code} ${one.position.path}:${String(one.position.line)} ${one.symbol.name}`,
@@ -225,8 +224,7 @@ describe("a pattern module declaration an import of a component file matches", (
     });
     roots.push(root);
     const { config } = resolve({
-      repository: '{ "target": { "kind": "application" } }',
-      repositoryLabel: "deadset.json",
+      repository: { text: '{ "target": { "kind": "application" } }', label: "deadset.json" },
     });
     const engine = openEngine({
       collectTiming: false,

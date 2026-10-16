@@ -1,7 +1,8 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { fixture } from "../__test-helpers__/fixtures.ts";
-import { reportRefusals, schemaRefusals } from "./report-schema.ts";
+import { reportRefusals } from "./report-schema.ts";
+import { schemaRefusals } from "./schema.ts";
 
 /** Every report document the pinned vectors publish, by its path below the fixtures. */
 const REPORTS = ["sarif", "baseline"].flatMap((family) =>

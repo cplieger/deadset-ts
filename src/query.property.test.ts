@@ -181,8 +181,10 @@ function analysisUnder(cascade: Cascade, fails: Fails, asked?: Set<string>): Run
   };
   const host = nodeHost();
   const { config, provenance } = resolve({
-    repository: JSON.stringify({ target: { kind: "library" }, reporters: { cascade } }),
-    repositoryLabel: "deadset.json",
+    repository: {
+      text: JSON.stringify({ target: { kind: "library" }, reporters: { cascade } }),
+      label: "deadset.json",
+    },
   });
   return runAnalysis(engine, host, scopeForDir(host, root), config, provenance, {
     production: true,

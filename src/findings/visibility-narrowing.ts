@@ -266,13 +266,13 @@ function unreachable(
 export function narrowings(input: EmitterInput): readonly Finding[] {
   const facts = factsOf(input.swept.matrix.union);
   const { declared, loaded } = input.boundary.consumers;
-  const closed = input.config.consumersComplete && declared.every((id) => loaded.includes(id));
+  const closed = input.config.consumers.complete && declared.every((id) => loaded.includes(id));
   const world = { closed, writeOnly: writeOnlyDeclarations(input) };
   const candidates = new Map(
     input.swept.sweep.candidates.map((candidate) => [candidate.id, candidate]),
   );
   const generated =
-    input.config.analysis.generatedFiles === "include" ? undefined : input.files.generated;
+    input.config.analysis.generated_files === "include" ? undefined : input.files.generated;
 
   const findings: Finding[] = [];
   facts.graph.symbols.forEach((symbol, at) => {

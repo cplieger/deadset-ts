@@ -22,8 +22,7 @@ function target(files: Readonly<Record<string, string>>) {
   });
   const host = nodeHost();
   const { config, provenance } = resolve({
-    repository: JSON.stringify(APPLICATION),
-    repositoryLabel: "deadset.json",
+    repository: { text: JSON.stringify(APPLICATION), label: "deadset.json" },
   });
   return { host, scope: scopeForDir(host, root), config, provenance };
 }

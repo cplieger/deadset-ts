@@ -13,7 +13,7 @@ import {
   SYMBOL_SUBJECTS,
   type Subject,
 } from "./contract/contract.generated.ts";
-import { ConfigError } from "./config.ts";
+import { UsageError } from "./usage.ts";
 import type { Finding } from "./finding.ts";
 import { positionKey, type Position } from "./position.ts";
 import { isRef } from "./ref.ts";
@@ -68,9 +68,9 @@ export interface Suppressions {
  * instruction the analysis cannot carry out. It is a malformed input, so the command line
  * answers it with the usage code.
  */
-export class SuppressionError extends ConfigError {
+export class SuppressionError extends UsageError {
   constructor(mechanism: Mechanism, at: string, text: string, want: string) {
-    super("malformed", at, `${mechanism} ${at}: ${text}: want ${want}`);
+    super(`${mechanism} ${at}: ${text}: want ${want}`);
     this.name = "SuppressionError";
   }
 }

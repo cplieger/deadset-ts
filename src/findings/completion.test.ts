@@ -5,14 +5,14 @@ import { afterAll, describe, expect, it } from "vitest";
 import { emitterInputOf, findingsOf } from "../../__test-helpers__/emitter-input.ts";
 import { fixture } from "../../__test-helpers__/fixtures.ts";
 import { writeProject } from "../../__test-helpers__/projects.ts";
-import type { Config } from "../config.ts";
+import type { ResolvedConfig } from "../config.ts";
 import type { CompletedFinding } from "../finding.ts";
 import { resolve } from "../resolve.ts";
 
 /** The configuration one target's own document resolves to. */
-function configOf(target: string): Config {
+function configOf(target: string): ResolvedConfig {
   const path = join(target, "deadset.json");
-  return resolve({ repository: readFileSync(path, "utf8"), repositoryLabel: path }).config;
+  return resolve({ repository: { text: readFileSync(path, "utf8"), label: path } }).config;
 }
 
 /** Each finding as its code, its subject and the component it is placed in. */
@@ -92,8 +92,7 @@ function reportedUnder(
   const path = join(target, "deadset.json");
   const own = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
   const { config } = resolve({
-    repository: JSON.stringify({ ...own, ...extra }),
-    repositoryLabel: path,
+    repository: { text: JSON.stringify({ ...own, ...extra }), label: path },
   });
   return findingsOf(emitterInputOf(target, config));
 }
@@ -268,8 +267,10 @@ describe("the defaults of a library", () => {
       emitterInputOf(
         root,
         resolve({
-          repository: JSON.stringify({ target: { kind: "library" }, ...document }),
-          repositoryLabel: "deadset.json",
+          repository: {
+            text: JSON.stringify({ target: { kind: "library" }, ...document }),
+            label: "deadset.json",
+          },
         }).config,
       ),
     ).map((finding) => `${finding.code} ${finding.symbol.name} ${finding.confidence}`);
@@ -328,8 +329,10 @@ describe("the confidence of a dead component", () => {
       emitterInputOf(
         root,
         resolve({
-          repository: JSON.stringify({ target: { kind: "library" }, ...document }),
-          repositoryLabel: "deadset.json",
+          repository: {
+            text: JSON.stringify({ target: { kind: "library" }, ...document }),
+            label: "deadset.json",
+          },
         }).config,
       ),
     ).map((finding) => `${finding.code} ${finding.symbol.name} ${finding.confidence}`);
@@ -357,9 +360,10 @@ describe("a test of dead code in a library", () => {
     });
     try {
       const { config } = resolve({
-        repository:
-          '{ "target": { "kind": "library" }, "analysis": { "min_confidence": "possible" } }',
-        repositoryLabel: "deadset.json",
+        repository: {
+          text: '{ "target": { "kind": "library" }, "analysis": { "min_confidence": "possible" } }',
+          label: "deadset.json",
+        },
       });
       const found = findingsOf(emitterInputOf(root, config)).filter(
         (finding) => finding.code === "DS1103" || finding.symbol.name === "reset",
@@ -381,8 +385,7 @@ function reportedOver(
   const root = writeProject(files);
   try {
     const { config } = resolve({
-      repository: JSON.stringify(document),
-      repositoryLabel: "deadset.json",
+      repository: { text: JSON.stringify(document), label: "deadset.json" },
     });
     return findingsOf(emitterInputOf(root, config));
   } finally {

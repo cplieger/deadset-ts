@@ -72,7 +72,7 @@ function answer(name: string): Answered {
       : {}),
     ...((expected.closed_world ?? []).includes("roots") ? { ts: { roots_complete: true } } : {}),
   };
-  const { config } = resolve({ repository: JSON.stringify(document), repositoryLabel: name });
+  const { config } = resolve({ repository: { text: JSON.stringify(document), label: name } });
   const input = emitterInputOf(join(dir, "ts", "target"), config, {
     consumers: (expected.consumers ?? []).map((consumer) => join(dir, "ts", consumer)),
   });

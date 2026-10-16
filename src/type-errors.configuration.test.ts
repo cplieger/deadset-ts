@@ -17,12 +17,14 @@ function analyzed(files: Readonly<Record<string, string>>) {
   });
   const host = nodeHost();
   const { config, provenance } = resolve({
-    repository: JSON.stringify({
-      target: { kind: "application" },
-      analysis: { min_confidence: "possible" },
-      ts: { entry_files: ["app/main.ts"] },
-    }),
-    repositoryLabel: "deadset.json",
+    repository: {
+      text: JSON.stringify({
+        target: { kind: "application" },
+        analysis: { min_confidence: "possible" },
+        ts: { entry_files: ["app/main.ts"] },
+      }),
+      label: "deadset.json",
+    },
   });
   const analysis = runAnalysis(
     openEngine({ collectTiming: false }),

@@ -2,12 +2,12 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { nodeHost } from "../bin/node-host.ts";
-import { defaultConfig } from "../src/config.ts";
 import { discoverProjects, projectErrors, renderDiagnostic } from "../src/discover.ts";
 import { inventory, type InventoryCost } from "../src/inventory.ts";
 import { references, type ReferenceCost, type ReferenceOptions } from "../src/references.ts";
 import { scopeForDir } from "../src/scope.ts";
 import { diagnosticsOf, openEngine, runSession, type Engine } from "../src/session.ts";
+import { resolvePartial } from "../src/resolve.ts";
 
 /**
  * Measures what one batch cap costs the reference pass, so the pass option's
@@ -183,7 +183,7 @@ function onePass(dir: string, cap: Cap): Pass {
   const targetRoot = scope.target.path;
   const options: ReferenceOptions = {
     batchCap: cap === "uncapped" ? NO_CAP : cap,
-    testFiles: defaultConfig().ts.testFiles,
+    testFiles: resolvePartial({}).ts.test_files,
   };
   const engine: Engine = openEngine({ collectTiming: true });
   const started = process.hrtime.bigint();

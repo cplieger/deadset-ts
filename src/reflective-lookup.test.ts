@@ -17,8 +17,7 @@ const TARGET = fixture("projects", "named-members");
 function sweepFixture(): RunSweep {
   const document = join(TARGET, "deadset.json");
   const { config } = resolve({
-    repository: readFileSync(document, "utf8"),
-    repositoryLabel: document,
+    repository: { text: readFileSync(document, "utf8"), label: document },
   });
   const host = nodeHost();
   return runSweep(openEngine({ collectTiming: false }), host, scopeForDir(host, TARGET), config, {
@@ -75,8 +74,7 @@ function lookedUp(
   });
   try {
     const { config } = resolve({
-      repository: '{ "target": { "kind": "application" } }',
-      repositoryLabel: "deadset.json",
+      repository: { text: '{ "target": { "kind": "application" } }', label: "deadset.json" },
     });
     const opened = openEngine({ collectTiming: false });
     const engine: Engine =

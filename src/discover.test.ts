@@ -79,7 +79,6 @@ const EMPTY = '{ "include": [] }\n';
 
 /** A platform entry, which names a configuration of another language. */
 const PLATFORM: BuildConfiguration = {
-  shape: "platform",
   id: "linux-amd64",
   os: "linux",
   arch: "amd64",
@@ -248,9 +247,7 @@ describe("project discovery", () => {
     });
 
     const thrown = thrownBy(() =>
-      discoverProjects(engine(), HOST, scopeOf(root), [
-        { shape: "project", id: "named", project: "tsconfig.json" },
-      ]),
+      discoverProjects(engine(), HOST, scopeOf(root), [{ id: "named", project: "tsconfig.json" }]),
     );
 
     expect(thrown).toBeInstanceOf(DiscoveryError);
@@ -267,9 +264,7 @@ describe("project discovery", () => {
     });
 
     const thrown = thrownBy(() =>
-      discoverProjects(engine(), HOST, scopeOf(root), [
-        { shape: "project", id: "named", project: "tsconfig.json" },
-      ]),
+      discoverProjects(engine(), HOST, scopeOf(root), [{ id: "named", project: "tsconfig.json" }]),
     );
 
     expect(thrown instanceof DiscoveryError ? thrown.message : "").toContain(
@@ -349,8 +344,8 @@ describe("a declared matrix", () => {
 
     const found = discoverProjects(engine(), HOST, scopeOf(root), [
       PLATFORM,
-      { shape: "project", id: "app", project: "packages/app/tsconfig.json" },
-      { shape: "project", id: "tsconfig.json", project: "tsconfig.json" },
+      { id: "app", project: "packages/app/tsconfig.json" },
+      { id: "tsconfig.json", project: "tsconfig.json" },
     ]);
 
     expect(found.projects).toEqual([
@@ -371,9 +366,7 @@ describe("a declared matrix", () => {
     });
 
     const thrown = thrownBy(() =>
-      discoverProjects(engine(), HOST, scopeOf(root), [
-        { shape: "project", id: "a", project: "a/tsconfig.json" },
-      ]),
+      discoverProjects(engine(), HOST, scopeOf(root), [{ id: "a", project: "a/tsconfig.json" }]),
     );
 
     expect(thrown).toBeInstanceOf(DiscoveryError);
@@ -392,7 +385,7 @@ describe("a declared matrix", () => {
     });
 
     const found = discoverProjects(engine(), HOST, scopeOf(join(root, "dom")), [
-      { shape: "project", id: "dom", project: "tsconfig.json" },
+      { id: "dom", project: "tsconfig.json" },
     ]);
 
     expect(found.configFiles).toEqual([join(root, "dom", "tsconfig.json")]);
@@ -407,9 +400,7 @@ describe("a declared matrix", () => {
     });
 
     const thrown = thrownBy(() =>
-      discoverProjects(engine(), HOST, scopeOf(root), [
-        { shape: "project", id: "a", project: "a/tsconfig.json" },
-      ]),
+      discoverProjects(engine(), HOST, scopeOf(root), [{ id: "a", project: "a/tsconfig.json" }]),
     );
 
     expect(thrown).toBeInstanceOf(DiscoveryError);
@@ -426,8 +417,8 @@ describe("a declared matrix", () => {
     });
 
     const found = discoverProjects(engine(), HOST, scopeOf(root), [
-      { shape: "project", id: "a", project: "a/tsconfig.json" },
-      { shape: "project", id: "core", project: "b/tsconfig.json" },
+      { id: "a", project: "a/tsconfig.json" },
+      { id: "core", project: "b/tsconfig.json" },
     ]);
 
     expect(found.projects).toEqual([
@@ -447,7 +438,7 @@ describe("a declared matrix", () => {
         target: { id: "", path: root },
         consumers: [{ id: "", path: join(root, "other", "tsconfig.json") }],
       },
-      [{ shape: "project", id: "root", project: "tsconfig.json" }],
+      [{ id: "root", project: "tsconfig.json" }],
     );
 
     expect(found.configFiles).toEqual([join(root, "tsconfig.json")]);
@@ -459,8 +450,8 @@ describe("a declared matrix", () => {
     write(root, { "tsconfig.json": EMPTY });
 
     const found = discoverProjects(engine(), HOST, scopeOf(root), [
-      { shape: "project", id: "first", project: "tsconfig.json" },
-      { shape: "project", id: "second", project: "tsconfig.json" },
+      { id: "first", project: "tsconfig.json" },
+      { id: "second", project: "tsconfig.json" },
     ]);
 
     expect(found.projects).toEqual([{ id: "first", configFile: join(root, "tsconfig.json") }]);
@@ -471,7 +462,7 @@ describe("a declared matrix", () => {
     write(root, { "tsconfig.build.json": '{ "include": [], "references": [{ "path": "" }] }\n' });
 
     const found = discoverProjects(engine(), HOST, scopeOf(root), [
-      { shape: "project", id: "build", project: "tsconfig.build.json" },
+      { id: "build", project: "tsconfig.build.json" },
     ]);
 
     expect(found.configFiles).toEqual([join(root, "tsconfig.build.json")]);
@@ -492,7 +483,7 @@ describe("a declared matrix", () => {
 
     const thrown = thrownBy(() =>
       discoverProjects(unreadable, HOST, scopeOf(root), [
-        { shape: "project", id: "named", project: "tsconfig.json" },
+        { id: "named", project: "tsconfig.json" },
       ]),
     );
 
@@ -515,9 +506,7 @@ describe("a declared matrix", () => {
     write(root, files);
 
     const thrown = thrownBy(() =>
-      discoverProjects(engine(), HOST, scopeOf(root), [
-        { shape: "project", id: "named", project: "tsconfig.json" },
-      ]),
+      discoverProjects(engine(), HOST, scopeOf(root), [{ id: "named", project: "tsconfig.json" }]),
     );
 
     expect(thrown).toBeInstanceOf(DiscoveryError);

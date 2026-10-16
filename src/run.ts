@@ -1,10 +1,13 @@
+import { CONFIG_MAX_BYTES, SETTINGS } from "./contract/config.generated.ts";
 import { EXIT_FAILURE, EXIT_USAGE } from "./contract/contract.generated.ts";
-import { ConfigError, REPOSITORY_DOCUMENT, type Inputs } from "./config.ts";
+import { REPOSITORY_DOCUMENT, type Document, type Inputs } from "./config.ts";
 import { DiscoveryError, renderDiagnostic } from "./discover.ts";
+import { readTargetDocument, TargetDocumentError } from "./fs/document.ts";
 import type { Host } from "./host.ts";
 import { joinPath, resolvePath } from "./paths.ts";
 import { readScope, ScopeError, scopeForDir, type Scope } from "./scope.ts";
 import { SetupError, setupLine } from "./setup-failure.ts";
+import { UsageError } from "./usage.ts";
 import { openEngine, type Engine, type EngineOptions } from "./session.ts";
 import { printConfigVerb } from "./verbs/print-config.ts";
 import { printProjectsVerb } from "./verbs/print-projects.ts";
@@ -48,32 +51,15 @@ const USAGE = `usage: ${PRODUCT} <verb> [options]\nverbs: ${VERBS.map((verb) => 
 const SOURCE_EDIT_TOKENS = ["fix", "edit", "delete", "rewrite"] as const;
 
 /**
- * Maps an option name to the setting of the Contract's configuration schema it supplies,
- * so one entry registers the option, supplies the document resolution reads, and gives
- * the spelling the setting's provenance names. The name is this command's vocabulary and
- * is never derived from the path: a setting reaches the command line only by an entry,
- * and a path names a key the schema declares.
+ * Maps an option name to the setting of the Contract's configuration schema it supplies:
+ * the options contract/settings.json names for a setting this analyzer reads.
  */
-export const SETTING_OPTIONS: ReadonlyMap<string, string> = new Map([
-  ["min-confidence", "analysis.min_confidence"],
-  ["sort", "reporters.sort"],
-  ["cascade", "reporters.cascade"],
-  ["max-findings", "reporters.max_findings"],
-  ["fail-on", "reporters.fail_on"],
-]);
+export const SETTING_OPTIONS: ReadonlyMap<string, string> = new Map(
+  SETTINGS.flatMap((row) => (row.option === undefined ? [] : [[row.option, row.key] as const])),
+);
 
 /** The options that take a value and are not settings. */
 const PLAIN_OPTIONS: ReadonlySet<string> = new Set(["target", "config", "central", "scope"]);
-
-/**
- * The setting options whose value is an integer rather than a string. A value
- * written other than as digits is passed on as the string it is, so resolution
- * refuses it by its type rather than reading `1e2` as 100.
- */
-const INTEGER_OPTIONS: ReadonlySet<string> = new Set(["max-findings"]);
-
-/** An integer as an option writes it: an optional minus sign and digits alone. */
-const INTEGER_TEXT = /^-?[0-9]+$/u;
 
 /** One invocation's options, by name: the last value of each, and every value of a repeatable one. */
 interface Options {
@@ -109,7 +95,7 @@ function readOptions(args: readonly string[], own: VerbOptions): Options {
   const repeated = new Map<string, string[]>();
   for (const arg of args) {
     if (!arg.startsWith("-")) {
-      throw new ConfigError("malformed", "", `unexpected argument ${JSON.stringify(arg)}`);
+      throw new UsageError(`unexpected argument ${JSON.stringify(arg)}`);
     }
     const [spelled, ...rest] = arg.split("=");
     const name = (spelled ?? "").replace(/^-+/u, "");
@@ -119,14 +105,10 @@ function readOptions(args: readonly string[], own: VerbOptions): Options {
       !own.plain.includes(name) &&
       !own.repeatable.includes(name)
     ) {
-      throw new ConfigError("malformed", "", `unknown option ${JSON.stringify(spelled ?? arg)}`);
+      throw new UsageError(`unknown option ${JSON.stringify(spelled ?? arg)}`);
     }
     if (rest.length === 0) {
-      throw new ConfigError(
-        "malformed",
-        "",
-        `option ${JSON.stringify(spelled ?? arg)} takes a value`,
-      );
+      throw new UsageError(`option ${JSON.stringify(spelled ?? arg)} takes a value`);
     }
     const value = rest.join("=");
     named.set(name, value);
@@ -135,47 +117,54 @@ function readOptions(args: readonly string[], own: VerbOptions): Options {
   return { named, repeated };
 }
 
-function readFileOr(host: Host, path: string, orUndefined: boolean): string | undefined {
+/** The document an option names. */
+function documentAt(host: Host, label: string): Document {
   try {
-    return host.readFile(resolvePath(host.workingDirectory(), path));
+    const path = resolvePath(host.workingDirectory(), label);
+    // A file past the bound reads as one byte more than it, which resolution refuses.
+    return { text: host.readFile(path, CONFIG_MAX_BYTES + 1), label };
   } catch (error: unknown) {
-    if (orUndefined) {
-      return undefined;
-    }
-    throw new ConfigError("malformed", "", `${path}: ${message(error)}`);
+    throw new UsageError(`${label}: ${message(error)}`);
   }
 }
 
 /**
- * The configuration documents one invocation reads: the repository configuration
- * at the target root or the path an option named, the central configuration, and
- * the settings the options supply as one flag document.
+ * The repository configuration at the target root, none where it is absent. One that
+ * cannot be read is a configuration document that cannot be, refused with the usage code.
+ */
+function repositoryAt(host: Host, target: string): Document | undefined {
+  const label = joinPath(target, REPOSITORY_DOCUMENT);
+  const root = resolvePath(host.workingDirectory(), target);
+  try {
+    const text = readTargetDocument(host, root, REPOSITORY_DOCUMENT, label);
+    return text === undefined ? undefined : { text, label };
+  } catch (error: unknown) {
+    throw error instanceof TargetDocumentError ? new UsageError(error.message) : error;
+  }
+}
+
+/**
+ * The configuration sources one invocation carries: the repository configuration at
+ * the target root or the path an option named, the central configuration, and the
+ * text each setting option was given.
  */
 function inputsOf(host: Host, options: Options): Inputs {
-  const target = options.named.get("target") ?? ".";
   const named = options.named.get("config");
-  const repositoryLabel = named ?? joinPath(target, REPOSITORY_DOCUMENT);
-  const repository = readFileOr(host, repositoryLabel, named === undefined);
+  const target = options.named.get("target") ?? ".";
+  const repository = named === undefined ? repositoryAt(host, target) : documentAt(host, named);
   const centralLabel = options.named.get("central");
-  const central = centralLabel === undefined ? undefined : readFileOr(host, centralLabel, false);
-
-  const flat: Record<string, unknown> = {};
-  const flagLabels = new Map<string, string>();
-  for (const [name, path] of SETTING_OPTIONS) {
+  const central = centralLabel === undefined ? undefined : documentAt(host, centralLabel);
+  const flags = new Map<string, string>();
+  for (const [name, key] of SETTING_OPTIONS) {
     const value = options.named.get(name);
-    if (value === undefined) {
-      continue;
+    if (value !== undefined) {
+      flags.set(key, value);
     }
-    flat[path] = INTEGER_OPTIONS.has(name) && INTEGER_TEXT.test(value) ? Number(value) : value;
-    flagLabels.set(path, `--${name}`);
   }
-  const flags = Object.keys(flat).length === 0 ? undefined : JSON.stringify(flat);
-
   return {
-    ...(flags === undefined ? {} : { flags }),
-    ...(repository === undefined ? {} : { repository, repositoryLabel }),
-    ...(central === undefined || centralLabel === undefined ? {} : { central, centralLabel }),
-    flagLabels,
+    flags,
+    ...(repository === undefined ? {} : { repository }),
+    ...(central === undefined ? {} : { central }),
   };
 }
 
@@ -193,9 +182,7 @@ function scopeOf(host: Host, options: Options): Scope {
  * the exit code: 0 for a completed verb, 1 for a finding that fails the run, 2 for a
  * usage error, a requested source edit or a refused configuration, 3 for a failure that
  * produced no answer. It writes nothing outside `out` and `err` and never exits the
- * process. `host` is the platform the run reads, the version it reports included, and
- * `openClient` opens the compiler client; a caller that watches what a run reads
- * supplies its own of either.
+ * process. A caller that watches what a run reads supplies its own `host` or `openClient`.
  */
 export function run(
   args: readonly string[],
@@ -255,7 +242,7 @@ function invoke(
       openClient: (config) => {
         opened = openClient({
           collectTiming: false,
-          components: { extensions: config.ts.componentExtensions, host: streams.host },
+          components: { extensions: config.ts.component_extensions, host: streams.host },
         });
         return opened;
       },
@@ -268,7 +255,7 @@ function invoke(
 
 /** Turns one refusal into the exit code the Contract's table gives it. */
 function refuse(error: unknown, err: Writer): number {
-  if (error instanceof ConfigError) {
+  if (error instanceof UsageError) {
     diagnose(err, error.message);
     err.write(USAGE);
     return EXIT_USAGE;
@@ -286,7 +273,7 @@ function refuse(error: unknown, err: Writer): number {
     }
     return EXIT_FAILURE;
   }
-  if (error instanceof ScopeError) {
+  if (error instanceof ScopeError || error instanceof TargetDocumentError) {
     diagnose(err, error.message);
     return EXIT_FAILURE;
   }

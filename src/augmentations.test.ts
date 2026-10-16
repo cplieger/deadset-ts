@@ -22,8 +22,7 @@ const FINDINGS = ((): string[] => {
     renameSync(join(root, "installed"), join(root, "node_modules"));
     const document = join(root, "deadset.json");
     const { config } = resolve({
-      repository: readFileSync(document, "utf8"),
-      repositoryLabel: document,
+      repository: { text: readFileSync(document, "utf8"), label: document },
     });
     return findingsOf(emitterInputOf(root, config)).map(
       (finding) =>
@@ -93,8 +92,7 @@ describe("a module augmentation of a library's interface", () => {
     try {
       const document = join(root, "deadset.json");
       const { config } = resolve({
-        repository: readFileSync(document, "utf8"),
-        repositoryLabel: document,
+        repository: { text: readFileSync(document, "utf8"), label: document },
       });
       expect(findingsOf(emitterInputOf(root, config)).map((finding) => finding.code)).toEqual([]);
     } finally {
@@ -129,8 +127,7 @@ describe("a module augmentation of a library's interface", () => {
     try {
       const document = join(root, "deadset.json");
       const { config } = resolve({
-        repository: readFileSync(document, "utf8"),
-        repositoryLabel: document,
+        repository: { text: readFileSync(document, "utf8"), label: document },
       });
       expect(
         findingsOf(emitterInputOf(root, config)).map(
@@ -157,8 +154,7 @@ describe("an augmentation of a dependency's interface whose member a string key 
     });
     try {
       const { config } = resolve({
-        repository: '{ "target": { "kind": "application" } }',
-        repositoryLabel: "deadset.json",
+        repository: { text: '{ "target": { "kind": "application" } }', label: "deadset.json" },
       });
       expect(findingsOf(emitterInputOf(root, config)).map((finding) => finding.code)).toEqual([]);
     } finally {
@@ -177,8 +173,7 @@ function findingsIn(files: Readonly<Record<string, string>>): string[] {
   try {
     const document = join(root, "deadset.json");
     const { config } = resolve({
-      repository: readFileSync(document, "utf8"),
-      repositoryLabel: document,
+      repository: { text: readFileSync(document, "utf8"), label: document },
     });
     return findingsOf(emitterInputOf(root, config)).map(
       (finding) => `${finding.code} ${finding.symbol.name}`,
@@ -288,8 +283,7 @@ describe("a module augmentation in test-support code", () => {
     try {
       const document = join(root, "deadset.json");
       const { config } = resolve({
-        repository: readFileSync(document, "utf8"),
-        repositoryLabel: document,
+        repository: { text: readFileSync(document, "utf8"), label: document },
       });
       expect(
         findingsOf(emitterInputOf(root, config)).map(

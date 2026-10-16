@@ -48,7 +48,7 @@ function reported(): string[] {
     target: { kind: "application" },
     analysis: { min_confidence: "possible" },
   });
-  const { config } = resolve({ repository, repositoryLabel: "deadset.json" });
+  const { config } = resolve({ repository: { text: repository, label: "deadset.json" } });
   return findingsOf(emitterInputOf(root, config))
     .filter((finding) => finding.position.path !== "app.test.ts")
     .map((finding) => `${finding.code} ${finding.symbol.name} ${finding.reachabilityClass}`)
@@ -107,7 +107,7 @@ function testUsedFindings(minConfidence: string): string[] {
     target: { kind: "application" },
     analysis: { min_confidence: minConfidence },
   });
-  const { config } = resolve({ repository, repositoryLabel: "deadset.json" });
+  const { config } = resolve({ repository: { text: repository, label: "deadset.json" } });
   return findingsOf(emitterInputOf(root, config))
     .map(
       (finding) =>
@@ -161,7 +161,7 @@ function deadRootFindings(minConfidence: string): string[] {
     target: { kind: "application" },
     analysis: { min_confidence: minConfidence },
   });
-  const { config } = resolve({ repository, repositoryLabel: "deadset.json" });
+  const { config } = resolve({ repository: { text: repository, label: "deadset.json" } });
   return findingsOf(emitterInputOf(root, config))
     .map(
       (finding) =>
@@ -213,7 +213,7 @@ describe("a test-support interface test code references", () => {
       target: { kind: "application" },
       analysis: { min_confidence: "possible" },
     });
-    const { config } = resolve({ repository, repositoryLabel: "deadset.json" });
+    const { config } = resolve({ repository: { text: repository, label: "deadset.json" } });
     expect(
       findingsOf(emitterInputOf(root, config)).map(
         (finding) => `${finding.code} ${finding.symbol.name}`,
@@ -244,7 +244,7 @@ describe("a file the test runner's configuration names as a setup file", () => {
       target: { kind: "application" },
       analysis: { min_confidence: "possible" },
     });
-    const { config } = resolve({ repository, repositoryLabel: "deadset.json" });
+    const { config } = resolve({ repository: { text: repository, label: "deadset.json" } });
     return findingsOf(emitterInputOf(root, config))
       .filter((finding) => finding.position.path === "registry.ts")
       .map((finding) => `${finding.code} ${finding.symbol.name} ${finding.reachabilityClass}`)

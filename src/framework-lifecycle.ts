@@ -55,8 +55,8 @@ function resolveContracts<Brand>(
   contracts: readonly LifecycleContract[],
 ): readonly ResolvedContract[] {
   const entries: DeclarationEntry[] = contracts.flatMap((contract) => [
-    ...contract.components,
-    ...contract.bases,
+    ...(contract.components ?? []),
+    ...(contract.bases ?? []),
   ]);
   const resolved = resolveEntries(project, held, entries);
   let next = 0;
@@ -67,8 +67,8 @@ function resolveContracts<Brand>(
   };
   return contracts.map((contract) => ({
     contract,
-    components: take(contract.components.length),
-    bases: take(contract.bases.length),
+    components: take(contract.components?.length ?? 0),
+    bases: take(contract.bases?.length ?? 0),
   }));
 }
 
@@ -243,11 +243,11 @@ function byBases<Brand>(
  */
 export function frameworkLifecycle<Brand>(input: DetectorInput<Brand>): readonly Evidence[] {
   const { project, held, targetRoot } = input;
-  if (input.ts.lifecycleContracts.length === 0) {
+  if (input.ts.lifecycle_contracts.length === 0) {
     return [];
   }
   const chains = aliasChains(project, held);
-  const contracts = resolveContracts(project, held, input.ts.lifecycleContracts);
+  const contracts = resolveContracts(project, held, input.ts.lifecycle_contracts);
   const components = [
     ...byComponents(project, held, chains, contracts),
     ...byBases(project, held, chains, contracts),
@@ -256,7 +256,7 @@ export function frameworkLifecycle<Brand>(input: DetectorInput<Brand>): readonly
     return [];
   }
   const ids = new Set(components.map((one) => one.id));
-  const sides: readonly ClassSide[] = input.ts.lifecycleContracts.some((contract) =>
+  const sides: readonly ClassSide[] = input.ts.lifecycle_contracts.some((contract) =>
     contract.members.some((name) => name.endsWith(":static")),
   )
     ? ["instance", "static"]

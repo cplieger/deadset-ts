@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { nodeHost } from "../../bin/node-host.ts";
 import { contractDocument } from "../../__test-helpers__/fixtures.ts";
-import { schemaRefusals } from "../report-schema.ts";
+import { schemaRefusals } from "../schema.ts";
 import type { Host } from "../host.ts";
 import { run, type Writer } from "../run.ts";
 import { CONFORMANCE } from "../conformance.ts";

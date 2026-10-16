@@ -82,7 +82,7 @@ import { erasedStores, type ErasedStores } from "./erased-stores.ts";
 import { checkedTypes, CONVERSION_MEMBERS, valueReach, type Reached } from "./value-reach.ts";
 
 /** The serializer every run reads, whatever the configuration names. */
-const JSON_STRINGIFY: DeclarationEntry = { shape: "global", global: "JSON.stringify" };
+const JSON_STRINGIFY: DeclarationEntry = { global: "JSON.stringify" };
 
 /** The methods a serializer and a formatter resolve by name on a value that left the analysis. */
 const CONVERSIONS: ReadonlySet<string> = new Set(["toJSON", "toString"]);

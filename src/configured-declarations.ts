@@ -19,7 +19,7 @@ import {
 import { SymbolFlags, type NodeHandle, type Symbol as TSSymbol } from "@typescript/native/sync";
 import type { AliasChains } from "./alias-chain.ts";
 import { resolvedTargets } from "./calls.ts";
-import type { Config, DeclarationEntry } from "./config.ts";
+import type { DeclarationEntry, ResolvedConfig } from "./config.ts";
 import { declaredComponent, type Inventory } from "./inventory.ts";
 import { must, Unanswerable } from "./query.ts";
 import { nameComponent } from "./ref.ts";
@@ -252,21 +252,21 @@ export function resolveEntries<Brand>(
   }
   const modules = modulesNamed(
     project,
-    new Set(entries.flatMap((entry) => (entry.shape === "module" ? [entry.module] : []))),
+    new Set(entries.flatMap((entry) => ("module" in entry ? [entry.module] : []))),
   );
   return entries.map((entry) => {
-    if (entry.shape === "symbol") {
+    if ("symbol" in entry) {
       return { entry, handles: new Set<string>(), ids: new Set(byRef.get(entry.symbol) ?? []) };
     }
     const { components, static: isStatic } = componentsOf(
-      entry.shape === "module" ? entry.name : entry.global,
+      "module" in entry ? entry.name : entry.global,
     );
     const [first = "", ...rest] = components;
     let start: TSSymbol | undefined;
     if (isStatic && rest.length === 0) {
       // Only a member is static, and a path of one component names no member.
       start = undefined;
-    } else if (entry.shape === "module") {
+    } else if ("module" in entry) {
       const module = modules.get(entry.module);
       start = module === undefined ? undefined : memberOf(project, module, first, false);
     } else if (nameComponent(first) === first) {
@@ -329,14 +329,10 @@ export function entriesAt<Brand>(
  * program the display name the inventory gives it.
  */
 export function spelledEntry(entry: DeclarationEntry, held: Inventory): string {
-  switch (entry.shape) {
-    case "symbol":
-      return held.symbols.find((symbol) => symbol.ref === entry.symbol)?.name ?? entry.symbol;
-    case "module":
-      return entry.name;
-    case "global":
-      return entry.global;
+  if ("symbol" in entry) {
+    return held.symbols.find((symbol) => symbol.ref === entry.symbol)?.name ?? entry.symbol;
   }
+  return "module" in entry ? entry.name : entry.global;
 }
 
 /** One entry of a configuration key that names a declaration, and the key's dotted path. */
@@ -353,14 +349,17 @@ const LIFECYCLE_KEY = "ts.lifecycle_contracts";
  * the injection registrations, each lifecycle contract's components and then its bases,
  * and the serializers.
  */
-export function configuredDeclarations(config: Config): readonly ConfiguredDeclaration[] {
+export function configuredDeclarations(config: ResolvedConfig): readonly ConfiguredDeclaration[] {
   return [
-    ...config.ts.injectionRegistrations.map((entry) => ({
+    ...config.ts.injection_registrations.map((entry) => ({
       key: "ts.injection_registrations",
       entry,
     })),
-    ...config.ts.lifecycleContracts.flatMap((contract) =>
-      [...contract.components, ...contract.bases].map((entry) => ({ key: LIFECYCLE_KEY, entry })),
+    ...config.ts.lifecycle_contracts.flatMap((contract) =>
+      [...(contract.components ?? []), ...(contract.bases ?? [])].map((entry) => ({
+        key: LIFECYCLE_KEY,
+        entry,
+      })),
     ),
     ...config.ts.serializers.map((entry) => ({ key: "ts.serializers", entry })),
   ];
@@ -396,12 +395,8 @@ export function declarationsNamed<Brand>(
  * sign and its name, and a global entry's path after a number sign.
  */
 export function configuredRef(entry: DeclarationEntry): string {
-  switch (entry.shape) {
-    case "symbol":
-      return entry.symbol;
-    case "module":
-      return `${entry.module}#${entry.name}`;
-    case "global":
-      return `#${entry.global}`;
+  if ("symbol" in entry) {
+    return entry.symbol;
   }
+  return "module" in entry ? `${entry.module}#${entry.name}` : `#${entry.global}`;
 }

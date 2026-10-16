@@ -1,467 +1,469 @@
-import { ConfigError } from "./config.ts";
+/**
+ * Holds a value to a JSON Schema the generator copies from the Contract. It evaluates the
+ * keywords the Contract's schemas use; the schemas' patterns are written to match alike in
+ * RE2 and in ECMAScript.
+ */
+
+import { isRecord, pointerOf, pointerSegments } from "./json-document.ts";
 import { bytewise } from "./text/compare.ts";
 
 /**
- * How one node of the closed key list is written: `leaf`, a scalar or an array of
- * scalars; `section`, an object of declared members and no value of its own; `map`, an
- * object of open member names and scalar values (severity, provenance); `list`, an
- * array of objects holding every admitted shape's members; `object`, one setting
- * written as an object of declared members and supplied whole. Which shape an entry or
- * a value takes, where the key list admits several, is the decoder's refusal.
+ * One value a schema refuses: its JSON Pointer, the keyword, and why. `member` names the
+ * member a `required`, `additionalProperties` or `propertyNames` refusal is about, the
+ * object being at `pointer`, and is empty for every other keyword.
  */
-type KeyKind = "leaf" | "section" | "map" | "list" | "object";
-
-/**
- * One node of the closed key list. `members` holds a section's declared members,
- * or a list entry's, and is absent otherwise. `integer` marks a leaf of the
- * integer type, whose number the document writes as digits alone.
- */
-export interface KeyNode {
-  readonly kind: KeyKind;
-  readonly members?: Readonly<Record<string, KeyNode>>;
-  readonly integer?: true;
+export interface SchemaRefusal {
+  readonly pointer: string;
+  readonly keyword: string;
+  readonly reason: string;
+  readonly member: string;
 }
 
-const leaf: KeyNode = { kind: "leaf" };
-const integer: KeyNode = { kind: "leaf", integer: true };
-
-/** A list of declarations, each entry in one of the three shapes the `ts` section states. */
-const declarations: KeyNode = {
-  kind: "list",
-  members: { symbol: leaf, module: leaf, name: leaf, global: leaf },
-};
+export type Schema = Readonly<Record<string, unknown>>;
+type Documents = Readonly<Record<string, Schema>>;
 
 /**
- * The closed key list the Contract's configuration schema declares, derived from
- * that schema key by key. A test pins the two equal, so a Contract change that
- * adds a key fails there rather than being silently unimplemented.
+ * Every keyword the validator evaluates or knows to carry no assertion. A schema naming
+ * another fails every check rather than passing values the keyword would refuse.
  */
-export const SCHEMA_ROOT: KeyNode = {
-  kind: "section",
-  members: {
-    contract_version: leaf,
-    target: {
-      kind: "section",
-      members: { kind: { kind: "object", members: { go: leaf, ts: leaf } } },
-    },
-    analysis: {
-      kind: "section",
-      members: {
-        languages: leaf,
-        min_confidence: leaf,
-        generated_files: leaf,
-        consumer_tests: leaf,
-        configurations: {
-          kind: "list",
-          members: { id: leaf, os: leaf, arch: leaf, tags: leaf, project: leaf },
-        },
-        matrix: { kind: "section", members: { complete: leaf } },
-        template_dirs: leaf,
-        template_delimiters: {
-          kind: "object",
-          members: { left: leaf, right: leaf },
-        },
-      },
-    },
-    consumers: { kind: "section", members: { complete: leaf } },
-    roots: { kind: "section", members: { patterns: leaf } },
-    severity: { kind: "map" },
-    exemptions: { kind: "section", members: { disabled: leaf } },
-    reporters: {
-      kind: "section",
-      members: {
-        formats: leaf,
-        sort: leaf,
-        cascade: leaf,
-        max_findings: integer,
-        fail_on: leaf,
-      },
-    },
-    providers: {
-      kind: "section",
-      members: {
-        analyzers: {
-          kind: "list",
-          members: {
-            name: leaf,
-            languages: leaf,
-            command: leaf,
-            source: leaf,
-            version: leaf,
-            digest: leaf,
-          },
-        },
-      },
-    },
-    go: { kind: "section", members: {} },
-    ts: {
-      kind: "section",
-      members: {
-        test_files: leaf,
-        entry_files: leaf,
-        component_extensions: leaf,
-        disabled_conventions: leaf,
-        injection_registrations: declarations,
-        lifecycle_contracts: {
-          kind: "list",
-          members: { components: declarations, bases: declarations, members: leaf },
-        },
-        serializers: declarations,
-        roots_complete: leaf,
-      },
-    },
-    provenance: { kind: "map" },
-  },
-};
+const KEYWORDS: ReadonlySet<string> = new Set([
+  ...["$schema", "$id", "$comment", "$defs", "title", "description", "default", "examples"],
+  ...["$ref", "type", "enum", "const", "pattern", "minLength", "minimum", "maximum"],
+  ...["properties", "additionalProperties", "propertyNames", "required", "minProperties"],
+  ...["items", "minItems", "maxItems", "uniqueItems"],
+  ...["allOf", "anyOf", "oneOf", "not", "if", "then", "else"],
+]);
 
-/** The name of the severity object, whose member names the key list leaves open. */
-export const SEVERITY_SECTION = "severity";
+const patterns = new Map<string, RegExp>();
 
-/**
- * The node one member name resolves to, and whether the key list declares it. A
- * member of an open object, and any member below a setting, resolves to a leaf,
- * so the walk descends far enough to find a repeated member at any depth.
- */
-function memberOf(node: KeyNode, name: string): KeyNode | undefined {
-  if (node.kind === "section" || node.kind === "list" || node.kind === "object") {
-    const members = node.members ?? {};
-    return Object.hasOwn(members, name) ? members[name] : undefined;
+function pattern(source: string): RegExp {
+  let held = patterns.get(source);
+  if (held === undefined) {
+    held = new RegExp(source, "u");
+    patterns.set(source, held);
   }
-  return leaf;
+  return held;
 }
 
-function joinKey(at: string, name: string): string {
-  return at === "" ? name : `${at}.${name}`;
+function typeOf(value: unknown): string {
+  if (value === null) {
+    return "null";
+  }
+  if (Array.isArray(value)) {
+    return "array";
+  }
+  if (typeof value === "number") {
+    return Number.isInteger(value) ? "integer" : "number";
+  }
+  return typeof value;
 }
 
-function collect(node: KeyNode, at: string, keys: string[], settingsOnly: boolean): void {
-  for (const [name, child] of Object.entries(node.members ?? {})) {
-    const path = joinKey(at, name);
-    if (!settingsOnly) {
-      keys.push(path);
-      collect(child, child.kind === "list" ? `${path}[]` : path, keys, settingsOnly);
-      continue;
+function hasType(value: unknown, name: string): boolean {
+  const held = typeOf(value);
+  return held === name || (name === "number" && held === "integer");
+}
+
+/** The types a schema names, none where it names no type. */
+function typesOf(schema: Schema): readonly string[] {
+  const types = schema["type"];
+  if (types === undefined) {
+    return [];
+  }
+  return (Array.isArray(types) ? types : [types]).filter((one) => typeof one === "string");
+}
+
+/** One value's encoding with object members sorted, so two equal values encode alike. */
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonical).join(",")}]`;
+  }
+  if (isRecord(value)) {
+    return `{${Object.keys(value)
+      .sort(bytewise)
+      .map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+/** A string's length in code points, which JSON Schema's minLength counts. */
+function codePoints(value: string): number {
+  let counted = 0;
+  for (const _point of value) {
+    counted += 1;
+  }
+  return counted;
+}
+
+/** The schemas of a list keyword, none where the schema does not write it. */
+function listOf(schema: Schema, keyword: string): readonly Schema[] {
+  const held = schema[keyword];
+  return Array.isArray(held) ? (held as Schema[]) : [];
+}
+
+/** Whether a reader fixes refusal `a` before `b`: an object's before one inside it, then by kind. */
+function before(a: SchemaRefusal, b: SchemaRefusal): boolean {
+  if (a.pointer === b.pointer) {
+    return rank(a) < rank(b);
+  }
+  return b.pointer.startsWith(`${a.pointer}/`);
+}
+
+/** The order of the refusals of one place: an undeclared member, a missing one, any other. */
+function rank(refusal: SchemaRefusal): number {
+  if (refusal.keyword === "additionalProperties" || refusal.keyword === "propertyNames") {
+    return 0;
+  }
+  return refusal.keyword === "required" ? 1 : 2;
+}
+
+/** The value one JSON Pointer segment names inside `value`, or undefined. */
+function valueAt(value: unknown, segment: string): unknown {
+  if (Array.isArray(value)) {
+    return /^[0-9]+$/u.test(segment) ? value[Number(segment)] : undefined;
+  }
+  return isRecord(value) && Object.hasOwn(value, segment) ? value[segment] : undefined;
+}
+
+/**
+ * The schema `properties` declares for the member `name`, or undefined: a member named as an
+ * `Object.prototype` property, such as `__proto__`, is declared only where it is written.
+ */
+function declaredMember(properties: Readonly<Record<string, unknown>>, name: string): unknown {
+  return Object.hasOwn(properties, name) ? properties[name] : undefined;
+}
+
+/** A schema with the document it is read from, so a relative `$ref` resolves there. */
+type Located = readonly [string, Schema];
+
+/** The keyword checks over one set of schema documents, each named as a `$ref` names it. */
+class Checker {
+  private readonly documents: Documents;
+
+  constructor(documents: Documents) {
+    this.documents = documents;
+  }
+
+  resolve(doc: string, ref: string): Located {
+    const [file = "", pointer = ""] = ref.split("#");
+    const target = file === "" ? doc : file;
+    let schema: unknown = this.documents[target];
+    for (const token of pointerSegments(pointer)) {
+      schema = isRecord(schema) ? schema[token] : undefined;
     }
-    if (child.kind === "leaf" || child.kind === "list" || child.kind === "object") {
-      keys.push(path);
-      continue;
+    if (!isRecord(schema)) {
+      throw new Error(`schema: ${ref} names no schema`);
     }
-    collect(child, path, keys, settingsOnly);
+    return [target, schema];
   }
-}
 
-/**
- * Every key the closed key list declares, as a dotted path, in ascending order:
- * the sections, the settings, and the two open objects. A list's entry members
- * are spelled under the list's own path followed by empty brackets.
- */
-export function declaredKeys(): string[] {
-  const keys: string[] = [];
-  collect(SCHEMA_ROOT, "", keys, false);
-  return keys.sort(bytewise);
-}
-
-/**
- * The dotted path of every setting that holds one value, in ascending order. A
- * list and a setting written as an object are each one setting, their members not
- * addressable on their own, and the severity object is not among them: it
- * resolves per code.
- */
-export function settingPaths(): string[] {
-  const paths: string[] = [];
-  collect(SCHEMA_ROOT, "", paths, true);
-  return paths.sort(bytewise);
-}
-
-/**
- * Whether one dotted path names a setting a source may supply: a setting of the
- * closed key list, or one code of the severity object, whose member names the key
- * list leaves open. It is the predicate the command maps its own flag names
- * through, so a flag that would be refused as an unimplemented key is a failing
- * test rather than a flag nothing reads.
- *
- * A section holds no value of its own, so `analysis` is false. A setting written
- * as an object is supplied whole, so `analysis.template_delimiters` is true and
- * `analysis.template_delimiters.left` is false. A severity code is a declared
- * setting whatever it names, so `severity.DS9999` is true here and refused by
- * resolution: this answers the shape of a path, and resolution answers the
- * vocabulary.
- */
-export function declaresSetting(path: string): boolean {
-  if (settingPaths().includes(path)) {
-    return true;
+  refusals(doc: string, schema: Schema, value: unknown, at: string): readonly SchemaRefusal[] {
+    const found: SchemaRefusal[] = [];
+    this.check(doc, schema, value, at, found);
+    return found;
   }
-  const dot = path.indexOf(".");
-  if (dot < 0) {
-    return false;
-  }
-  const code = path.slice(dot + 1);
-  return path.slice(0, dot) === SEVERITY_SECTION && code !== "" && !code.includes(".");
-}
 
-/** The Levenshtein distance between two strings, counted in code points. */
-function editDistance(a: string, b: string): number {
-  const from = Array.from(a);
-  const to = Array.from(b);
-  let previous = Array.from({ length: to.length + 1 }, (_unused, index) => index);
-  let current = new Array<number>(to.length + 1).fill(0);
-  for (let i = 1; i <= from.length; i += 1) {
-    current[0] = i;
-    for (let j = 1; j <= to.length; j += 1) {
-      const substitution = (previous[j - 1] ?? 0) + (from[i - 1] === to[j - 1] ? 0 : 1);
-      current[j] = Math.min(substitution, (previous[j] ?? 0) + 1, (current[j - 1] ?? 0) + 1);
+  matches(doc: string, schema: Schema, value: unknown, at: string): boolean {
+    return this.refusals(doc, schema, value, at).length === 0;
+  }
+
+  check(doc: string, schema: Schema, value: unknown, at: string, found: SchemaRefusal[]): void {
+    for (const keyword of Object.keys(schema)) {
+      if (!KEYWORDS.has(keyword) && !keyword.startsWith("x-")) {
+        throw new Error(`schema: the keyword ${keyword} is not one this validator evaluates`);
+      }
     }
-    [previous, current] = [current, previous];
-  }
-  return previous[to.length] ?? 0;
-}
-
-function sharedSegments(a: readonly string[], b: readonly string[]): number {
-  let shared = 0;
-  while (shared < a.length && shared < b.length && a[shared] === b[shared]) {
-    shared += 1;
-  }
-  return shared;
-}
-
-/**
- * The implemented key closest to `key`: the one sharing the most leading dotted
- * segments, and among those the smallest edit distance over the whole path, ties
- * broken in ascending order.
- */
-export function nearestKey(key: string): string {
-  const segments = key.split(".");
-  let nearest = "";
-  let bestShared = -1;
-  let bestDistance = 0;
-  for (const candidate of declaredKeys()) {
-    const shared = sharedSegments(segments, candidate.split("."));
-    const distance = editDistance(key, candidate);
-    if (shared < bestShared || (shared === bestShared && distance >= bestDistance)) {
-      continue;
+    const refuse = (keyword: string, reason: string, member = ""): void => {
+      found.push({ pointer: at, keyword, reason, member });
+    };
+    if (typeof schema["$ref"] === "string") {
+      const [target, referenced] = this.resolve(doc, schema["$ref"]);
+      this.check(target, referenced, value, at, found);
     }
-    nearest = candidate;
-    bestShared = shared;
-    bestDistance = distance;
-  }
-  return nearest;
-}
-
-/** A refusal of a document that is not one instance of the closed key list. */
-export function malformed(label: string, path: string, detail: string): ConfigError {
-  const message = path === "" ? `${label}: ${detail}` : `${label}: ${path}: ${detail}`;
-  return new ConfigError("malformed", path, message);
-}
-
-/**
- * A refusal of a key the closed key list does not declare, naming the nearest key
- * it does.
- */
-function unimplementedKey(label: string, path: string): ConfigError {
-  const nearest = nearestKey(path);
-  let hint = "";
-  if (nearest === path) {
-    hint = `. ${JSON.stringify(path)} is one setting written as nested objects, not as one key`;
-  } else if (nearest !== "") {
-    hint = `. The nearest implemented key is ${JSON.stringify(nearest)}`;
-  }
-  return new ConfigError(
-    "unimplemented-key",
-    path,
-    `${label}: key ${JSON.stringify(path)} is not implemented${hint}`,
-  );
-}
-
-/**
- * The position a walk over one document's text has reached. The walk exists
- * because the value a JSON parse returns cannot answer one question the Contract
- * asks: a member written twice at one level is a refusal, and a parse keeps the
- * last value, so the document reads as though it named the member once. Nothing
- * here produces a value; the value is the parse's.
- */
-interface Cursor {
-  readonly text: string;
-  at: number;
-}
-
-const SPACE = new Set([0x20, 0x09, 0x0a, 0x0d]);
-
-function skipSpace(cursor: Cursor): void {
-  while (cursor.at < cursor.text.length && SPACE.has(cursor.text.charCodeAt(cursor.at))) {
-    cursor.at += 1;
-  }
-}
-
-/**
- * The string literal at the cursor, decoded by the standard library: the walk
- * finds the literal's extent and the parse reads it, so an escaped member name
- * compares equal to the name it spells.
- */
-function readName(cursor: Cursor, at: string, label: string): string {
-  const start = cursor.at;
-  cursor.at += 1;
-  while (cursor.at < cursor.text.length) {
-    const ch = cursor.text.charCodeAt(cursor.at);
-    if (ch === 0x5c) {
-      cursor.at += 2;
-      continue;
-    }
-    cursor.at += 1;
-    if (ch === 0x22) {
-      return JSON.parse(cursor.text.slice(start, cursor.at)) as string;
-    }
-  }
-  throw malformed(label, at, "a member name is not terminated");
-}
-
-function skipScalar(cursor: Cursor): void {
-  while (cursor.at < cursor.text.length) {
-    const ch = cursor.text.charCodeAt(cursor.at);
-    if (ch === 0x2c || ch === 0x7d || ch === 0x5d || SPACE.has(ch)) {
+    const named = typesOf(schema);
+    if (named.length > 0 && !named.some((one) => hasType(value, one))) {
+      refuse("type", `the value is ${typeOf(value)}, want ${named.join(", ")}`);
       return;
     }
-    cursor.at += 1;
-  }
-}
-
-/** A number the document writes as an optional minus sign and digits alone. */
-const INTEGER_TEXT = /^-?[0-9]+$/u;
-
-/** The start of a JSON number: a minus sign or a digit. */
-const NUMBER_START = /^[-0-9]/u;
-
-/**
- * Refuses a number written with a fraction or an exponent where the key list
- * declares an integer. A parse reads `100.0` and `1e2` as the integer 100, so only
- * the text can tell them apart. A scalar that is no number is the decoder's to
- * refuse by its type.
- */
-function checkInteger(text: string, at: string, label: string): void {
-  if (NUMBER_START.test(text) && !INTEGER_TEXT.test(text)) {
-    throw malformed(
-      label,
-      at,
-      `${text} is written with a fraction or an exponent, and an integer is digits alone`,
-    );
-  }
-}
-
-function walkValue(cursor: Cursor, at: string, node: KeyNode, label: string): void {
-  skipSpace(cursor);
-  const ch = cursor.text.charCodeAt(cursor.at);
-  if (ch === 0x7b) {
-    cursor.at += 1;
-    walkObject(cursor, at, node, label);
-    return;
-  }
-  if (ch === 0x5b) {
-    cursor.at += 1;
-    walkArray(cursor, at, node, label);
-    return;
-  }
-  if (ch === 0x22) {
-    readName(cursor, at, label);
-    return;
-  }
-  const start = cursor.at;
-  skipScalar(cursor);
-  if (node.integer === true) {
-    checkInteger(cursor.text.slice(start, cursor.at), at, label);
-  }
-}
-
-function walkObject(cursor: Cursor, at: string, node: KeyNode, label: string): void {
-  const seen = new Set<string>();
-  for (;;) {
-    skipSpace(cursor);
-    const ch = cursor.text.charCodeAt(cursor.at);
-    if (ch === 0x7d) {
-      cursor.at += 1;
-      return;
+    this.checkValue(schema, value, refuse);
+    if (Array.isArray(value)) {
+      this.checkArray(doc, schema, value, at, found, refuse);
+    } else if (isRecord(value)) {
+      this.checkObject(doc, schema, value, at, found, refuse);
     }
-    if (ch === 0x2c) {
-      cursor.at += 1;
-      continue;
+    this.checkApplicators(doc, schema, value, at, found, refuse);
+  }
+
+  private checkValue(
+    schema: Schema,
+    value: unknown,
+    refuse: (keyword: string, reason: string) => void,
+  ): void {
+    const values = schema["enum"];
+    if (Array.isArray(values) && !values.some((one) => canonical(one) === canonical(value))) {
+      refuse("enum", `${canonical(value)} is not one of ${values.map(canonical).join(", ")}`);
     }
-    if (ch !== 0x22) {
-      throw malformed(label, at, "a member name is expected");
+    if (schema["const"] !== undefined && canonical(schema["const"]) !== canonical(value)) {
+      refuse("const", `${canonical(value)} is not ${canonical(schema["const"])}`);
     }
-    const name = readName(cursor, at, label);
-    const path = joinKey(at, name);
-    if (seen.has(name)) {
-      throw malformed(
-        label,
-        path,
-        `member ${JSON.stringify(name)} is written twice, so neither value is chosen`,
+    if (typeof value === "string") {
+      if (typeof schema["pattern"] === "string" && !pattern(schema["pattern"]).test(value)) {
+        refuse("pattern", `${JSON.stringify(value)} does not match ${schema["pattern"]}`);
+      }
+      if (typeof schema["minLength"] === "number" && codePoints(value) < schema["minLength"]) {
+        refuse(
+          "minLength",
+          `${JSON.stringify(value)} is shorter than ${String(schema["minLength"])} characters`,
+        );
+      }
+    }
+    if (typeof value === "number") {
+      if (typeof schema["minimum"] === "number" && value < schema["minimum"]) {
+        refuse("minimum", `${String(value)} is below ${String(schema["minimum"])}`);
+      }
+      if (typeof schema["maximum"] === "number" && value > schema["maximum"]) {
+        refuse("maximum", `${String(value)} is above ${String(schema["maximum"])}`);
+      }
+    }
+  }
+
+  private checkObject(
+    doc: string,
+    schema: Schema,
+    value: Readonly<Record<string, unknown>>,
+    at: string,
+    found: SchemaRefusal[],
+    refuse: (keyword: string, reason: string, member?: string) => void,
+  ): void {
+    const properties = isRecord(schema["properties"]) ? schema["properties"] : {};
+    const additional = schema["additionalProperties"];
+    const names = schema["propertyNames"];
+    for (const name of Object.keys(value).sort(bytewise)) {
+      const [refusedName] = isRecord(names) ? this.refusals(doc, names, name, at) : [];
+      if (refusedName !== undefined) {
+        refuse(
+          "propertyNames",
+          `the member name ${JSON.stringify(name)}: ${refusedName.reason}`,
+          name,
+        );
+      }
+      const member = `${at}${pointerOf([name])}`;
+      const declared = declaredMember(properties, name);
+      if (isRecord(declared)) {
+        this.check(doc, declared, value[name], member, found);
+      } else if (additional === false) {
+        refuse(
+          "additionalProperties",
+          `the member ${JSON.stringify(name)} is not one the schema declares`,
+          name,
+        );
+      } else if (isRecord(additional)) {
+        this.check(doc, additional, value[name], member, found);
+      }
+    }
+    for (const name of Array.isArray(schema["required"]) ? (schema["required"] as string[]) : []) {
+      if (!Object.hasOwn(value, name)) {
+        refuse("required", `the member ${JSON.stringify(name)} is absent`, name);
+      }
+    }
+    const fewest = schema["minProperties"];
+    if (typeof fewest === "number" && Object.keys(value).length < fewest) {
+      refuse(
+        "minProperties",
+        `the object holds ${String(Object.keys(value).length)} members, fewer than ${String(fewest)}`,
       );
     }
-    seen.add(name);
-    const child = memberOf(node, name);
-    if (child === undefined) {
-      throw unimplementedKey(label, path);
-    }
-    skipSpace(cursor);
-    if (cursor.text.charCodeAt(cursor.at) !== 0x3a) {
-      throw malformed(label, path, "a member name is followed by a colon");
-    }
-    cursor.at += 1;
-    walkValue(cursor, path, child, label);
   }
-}
 
-function walkArray(cursor: Cursor, at: string, node: KeyNode, label: string): void {
-  const entry: KeyNode =
-    node.kind === "list" ? { kind: "section", members: node.members ?? {} } : leaf;
-  let index = 0;
-  for (;;) {
-    skipSpace(cursor);
-    const ch = cursor.text.charCodeAt(cursor.at);
-    if (ch === 0x5d) {
-      cursor.at += 1;
-      return;
+  private checkArray(
+    doc: string,
+    schema: Schema,
+    value: readonly unknown[],
+    at: string,
+    found: SchemaRefusal[],
+    refuse: (keyword: string, reason: string) => void,
+  ): void {
+    const items = schema["items"];
+    if (isRecord(items)) {
+      value.forEach((item, i) => {
+        this.check(doc, items, item, `${at}/${String(i)}`, found);
+      });
     }
-    if (ch === 0x2c) {
-      cursor.at += 1;
-      continue;
+    if (typeof schema["minItems"] === "number" && value.length < schema["minItems"]) {
+      refuse(
+        "minItems",
+        `the array holds ${String(value.length)} items, fewer than ${String(schema["minItems"])}`,
+      );
     }
-    walkValue(cursor, `${at}[${index}]`, entry, label);
-    index += 1;
+    if (typeof schema["maxItems"] === "number" && value.length > schema["maxItems"]) {
+      refuse(
+        "maxItems",
+        `the array holds ${String(value.length)} items, more than ${String(schema["maxItems"])}`,
+      );
+    }
+    if (schema["uniqueItems"] === true && new Set(value.map(canonical)).size !== value.length) {
+      refuse("uniqueItems", "the array lists one value twice");
+    }
   }
-}
 
-/**
- * Walks one document's text against the closed key list, refusing a member the
- * key list does not declare and a member one object writes twice, each naming its
- * dotted path. The document is already known to parse.
- */
-export function checkDocument(text: string, node: KeyNode, label: string): void {
-  const cursor: Cursor = { text, at: 0 };
-  walkValue(cursor, "", node, label);
-}
-
-/**
- * The flag document, whose keys are dotted setting paths, rewritten as the nested
- * object the closed key list declares, so one decoder reads every source. A key
- * naming no setting is refused.
- */
-export function nestFlags(flat: Readonly<Record<string, unknown>>, label: string): unknown {
-  const nested: Record<string, unknown> = {};
-  for (const path of Object.keys(flat).sort(bytewise)) {
-    if (!declaresSetting(path)) {
-      throw unimplementedKey(label, path);
+  private checkApplicators(
+    doc: string,
+    schema: Schema,
+    value: unknown,
+    at: string,
+    found: SchemaRefusal[],
+    refuse: (keyword: string, reason: string) => void,
+  ): void {
+    for (const each of listOf(schema, "allOf")) {
+      this.check(doc, each, value, at, found);
     }
-    const segments = path.split(".");
-    let into = nested;
-    for (const segment of segments.slice(0, -1)) {
-      const child = into[segment] ?? {};
-      if (typeof child !== "object" || Array.isArray(child)) {
-        throw malformed(label, path, `the flag document sets ${JSON.stringify(segment)} twice`);
+    const matching = (keyword: string): number =>
+      listOf(schema, keyword).filter((each) => this.matches(doc, each, value, at)).length;
+    if (schema["anyOf"] !== undefined && matching("anyOf") === 0) {
+      refuse("anyOf", "the value matches none of the alternatives");
+    }
+    if (schema["oneOf"] !== undefined && matching("oneOf") !== 1) {
+      refuse(
+        "oneOf",
+        `the value matches ${String(matching("oneOf"))} of the alternatives, want exactly one`,
+      );
+    }
+    if (isRecord(schema["not"]) && this.matches(doc, schema["not"], value, at)) {
+      refuse("not", "the value matches a schema it must not match");
+    }
+    if (isRecord(schema["if"])) {
+      const branch = this.matches(doc, schema["if"], value, at) ? schema["then"] : schema["else"];
+      if (isRecord(branch)) {
+        this.check(doc, branch, value, at, found);
       }
-      into[segment] = child;
-      into = child as Record<string, unknown>;
     }
-    const last = segments[segments.length - 1] ?? "";
-    into[last] = flat[path];
   }
-  return nested;
+
+  /**
+   * The refusal of `value` a reader fixes first, none for an instance: an object's
+   * refusal before any inside it, at one place an undeclared member, then a missing one,
+   * then any other, else the order the check finds them in. A oneOf no alternative
+   * matches is explained by the first refusal of the alternative the value was written
+   * for: the one whose type admits it, or of several, the one declaring the most of an
+   * object's members, then the fewest. Where two remain, the refusal is the oneOf's own.
+   */
+  first(doc: string, schema: Schema, value: unknown, at: string): SchemaRefusal | undefined {
+    const found: SchemaRefusal[] = [];
+    this.check(doc, schema, value, at, found);
+    let first = found[0];
+    for (const other of found.slice(1)) {
+      if (first !== undefined && before(other, first)) {
+        first = other;
+      }
+    }
+    if (first?.keyword !== "oneOf") {
+      return first;
+    }
+    let held = value;
+    let holders: readonly Located[] = [[doc, schema]];
+    for (const segment of pointerSegments(first.pointer.slice(at.length))) {
+      holders = holders.flatMap(([d, s]) =>
+        this.applied(d, s, held).flatMap(([d2, s2]) => this.member(d2, s2, held, segment)),
+      );
+      held = valueAt(held, segment);
+    }
+    for (const [d, holder] of holders) {
+      const alternatives = listOf(holder, "oneOf");
+      if (alternatives.some((each) => this.matches(d, each, held, first.pointer))) {
+        continue;
+      }
+      const alternative = closest(alternatives, held);
+      const inner = alternative && this.first(d, alternative, held, first.pointer);
+      if (inner !== undefined) {
+        return inner;
+      }
+    }
+    return first;
+  }
+
+  /** The schemas checked at one place when `schema` is: it, its `$ref`, its allOf and its if branch. */
+  private applied(doc: string, schema: Schema, value: unknown): readonly Located[] {
+    const held: Located[] = [[doc, schema]];
+    if (typeof schema["$ref"] === "string") {
+      const [target, referenced] = this.resolve(doc, schema["$ref"]);
+      held.push(...this.applied(target, referenced, value));
+    }
+    for (const each of listOf(schema, "allOf")) {
+      held.push(...this.applied(doc, each, value));
+    }
+    if (isRecord(schema["if"])) {
+      const branch = this.matches(doc, schema["if"], value, "") ? schema["then"] : schema["else"];
+      if (isRecord(branch)) {
+        held.push(...this.applied(doc, branch, value));
+      }
+    }
+    return held;
+  }
+
+  /** The schemas `schema` checks the member or the entry `segment` names in `value` with. */
+  private member(doc: string, schema: Schema, value: unknown, segment: string): readonly Located[] {
+    if (Array.isArray(value)) {
+      return isRecord(schema["items"]) ? [[doc, schema["items"]]] : [];
+    }
+    const properties = isRecord(schema["properties"]) ? schema["properties"] : {};
+    const declared = declaredMember(properties, segment);
+    if (isRecord(declared)) {
+      return [[doc, declared]];
+    }
+    const additional = schema["additionalProperties"];
+    return isRecord(additional) ? [[doc, additional]] : [];
+  }
+}
+
+/** The alternative a value matching none of them was written for, or none where none or two remain. */
+function closest(alternatives: readonly Schema[], value: unknown): Schema | undefined {
+  const typed = alternatives.filter((each) => {
+    const types = typesOf(each);
+    return types.length === 0 || types.some((one) => hasType(value, one));
+  });
+  if (typed.length === 1 || !isRecord(value)) {
+    return typed.length === 1 ? typed[0] : undefined;
+  }
+  let best: Schema[] = [];
+  let most = -1;
+  let fewest = 0;
+  for (const alternative of typed) {
+    const properties = isRecord(alternative["properties"]) ? alternative["properties"] : {};
+    const named = Object.keys(value).filter((name) => Object.hasOwn(properties, name)).length;
+    const declared = Object.keys(properties).length;
+    if (named > most || (named === most && declared < fewest)) {
+      [best, most, fewest] = [[alternative], named, declared];
+    } else if (named === most && declared === fewest) {
+      best.push(alternative);
+    }
+  }
+  return best.length === 1 ? best[0] : undefined;
+}
+
+/**
+ * A validator over one set of schema documents, each named as a `$ref` names it, rooted
+ * at one of them: what it refuses in a value, none for an instance.
+ */
+export function schemaRefusals(
+  documents: Documents,
+  root: string,
+): (value: unknown) => readonly SchemaRefusal[] {
+  const checker = new Checker(documents);
+  const top = documents[root];
+  if (top === undefined) {
+    throw new Error(`the schema set holds no document ${root}`);
+  }
+  return (value) => {
+    const found: SchemaRefusal[] = [];
+    checker.check(root, top, value, "", found);
+    return found;
+  };
+}
+
+/**
+ * The refusal of `value` a reader fixes first under one schema, none for an instance. A
+ * `$ref` the schema holds names a place in the schema itself.
+ */
+export function firstRefusal(schema: Schema, value: unknown): SchemaRefusal | undefined {
+  return new Checker({ "": schema }).first("", schema, value, "");
 }

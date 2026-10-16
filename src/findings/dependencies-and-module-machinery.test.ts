@@ -36,8 +36,7 @@ function sweepFixture(
 ): { input: EmitterInput; findings: Finding[] } {
   const path = join(target, "deadset.json");
   const { config } = resolve({
-    repository: document ?? readFileSync(path, "utf8"),
-    repositoryLabel: path,
+    repository: { text: document ?? readFileSync(path, "utf8"), label: path },
   });
   const input = emitterInputOf(target, config);
   const emit = EMITTERS.get("dependencies-and-module-machinery");
@@ -156,8 +155,10 @@ describe("the dependencies-and-module-machinery emitter", () => {
       ].join("\n"),
     });
     const { config } = resolve({
-      repository: JSON.stringify({ target: { kind: "application" } }),
-      repositoryLabel: "deadset.json",
+      repository: {
+        text: JSON.stringify({ target: { kind: "application" } }),
+        label: "deadset.json",
+      },
     });
     try {
       expect(emitterInputOf(root, config).dependencies.lastUses).toEqual(
@@ -309,8 +310,10 @@ describe("a dependency only dead code uses", () => {
       "src/helped.test.ts": 'import { helper } from "./helped.ts";\nconsole.log(helper());\n',
     });
     const { config } = resolve({
-      repository: JSON.stringify({ target: { kind: "application" } }),
-      repositoryLabel: "deadset.json",
+      repository: {
+        text: JSON.stringify({ target: { kind: "application" } }),
+        label: "deadset.json",
+      },
     });
     const emit = EMITTERS.get("dependencies-and-module-machinery");
     try {
@@ -357,11 +360,13 @@ describe("a nested package whose configurations the run could not build", () => 
       }),
     });
     const { config } = resolve({
-      repository: JSON.stringify({
-        target: { kind: "application" },
-        analysis: { min_confidence: "possible" },
-      }),
-      repositoryLabel: "deadset.json",
+      repository: {
+        text: JSON.stringify({
+          target: { kind: "application" },
+          analysis: { min_confidence: "possible" },
+        }),
+        label: "deadset.json",
+      },
     });
     try {
       expect(
@@ -402,8 +407,10 @@ describe("a file no import reaches", () => {
       ].join("\n"),
     });
     const { config } = resolve({
-      repository: JSON.stringify({ target: { kind: "application" } }),
-      repositoryLabel: "deadset.json",
+      repository: {
+        text: JSON.stringify({ target: { kind: "application" } }),
+        label: "deadset.json",
+      },
     });
     try {
       expect(
@@ -440,8 +447,10 @@ describe("a package a file asks the runtime to resolve", () => {
       ].join("\n"),
     });
     const { config } = resolve({
-      repository: JSON.stringify({ target: { kind: "application" } }),
-      repositoryLabel: "deadset.json",
+      repository: {
+        text: JSON.stringify({ target: { kind: "application" } }),
+        label: "deadset.json",
+      },
     });
     const emit = EMITTERS.get("dependencies-and-module-machinery");
     try {
@@ -477,8 +486,10 @@ describe("a command a workspace member's script runs", () => {
       "packages/app/src/main.ts": "console.log(1);\n",
     });
     const { config } = resolve({
-      repository: JSON.stringify({ target: { kind: "application" } }),
-      repositoryLabel: "deadset.json",
+      repository: {
+        text: JSON.stringify({ target: { kind: "application" } }),
+        label: "deadset.json",
+      },
     });
     const emit = EMITTERS.get("dependencies-and-module-machinery");
     try {

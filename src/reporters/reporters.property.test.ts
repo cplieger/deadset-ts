@@ -285,13 +285,15 @@ describe("every reporter", () => {
           .map((one) => one.code)
           .filter((code) => !FIXED_SEVERITY_CODES.includes(code));
         const { config } = resolve({
-          repository: JSON.stringify({
-            target: { kind: "application" },
-            severity: Object.fromEntries(settable.map((code) => [code, "warn"])),
-          }),
-          repositoryLabel: "deadset.json",
+          repository: {
+            text: JSON.stringify({
+              target: { kind: "application" },
+              severity: Object.fromEntries(settable.map((code) => [code, "warn"])),
+            }),
+            label: "deadset.json",
+          },
         });
-        expect([...config.severity.keys()].sort()).toEqual([...new Set(settable)].sort());
+        expect(Object.keys(config.severity).sort()).toEqual([...new Set(settable)].sort());
       }),
       { numRuns: 200 },
     );

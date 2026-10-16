@@ -16,8 +16,7 @@ const TARGET = fixture("projects", "framework-lifecycle");
 function sweepFixture(document?: string): RunSweep {
   const path = join(TARGET, "deadset.json");
   const { config } = resolve({
-    repository: document ?? readFileSync(path, "utf8"),
-    repositoryLabel: path,
+    repository: { text: document ?? readFileSync(path, "utf8"), label: path },
   });
   const host = nodeHost();
   return runSweep(openEngine({ collectTiming: false }), host, scopeForDir(host, TARGET), config, {
@@ -111,15 +110,17 @@ function sweptElements(main: string): RunSweep {
   });
   try {
     const { config } = resolve({
-      repository: JSON.stringify({
-        target: { kind: "application" },
-        ts: {
-          lifecycle_contracts: [
-            { bases: [{ global: "HTMLElement" }], members: ["connectedCallback"] },
-          ],
-        },
-      }),
-      repositoryLabel: "deadset.json",
+      repository: {
+        text: JSON.stringify({
+          target: { kind: "application" },
+          ts: {
+            lifecycle_contracts: [
+              { bases: [{ global: "HTMLElement" }], members: ["connectedCallback"] },
+            ],
+          },
+        }),
+        label: "deadset.json",
+      },
     });
     const host = nodeHost();
     return runSweep(openEngine({ collectTiming: false }), host, scopeForDir(host, root), config, {

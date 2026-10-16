@@ -13,7 +13,7 @@
  */
 
 import { readComponent } from "./component-files.ts";
-import { ConfigError, type Analysis, type TemplateDelimiters } from "./config.ts";
+import type { ResolvedConfig, TemplateDelimiters } from "./config.ts";
 import type { DetectorInput, Evidence } from "./exempt.ts";
 import type { Host } from "./host.ts";
 import type { SymbolKind } from "./inventory.ts";
@@ -22,6 +22,7 @@ import { extensionOf, isAbsolutePath, joinPath, normalizePath, relativePath } fr
 import { isComponentFile, type Position } from "./position.ts";
 import { bytewise } from "./text/compare.ts";
 import { filesBelow } from "./fs/tree.ts";
+import { UsageError } from "./usage.ts";
 
 /** One template, by its path below the target root. */
 interface TemplateFile {
@@ -60,7 +61,11 @@ const IDENTIFIER = /[\p{ID_Start}$_][\p{ID_Continue}$\u200C\u200D]*/uy;
  * exemption it was configured for off. A symbolic link to a directory is not
  * followed.
  */
-export function readTemplates(host: Host, targetRoot: string, analysis: Analysis): Templates {
+export function readTemplates(
+  host: Host,
+  targetRoot: string,
+  analysis: ResolvedConfig["analysis"],
+): Templates {
   const files = new Map<string, string>();
   const read = (dir: string): void => {
     for (const below of filesBelow(host, joinPath(targetRoot, dir), () => true)) {
@@ -71,7 +76,7 @@ export function readTemplates(host: Host, targetRoot: string, analysis: Analysis
       }
     }
   };
-  for (const configured of analysis.templateDirs) {
+  for (const configured of analysis.template_dirs) {
     const dir = normalizePath(configured);
     if (
       isAbsolutePath(dir) ||
@@ -79,16 +84,14 @@ export function readTemplates(host: Host, targetRoot: string, analysis: Analysis
       dir.startsWith("../") ||
       host.kindOf(joinPath(targetRoot, dir)) !== "directory"
     ) {
-      throw new ConfigError(
-        "malformed",
-        "analysis.template_dirs",
+      throw new UsageError(
         `analysis.template_dirs: ${JSON.stringify(configured)} is not a directory below the target root`,
       );
     }
     read(dir);
   }
   return {
-    delimiters: analysis.templateDelimiters,
+    delimiters: analysis.template_delimiters,
     files: [...files]
       .map(([path, text]) => ({ path, text }))
       .sort((a, b) => bytewise(a.path, b.path)),

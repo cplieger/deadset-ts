@@ -34,7 +34,7 @@ function findingsOfLibrary(library: Library): string[] {
     ...library.files,
   });
   roots.push(root);
-  const { config } = resolve({ repository: LIBRARY, repositoryLabel: "deadset.json" });
+  const { config } = resolve({ repository: { text: LIBRARY, label: "deadset.json" } });
   return findingsOf(emitterInputOf(root, config)).map(
     (finding) => `${finding.code} ${finding.symbol.name}`,
   );

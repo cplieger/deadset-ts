@@ -4,7 +4,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { emitterInputOf, findingsOf } from "../../__test-helpers__/emitter-input.ts";
 import { fixture } from "../../__test-helpers__/fixtures.ts";
 import { writeProject } from "../../__test-helpers__/projects.ts";
-import type { Config } from "../config.ts";
+import type { ResolvedConfig } from "../config.ts";
 import type { CompletedFinding } from "../finding.ts";
 import { resolve } from "../resolve.ts";
 import type { Mode } from "../sweep.ts";
@@ -27,8 +27,8 @@ function supporting(text: string): string {
 }
 
 /** One configuration document, resolved. */
-function configOf(document: string): Config {
-  return resolve({ repository: document, repositoryLabel: "deadset.json" }).config;
+function configOf(document: string): ResolvedConfig {
+  return resolve({ repository: { text: document, label: "deadset.json" } }).config;
 }
 
 /** What the emitters read of one fixture project under its own configuration document. */

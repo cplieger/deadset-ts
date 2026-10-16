@@ -31,12 +31,14 @@ function parameters(main: readonly string[]): string[] {
   });
   try {
     const { config } = resolve({
-      repository: JSON.stringify({
-        target: { kind: "application" },
-        analysis: { min_confidence: "possible" },
-        ts: { entry_files: ["src/main.ts"] },
-      }),
-      repositoryLabel: "deadset.json",
+      repository: {
+        text: JSON.stringify({
+          target: { kind: "application" },
+          analysis: { min_confidence: "possible" },
+          ts: { entry_files: ["src/main.ts"] },
+        }),
+        label: "deadset.json",
+      },
     });
     return findingsOf(emitterInputOf(root, config))
       .filter((finding) => finding.code === "DS1401")

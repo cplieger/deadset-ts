@@ -5,7 +5,7 @@ import { nodeHost } from "../../bin/node-host.ts";
 import { emitterInputOf, findingsOf as reportedOf } from "../../__test-helpers__/emitter-input.ts";
 import { fixture } from "../../__test-helpers__/fixtures.ts";
 import { writeProject } from "../../__test-helpers__/projects.ts";
-import type { Config } from "../config.ts";
+import type { ResolvedConfig } from "../config.ts";
 import type { CompletedFinding } from "../finding.ts";
 import { resolve } from "../resolve.ts";
 import { run, type Writer } from "../run.ts";
@@ -19,8 +19,8 @@ const TARGET = fixture("projects", "reads-and-writes");
 const PRODUCTION: Mode = { production: true };
 
 /** The configuration a document resolves to. */
-function configOf(document: string): Config {
-  return resolve({ repository: document, repositoryLabel: "deadset.json" }).config;
+function configOf(document: string): ResolvedConfig {
+  return resolve({ repository: { text: document, label: "deadset.json" } }).config;
 }
 
 /** The run's reported findings of the reads-and-writes family, completed and dialed. */

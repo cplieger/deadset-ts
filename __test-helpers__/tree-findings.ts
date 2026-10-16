@@ -28,12 +28,14 @@ export function treeFindings(files: Readonly<Record<string, string>>): readonly 
   });
   try {
     const { config } = resolve({
-      repository: JSON.stringify({
-        target: { kind: "application" },
-        analysis: { min_confidence: "possible" },
-        ts: { entry_files: ["main.ts"] },
-      }),
-      repositoryLabel: "deadset.json",
+      repository: {
+        text: JSON.stringify({
+          target: { kind: "application" },
+          analysis: { min_confidence: "possible" },
+          ts: { entry_files: ["main.ts"] },
+        }),
+        label: "deadset.json",
+      },
     });
     return findingsOf(emitterInputOf(root, config)).map(
       (finding) => `${finding.code} ${finding.symbol.name}`,

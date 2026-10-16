@@ -21,8 +21,7 @@ const LOAD_TIMEOUT = 60_000;
 function sweepFixture(document?: string, target = TARGET): RunSweep {
   const path = join(target, "deadset.json");
   const { config } = resolve({
-    repository: document ?? readFileSync(path, "utf8"),
-    repositoryLabel: path,
+    repository: { text: document ?? readFileSync(path, "utf8"), label: path },
   });
   const host = nodeHost();
   return runSweep(openEngine({ collectTiming: false }), host, scopeForDir(host, target), config, {
@@ -259,8 +258,7 @@ describe("serialization-contract over checked values and ambient callees", () =>
   it("reports only what reaches no destination, a function or an implemented member of the project included", () => {
     const document = join(CHECKED, "deadset.json");
     const { config } = resolve({
-      repository: readFileSync(document, "utf8"),
-      repositoryLabel: document,
+      repository: { text: readFileSync(document, "utf8"), label: document },
     });
 
     expect(
@@ -468,11 +466,13 @@ function retainedIn(main: readonly string[]): string[] {
   });
   try {
     const { config } = resolve({
-      repository: JSON.stringify({
-        target: { kind: "application" },
-        ts: { entry_files: ["main.ts"] },
-      }),
-      repositoryLabel: "deadset.json",
+      repository: {
+        text: JSON.stringify({
+          target: { kind: "application" },
+          ts: { entry_files: ["main.ts"] },
+        }),
+        label: "deadset.json",
+      },
     });
     const host = nodeHost();
     const swept = runSweep(
@@ -799,11 +799,13 @@ describe("serialization-contract over a target and a consumer it imports", () =>
         mkdirSync(join(top, "lib", "node_modules", "@example"), { recursive: true });
         symlinkSync(join(top, "app"), join(top, "lib", "node_modules", "@example", "app"));
         const { config } = resolve({
-          repository: JSON.stringify({
-            target: { kind: "application" },
-            ts: { entry_files: ["main.ts"] },
-          }),
-          repositoryLabel: "deadset.json",
+          repository: {
+            text: JSON.stringify({
+              target: { kind: "application" },
+              ts: { entry_files: ["main.ts"] },
+            }),
+            label: "deadset.json",
+          },
         });
         const swept = runSweep(
           openEngine({ collectTiming: false }),

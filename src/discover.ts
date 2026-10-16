@@ -504,7 +504,7 @@ export function discoverProjects(
   configurations: readonly BuildConfiguration[] = [],
 ): Discovery {
   const declared = configurations.filter(
-    (entry): entry is ProjectConfiguration => entry.shape === "project",
+    (entry): entry is ProjectConfiguration => "project" in entry,
   );
   if (declared.length > 0) {
     return declaredProjects(engine, host, scope.target.path, declared);

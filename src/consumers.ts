@@ -4,7 +4,7 @@
  * snapshot, and whose references to the target's declarations count against them.
  */
 
-import type { Config } from "./config.ts";
+import type { PartialConfig } from "./config.ts";
 import { consumerProjects } from "./discover.ts";
 import type { Host } from "./host.ts";
 import { inventory, packageScope } from "./inventory.ts";
@@ -68,7 +68,7 @@ export function consumerReferences<Brand>(
   host: Host,
   targetRoot: string,
   consumer: ConsumerSide,
-  config: Config,
+  config: PartialConfig,
 ): readonly Reference[] {
   const held = inventory(
     narrowedTo(project, (file) => relativePath(targetRoot, file.fileName) !== undefined),
@@ -76,10 +76,10 @@ export function consumerReferences<Brand>(
     targetRoot,
   );
   const found = references(project, held, targetRoot, {
-    testFiles: config.ts.testFiles,
+    testFiles: config.ts.test_files,
     consumer,
   }).references;
-  if (config.analysis.consumerTests !== "production") {
+  if (config.analysis.consumer_tests !== "production") {
     return found;
   }
   return found.map((reference) => (reference.test ? { ...reference, test: false } : reference));

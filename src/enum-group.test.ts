@@ -23,8 +23,10 @@ function sweepRoot(
   panicsOn?: (accessor: string, locations: readonly string[]) => boolean,
 ): RunSweep {
   const { config } = resolve({
-    repository: JSON.stringify({ target: { kind: "application" } }),
-    repositoryLabel: "deadset.json",
+    repository: {
+      text: JSON.stringify({ target: { kind: "application" } }),
+      label: "deadset.json",
+    },
   });
   const opened = openEngine({ collectTiming: false });
   const engine: Engine =

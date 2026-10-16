@@ -32,8 +32,7 @@ function rootLines(analyzed: Analyzed): string[] {
 function runOver(target: string, document = join(target, "deadset.json")): RunRoots {
   const host = nodeHost();
   const { config, provenance } = resolve({
-    repository: readFileSync(document, "utf8"),
-    repositoryLabel: document,
+    repository: { text: readFileSync(document, "utf8"), label: document },
   });
   return runRoots(
     openEngine({ collectTiming: false }),

@@ -8,34 +8,71 @@ import {
   fixture,
   vectorFile,
 } from "../__test-helpers__/fixtures.ts";
-import { ConfigError, type Inputs } from "./config.ts";
+import { refusedPlace } from "../__test-helpers__/refusal.ts";
+import type { Inputs } from "./config.ts";
+import { SETTINGS, type SettingRow } from "./contract/config.generated.ts";
+import { isRecord } from "./json-document.ts";
 import { printConfig } from "./print.ts";
+import { LANGUAGE, PRODUCT } from "./product.ts";
 import { resolve } from "./resolve.ts";
+import { UsageError } from "./usage.ts";
 
 /** The exit code every refusal configuration resolution makes maps to. */
 const USAGE_EXIT_CODE = 2;
 
-/**
- * The flag each case's flag document was supplied through, as that case's expected
- * provenance spells it.
- */
-function caseFlagLabels(name: string): ReadonlyMap<string, string> {
-  if (name === "array-spanning-lines") {
-    return new Map([["analysis.min_confidence", "--min-confidence"]]);
-  }
-  return new Map();
+const ROWS: ReadonlyMap<string, SettingRow> = new Map(SETTINGS.map((row) => [row.key, row]));
+
+/** Whether a case applies to this analyzer: it lists no products, or lists this one. */
+function applies(name: string): boolean {
+  const products = (JSON.parse(vectorFile(name, "case.json") ?? "{}") as { products?: string[] })
+    .products;
+  return products === undefined || products.includes(PRODUCT);
 }
 
 function inputsFor(name: string): Inputs {
   const flags = vectorFile(name, "flags.json");
   const repository = vectorFile(name, "repository.json");
   const central = vectorFile(name, "central.json");
+  const supplied = Object.entries(JSON.parse(flags ?? "{}") as Record<string, unknown>);
   return {
-    ...(flags === undefined ? {} : { flags }),
-    ...(repository === undefined ? {} : { repository, repositoryLabel: "repository.json" }),
-    ...(central === undefined ? {} : { central, centralLabel: "central.json" }),
-    flagLabels: caseFlagLabels(name),
+    flags: new Map(supplied.map(([key, value]) => [key, String(value)])),
+    ...(repository === undefined
+      ? {}
+      : { repository: { text: repository, label: "repository.json" } }),
+    ...(central === undefined ? {} : { central: { text: central, label: "central.json" } }),
   };
+}
+
+/** Whether this analyzer reads a dotted key: its row's, or a keyed section member's. */
+function reads(key: string): boolean {
+  const row = ROWS.get(key) ?? ROWS.get(key.slice(0, key.lastIndexOf(".")));
+  return row?.read === true && row.role !== "ignored";
+}
+
+/**
+ * A published resolved configuration as this analyzer resolves it: the keys its language
+ * reads, a key written per language narrowed to this language's member, and their
+ * provenance entries.
+ */
+function narrowed(value: Record<string, unknown>, at = ""): Record<string, unknown> {
+  const held: Record<string, unknown> = {};
+  for (const [name, member] of Object.entries(value)) {
+    const key = at === "" ? name : `${at}.${name}`;
+    if (key === "provenance") {
+      const entries = Object.entries(member as Record<string, string>);
+      held[name] = Object.fromEntries(entries.filter(([path]) => reads(path)));
+    } else if (reads(key)) {
+      const row = ROWS.get(key);
+      if (row?.role === "section") {
+        held[name] = narrowed(member as Record<string, unknown>, key);
+      } else if (row?.perLanguage !== undefined && isRecord(member)) {
+        held[name] = { [LANGUAGE]: member[LANGUAGE] };
+      } else {
+        held[name] = member;
+      }
+    }
+  }
+  return held;
 }
 
 describe("the committed copy of the Contract", () => {
@@ -97,7 +134,20 @@ describe("the published configuration vectors", () => {
     ]);
   });
 
-  it.each(configVectorCases().map((name) => ({ name })))("$name", ({ name }) => {
+  it("runs a case listing products only where it lists this analyzer", () => {
+    expect(configVectorCases().filter((name) => !applies(name))).toEqual([
+      "provider-name-duplicated",
+      "target-kind-empty-object",
+      "target-kind-member-null",
+      "target-kind-missing-before-a-refused-value",
+    ]);
+  });
+
+  it.each(
+    configVectorCases()
+      .filter(applies)
+      .map((name) => ({ name })),
+  )("$name", ({ name }) => {
     const expected = vectorFile(name, "expected.json");
     const refused = vectorFile(name, "expected-error.json");
     expect(
@@ -114,12 +164,13 @@ describe("the published configuration vectors", () => {
       } catch (error: unknown) {
         thrown = error;
       }
-      expect(thrown, `resolve(${name}) refused the case`).toBeInstanceOf(ConfigError);
-      if (!(thrown instanceof ConfigError)) {
+      expect(thrown, `resolve(${name}) refused the case`).toBeInstanceOf(UsageError);
+      if (!(thrown instanceof UsageError)) {
         return;
       }
-      expect(thrown.key, `resolve(${name}) named the key the case names`).toBe(want.names);
-      expect(thrown.message, `resolve(${name}) message names ${want.names}`).toContain(want.names);
+      expect(refusedPlace(thrown.message), `resolve(${name}) named the key the case names`).toBe(
+        want.names,
+      );
       return;
     }
 
@@ -128,9 +179,9 @@ describe("the published configuration vectors", () => {
     expect(
       JSON.parse(printed),
       `resolve(${name}) printed the case's resolved configuration`,
-    ).toEqual(JSON.parse(expected ?? ""));
+    ).toEqual(narrowed(JSON.parse(expected ?? "") as Record<string, unknown>));
 
-    const back = resolve({ repository: printed, repositoryLabel: "printed.json" });
+    const back = resolve({ repository: { text: printed, label: "printed.json" } });
     expect(
       back.config,
       `the printed configuration of ${name} resolves to what it was printed from`,

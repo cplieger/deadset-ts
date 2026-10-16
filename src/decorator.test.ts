@@ -17,8 +17,7 @@ const TARGET = fixture("projects", "decorators");
 function sweepFixture(document?: string): RunSweep {
   const path = join(TARGET, "deadset.json");
   const { config } = resolve({
-    repository: document ?? readFileSync(path, "utf8"),
-    repositoryLabel: path,
+    repository: { text: document ?? readFileSync(path, "utf8"), label: path },
   });
   const host = nodeHost();
   return runSweep(openEngine({ collectTiming: false }), host, scopeForDir(host, TARGET), config, {

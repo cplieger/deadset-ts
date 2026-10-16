@@ -1,5 +1,5 @@
-/** What one path names. */
-export type PathKind = "file" | "directory" | "absent";
+/** What one path names: `"other"` is anything else there, a named pipe, a device or a socket. */
+export type PathKind = "file" | "directory" | "other" | "absent";
 
 /** One entry of a directory. */
 export interface DirectoryEntry {
@@ -17,11 +17,18 @@ export interface DirectoryEntry {
 export interface Host {
   /** The directory a relative path resolves against. */
   workingDirectory(): string;
-  /** The text of one file, or a throw naming why it cannot be read. */
-  readFile(path: string): string;
+  /**
+   * The text of one file, or a throw naming why it cannot be read. Given `limit`, the
+   * text of no more than the file's first `limit` bytes, so a caller bounding a document
+   * asks for one byte past its bound and never holds a larger file whole.
+   */
+  readFile(path: string, limit?: number): string;
   /** The entries of one directory, or a throw naming why it cannot be read. */
   readDirectory(path: string): readonly DirectoryEntry[];
-  /** What one path names, `"absent"` where nothing is there. */
+  /**
+   * What one path names once every symbolic link along it is followed, `"absent"` where
+   * nothing is there, or a throw naming why it cannot be known, as for a link loop.
+   */
   kindOf(path: string): PathKind;
   /**
    * The path one path names once every symbolic link along it is followed, or a throw

@@ -43,11 +43,13 @@ describe("a declaration form", () => {
     });
     try {
       const { config } = resolve({
-        repository: JSON.stringify({
-          target: { kind: "application" },
-          ts: { entry_files: ["src/main.ts"] },
-        }),
-        repositoryLabel: "deadset.json",
+        repository: {
+          text: JSON.stringify({
+            target: { kind: "application" },
+            ts: { entry_files: ["src/main.ts"] },
+          }),
+          label: "deadset.json",
+        },
       });
       expect(
         findingsOf(emitterInputOf(root, config)).map(
@@ -171,11 +173,13 @@ describe("an accessor pair's setter", () => {
     });
     try {
       const { config } = resolve({
-        repository: JSON.stringify({
-          target: { kind: "application" },
-          ts: { entry_files: ["src/main.ts"] },
-        }),
-        repositoryLabel: "deadset.json",
+        repository: {
+          text: JSON.stringify({
+            target: { kind: "application" },
+            ts: { entry_files: ["src/main.ts"] },
+          }),
+          label: "deadset.json",
+        },
       });
 
       expect(

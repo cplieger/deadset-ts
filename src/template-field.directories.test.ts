@@ -3,9 +3,9 @@ import { join } from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
 import { writeProject } from "../__test-helpers__/projects.ts";
-import { ConfigError } from "./config.ts";
 import { resolve } from "./resolve.ts";
 import { readTemplates } from "./template-field.ts";
+import { UsageError } from "./usage.ts";
 
 function tree(files: Readonly<Record<string, string>>): string {
   const root = writeProject(files);
@@ -17,11 +17,13 @@ function tree(files: Readonly<Record<string, string>>): string {
 
 function templatesOf(targetRoot: string, dirs: readonly string[]) {
   const { config } = resolve({
-    repository: JSON.stringify({
-      target: { kind: "application" },
-      analysis: { template_dirs: dirs },
-    }),
-    repositoryLabel: "deadset.json",
+    repository: {
+      text: JSON.stringify({
+        target: { kind: "application" },
+        analysis: { template_dirs: dirs },
+      }),
+      label: "deadset.json",
+    },
   });
   return readTemplates(nodeHost(), targetRoot, config.analysis);
 }
@@ -69,9 +71,7 @@ describe("the templates of a run", () => {
     });
 
     expect(() => templatesOf(join(root, "app"), [dir])).toThrow(
-      new ConfigError(
-        "malformed",
-        "analysis.template_dirs",
+      new UsageError(
         `analysis.template_dirs: ${JSON.stringify(dir)} is not a directory below the target root`,
       ),
     );

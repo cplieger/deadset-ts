@@ -8,7 +8,7 @@
  */
 
 import { EXEMPTION_CLASSES } from "./contract/contract.generated.ts";
-import type { Config, TSSection } from "./config.ts";
+import type { ResolvedConfig } from "./config.ts";
 import {
   TS_EXEMPTION_CLASSES,
   typescriptVisibilityOf,
@@ -48,7 +48,7 @@ export interface DetectorInput<Brand> {
   /** The configured templates, read once for the run. */
   readonly templates: Templates;
   /** The `ts` section, whose declarations the configured classes read. */
-  readonly ts: TSSection;
+  readonly ts: ResolvedConfig["ts"];
   /** The absolute path of each declared consumer, whose modules are part of the analysis. */
   readonly consumers: readonly string[];
   /** The project's generated files, by path below the target root, each with the detail its retentions name. */
@@ -75,8 +75,8 @@ interface Holding {
  * The classes `exemptions.disabled` switches off. A class that runs on another language
  * only switches nothing off here, so one configuration serves every analyzer.
  */
-export function disabledClasses(config: Config): ReadonlySet<ExemptionClass> {
-  return new Set(config.exemptionsDisabled);
+export function disabledClasses(config: ResolvedConfig): ReadonlySet<ExemptionClass> {
+  return new Set(config.exemptions.disabled);
 }
 
 /**

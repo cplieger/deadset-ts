@@ -7,6 +7,7 @@ import {
   openSync,
   readdirSync,
   readFileSync,
+  readSync,
   realpathSync,
   renameSync,
   rmSync,
@@ -97,6 +98,21 @@ function writeAtomically(path: string, pieces: Iterable<string>): void {
   }
 }
 
+/** The text of a file's first `limit` bytes, or of all of it where it holds fewer. */
+function readHead(path: string, limit: number): string {
+  const bytes = Buffer.alloc(limit);
+  const fd = openSync(path, "r");
+  try {
+    let held = 0;
+    for (let got = -1; got !== 0 && held < limit; held += got) {
+      got = readSync(fd, bytes, held, limit - held, null);
+    }
+    return bytes.toString("utf8", 0, held);
+  } finally {
+    closeSync(fd);
+  }
+}
+
 /** A new directory under the platform's temporary directory. */
 function temporaryDirectory(): TemporaryDirectory {
   const path = mkdtempSync(join(tmpdir(), `${PRODUCT}-mapper-`));
@@ -128,7 +144,8 @@ function componentMapperCommand(): readonly string[] {
 export function nodeHost(): Host {
   return {
     workingDirectory: () => process.cwd(),
-    readFile: (path) => readFileSync(path, "utf8"),
+    readFile: (path, limit) =>
+      limit === undefined ? readFileSync(path, "utf8") : readHead(path, limit),
     readDirectory: (path): readonly DirectoryEntry[] =>
       readdirSync(path, { withFileTypes: true }).map((entry) => ({
         name: entry.name,
@@ -139,7 +156,10 @@ export function nodeHost(): Host {
       if (stat === undefined) {
         return "absent";
       }
-      return stat.isDirectory() ? "directory" : "file";
+      if (stat.isDirectory()) {
+        return "directory";
+      }
+      return stat.isFile() ? "file" : "other";
     },
     realPath: (path) => realpathSync(path),
     analyzerVersion: (): string => {
