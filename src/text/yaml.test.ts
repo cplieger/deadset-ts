@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { yamlDocument } from "./yaml-document.ts";
+import { yamlDocument, yamlKey } from "./yaml.ts";
 
 describe("yamlDocument", () => {
   it("reads block mappings and sequences, quoted keys and scalars, and comments", () => {
@@ -88,5 +88,30 @@ describe("yamlDocument", () => {
 
   it("reads an empty document as null", () => {
     expect(yamlDocument("# nothing\n")).toBeNull();
+  });
+});
+
+describe("yamlKey", () => {
+  it("reads one key whose siblings lie outside the subset, and answers absent for a key not there", () => {
+    const text = [
+      "catalog: &shared",
+      "  react: ^19.0.0",
+      "packages:",
+      "  - packages/* # the libraries",
+      '  - "!**/test/**"',
+      "patchedDependencies: |",
+      "  packages: not a key",
+    ].join("\n");
+
+    expect(yamlKey(text, "packages")).toEqual({
+      kind: "value",
+      value: ["packages/*", "!**/test/**"],
+    });
+    expect(yamlKey(text, "overrides")).toEqual({ kind: "absent" });
+  });
+
+  it("refuses a key declared twice, and one whose own lines lie outside the subset", () => {
+    expect(yamlKey("packages: [a]\npackages: [b]\n", "packages").kind).toBe("refused");
+    expect(yamlKey("packages: &all\n  - a\n", "packages").kind).toBe("refused");
   });
 });

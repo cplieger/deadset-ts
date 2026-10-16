@@ -18,7 +18,6 @@ import {
   isIdentifier,
   isMethodDeclaration,
   isNoSubstitutionTemplateLiteral,
-  isParenthesizedExpression,
   isParenthesizedTypeNode,
   isPropertyAccessExpression,
   isReturnStatement,
@@ -28,6 +27,7 @@ import {
   type Node,
   type SourceFile,
 } from "@typescript/native/ast";
+import { parenthesesRemoved } from "./unwrap.ts";
 import { TypeFlags, type Type } from "@typescript/native/sync";
 import { aliasChains } from "./alias-chain.ts";
 import type { DetectorInput, Evidence } from "./exempt.ts";
@@ -55,15 +55,6 @@ interface Site {
   readonly at: Node;
 }
 
-/** The expression one node is, through however many parentheses are written around it. */
-function unparenthesized(node: Node): Node {
-  let held = node;
-  while (isParenthesizedExpression(held)) {
-    held = held.expression;
-  }
-  return held;
-}
-
 /**
  * The name node a type node names its declaration by: the identifier of a type
  * reference, the right side of a qualified one, through parentheses. A type that is no
@@ -86,7 +77,7 @@ function typeName(type: Node | undefined): Node | undefined {
 
 /** The name node an expression names an object by: an identifier, or a property access's name. */
 function objectName(expression: Node): Node | undefined {
-  const held = unparenthesized(expression);
+  const held = parenthesesRemoved(expression);
   if (isIdentifier(held)) {
     return held;
   }

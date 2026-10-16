@@ -16,7 +16,6 @@ import {
   isNoSubstitutionTemplateLiteral,
   isNumericLiteral,
   isObjectLiteralExpression,
-  isParenthesizedExpression,
   isPropertyAccessExpression,
   isPropertyAssignment,
   isShorthandPropertyAssignment,
@@ -31,6 +30,7 @@ import { SymbolFlags, TypeFlags, type Type } from "@typescript/native/sync";
 import { must } from "./query.ts";
 import type { ProjectView } from "./session.ts";
 import { checkedTypes } from "./value-reach.ts";
+import { parenthesesRemoved } from "./unwrap.ts";
 
 /** The types that keep nothing of the value they are given. */
 const ERASED = TypeFlags.Any | TypeFlags.Unknown;
@@ -79,10 +79,6 @@ function literalKey(node: Expression): string | undefined {
   return isStringLiteral(node) || isNoSubstitutionTemplateLiteral(node) || isNumericLiteral(node)
     ? node.text
     : undefined;
-}
-
-function unwrapped(node: Expression): Expression {
-  return isParenthesizedExpression(node) ? unwrapped(node.expression) : node;
 }
 
 /**
@@ -150,8 +146,8 @@ function propertyAt(source: Expression, name: string): Expression | undefined {
  * here, and a default value is stored in its target too.
  */
 function patternTargets(pattern: Expression, from: Stored, out: Target[]): void {
-  const target = unwrapped(pattern);
-  const source = from.path.length === 0 ? unwrapped(from.value) : from.value;
+  const target = parenthesesRemoved(pattern);
+  const source = from.path.length === 0 ? parenthesesRemoved(from.value) : from.value;
   const into = (element: Expression, step: Step, literal: Expression | undefined): void => {
     patternTargets(
       element,

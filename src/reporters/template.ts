@@ -10,6 +10,7 @@
 import { CHUNK_LENGTH } from "../json-chunks.ts";
 import { RenderError } from "./reporter.ts";
 import { utf8Bytes } from "./sha256.ts";
+import { bytewise } from "../text/compare.ts";
 
 /** A template that does not parse, which refuses the invocation before any analysis. */
 export class TemplateError extends Error {
@@ -618,7 +619,7 @@ function formatted(value: Value, nested: boolean): string {
   }
   const object: ValueObject = value;
   const entries = Object.keys(object)
-    .sort()
+    .sort(bytewise)
     .map((key) => `${key}:${formatted(object[key] ?? null, true)}`);
   return `map[${entries.join(" ")}]`;
 }
@@ -647,26 +648,9 @@ function compareBasic(name: string, a: Value, b: Value): number {
     return Number.NaN;
   }
   if (kind === "string") {
-    return byCodePoints(a as string, b as string);
+    return bytewise(a as string, b as string);
   }
   return (a as number) < (b as number) ? -1 : 1;
-}
-
-/**
- * Two strings ordered by the bytes of their UTF-8 encodings, which is the order of their
- * code points: the order of their UTF-16 code units differs above U+FFFF.
- */
-function byCodePoints(a: string, b: string): number {
-  let at = 0;
-  while (at < a.length && at < b.length) {
-    const x = a.codePointAt(at) ?? 0;
-    const y = b.codePointAt(at) ?? 0;
-    if (x !== y) {
-      return x < y ? -1 : 1;
-    }
-    at += x > 0xffff ? 2 : 1;
-  }
-  return a.length - b.length;
 }
 
 /** The escapes `%q` writes for the control characters that have one of their own. */
@@ -1022,7 +1006,7 @@ class Execution {
         entries = value.map((one, i) => [i, one]);
       } else if (isObject(value)) {
         entries = Object.keys(value)
-          .sort()
+          .sort(bytewise)
           .map((key) => [key, value[key] ?? null]);
       } else {
         throw new RenderError(`range cannot iterate over a ${kindOf(value)}`);

@@ -48,7 +48,7 @@ export function typescriptVisibilityOf(exemptionClass: TSExemptionClass): TypeSc
   return VISIBILITY.get(exemptionClass) ?? { private: false, privateName: false };
 }
 
-/** Whether one name is a class of the vocabulary, whichever language it runs on. */
-export function isExemptionClass(name: string): name is ExemptionClass {
-  return EXEMPTION_CLASSES.some((row) => row.class === name);
-}
+/** Every class of the vocabulary, whichever language it runs on, in the vocabulary's order. */
+export const EXEMPTION_CLASS_NAMES: readonly ExemptionClass[] = EXEMPTION_CLASSES.map(
+  (row) => row.class,
+);

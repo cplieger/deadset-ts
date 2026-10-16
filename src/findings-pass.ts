@@ -24,6 +24,8 @@ import {
   type Ledger,
 } from "./suppress.ts";
 import type { Provenance, Recorded } from "./suppress-file.ts";
+import { bytewise } from "./text/compare.ts";
+import { PRODUCT } from "./product.ts";
 
 /** The counts a report's totals carry beside its findings. */
 interface PassTotals {
@@ -49,22 +51,14 @@ export interface PassResult {
   readonly ledger: Ledger;
 }
 
-/** Two strings ordered bytewise. */
-function compare(a: string, b: string): number {
-  if (a === b) {
-    return 0;
-  }
-  return a < b ? -1 : 1;
-}
-
 /** The canonical order: path, line, column, code, then the symbol reference. */
 function canonical(a: Finding, b: Finding): number {
   return (
-    compare(a.position.path, b.position.path) ||
+    bytewise(a.position.path, b.position.path) ||
     a.position.line - b.position.line ||
     a.position.column - b.position.column ||
-    compare(a.code, b.code) ||
-    compare(a.symbol.ref, b.symbol.ref)
+    bytewise(a.code, b.code) ||
+    bytewise(a.symbol.ref, b.symbol.ref)
   );
 }
 
@@ -161,5 +155,5 @@ export function rowKey(row: Recorded): string {
 
 /** The analyzer identity a baseline this analyzer writes names as its rows' provenance. */
 export function analyzerProvenance(version: string): Provenance {
-  return { analyzer: "deadset-ts", version };
+  return { analyzer: PRODUCT, version };
 }

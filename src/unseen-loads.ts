@@ -6,13 +6,10 @@
  */
 
 import {
-  isAsExpression,
   isBinaryExpression,
   isCallExpression,
   isIdentifier,
   isNoSubstitutionTemplateLiteral,
-  isParenthesizedExpression,
-  isSatisfiesExpression,
   isStringLiteral,
   isTemplateExpression,
   SyntaxKind,
@@ -23,21 +20,13 @@ import { renderPosition, type Position } from "./position.ts";
 import { UNANSWERED } from "./query.ts";
 import type { ProjectView } from "./session.ts";
 import { sourceFilesOf } from "./source-files.ts";
+import { unwrapped } from "./unwrap.ts";
 
 /** One load the analysis cannot resolve, in the configuration whose production file writes it. */
 export interface UnseenLoad {
   readonly configuration: string;
   /** The position of the call. */
   readonly position: Position;
-}
-
-/** The expression a wrapper that changes no value holds: parentheses and type assertions. */
-function unwrapped(node: Node): Node {
-  let at = node;
-  while (isParenthesizedExpression(at) || isAsExpression(at) || isSatisfiesExpression(at)) {
-    at = at.expression;
-  }
-  return at;
 }
 
 /** The literal text a computed path starts with: a template's head, or a concatenation's first literal. */

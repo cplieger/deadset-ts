@@ -29,6 +29,7 @@ const PROJECT: Readonly<Record<string, string>> = {
   ...source("after"),
   ...source("hidden"),
   ...source("nested"),
+  ...source("tracked"),
   "index.html": [
     "<!doctype html>",
     "<SCRIPT Type='module' SRC='./src/cased.ts'></SCRIPT>",
@@ -43,6 +44,7 @@ const PROJECT: Readonly<Record<string, string>> = {
   ].join("\n"),
   "pages/about.html": '<script type="module" src="/src/nested.ts"></script>\n',
   "node_modules/kit/index.html": '<script type="module" src="../../src/hidden.ts"></script>\n',
+  ".git/index.html": '<script type="module" src="../src/tracked.ts"></script>\n',
 };
 
 const roots: string[] = [];
@@ -83,6 +85,7 @@ describe("the scripts of an HTML file", () => {
     ["src/remote.ts", "a value naming another origin"],
     ["src/after.ts", "text after the end tag of an inline module script"],
     ["src/hidden.ts", "an HTML file inside a node_modules directory"],
+    ["src/tracked.ts", "an HTML file inside the .git directory"],
   ])("leave %s unloaded, named by %s", (path) => {
     expect(found).toContain(path);
   });

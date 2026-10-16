@@ -28,6 +28,31 @@ export const FORMATS = [
   "template",
 ] as const satisfies readonly Format[];
 
+/** Each analyzed language's row: its analyzer, the names that mark it and the directories it skips. */
+export const LANGUAGE_ROWS = {
+  go: {
+    analyzer: "deadset-go",
+    markers: ["go.mod"],
+    skippedDirectories: ["node_modules", "testdata", "vendor", ".*", "_*"],
+  },
+  ts: {
+    analyzer: "deadset-ts",
+    markers: ["tsconfig*.json"],
+    skippedDirectories: ["node_modules", ".git"],
+  },
+} as const satisfies Readonly<
+  Partial<
+    Record<
+      Language,
+      {
+        readonly analyzer: string;
+        readonly markers: readonly string[];
+        readonly skippedDirectories: readonly string[];
+      }
+    >
+  >
+>;
+
 export const EXIT_CLEAN = 0;
 export const EXIT_FINDINGS = 1;
 export const EXIT_USAGE = 2;

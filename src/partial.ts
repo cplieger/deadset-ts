@@ -1,6 +1,7 @@
 import type { NotBuilt } from "./discover.ts";
 import { relativePath } from "./paths.ts";
 import type { UnansweredQuestion } from "./query.ts";
+import { bytewise } from "./text/compare.ts";
 
 /** What a run read only in part. */
 interface Partial {
@@ -24,7 +25,7 @@ function counted(n: number, one: string, many: string): string {
  */
 export function partialNotes(partial: Partial): readonly string[] {
   const notes = [...partial.notBuilt]
-    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    .sort((a, b) => bytewise(a.id, b.id))
     .map(
       (one) =>
         `the derived configuration ${one.id} was not built and is not analyzed: ${one.error}`,

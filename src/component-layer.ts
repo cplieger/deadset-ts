@@ -8,10 +8,12 @@
 
 import type { CreateSnapshotParams } from "@typescript/native/sync";
 import type { Host } from "./host.ts";
+import { INSTALLED_PACKAGES } from "./fs/manifest.ts";
 import { dirnamePath, joinPath } from "./paths.ts";
+import { PRODUCT } from "./product.ts";
 
 /** The name the mapper's manifest declares and every configuration's entry names. */
-const MAPPER_PACKAGE = "deadset-ts-component-files";
+const MAPPER_PACKAGE = `${PRODUCT}-component-files`;
 
 /** The file system one snapshot is created with. */
 type SnapshotFileSystem = NonNullable<CreateSnapshotParams["fileSystem"]>;
@@ -150,7 +152,7 @@ export function componentLayer(
       mappers,
     );
     if (mapper !== undefined) {
-      symlinks[joinPath(dirnamePath(configFile), "node_modules", MAPPER_PACKAGE)] = {
+      symlinks[joinPath(dirnamePath(configFile), INSTALLED_PACKAGES, MAPPER_PACKAGE)] = {
         target: mapper.packageDirectory,
         host: true,
       };

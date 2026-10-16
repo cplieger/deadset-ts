@@ -15,6 +15,7 @@ import { describeVerb } from "./verbs/describe.ts";
 import { EXPLAIN_OPTIONS, explainVerb } from "./verbs/explain.ts";
 import { type Verb, type VerbOptions } from "./verbs/verb.ts";
 import { versionVerb } from "./verbs/version.ts";
+import { diagnose, message, PRODUCT } from "./product.ts";
 
 /** One output stream of the command line. `process.stdout` and `process.stderr` satisfy it. */
 export interface Writer {
@@ -37,7 +38,7 @@ const VERBS: readonly {
   { name: "version", run: versionVerb },
 ];
 
-const USAGE = `usage: deadset-ts <verb> [options]\nverbs: ${VERBS.map((verb) => verb.name).join(", ")}\n`;
+const USAGE = `usage: ${PRODUCT} <verb> [options]\nverbs: ${VERBS.map((verb) => verb.name).join(", ")}\n`;
 
 /**
  * The tokens whose presence in an option's name makes that option a request to
@@ -141,11 +142,7 @@ function readFileOr(host: Host, path: string, orUndefined: boolean): string | un
     if (orUndefined) {
       return undefined;
     }
-    throw new ConfigError(
-      "malformed",
-      "",
-      `${path}: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    throw new ConfigError("malformed", "", `${path}: ${message(error)}`);
   }
 }
 
@@ -209,9 +206,7 @@ export function run(
 ): number {
   const editing = sourceEditOption(args);
   if (editing !== undefined) {
-    err.write(
-      `deadset-ts: ${editing} is not supported: deadset-ts reports and never edits a source file\n`,
-    );
+    diagnose(err, `${editing} is not supported: ${PRODUCT} reports and never edits a source file`);
     err.write(USAGE);
     return EXIT_USAGE;
   }
@@ -228,7 +223,7 @@ export function run(
     );
   }
   if (name !== undefined) {
-    err.write(`deadset-ts: unknown verb ${JSON.stringify(name)}\n`);
+    diagnose(err, `unknown verb ${JSON.stringify(name)}`);
   }
   err.write(USAGE);
   return EXIT_USAGE;
@@ -274,7 +269,7 @@ function invoke(
 /** Turns one refusal into the exit code the Contract's table gives it. */
 function refuse(error: unknown, err: Writer): number {
   if (error instanceof ConfigError) {
-    err.write(`deadset-ts: ${error.message}\n`);
+    diagnose(err, error.message);
     err.write(USAGE);
     return EXIT_USAGE;
   }
@@ -282,7 +277,7 @@ function refuse(error: unknown, err: Writer): number {
     for (const diagnostic of error.diagnostics) {
       err.write(`${renderDiagnostic(diagnostic)}\n`);
     }
-    err.write(`deadset-ts: ${error.message}\n`);
+    diagnose(err, error.message);
     return EXIT_FAILURE;
   }
   if (error instanceof SetupError) {
@@ -292,7 +287,7 @@ function refuse(error: unknown, err: Writer): number {
     return EXIT_FAILURE;
   }
   if (error instanceof ScopeError) {
-    err.write(`deadset-ts: ${error.message}\n`);
+    diagnose(err, error.message);
     return EXIT_FAILURE;
   }
   throw error;

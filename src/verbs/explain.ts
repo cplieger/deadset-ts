@@ -14,6 +14,8 @@ import type { Reference } from "../references.ts";
 import { resolve } from "../resolve.ts";
 import type { Root } from "../roots.ts";
 import { type Verb, type VerbOptions } from "./verb.ts";
+import { bytewise } from "../text/compare.ts";
+import { diagnose } from "../product.ts";
 
 /**
  * The three spellings of an explanation request, each naming the symbol to explain. They are
@@ -102,7 +104,7 @@ function subjectOf(
         symbol.ref.toLowerCase().includes(folded) || symbol.name.toLowerCase().includes(folded),
     )
     .map(described)
-    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    .sort(bytewise);
   return { candidates: partial.slice(0, MAX_PARTIAL_MATCHES) };
 }
 
@@ -381,7 +383,7 @@ export const explainVerb: Verb = ({ out, err, host, inputs, scope, openClient, o
     targetRoot: resolvePath(host.workingDirectory(), scoped.target.path),
   });
   if (subject === undefined) {
-    err.write(`deadset-ts: ${JSON.stringify(named)} names no one symbol of the target\n`);
+    diagnose(err, `${JSON.stringify(named)} names no one symbol of the target`);
     for (const candidate of candidates) {
       err.write(`  ${candidate}\n`);
     }
@@ -392,7 +394,7 @@ export const explainVerb: Verb = ({ out, err, host, inputs, scope, openClient, o
     out.write(explanation(analysis, subject, config.reporters.cascade));
   }
   for (const note of notes) {
-    err.write(`deadset-ts: ${note}\n`);
+    diagnose(err, note);
   }
   return subject === undefined ? EXIT_USAGE : EXIT_CLEAN;
 };

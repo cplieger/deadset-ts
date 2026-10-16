@@ -25,7 +25,7 @@ describe("a glob pattern", () => {
     expect(matched("src/?.ts", ["src/a.ts", "src/ab.ts", "src//.ts"])).toEqual(["src/a.ts"]);
   });
 
-  it("reads a brace list as an alternation of its members, each written literally", () => {
+  it("reads a brace list as an alternation of its members", () => {
     expect(
       matched("src/{a,b.c}.ts", ["src/a.ts", "src/b.c.ts", "src/bxc.ts", "src/{a,b.c}.ts"]),
     ).toEqual(["src/a.ts", "src/b.c.ts"]);

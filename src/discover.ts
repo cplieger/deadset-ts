@@ -8,12 +8,17 @@ import type { Scope } from "./scope.ts";
 import { SetupError } from "./setup-failure.ts";
 import type { Engine, ProjectDiagnostics } from "./session.ts";
 import { writtenPath, type WorkspaceProgram } from "./workspace-programs.ts";
+import { filesBelow } from "./fs/tree.ts";
+import { LANGUAGE, message } from "./product.ts";
+import { LANGUAGE_ROWS } from "./contract/contract.generated.ts";
+import { globExpression } from "./text/glob.ts";
 
-/** Directory names discovery does not descend into. */
-export const IGNORED_DIRECTORIES: ReadonlySet<string> = new Set(["node_modules", ".git"]);
+const MARKERS = LANGUAGE_ROWS[LANGUAGE].markers.map(globExpression);
 
-/** A compiler configuration file discovery recognises under a root. */
-const CONFIG_FILE = /^tsconfig.*\.json$/u;
+/** Whether one file name is a compiler configuration's: one of the language row's markers. */
+export function isConfigFile(name: string): boolean {
+  return MARKERS.some((marker) => marker.test(name));
+}
 
 /**
  * A run that cannot read what it was asked to analyze. It ends the run with the
@@ -218,39 +223,9 @@ interface Discovery {
   readonly fromScope: readonly string[];
 }
 
-/**
- * The configuration files below `root`, in ascending path order, skipping an
- * ignored directory. A directory that cannot be read is skipped: a tree the
- * analysis may not enter names no project.
- */
-function configFilesUnder(host: Host, root: string): string[] {
-  const found: string[] = [];
-  const pending = [root];
-  while (pending.length > 0) {
-    const dir = pending.pop();
-    if (dir === undefined) {
-      break;
-    }
-    let entries: readonly { readonly name: string; readonly directory: boolean }[];
-    try {
-      entries = host.readDirectory(dir);
-    } catch {
-      continue;
-    }
-    for (const entry of [...entries].sort((a, b) => (a.name < b.name ? -1 : 1))) {
-      const path = joinPath(dir, entry.name);
-      if (entry.directory) {
-        if (!IGNORED_DIRECTORIES.has(entry.name)) {
-          pending.push(path);
-        }
-        continue;
-      }
-      if (CONFIG_FILE.test(entry.name)) {
-        found.push(path);
-      }
-    }
-  }
-  return found.sort();
+/** The configuration files below `root`, by absolute path in ascending order. */
+function configFilesUnder(host: Host, root: string): readonly string[] {
+  return filesBelow(host, root, isConfigFile).map((path) => joinPath(root, path));
 }
 
 /**
@@ -329,7 +304,7 @@ export function consumerProjects(engine: Engine, host: Host, root: string): read
   if (kind !== "directory") {
     throw new DiscoveryError(`the consumer ${root} is not a directory`, []);
   }
-  const found = derivedFrom(engine, host, configFilesUnder(host, root), () => true);
+  const found = derivedFrom(engine, host, [...configFilesUnder(host, root)], () => true);
   if (found.length === 0) {
     throw new DiscoveryError(
       `the consumer ${root} holds no compiler configuration, so none of its references can be read`,
@@ -384,7 +359,7 @@ function readConfiguration(
       ? { references: referencesOf(parsed) }
       : { reason: `TS${String(circular.code)}: ${circular.text.replace("{0}", () => configFile)}` };
   } catch (error: unknown) {
-    return { reason: error instanceof Error ? error.message : String(error) };
+    return { reason: message(error) };
   }
 }
 

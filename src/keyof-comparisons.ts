@@ -10,7 +10,6 @@ import {
   isCaseClause,
   isElementAccessExpression,
   isIdentifier,
-  isParenthesizedExpression,
   isPropertyAccessExpression,
   isSwitchStatement,
   isTypeOperatorNode,
@@ -27,6 +26,7 @@ import { renderPosition } from "./position.ts";
 import { UNANSWERED } from "./query.ts";
 import type { Reference } from "./references.ts";
 import type { ProjectView } from "./session.ts";
+import { parenthesesRemoved } from "./unwrap.ts";
 
 /** The operators that compare their operands for equality. */
 const EQUALITIES: ReadonlySet<SyntaxKind> = new Set([
@@ -44,13 +44,9 @@ interface Comparison {
   readonly other: Expression;
 }
 
-function unwrapped(node: Expression): Expression {
-  return isParenthesizedExpression(node) ? unwrapped(node.expression) : node;
-}
-
 /** The name node an operand's symbol is read at: an identifier, or a property access's name. */
 function nameOf(node: Expression): Node | undefined {
-  const at = unwrapped(node);
+  const at = parenthesesRemoved(node);
   if (isIdentifier(at)) {
     return at;
   }
@@ -132,7 +128,7 @@ export function keyofComparisonReferences<Brand>(
   }
   const named = comparisons.flatMap((one) => {
     const name = nameOf(one.keyed);
-    return name === undefined || isElementAccessExpression(unwrapped(one.other))
+    return name === undefined || isElementAccessExpression(parenthesesRemoved(one.other))
       ? []
       : [{ ...one, name }];
   });

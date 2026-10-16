@@ -10,7 +10,7 @@ import type { Host } from "./host.ts";
 import type { InventorySymbol } from "./inventory.ts";
 import { jsonChunks } from "./json-chunks.ts";
 import { joinPath } from "./paths.ts";
-import { positionAt, walkDocument } from "./json-document.ts";
+import { isRecord, positionAt, walkDocument } from "./json-document.ts";
 import type { Position } from "./position.ts";
 import { declarationKey } from "./ref.ts";
 import {
@@ -26,6 +26,7 @@ import {
   type SuppressionRecord,
   type Suppressions,
 } from "./suppress.ts";
+import { message } from "./product.ts";
 
 /** The name and the location the grammar fixes for the ignore file. */
 export const IGNORE_FILE = "deadset-ignore.json";
@@ -79,10 +80,6 @@ function documentSite(shape: Shape): Position {
   return { path: shape.file, line: 0, column: 0 };
 }
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 /** What one entry or row resolves to. */
 interface Read {
   readonly records: readonly SuppressionRecord[];
@@ -100,7 +97,7 @@ function readRecord(value: unknown, site: Position, byReference: ByReference, sh
   const refuse = (text: string, want: string): never => {
     throw new SuppressionError(shape.mechanism, siteText(site), text, want);
   };
-  if (!isObject(value)) {
+  if (!isRecord(value)) {
     return refuse(JSON.stringify(value), shape.recordWant);
   }
   for (const [key, held] of Object.entries(value)) {
@@ -200,9 +197,9 @@ function readDocument(
   try {
     parsed = JSON.parse(text);
   } catch (error: unknown) {
-    return malformed(`${shape.file}: ${error instanceof Error ? error.message : String(error)}`);
+    return malformed(`${shape.file}: ${message(error)}`);
   }
-  if (!isObject(parsed)) {
+  if (!isRecord(parsed)) {
     return malformed(shape.file);
   }
   const walk = walkDocument(text, shape.array);
@@ -328,9 +325,9 @@ export function otherSchemeRows(text: string, own: string = OWN_SCHEME): readonl
   try {
     parsed = JSON.parse(text);
   } catch (error: unknown) {
-    return refuse(error instanceof Error ? error.message : String(error));
+    return refuse(message(error));
   }
-  const held = isObject(parsed) ? parsed[BASELINE_SHAPE.array] : undefined;
+  const held = isRecord(parsed) ? parsed[BASELINE_SHAPE.array] : undefined;
   if (!Array.isArray(held)) {
     return refuse(BASELINE_SHAPE.documentWant);
   }
@@ -338,7 +335,7 @@ export function otherSchemeRows(text: string, own: string = OWN_SCHEME): readonl
     try {
       readRecord(value, documentSite(BASELINE_SHAPE), new Map(), BASELINE_SHAPE);
     } catch (error: unknown) {
-      return refuse(error instanceof Error ? error.message : String(error));
+      return refuse(message(error));
     }
     // readRecord has checked every member is a string and the code and symbol are present.
     const { code, symbol, path, reason } = value as Readonly<Record<string, string>>;

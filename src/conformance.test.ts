@@ -7,7 +7,7 @@ import { nodeHost } from "../bin/node-host.ts";
 import { fixture, readFixture, ROOT } from "../__test-helpers__/fixtures.ts";
 import { writeProject } from "../__test-helpers__/projects.ts";
 import { CONFORMANCE, DECLARED_GAPS, type DeclaredGap } from "./conformance.ts";
-import { ANALYZER_NAME } from "./report.ts";
+import { PRODUCT } from "./product.ts";
 import { run, type Writer } from "./run.ts";
 
 /** The bound on the case that loads a target. */
@@ -67,7 +67,7 @@ describe("the conformance record", () => {
     };
 
     expect(DECLARED_GAPS).toEqual(document.gaps);
-    expect(document.product.name).toBe(ANALYZER_NAME);
+    expect(document.product.name).toBe(PRODUCT);
     expect(document.corpus_version).toBe(corpus.corpus_version);
   });
 

@@ -5,13 +5,13 @@
  */
 
 import type { SourceFile } from "@typescript/native/ast";
-import { IGNORED_DIRECTORIES } from "./discover.ts";
 import type { Host } from "./host.ts";
 import { packageScope } from "./inventory.ts";
 import { dirnamePath, joinPath, relativePath, resolvePath } from "./paths.ts";
 import { renderRef } from "./ref.ts";
 import type { ProjectView } from "./session.ts";
 import type { UnseenLoad } from "./unseen-loads.ts";
+import { filesBelow } from "./fs/tree.ts";
 
 /** A file name the compiler reads as a source file. */
 const SOURCE_FILE = /\.(?:ts|tsx|mts|cts)$/u;
@@ -74,29 +74,11 @@ function lastLine(text: string): number {
  * that cannot be read is skipped, as discovery skips it.
  */
 export function sourcePaths(host: Host, targetRoot: string): readonly string[] {
-  const found: string[] = [];
-  const pending = [""];
-  for (let dir = pending.pop(); dir !== undefined; dir = pending.pop()) {
-    let entries: readonly { readonly name: string; readonly directory: boolean }[];
-    try {
-      entries = host.readDirectory(joinPath(targetRoot, dir));
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      const path = dir === "" ? entry.name : `${dir}/${entry.name}`;
-      if (entry.directory) {
-        if (!IGNORED_DIRECTORIES.has(entry.name)) {
-          pending.push(path);
-        }
-        continue;
-      }
-      if (SOURCE_FILE.test(entry.name) && !DECLARATION_FILE.test(entry.name)) {
-        found.push(path);
-      }
-    }
-  }
-  return found.sort((a, b) => (a < b ? -1 : 1));
+  return filesBelow(
+    host,
+    targetRoot,
+    (name) => SOURCE_FILE.test(name) && !DECLARATION_FILE.test(name),
+  );
 }
 
 /**

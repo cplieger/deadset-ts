@@ -8,6 +8,8 @@
  * one at a time: beside a finding, or in a report's declared gaps.
  */
 
+import { bytewise } from "./text/compare.ts";
+
 /** One declined entry-point convention. */
 export interface DeclinedConvention {
   /** The tool the convention belongs to, by the name of the package or service. */
@@ -323,16 +325,8 @@ const PARTLY_ENTERED: readonly DeclinedConvention[] = [
   },
 ];
 
-/** Two strings ordered bytewise. */
-function compare(a: string, b: string): number {
-  if (a === b) {
-    return 0;
-  }
-  return a < b ? -1 : 1;
-}
-
 /** Every declined entry-point convention, ordered by tool and then by convention. */
 export const DECLINED_CONVENTIONS: readonly DeclinedConvention[] = [
   ...UNREAD_TOOLS.map((tool) => ({ tool, convention: EVERY_CONVENTION, reason: UNREAD })),
   ...PARTLY_ENTERED,
-].sort((a, b) => compare(a.tool, b.tool) || compare(a.convention, b.convention));
+].sort((a, b) => bytewise(a.tool, b.tool) || bytewise(a.convention, b.convention));

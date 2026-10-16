@@ -23,7 +23,6 @@ import type { NotBuilt } from "../discover.ts";
 import { partialNotes } from "../partial.ts";
 import {
   buildReport,
-  LANGUAGE,
   capFindings,
   sortFindings,
   type ReportConfiguration,
@@ -39,6 +38,8 @@ import { resolve } from "../resolve.ts";
 import { otherSchemeRows, rowReason, writeBaseline, type Recorded } from "../suppress-file.ts";
 import type { UnseenLoad } from "../unseen-loads.ts";
 import { type Verb, type VerbOptions } from "./verb.ts";
+import { bytewise } from "../text/compare.ts";
+import { diagnose, LANGUAGE, message } from "../product.ts";
 
 /** The options `analyze` takes beside the ones every verb takes. */
 export const ANALYZE_OPTIONS: VerbOptions = {
@@ -60,7 +61,7 @@ class ReportPathError extends Error {
 
 /** The formats this analyzer renders, for a message that names them. */
 function formatNames(): string {
-  return [...RENDERINGS.keys()].sort().join(", ");
+  return [...RENDERINGS.keys()].sort(bytewise).join(", ");
 }
 
 /** The renderings one invocation writes: the ones it named, else the configuration's. */
@@ -200,11 +201,7 @@ function templateOf(
   try {
     source = host.readFile(resolvePath(invoked, named));
   } catch (error: unknown) {
-    throw new ConfigError(
-      "malformed",
-      "",
-      `--template=${named}: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    throw new ConfigError("malformed", "", `--template=${named}: ${message(error)}`);
   }
   try {
     return parseTemplate(source);
@@ -268,7 +265,7 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
   try {
     version = host.analyzerVersion();
   } catch (error: unknown) {
-    err.write(`deadset-ts: ${error instanceof Error ? error.message : String(error)}\n`);
+    diagnose(err, message(error));
     return EXIT_FAILURE;
   }
 
@@ -349,7 +346,7 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
     if (!(error instanceof ReportPathError)) {
       throw error;
     }
-    err.write(`deadset-ts: ${error.message}\n`);
+    diagnose(err, error.message);
     return EXIT_FAILURE;
   }
 
@@ -382,38 +379,42 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
       );
     }
   } catch (error: unknown) {
-    err.write(`deadset-ts: ${error instanceof Error ? error.message : String(error)}\n`);
+    diagnose(err, message(error));
     return EXIT_FAILURE;
   }
 
   for (const note of partial) {
-    err.write(`deadset-ts: ${note}\n`);
+    diagnose(err, note);
   }
   for (const line of [...unread, ...unfound]) {
-    err.write(`deadset-ts: ${line}\n`);
+    diagnose(err, line);
   }
   for (const warning of warnings) {
-    err.write(
-      `deadset-ts: ${warning.path}:${String(warning.line)}: a <script> start tag that begins a line is not read as a block: ${warning.reason}\n`,
+    diagnose(
+      err,
+      `${warning.path}:${String(warning.line)}: a <script> start tag that begins a line is not read as a block: ${warning.reason}`,
     );
   }
   for (const skip of report.type_error_skips) {
-    err.write(
-      `deadset-ts: ${skip.path}:${String(skip.line)}: ${skip.message}: the function or statement holding this type error is not evaluated\n`,
+    diagnose(
+      err,
+      `${skip.path}:${String(skip.line)}: ${skip.message}: the function or statement holding this type error is not evaluated`,
     );
   }
   if (report.totals.pending > 0) {
-    err.write(
-      `deadset-ts: ${counted(report.totals.pending, "pending finding")}: the report names a declared cross-language edge, and no merge has resolved it\n`,
+    diagnose(
+      err,
+      `${counted(report.totals.pending, "pending finding")}: the report names a declared cross-language edge, and no merge has resolved it`,
     );
   }
   if (report.totals.stale_suppressions > 0) {
-    err.write(`deadset-ts: ${counted(report.totals.stale_suppressions, "stale suppression")}\n`);
+    diagnose(err, counted(report.totals.stale_suppressions, "stale suppression"));
   }
   if (exitCode === EXIT_CODE_OFF) {
     if (verdict !== EXIT_CLEAN) {
-      err.write(
-        `deadset-ts: the exit code is configured off: the verdict of this run is ${String(verdict)}\n`,
+      diagnose(
+        err,
+        `the exit code is configured off: the verdict of this run is ${String(verdict)}`,
       );
     }
     return EXIT_CLEAN;

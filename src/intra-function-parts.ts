@@ -96,6 +96,7 @@ import type { Reference } from "./references.ts";
 import type { ProjectView } from "./session.ts";
 import { signatureOf, type SignatureNode } from "./signatures.ts";
 import { spellsNoBinding } from "./spelled-names.ts";
+import { parenthesesRemoved } from "./unwrap.ts";
 
 /** The subject kind of each part this module reads. */
 type PartKind = "parameter" | "result" | "statement" | "store" | "case";
@@ -197,11 +198,6 @@ function spanOf(file: SourceFile, root: string, node: Node): FindingPosition {
   return { ...start, endLine };
 }
 
-/** The parenthesized expression's content, through every pair of parentheses. */
-function unwrapped(node: Node): Node {
-  return isParenthesizedExpression(node) ? unwrapped(node.expression) : node;
-}
-
 /** The node the parentheses around one expression sit in. */
 function outerParent(node: Node): Node {
   return isParenthesizedExpression(node.parent) ? outerParent(node.parent) : node.parent;
@@ -209,7 +205,7 @@ function outerParent(node: Node): Node {
 
 /** The name a call is made through: the identifier, or the member a property access names. */
 function calleeName(call: CallExpression): Identifier | undefined {
-  const callee = unwrapped(call.expression);
+  const callee = parenthesesRemoved(call.expression);
   if (isIdentifier(callee)) {
     return callee;
   }
@@ -276,7 +272,7 @@ function unreachableExempt(statement: Statement): boolean {
 
 /** The value a case expression is a literal of, as a key two equal literals share, or none. */
 function caseKey(expression: Node): string | undefined {
-  const node = unwrapped(expression);
+  const node = parenthesesRemoved(expression);
   if (isStringLiteral(node) || isNoSubstitutionTemplateLiteral(node)) {
     return `s:${node.text}`;
   }
@@ -402,7 +398,7 @@ function extendedNames(files: readonly SourceFile[]): ReadonlySet<string> {
         if (isTypeReferenceNode(type)) {
           named = isQualifiedName(type.typeName) ? type.typeName.right : type.typeName;
         } else {
-          const expression = unwrapped(type.expression);
+          const expression = parenthesesRemoved(type.expression);
           named = isPropertyAccessExpression(expression) ? expression.name : expression;
         }
         if (isIdentifier(named)) {
@@ -455,7 +451,7 @@ function decoratorFixes(constructor: ConstructorDeclaration): boolean {
 
 /** The name an expression spells a class by: an identifier, or the member a property access names. */
 function spelledName(expression: Node): Identifier | undefined {
-  const node = unwrapped(expression);
+  const node = parenthesesRemoved(expression);
   if (isIdentifier(node)) {
     return node;
   }
@@ -724,8 +720,8 @@ export function projectParts<Brand>(
       if ((isImportClause(node) || isNamespaceImport(node)) && node.name !== undefined) {
         specifiers.add(position(node.name));
       }
-      if (isExportAssignment(node) && isIdentifier(unwrapped(node.expression))) {
-        specifiers.add(position(unwrapped(node.expression)));
+      if (isExportAssignment(node) && isIdentifier(parenthesesRemoved(node.expression))) {
+        specifiers.add(position(parenthesesRemoved(node.expression)));
       }
       if (isSwitchStatement(node)) {
         const holder = holderOf(node);
@@ -1325,7 +1321,7 @@ function isPlainWrite(use: Identifier): boolean {
   return (
     isBinaryExpression(parent) &&
     parent.operatorToken.kind === SyntaxKind.EqualsToken &&
-    unwrapped(parent.left) === use
+    parenthesesRemoved(parent.left) === use
   );
 }
 
@@ -1382,14 +1378,14 @@ function deadStores(
       if (!isExpressionStatement(statement)) {
         return undefined;
       }
-      const expression = unwrapped(statement.expression);
+      const expression = parenthesesRemoved(statement.expression);
       if (
         !isBinaryExpression(expression) ||
         expression.operatorToken.kind !== SyntaxKind.EqualsToken
       ) {
         return undefined;
       }
-      const target = unwrapped(expression.left);
+      const target = parenthesesRemoved(expression.left);
       return isIdentifier(target) && uses.includes(target)
         ? { target, value: expression.right }
         : undefined;

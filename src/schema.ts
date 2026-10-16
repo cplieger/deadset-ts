@@ -1,4 +1,5 @@
 import { ConfigError } from "./config.ts";
+import { bytewise } from "./text/compare.ts";
 
 /**
  * How one node of the closed key list is written: `leaf`, a scalar or an array of
@@ -157,7 +158,7 @@ function collect(node: KeyNode, at: string, keys: string[], settingsOnly: boolea
 export function declaredKeys(): string[] {
   const keys: string[] = [];
   collect(SCHEMA_ROOT, "", keys, false);
-  return keys.sort();
+  return keys.sort(bytewise);
 }
 
 /**
@@ -169,7 +170,7 @@ export function declaredKeys(): string[] {
 export function settingPaths(): string[] {
   const paths: string[] = [];
   collect(SCHEMA_ROOT, "", paths, true);
-  return paths.sort();
+  return paths.sort(bytewise);
 }
 
 /**
@@ -445,7 +446,7 @@ export function checkDocument(text: string, node: KeyNode, label: string): void 
  */
 export function nestFlags(flat: Readonly<Record<string, unknown>>, label: string): unknown {
   const nested: Record<string, unknown> = {};
-  for (const path of Object.keys(flat).sort()) {
+  for (const path of Object.keys(flat).sort(bytewise)) {
     if (!declaresSetting(path)) {
       throw unimplementedKey(label, path);
     }

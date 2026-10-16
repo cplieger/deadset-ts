@@ -7,16 +7,14 @@
 import type { Cascade } from "./config.ts";
 import { OUTSIDE, type Graph } from "./graph.ts";
 import type { InventorySymbol } from "./inventory.ts";
-
-/** The name every component identifier this analyzer mints starts with. */
-const ANALYZER = "deadset-ts";
+import { PRODUCT } from "./product.ts";
 
 /** The fewest digits a component identifier's number is written with. */
 const ID_DIGITS = 4;
 
 /** The identifier of the component at one place of the run's order, counted from one. */
 export function componentId(place: number): string {
-  return `${ANALYZER}/c-${String(place).padStart(ID_DIGITS, "0")}`;
+  return `${PRODUCT}/c-${String(place).padStart(ID_DIGITS, "0")}`;
 }
 
 /** The index of a declaration the component walk has not reached. */

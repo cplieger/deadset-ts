@@ -50,6 +50,7 @@ import {
 import { computedComponent, nameComponent, renderRef, type Component, type Module } from "./ref.ts";
 import { isAnswered, UNANSWERED } from "./query.ts";
 import type { Handle, ProjectView } from "./session.ts";
+import { manifestAt } from "./fs/manifest.ts";
 
 /**
  * The symbol inventory of one project: every declaration the target's own files
@@ -233,8 +234,6 @@ interface ExportScope {
   readonly nameNode: Node;
 }
 
-const MANIFEST = "package.json";
-
 /** One manifest that names a package, and the directory below the root that holds it. */
 interface Named {
   readonly name: string;
@@ -255,24 +254,7 @@ export function packageScope(host: Host, root: string): (path: string) => Module
   const named = new Map<string, Named | undefined>();
 
   const manifestName = (dir: string): string | undefined => {
-    let text: string;
-    try {
-      text = host.readFile(joinPath(root, dir, MANIFEST));
-    } catch {
-      return undefined;
-    }
-    let value: unknown;
-    try {
-      value = JSON.parse(text);
-    } catch {
-      // A manifest this program cannot read names no package, which is the same
-      // answer as an absent one: the file is then scoped by the target root.
-      return undefined;
-    }
-    if (typeof value !== "object" || value === null) {
-      return undefined;
-    }
-    const name = (value as Record<string, unknown>)["name"];
+    const name = manifestAt(host, joinPath(root, dir))?.["name"];
     return typeof name === "string" && name !== "" ? name : undefined;
   };
 

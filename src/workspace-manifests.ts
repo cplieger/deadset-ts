@@ -12,6 +12,7 @@ import { readManifest, type Manifest, type ManifestEntry } from "./manifest.ts";
 import { joinPath, relativePath } from "./paths.ts";
 import type { WorkspaceMember } from "./workspace.ts";
 import type { WorkspaceResolver } from "./workspace-resolution.ts";
+import { MANIFEST } from "./fs/manifest.ts";
 
 /** The one character a subpath pattern of a manifest's `exports` holds. */
 const SUBPATH_WILDCARD = "*";
@@ -84,8 +85,7 @@ export function memberEntries(
     }
     const manifest = readManifest(host, member.dir);
     const where =
-      relativePath(targetRoot, joinPath(member.dir, "package.json")) ??
-      joinPath(member.dir, "package.json");
+      relativePath(targetRoot, joinPath(member.dir, MANIFEST)) ?? joinPath(member.dir, MANIFEST);
     const kept = manifest.entries.flatMap((entry): ManifestEntry[] => {
       const exported = entry.member.startsWith("exports");
       if (member.private && exported) {

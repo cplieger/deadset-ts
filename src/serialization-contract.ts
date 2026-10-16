@@ -53,6 +53,7 @@ import {
   type SourceFile,
   type SpreadAssignment,
 } from "@typescript/native/ast";
+import { parenthesesRemoved } from "./unwrap.ts";
 import {
   SignatureKind,
   SymbolFlags,
@@ -227,12 +228,6 @@ interface MethodForm {
   readonly invocation: Invocation;
 }
 
-function unparenthesized(expression: Expression): Expression {
-  return isParenthesizedExpression(expression)
-    ? unparenthesized(expression.expression)
-    : expression;
-}
-
 /**
  * The invocation a call writes through a method of `Function.prototype`, read from
  * the syntax alone: `f.call(self, a)`, `f.apply(self, [a])`, `f.bind(self, a)`, which
@@ -241,12 +236,12 @@ function unparenthesized(expression: Expression): Expression {
  * carries. Whether the method is the prototype's is resolution's to say.
  */
 function throughMethod(call: CallExpression): MethodForm | undefined {
-  const expression = unparenthesized(call.expression);
+  const expression = parenthesesRemoved(call.expression);
   if (isPropertyAccessExpression(expression) && FUNCTION_METHODS.has(expression.name.text)) {
     const [, ...rest] = call.arguments;
     let passed: readonly Expression[] = rest;
     if (expression.name.text === "apply") {
-      const list = rest[0] === undefined ? undefined : unparenthesized(rest[0]);
+      const list = rest[0] === undefined ? undefined : parenthesesRemoved(rest[0]);
       passed = list === undefined ? [] : isArrayLiteralExpression(list) ? list.elements : [list];
     }
     return {
@@ -255,7 +250,7 @@ function throughMethod(call: CallExpression): MethodForm | undefined {
     };
   }
   if (isCallExpression(expression)) {
-    const bound = unparenthesized(expression.expression);
+    const bound = parenthesesRemoved(expression.expression);
     if (isPropertyAccessExpression(bound) && bound.name.text === "bind") {
       return {
         method: bound.name,

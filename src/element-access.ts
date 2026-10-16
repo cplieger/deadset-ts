@@ -47,6 +47,7 @@ import { renderPosition } from "./position.ts";
 import { UNANSWERED } from "./query.ts";
 import type { Reference } from "./references.ts";
 import type { ProjectView } from "./session.ts";
+import { parenthesesRemoved } from "./unwrap.ts";
 
 type Use = "read" | "write" | "both";
 
@@ -93,13 +94,9 @@ function useOf(node: Node): Use {
   return "read";
 }
 
-function unwrapped(node: Expression): Expression {
-  return isParenthesizedExpression(node) ? unwrapped(node.expression) : node;
-}
-
 /** Whether an index is a literal the checker resolves to a member by its own text. */
 function isLiteralIndex(node: Expression): boolean {
-  const at = unwrapped(node);
+  const at = parenthesesRemoved(node);
   return isStringLiteral(at) || isNumericLiteral(at) || isNoSubstitutionTemplateLiteral(at);
 }
 
@@ -293,7 +290,7 @@ export function elementAccessReferences<Brand>(
   const parameterOf = new Map<Candidate, { callable: Callable; at: number }>();
   const byCallable = new Map<Identifier, Candidate[]>();
   for (const candidate of candidates) {
-    const index = unwrapped(candidate.access.argumentExpression);
+    const index = parenthesesRemoved(candidate.access.argumentExpression);
     const fn = isIdentifier(index) ? enclosingFunction(candidate.access) : undefined;
     const callable = fn === undefined ? undefined : callableOf(fn);
     if (callable === undefined || !isIdentifier(index)) {
@@ -353,7 +350,7 @@ export function elementAccessReferences<Brand>(
       continue;
     }
     // An object that is a parameter too is read as the argument each call passes there.
-    const object = unwrapped(candidate.access.expression);
+    const object = parenthesesRemoved(candidate.access.expression);
     const objectAt = isIdentifier(object)
       ? deferred.callable.parameters.findIndex(
           (parameter) => isIdentifier(parameter.name) && parameter.name.text === object.text,

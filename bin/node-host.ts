@@ -17,9 +17,10 @@ import { tmpdir } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { DirectoryEntry, Host, PathKind, TemporaryDirectory } from "../src/host.ts";
+import { PRODUCT } from "../src/product.ts";
 
 /** The name the manifest of this package declares. */
-const PACKAGE_NAME = "@cplieger/deadset-ts";
+const PACKAGE_NAME = `@cplieger/${PRODUCT}`;
 
 /** The version the walk found, read once per process. */
 let found: string | undefined;
@@ -98,7 +99,7 @@ function writeAtomically(path: string, pieces: Iterable<string>): void {
 
 /** A new directory under the platform's temporary directory. */
 function temporaryDirectory(): TemporaryDirectory {
-  const path = mkdtempSync(join(tmpdir(), "deadset-ts-mapper-"));
+  const path = mkdtempSync(join(tmpdir(), `${PRODUCT}-mapper-`));
   return {
     path,
     remove: () => {

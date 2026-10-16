@@ -9,7 +9,6 @@ import {
   isArrayBindingPattern,
   isArrayLiteralExpression,
   isArrowFunction,
-  isAsExpression,
   isCallExpression,
   isConstructorDeclaration,
   isFunctionDeclaration,
@@ -25,10 +24,8 @@ import {
   isNoSubstitutionTemplateLiteral,
   isObjectBindingPattern,
   isObjectLiteralExpression,
-  isParenthesizedExpression,
   isPropertyAccessExpression,
   isPropertyAssignment,
-  isSatisfiesExpression,
   isSetAccessorDeclaration,
   isStringLiteral,
   isVariableDeclaration,
@@ -39,11 +36,15 @@ import {
   type SourceFile,
 } from "@typescript/native/ast";
 import { filesNamedBy, type ParseFile } from "./configuration-files.ts";
-import { globExpression } from "./glob.ts";
 import type { Host } from "./host.ts";
-import { scriptTokens } from "./manifest.ts";
-import { dirnamePath, joinPath, relativePath, resolvePath } from "./paths.ts";
+import { ancestors, dirnamePath, relativePath, resolvePath } from "./paths.ts";
 import type { SourceFiles } from "./source-files.ts";
+import { bytewise } from "./text/compare.ts";
+import { isRecord } from "./json-document.ts";
+import { unwrapped } from "./unwrap.ts";
+import { holdsManifest, inInstalledPackages, manifestAt } from "./fs/manifest.ts";
+import { globExpression } from "./text/glob.ts";
+import { scriptTokens } from "./text/shell.ts";
 
 /** One bundler API: the module, the functions it exports that build, and the option naming entries. */
 interface BundlerAPI {
@@ -78,26 +79,11 @@ const BUNDLERS: readonly BundlerAPI[] = [
 
 const MODULE_EXTENSION = /\.(?:js|mjs|cjs|ts|mts|cts)$/u;
 
-const MANIFEST = "package.json";
-
 /** One own file a build script's bundler call names as an entry. */
 interface BuildEntry {
   readonly file: SourceFile;
   /** The string that named it. */
   readonly source: string;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/** The expression a wrapper that changes no value holds. */
-function unwrapped(node: Node): Node {
-  let at = node;
-  while (isParenthesizedExpression(at) || isAsExpression(at) || isSatisfiesExpression(at)) {
-    at = at.expression;
-  }
-  return at;
 }
 
 function literalOf(node: Node): string | undefined {
@@ -462,7 +448,7 @@ function scriptEntries(file: SourceFile, dir: string, files: SourceFiles): reado
         continue;
       }
       const [argument] = call.arguments;
-      let options = argument === undefined ? undefined : unwrapped(argument);
+      let options: Node | undefined = argument === undefined ? undefined : unwrapped(argument);
       if (options !== undefined && isIdentifier(options)) {
         options = shadowed.has(options.text) ? undefined : declared.get(options.text);
         options = options === undefined ? undefined : unwrapped(options);
@@ -489,13 +475,7 @@ function scriptEntries(file: SourceFile, dir: string, files: SourceFiles): reado
 
 /** The modules one manifest's scripts run, by absolute path, each below the target root. */
 function scriptModules(host: Host, root: string, dir: string): readonly string[] {
-  let manifest: unknown;
-  try {
-    manifest = JSON.parse(host.readFile(joinPath(dir, MANIFEST)));
-  } catch {
-    return [];
-  }
-  const scripts = isRecord(manifest) ? manifest["scripts"] : undefined;
+  const scripts = manifestAt(host, dir)?.["scripts"];
   if (!isRecord(scripts)) {
     return [];
   }
@@ -509,14 +489,14 @@ function scriptModules(host: Host, root: string, dir: string): readonly string[]
       if (
         MODULE_EXTENSION.test(path) &&
         relativePath(root, path) !== undefined &&
-        !path.split("/").includes("node_modules") &&
+        !inInstalledPackages(path) &&
         host.kindOf(path) === "file"
       ) {
         found.add(path);
       }
     }
   }
-  return [...found].sort();
+  return [...found].sort(bytewise);
 }
 
 /**
@@ -533,17 +513,16 @@ export function buildScriptEntries(
   const root = resolvePath(host.workingDirectory(), targetRoot);
   const dirs = new Set<string>([root]);
   for (const file of files.byName.values()) {
-    for (
-      let dir = dirnamePath(file.fileName);
-      relativePath(root, dir) !== undefined && !dirs.has(dir);
-      dir = dirnamePath(dir)
-    ) {
+    for (const dir of ancestors(dirnamePath(file.fileName), root)) {
+      if (dirs.has(dir)) {
+        break;
+      }
       dirs.add(dir);
     }
   }
   const found: BuildEntry[] = [];
-  for (const dir of [...dirs].sort()) {
-    if (host.kindOf(joinPath(dir, MANIFEST)) !== "file") {
+  for (const dir of [...dirs].sort(bytewise)) {
+    if (!holdsManifest(host, dir)) {
       continue;
     }
     for (const path of scriptModules(host, root, dir)) {

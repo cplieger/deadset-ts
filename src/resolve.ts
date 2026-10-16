@@ -30,6 +30,7 @@ import {
   type TemplateDelimiters,
 } from "./config.ts";
 import { CONVENTION_ROWS } from "./convention-rows.ts";
+import { EXEMPTION_CLASS_NAMES, type ExemptionClass } from "./exempt-classes.ts";
 import { FIXED_SEVERITY_CODES, LIVE_CODES } from "./kinds.ts";
 import {
   checkDocument,
@@ -39,12 +40,14 @@ import {
   SEVERITY_SECTION,
   type KeyNode,
 } from "./schema.ts";
+import { bytewise } from "./text/compare.ts";
+import { isRecord } from "./json-document.ts";
+import { message } from "./product.ts";
 
 /** Names the command-line flags in a refusal, where a document is named by its path. */
 const FLAGS_LABEL = "the command-line flags";
 
 const SEVERITY_KEY = /^DS[0-9]{2}([0-9]{2})?$/u;
-const EXEMPTION_CLASS = /^[a-z][a-z0-9-]*$/u;
 const CONTRACT_VERSION_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+$/u;
 const ANALYZER_NAME = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/u;
 const PROVIDER_SOURCE = /^(go|npm):[^ \t\r\n]+$/u;
@@ -98,7 +101,7 @@ interface Doc {
   readonly consumersComplete: boolean | undefined;
   readonly rootPatterns: readonly string[] | undefined;
   readonly severity: ReadonlyMap<string, Severity> | undefined;
-  readonly exemptionsDisabled: readonly string[] | undefined;
+  readonly exemptionsDisabled: readonly ExemptionClass[] | undefined;
   readonly formats: readonly Format[] | undefined;
   readonly sort: Sort | undefined;
   readonly cascade: Cascade | undefined;
@@ -132,10 +135,6 @@ function originOf(source: DocSource, path: string): Origin {
     return { source: "flag", label: source.flagLabels.get(path) ?? "" };
   }
   return { source: source.kind, label: source.label };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function member(parent: Record<string, unknown> | undefined, name: string): unknown {
@@ -505,7 +504,7 @@ function fixedByContract(code: string): string[] {
   return FIXED_SEVERITY_CODES.filter(
     (candidate) =>
       code === candidate || (code.length === FAMILY_KEY_LENGTH && candidate.startsWith(code)),
-  ).sort();
+  ).sort(bytewise);
 }
 
 /** The codes a refusal names: one on its own, and several with the last joined by and. */
@@ -543,7 +542,7 @@ function readSeverity(
     return undefined;
   }
   const severity = new Map<string, Severity>();
-  for (const code of Object.keys(object).sort()) {
+  for (const code of Object.keys(object).sort(bytewise)) {
     const path = `${SEVERITY_SECTION}.${code}`;
     if (!SEVERITY_KEY.test(code)) {
       throw unimplementedSeverityKey(
@@ -577,26 +576,20 @@ function readSeverity(
   return severity;
 }
 
-/** The exemption classes named for switching off. */
+/** The exemption classes named for switching off, each one the vocabulary holds. */
 function readExemptions(
   document: Record<string, unknown> | undefined,
   label: string,
-): readonly string[] | undefined {
+): readonly ExemptionClass[] | undefined {
   const exemptions = section(document, "exemptions", "exemptions", label);
-  const disabled = readStrings(exemptions, "disabled", "exemptions.disabled", label, 0);
-  if (disabled === undefined) {
-    return undefined;
-  }
-  for (const entry of disabled) {
-    if (!EXEMPTION_CLASS.test(entry)) {
-      throw malformed(
-        label,
-        "exemptions.disabled",
-        `${JSON.stringify(entry)} is not an exemption class name`,
-      );
-    }
-  }
-  return disabled;
+  return readStrings(
+    exemptions,
+    "disabled",
+    "exemptions.disabled",
+    label,
+    0,
+    EXEMPTION_CLASS_NAMES,
+  );
 }
 
 /** The members that name a declaration, each belonging to exactly one shape. */
@@ -905,7 +898,7 @@ function parseDocument(text: string, node: KeyNode, label: string): unknown {
   try {
     value = JSON.parse(text);
   } catch (error: unknown) {
-    throw malformed(label, "", error instanceof Error ? error.message : String(error));
+    throw malformed(label, "", message(error));
   }
   checkDocument(text, node, label);
   return value;
@@ -1002,7 +995,7 @@ function settleSeverity(
     }
   }
   const severity = new Map<string, Severity>();
-  for (const code of [...codes].sort()) {
+  for (const code of [...codes].sort(bytewise)) {
     const path = `${SEVERITY_SECTION}.${code}`;
     for (const source of sources) {
       const value = source.doc.severity?.get(code);
@@ -1044,7 +1037,7 @@ function describeSource(
  * print a provenance value the closed key list refuses to read back.
  */
 function checkLabels(provenance: ReadonlyMap<string, Origin>): void {
-  for (const path of [...provenance.keys()].sort()) {
+  for (const path of [...provenance.keys()].sort(bytewise)) {
     const origin = provenance.get(path);
     if (origin !== undefined && origin.source !== "default" && origin.label === "") {
       throw malformed(

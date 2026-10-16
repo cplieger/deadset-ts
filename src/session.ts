@@ -26,6 +26,7 @@ import {
   type Queries,
   type UnansweredQuestion,
 } from "./query.ts";
+import { MANIFEST } from "./fs/manifest.ts";
 
 /**
  * The compiler the analysis reads through: a client over a protocol to a separate
@@ -115,7 +116,7 @@ export function openEngine(options: EngineOptions): Engine {
   if (components !== undefined && components.extensions.length > 0) {
     const made = components.host.temporaryDirectory();
     try {
-      components.host.writeDocument(joinPath(made.path, "package.json"), [
+      components.host.writeDocument(joinPath(made.path, MANIFEST), [
         mapperManifest(components.host.componentMapperCommand()),
       ]);
     } catch (error: unknown) {

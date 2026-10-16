@@ -6,8 +6,8 @@ import {
   SCHEMA_VERSIONS,
 } from "../contract/contract.generated.ts";
 import { CONFORMANCE, type Conformance } from "../conformance.ts";
-import { ANALYZER_NAME, LANGUAGE } from "../report.ts";
 import { type Verb } from "./verb.ts";
+import { diagnose, LANGUAGE, message, PRODUCT } from "../product.ts";
 
 /**
  * The document `describe` writes: the analyzer, the Contract version it implements, the
@@ -16,7 +16,7 @@ import { type Verb } from "./verb.ts";
  */
 export function describeDocument(version: string, recorded: Conformance | undefined): string {
   const document = {
-    name: ANALYZER_NAME,
+    name: PRODUCT,
     version,
     contract_version: CONTRACT_VERSION,
     schema_versions_accepted: SCHEMA_VERSIONS,
@@ -37,14 +37,14 @@ export function describeDocument(version: string, recorded: Conformance | undefi
 /** Writes this analyzer's description to the output stream, and nothing to the error stream. */
 export const describeVerb: Verb = ({ out, err, host, args }) => {
   if (args.length > 0) {
-    err.write(`deadset-ts: describe takes no argument, got ${JSON.stringify(args[0])}\n`);
+    diagnose(err, `describe takes no argument, got ${JSON.stringify(args[0])}`);
     return EXIT_USAGE;
   }
   let version: string;
   try {
     version = host.analyzerVersion();
   } catch (error: unknown) {
-    err.write(`deadset-ts: describe: ${error instanceof Error ? error.message : String(error)}\n`);
+    diagnose(err, `describe: ${message(error)}`);
     return EXIT_FAILURE;
   }
   out.write(describeDocument(version, CONFORMANCE));

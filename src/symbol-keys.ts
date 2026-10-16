@@ -12,7 +12,6 @@ import {
   isIdentifier,
   isNoSubstitutionTemplateLiteral,
   isNumericLiteral,
-  isParenthesizedExpression,
   isPropertyAccessExpression,
   isSpreadElement,
   isStringLiteral,
@@ -21,6 +20,7 @@ import {
   type Node,
   type SourceFile,
 } from "@typescript/native/ast";
+import { parenthesesRemoved } from "./unwrap.ts";
 import type { Symbol as TSSymbol, Type } from "@typescript/native/sync";
 import type { AliasChains } from "./alias-chain.ts";
 import { nodeKey, type Inventory, type InventorySymbol } from "./inventory.ts";
@@ -52,10 +52,7 @@ interface KeyedUse {
 
 /** The identifier an element access's argument names its key by, where it is a name. */
 export function keyNameOf(argument: Node): Node | undefined {
-  let at = argument;
-  while (isParenthesizedExpression(at)) {
-    at = at.expression;
-  }
+  const at = parenthesesRemoved(argument);
   if (isIdentifier(at)) {
     return at;
   }

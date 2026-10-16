@@ -1,13 +1,14 @@
 /**
- * Which files the `.gitignore` files of a tree ignore, read as git reads them:
+ * Which files git ignores below a tree's root, read as git reads its ignore files:
  * https://git-scm.com/docs/gitignore#_pattern_format
  */
 
-import { globExpression } from "./glob.ts";
 import type { Host } from "./host.ts";
-import { dirnamePath, joinPath, relativePath } from "./paths.ts";
+import { ancestors, dirnamePath, joinPath, relativePath } from "./paths.ts";
+import { gitignoreExpression } from "./text/glob.ts";
+import { repositoryOf } from "./fs/tree.ts";
 
-/** One pattern line of a `.gitignore` file. */
+/** One pattern line of an ignore file. */
 interface Rule {
   readonly negated: boolean;
   /** Whether the pattern ends with `/`, so it matches a directory alone. */
@@ -16,7 +17,7 @@ interface Rule {
   readonly expression: RegExp;
 }
 
-/** The rules one `.gitignore` text writes, in order. */
+/** The rules one ignore file's text writes, in order. */
 function rulesOf(text: string): readonly Rule[] {
   const rules: Rule[] = [];
   for (const raw of text.split(/\r?\n/u)) {
@@ -25,7 +26,7 @@ function rulesOf(text: string): readonly Rule[] {
       continue;
     }
     const negated = line.startsWith("!");
-    line = negated || line.startsWith("\\") ? line.slice(1) : line;
+    line = negated ? line.slice(1) : line;
     const directoryOnly = line.endsWith("/");
     line = line.replace(/\/+$/u, "");
     if (line === "") {
@@ -38,43 +39,55 @@ function rulesOf(text: string): readonly Rule[] {
     rules.push({
       negated,
       directoryOnly,
-      expression: globExpression(anchored ? pattern : `**/${pattern}`),
+      expression: gitignoreExpression(anchored ? pattern : `**/${pattern}`),
     });
   }
   return rules;
 }
 
+function rulesIn(host: Host, path: string): readonly Rule[] {
+  try {
+    return rulesOf(host.readFile(path));
+  } catch {
+    return [];
+  }
+}
+
 /**
- * Whether the `.gitignore` files at and below `root` ignore one absolute path. A path
- * outside `root` is not ignored, and a file below an ignored directory stays ignored
- * whatever a later pattern says, as git cannot re-include it.
+ * Whether git ignores one absolute path below `root`: by the repository's `info/exclude`,
+ * then the `.gitignore` files from the repository's root down to the path's directory, a
+ * later pattern overriding an earlier one. A path outside `root` is not ignored, and a file
+ * below an ignored directory stays ignored whatever a later pattern says, as git cannot
+ * re-include it. With no repository at or above `root`, the files at and below it are read;
+ * with one, the directories above `root` give patterns but are not themselves tested.
  */
 export function gitIgnored(host: Host, root: string): (path: string) => boolean {
+  const found = repositoryOf(host, root);
+  const repository = found?.root;
+  const above =
+    repository === undefined ? [] : [...ancestors(dirnamePath(root), repository)].reverse();
+  const excluded = found?.exclude === undefined ? [] : rulesIn(host, found.exclude);
   const read = new Map<string, readonly Rule[]>();
   const rulesAt = (dir: string): readonly Rule[] => {
     let rules = read.get(dir);
     if (rules === undefined) {
-      try {
-        rules = rulesOf(host.readFile(joinPath(dir, ".gitignore")));
-      } catch {
-        rules = [];
-      }
+      rules = rulesIn(host, joinPath(dir, ".gitignore"));
       read.set(dir, rules);
     }
     return rules;
   };
-  /** Whether the rules of `root` and of each directory down to one path's own decide it ignored. */
   const decided = (path: string, directory: boolean): boolean => {
-    const dirs: string[] = [];
-    for (let at = dirnamePath(path); relativePath(root, at) !== undefined; at = dirnamePath(at)) {
-      dirs.unshift(at);
-    }
-    dirs.unshift(root);
+    const sources: [string, readonly Rule[]][] = [
+      ...(repository === undefined ? [] : [[repository, excluded] as [string, readonly Rule[]]]),
+      ...[...above, ...[...ancestors(dirnamePath(path), root)].reverse()].map(
+        (dir): [string, readonly Rule[]] => [dir, rulesAt(dir)],
+      ),
+    ];
     let ignored = false;
-    for (const dir of dirs) {
-      const below = relativePath(dir, path);
-      for (const rule of below === undefined ? [] : rulesAt(dir)) {
-        if ((directory || !rule.directoryOnly) && rule.expression.test(below ?? "")) {
+    for (const [dir, rules] of sources) {
+      const below = relativePath(dir, path) ?? "";
+      for (const rule of rules) {
+        if ((directory || !rule.directoryOnly) && rule.expression.test(below)) {
           ignored = !rule.negated;
         }
       }

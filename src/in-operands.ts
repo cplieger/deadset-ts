@@ -13,6 +13,7 @@ import {
 } from "@typescript/native/ast";
 import type { ProjectView } from "./session.ts";
 import { sourceFilesOf } from "./source-files.ts";
+import { bytewise } from "./text/compare.ts";
 
 /**
  * The text of each string literal, or template literal with no substitution, written as
@@ -41,5 +42,5 @@ export function inOperandNames<Brand>(
       file.forEachChild(visit);
     }
   }
-  return [...found].sort();
+  return [...found].sort(bytewise);
 }

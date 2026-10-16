@@ -5,7 +5,7 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
 import { writeProject } from "../__test-helpers__/projects.ts";
 import type { Host } from "./host.ts";
-import { readManifest, scriptTokens } from "./manifest.ts";
+import { readManifest } from "./manifest.ts";
 import { run } from "./run.ts";
 
 /** A host holding one manifest at `/pkg`, or none. */
@@ -112,24 +112,6 @@ describe("readManifest", () => {
     });
     expect(readManifest(hostWith("{"), "/pkg")).toEqual({ entries: [], declaresExports: false });
     expect(readManifest(hostWith("[]"), "/pkg")).toEqual({ entries: [], declaresExports: false });
-  });
-});
-
-describe("scriptTokens", () => {
-  it.each([
-    ["node ./a.ts --flag", ["node", "./a.ts", "--flag"]],
-    ["a&&b", ["a", "b"]],
-    ["a||b", ["a", "b"]],
-    ["a;b", ["a", "b"]],
-    ["a|b", ["a", "b"]],
-    ["a &&  b\tc", ["a", "b", "c"]],
-    ['node "./a.ts"', ["node", "./a.ts"]],
-    ["node './a.ts'", ["node", "./a.ts"]],
-    ["node \"'./a.ts'\"", ["node", "'./a.ts'"]],
-    ["node \"./a.ts'", ["node", "\"./a.ts'"]],
-    ["vitest 'src/*.ts'", ["vitest"]],
-  ])("splits %j into %j", (command, tokens) => {
-    expect(scriptTokens(command)).toEqual(tokens);
   });
 });
 

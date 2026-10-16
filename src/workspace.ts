@@ -7,12 +7,23 @@
  * manifest, never one below `node_modules`.
  */
 
-import { DiscoveryError } from "./discover.ts";
+import { DiscoveryError, isConfigFile } from "./discover.ts";
 import type { EmitLayout } from "./emit-map.ts";
 import { commonDirectory } from "./emit-map.ts";
 import type { Host } from "./host.ts";
-import { dirnamePath, joinPath, relativePath } from "./paths.ts";
-import { pnpmPackages } from "./pnpm-workspace.ts";
+import { ancestors, dirnamePath, joinPath, relativePath } from "./paths.ts";
+import { bytewise } from "./text/compare.ts";
+import { isRecord } from "./json-document.ts";
+import { directoriesIn, filesIn, repositoryOf } from "./fs/tree.ts";
+import {
+  holdsManifest,
+  inInstalledPackages,
+  INSTALLED_PACKAGES,
+  MANIFEST,
+  manifestAt,
+} from "./fs/manifest.ts";
+import { braceExpanded, pathMatches, segmentMatches } from "./text/glob.ts";
+import { yamlKey } from "./text/yaml.ts";
 
 /** What one compiler configuration of a member says about where it reads and writes. */
 export interface ParsedLayout {
@@ -56,29 +67,7 @@ export interface Workspace {
   memberOf(path: string): WorkspaceMember | undefined;
 }
 
-const MANIFEST = "package.json";
 const PNPM_WORKSPACE = "pnpm-workspace.yaml";
-const CONFIG_FILE = /^tsconfig.*\.json$/u;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/** One manifest, decoded, or `undefined` where there is none to read. */
-function manifestAt(host: Host, dir: string): Record<string, unknown> | undefined {
-  let text: string;
-  try {
-    text = host.readFile(joinPath(dir, MANIFEST));
-  } catch {
-    return undefined;
-  }
-  try {
-    const value: unknown = JSON.parse(text);
-    return isRecord(value) ? value : undefined;
-  } catch {
-    return undefined;
-  }
-}
 
 /** The patterns one directory declares a workspace with, or `undefined` where it declares none. */
 function declarationAt(
@@ -87,14 +76,20 @@ function declarationAt(
 ): { readonly file: string; readonly patterns: readonly string[] } | undefined {
   const pnpm = joinPath(dir, PNPM_WORKSPACE);
   if (host.kindOf(pnpm) === "file") {
-    const read = pnpmPackages(host.readFile(pnpm));
-    if (read.kind === "refused") {
+    const read = yamlKey(host.readFile(pnpm), "packages");
+    if (read.kind === "absent") {
+      return { file: pnpm, patterns: [] };
+    }
+    const listed = read.kind === "value" ? read.value : undefined;
+    if (!Array.isArray(listed) || !listed.every((entry) => typeof entry === "string")) {
+      const reason =
+        read.kind === "refused" ? read.reason : "packages is not a sequence of strings";
       throw new DiscoveryError(
-        `${pnpm}: ${read.reason}; the workspace's packages are read from a sequence of strings`,
+        `${pnpm}: ${reason}; the workspace's packages are read from a sequence of strings`,
         [],
       );
     }
-    return { file: pnpm, patterns: read.kind === "listed" ? read.patterns : [] };
+    return { file: pnpm, patterns: listed };
   }
   const manifest = manifestAt(host, dir);
   if (manifest === undefined || !Object.hasOwn(manifest, "workspaces")) {
@@ -120,21 +115,6 @@ function declaresWorkspace(host: Host, dir: string): boolean {
   return manifest !== undefined && Object.hasOwn(manifest, "workspaces");
 }
 
-/** A pattern with every brace list expanded into its alternatives. */
-function braceExpanded(pattern: string): readonly string[] {
-  const open = pattern.indexOf("{");
-  const close = open < 0 ? -1 : pattern.indexOf("}", open);
-  if (close < 0) {
-    return [pattern];
-  }
-  const before = pattern.slice(0, open);
-  const after = pattern.slice(close + 1);
-  return pattern
-    .slice(open + 1, close)
-    .split(",")
-    .flatMap((member) => braceExpanded(before + member + after));
-}
-
 /**
  * The segments of one pattern below the workspace root, `.` and empty segments
  * dropped and `..` taken back, or `undefined` where it leaves the root.
@@ -157,56 +137,6 @@ function segmentsOf(pattern: string): readonly string[] | undefined {
 }
 
 /**
- * Whether one directory name matches one pattern segment: `*` stands for any run of
- * characters and `?` for one, and neither matches a leading dot.
- */
-function segmentMatches(segment: string, name: string): boolean {
-  if (name.startsWith(".") && !segment.startsWith(".")) {
-    return false;
-  }
-  const source = Array.from(segment)
-    .map((character) => {
-      if (character === "*") {
-        return ".*";
-      }
-      if (character === "?") {
-        return ".";
-      }
-      return character.replaceAll(/[.+^${}()|[\]\\/]/gu, (c) => `\\${c}`);
-    })
-    .join("");
-  return new RegExp(`^${source}$`, "u").test(name);
-}
-
-/** Whether one path's segments match one pattern's, `**` standing for any run of segments. */
-function pathMatches(pattern: readonly string[], path: readonly string[]): boolean {
-  const [head, ...rest] = pattern;
-  if (head === undefined) {
-    return path.length === 0;
-  }
-  if (head === "**") {
-    return (
-      pathMatches(rest, path) ||
-      (path.length > 0 && !(path[0] ?? "").startsWith(".") && pathMatches(pattern, path.slice(1)))
-    );
-  }
-  const [name, ...below] = path;
-  return name !== undefined && segmentMatches(head, name) && pathMatches(rest, below);
-}
-
-function subdirectories(host: Host, dir: string): readonly string[] {
-  try {
-    return host
-      .readDirectory(dir)
-      .filter((entry) => entry.directory && entry.name !== "node_modules" && entry.name !== ".git")
-      .map((entry) => entry.name)
-      .sort();
-  } catch {
-    return [];
-  }
-}
-
-/**
  * Every directory below `dir` one pattern names. `**` does not descend into a
  * directory that declares a workspace of its own, whose packages are that
  * workspace's to declare.
@@ -219,7 +149,7 @@ function expand(host: Host, dir: string, pattern: readonly string[], into: Set<s
   }
   if (head === "**") {
     expand(host, dir, rest, into);
-    for (const name of subdirectories(host, dir)) {
+    for (const name of directoriesIn(host, dir)) {
       if (name.startsWith(".")) {
         continue;
       }
@@ -230,12 +160,12 @@ function expand(host: Host, dir: string, pattern: readonly string[], into: Set<s
   }
   if (!head.includes("*") && !head.includes("?")) {
     const child = joinPath(dir, head);
-    if (head !== "node_modules" && host.kindOf(child) === "directory") {
+    if (head !== INSTALLED_PACKAGES && host.kindOf(child) === "directory") {
       expand(host, child, rest, into);
     }
     return;
   }
-  for (const name of subdirectories(host, dir)) {
+  for (const name of directoriesIn(host, dir)) {
     if (segmentMatches(head, name)) {
       expand(host, joinPath(dir, name), rest, into);
     }
@@ -277,10 +207,10 @@ function namesDirectory(root: string, patterns: readonly string[], dir: string):
   if (below === undefined) {
     return false;
   }
-  const path = below.split("/");
-  if (path.includes("node_modules")) {
+  if (inInstalledPackages(below)) {
     return false;
   }
+  const path = below.split("/");
   let named = false;
   for (const written of patterns) {
     const negated = written.startsWith("!");
@@ -314,17 +244,7 @@ function configurationsOf(
   dir: string,
   parse: (configFile: string) => ParsedLayout | undefined,
 ): readonly MemberConfiguration[] {
-  let names: readonly string[];
-  try {
-    names = host
-      .readDirectory(dir)
-      .filter((entry) => !entry.directory && CONFIG_FILE.test(entry.name))
-      .map((entry) => entry.name)
-      .sort();
-  } catch {
-    return [];
-  }
-  return names.flatMap((name) => {
+  return filesIn(host, dir, isConfigFile).flatMap((name) => {
     const configFile = joinPath(dir, name);
     const parsed = parse(configFile);
     return parsed === undefined
@@ -353,22 +273,17 @@ function nearestDeclaration(
       readonly highestPackage: string | undefined;
     }
   | undefined {
-  let dir = targetRoot;
   let highestPackage: string | undefined;
-  for (;;) {
+  for (const dir of ancestors(targetRoot, repositoryOf(host, targetRoot)?.root)) {
     const declared = declarationAt(host, dir);
     if (declared !== undefined) {
       return { root: dir, ...declared, highestPackage };
     }
-    if (host.kindOf(joinPath(dir, MANIFEST)) === "file") {
+    if (holdsManifest(host, dir)) {
       highestPackage = dir;
     }
-    const up = dirnamePath(dir);
-    if (up === dir || host.kindOf(joinPath(dir, ".git")) !== "absent") {
-      return undefined;
-    }
-    dir = up;
   }
+  return undefined;
 }
 
 /**
@@ -414,7 +329,7 @@ export function findWorkspace(
     return undefined;
   }
   members.sort((a, b) =>
-    a.dir === declared.root ? -1 : b.dir === declared.root ? 1 : a.dir < b.dir ? -1 : 1,
+    a.dir === declared.root ? -1 : b.dir === declared.root ? 1 : bytewise(a.dir, b.dir),
   );
   const named = new Map<string, WorkspaceMember[]>();
   for (const member of members) {
@@ -427,8 +342,7 @@ export function findWorkspace(
       return scopes.get(dir);
     }
     const up = dirnamePath(dir);
-    const found =
-      host.kindOf(joinPath(dir, MANIFEST)) === "file" ? dir : up === dir ? undefined : scopeOf(up);
+    const found = holdsManifest(host, dir) ? dir : up === dir ? undefined : scopeOf(up);
     scopes.set(dir, found);
     return found;
   };

@@ -8,9 +8,11 @@
 
 import { sourcePaths } from "./file-facts.ts";
 import type { Host } from "./host.ts";
-import { dirnamePath, joinPath, relativePath } from "./paths.ts";
+import { ancestors, dirnamePath, joinPath } from "./paths.ts";
 import type { Engine } from "./session.ts";
 import { writtenPath, type WorkspaceProgram } from "./workspace-programs.ts";
+import { bytewise } from "./text/compare.ts";
+import { holdsManifest } from "./fs/manifest.ts";
 
 const PREFERRED = "/tsconfig.json";
 
@@ -18,7 +20,7 @@ const PREFERRED = "/tsconfig.json";
 function byPreference(a: string, b: string): number {
   const first = a.endsWith(PREFERRED) ? 0 : 1;
   const second = b.endsWith(PREFERRED) ? 0 : 1;
-  return first - second || (a < b ? -1 : a > b ? 1 : 0);
+  return first - second || bytewise(a, b);
 }
 
 /**
@@ -54,17 +56,13 @@ export function joinedTestFiles(
     if (listed.has(file) || !patterns.some((pattern) => pattern.test(path))) {
       continue;
     }
-    for (let dir = dirnamePath(file); ; dir = dirnamePath(dir)) {
+    for (const dir of ancestors(dirnamePath(file), root)) {
       const [nearest] = byDir.get(dir) ?? [];
       if (nearest !== undefined) {
         joins.set(nearest, [...(joins.get(nearest) ?? []), file]);
         break;
       }
-      if (
-        host.kindOf(joinPath(dir, "package.json")) === "file" ||
-        dir === root ||
-        relativePath(root, dir) === undefined
-      ) {
+      if (holdsManifest(host, dir)) {
         break;
       }
     }

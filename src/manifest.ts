@@ -6,10 +6,12 @@
  */
 
 import type { Host } from "./host.ts";
-import { isAbsolutePath, joinPath, relativePath, resolvePath } from "./paths.ts";
+import { isAbsolutePath, relativePath, resolvePath } from "./paths.ts";
+import { isRecord } from "./json-document.ts";
+import { MANIFEST, manifestAt } from "./fs/manifest.ts";
+import { scriptTokens } from "./text/shell.ts";
 
 /** The manifest's own name. */
-const MANIFEST = "package.json";
 
 /** The three members that name an entry point beside `exports` and `bin`. */
 const LEGACY_MEMBERS = ["main", "module", "types"] as const;
@@ -44,10 +46,6 @@ export interface ManifestEntry {
   readonly dir: string;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 /**
  * Whether one member's value names a file of this package rather than another
  * package or a URL. A target written with no leading dot is a path too, which is
@@ -58,24 +56,6 @@ function isTarget(value: string, requireDot: boolean): boolean {
     return false;
   }
   return !requireDot || value.startsWith("./");
-}
-
-/** Where a script's command line splits into tokens: white space and the shell's operators. */
-const SCRIPT_SEPARATORS = /\s+|&&|\|\||;|\|/u;
-
-/** A token written inside one pair of quotes. */
-const QUOTED = /^(["'])(.*)\1$/su;
-
-/**
- * Every token one script's command line holds, each with one pair of enclosing quotes
- * removed. A token holding a wildcard is a pattern rather than a path, and names no
- * entry point.
- */
-export function scriptTokens(command: string): readonly string[] {
-  return command
-    .split(SCRIPT_SEPARATORS)
-    .map((token) => token.replace(QUOTED, "$2"))
-    .filter((token) => token !== "" && !token.includes("*"));
 }
 
 /** One member's spelling below another: `exports` then `exports["."]`. */
@@ -111,27 +91,6 @@ function exportTargets(value: unknown, member: string, found: Omit<ManifestEntry
   }
 }
 
-/** The manifest at the target root, decoded, or undefined where there is none to read. */
-function manifestOf(host: Host, targetRoot: string): Record<string, unknown> | undefined {
-  let text: string;
-  try {
-    text = host.readFile(joinPath(targetRoot, MANIFEST));
-  } catch {
-    return undefined;
-  }
-  let value: unknown;
-  try {
-    value = JSON.parse(text);
-  } catch {
-    // A manifest this program cannot read names no entry point, which is the same
-    // answer as an absent one. What a manifest's contents say is not refused here:
-    // the package manager owns that refusal, and an analysis of a tree it rejects
-    // is not the run's subject.
-    return undefined;
-  }
-  return isRecord(value) ? value : undefined;
-}
-
 /** What one manifest declares about where its package is entered. */
 export interface Manifest {
   /**
@@ -158,7 +117,7 @@ export interface Manifest {
  * it and there is one such configuration per project, while there is one manifest.
  */
 export function readManifest(host: Host, targetRoot: string): Manifest {
-  const manifest = manifestOf(host, targetRoot);
+  const manifest = manifestAt(host, targetRoot);
   if (manifest === undefined) {
     return { entries: [], declaresExports: false };
   }

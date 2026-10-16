@@ -19,12 +19,8 @@ import type { AppliedConvention } from "./conventions.ts";
 import type { PassResult } from "./findings-pass.ts";
 import type { StaleSuppression } from "./findings/self-check.ts";
 import type { TestFileRule } from "./references.ts";
-
-/** The name this analyzer writes every document under and mints every identifier with. */
-export const ANALYZER_NAME = "deadset-ts";
-
-/** The language this analyzer claims. */
-export const LANGUAGE = "ts";
+import { bytewise } from "./text/compare.ts";
+import { LANGUAGE, PRODUCT } from "./product.ts";
 
 /** One project configuration of the matrix a run analyzed. */
 export interface ReportConfiguration {
@@ -129,14 +125,6 @@ function componentsOf(
     }
   }
   return [...listed.values()];
-}
-
-/** Two strings ordered bytewise. */
-function compare(a: string, b: string): number {
-  if (a === b) {
-    return 0;
-  }
-  return a < b ? -1 : 1;
 }
 
 function wirePosition(position: FindingPosition): wire.Position {
@@ -257,22 +245,22 @@ function wireStale(stale: StaleSuppression): wire.StaleSuppressionsEntry {
 /** The canonical key over two findings: path, line, column, code, then the symbol reference. */
 function canonical(a: wire.Finding, b: wire.Finding): number {
   return (
-    compare(a.position.path, b.position.path) ||
+    bytewise(a.position.path, b.position.path) ||
     a.position.line - b.position.line ||
     a.position.column - b.position.column ||
-    compare(a.code, b.code) ||
-    compare(a.symbol.ref, b.symbol.ref)
+    bytewise(a.code, b.code) ||
+    bytewise(a.symbol.ref, b.symbol.ref)
   );
 }
 
 /** The canonical key over two stale suppressions, each component from the record's own member. */
 function canonicalStale(a: wire.StaleSuppressionsEntry, b: wire.StaleSuppressionsEntry): number {
   return (
-    compare(a.position.path, b.position.path) ||
+    bytewise(a.position.path, b.position.path) ||
     a.position.line - b.position.line ||
     a.position.column - b.position.column ||
-    compare(a.code, b.code) ||
-    compare(a.symbol, b.symbol)
+    bytewise(a.code, b.code) ||
+    bytewise(a.symbol, b.symbol)
   );
 }
 
@@ -289,9 +277,9 @@ function wireGap(gap: DeclaredGap): wire.DeclaredGapsEntry {
 /** Edge evaluations by edge, then side, then their compact encodings. */
 function byEdge(a: wire.EdgeEvaluationsEntry, b: wire.EdgeEvaluationsEntry): number {
   return (
-    compare(a.edge, b.edge) ||
-    compare(a.side, b.side) ||
-    compare(JSON.stringify(a), JSON.stringify(b))
+    bytewise(a.edge, b.edge) ||
+    bytewise(a.side, b.side) ||
+    bytewise(JSON.stringify(a), JSON.stringify(b))
   );
 }
 
@@ -346,16 +334,16 @@ export function buildReport(input: ReportInput): wire.Report {
     one.finding === undefined ? [] : [[wireFinding(one.finding), one.finding] as const],
   );
   const unavailable = [...new Map(input.unavailable.map((one) => [one.id, one])).values()]
-    .sort((a, b) => compare(a.id, b.id))
+    .sort((a, b) => bytewise(a.id, b.id))
     .map((one) => ({ id: one.id, role: "consumer" as const, reason: one.reason }));
   const loaded = [...input.loaded]
-    .sort((a, b) => compare(a.id, b.id) || compare(a.path, b.path))
+    .sort((a, b) => bytewise(a.id, b.id) || bytewise(a.path, b.path))
     .map((one) => ({ id: one.id, role: "consumer" as const, path: one.path }));
   return {
     schema_version: SCHEMA_VERSION,
     contract_version: input.contractVersion,
     analyzer: {
-      name: ANALYZER_NAME,
+      name: PRODUCT,
       version: input.version,
       languages: [LANGUAGE],
       schema_versions_accepted: SCHEMA_VERSIONS,
@@ -367,10 +355,10 @@ export function buildReport(input: ReportInput): wire.Report {
     },
     target: { kind: input.target.kind, root: input.target.root, identity: input.target.identity },
     configurations: [...input.configurations]
-      .sort((a, b) => compare(a.id, b.id))
+      .sort((a, b) => bytewise(a.id, b.id))
       .map((one) => ({ id: one.id, project: one.project })),
     configurations_not_built: [...input.notBuilt]
-      .sort((a, b) => compare(a.id, b.id))
+      .sort((a, b) => bytewise(a.id, b.id))
       .map((one) => ({ id: one.id, project: one.project, error: one.error })),
     consumers: { declared: loaded.length + unavailable.length, loaded, unavailable },
     findings,
@@ -383,10 +371,10 @@ export function buildReport(input: ReportInput): wire.Report {
     // name, so the compact encodings alone order them.
     declared_gaps: input.declaredGaps
       .map(wireGap)
-      .sort((a, b) => compare(JSON.stringify(a), JSON.stringify(b))),
+      .sort((a, b) => bytewise(JSON.stringify(a), JSON.stringify(b))),
     excluded_by_cgo: [],
     test_file_rules: [...input.testFileRules]
-      .sort((a, b) => compare(a.rule, b.rule) || a.matched - b.matched)
+      .sort((a, b) => bytewise(a.rule, b.rule) || a.matched - b.matched)
       .map((one) => ({ rule: one.rule, matched: one.matched })),
     type_error_skips: [
       ...new Map(
@@ -396,16 +384,18 @@ export function buildReport(input: ReportInput): wire.Report {
         }),
       ),
     ]
-      .sort(([a, x], [b, y]) => compare(x.path, y.path) || x.line - y.line || compare(a, b))
+      .sort(([a, x], [b, y]) => bytewise(x.path, y.path) || x.line - y.line || bytewise(a, b))
       .map(([, skip]) => skip),
     notes: [...new Map((input.notes ?? []).map((one) => [JSON.stringify(one), one])).entries()]
-      .sort(([a, x], [b, y]) => compare(x.kind, y.kind) || compare(x.path, y.path) || compare(a, b))
+      .sort(
+        ([a, x], [b, y]) => bytewise(x.kind, y.kind) || bytewise(x.path, y.path) || bytewise(a, b),
+      )
       .map(([, note]) => note),
     unanswered_questions: [...input.unanswered]
       .sort(
         (a, b) =>
-          compare(a.configuration, b.configuration) ||
-          compare(JSON.stringify(a), JSON.stringify(b)),
+          bytewise(a.configuration, b.configuration) ||
+          bytewise(JSON.stringify(a), JSON.stringify(b)),
       )
       .map((one) => ({
         configuration: one.configuration,

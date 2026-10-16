@@ -2,6 +2,8 @@ import { ConfigError } from "./config.ts";
 import type { Host } from "./host.ts";
 import { dirnamePath, isAbsolutePath, joinPath, resolvePath } from "./paths.ts";
 import { checkDocument, type KeyNode } from "./schema.ts";
+import { isRecord } from "./json-document.ts";
+import { message } from "./product.ts";
 
 /** The roles a scope document declares for a module. */
 const ROLE_TARGET = "target";
@@ -59,10 +61,6 @@ const SCOPE_ROOT: KeyNode = {
     consumers: { kind: "list", members: MODULE.members ?? {} },
   },
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 /**
  * One string member, or undefined where the document omits it. A member the
@@ -145,9 +143,7 @@ export function readScope(host: Host, file: string): Scope {
   try {
     text = host.readFile(absolute);
   } catch (error: unknown) {
-    throw new ScopeError(
-      `scope: ${file}: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    throw new ScopeError(`scope: ${file}: ${message(error)}`);
   }
   if (text.length > MAX_DOCUMENT_LENGTH) {
     throw new ScopeError(`scope: ${file} is longer than ${String(MAX_DOCUMENT_LENGTH)} characters`);
@@ -156,9 +152,7 @@ export function readScope(host: Host, file: string): Scope {
   try {
     value = JSON.parse(text);
   } catch (error: unknown) {
-    throw new ScopeError(
-      `scope: ${file}: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    throw new ScopeError(`scope: ${file}: ${message(error)}`);
   }
   if (!isRecord(value)) {
     throw new ScopeError(`scope: ${file} is not one JSON object`);

@@ -20,6 +20,8 @@ import type { SymbolKind } from "./inventory.ts";
 import { memberNames } from "./member-names.ts";
 import { extensionOf, isAbsolutePath, joinPath, normalizePath, relativePath } from "./paths.ts";
 import { isComponentFile, type Position } from "./position.ts";
+import { bytewise } from "./text/compare.ts";
+import { filesBelow } from "./fs/tree.ts";
 
 /** One template, by its path below the target root. */
 interface TemplateFile {
@@ -50,14 +52,6 @@ const READ_BY_MARKUP: ReadonlySet<SymbolKind> = new Set([...READ_BY_A_TEMPLATE, 
 /** One identifier, as the grammar of the analyzed language spells one. */
 const IDENTIFIER = /[\p{ID_Start}$_][\p{ID_Continue}$\u200C\u200D]*/uy;
 
-/** Two strings ordered bytewise. */
-function compare(a: string, b: string): number {
-  if (a === b) {
-    return 0;
-  }
-  return a < b ? -1 : 1;
-}
-
 /**
  * Every template under the configured directories, read once for the run, in path
  * order and each file once. A directory is named relative to the target root, and
@@ -69,15 +63,8 @@ function compare(a: string, b: string): number {
 export function readTemplates(host: Host, targetRoot: string, analysis: Analysis): Templates {
   const files = new Map<string, string>();
   const read = (dir: string): void => {
-    const entries = [...host.readDirectory(joinPath(targetRoot, dir))].sort((a, b) =>
-      compare(a.name, b.name),
-    );
-    for (const entry of entries) {
-      const path = joinPath(dir, entry.name);
-      if (entry.directory) {
-        read(path);
-        continue;
-      }
+    for (const below of filesBelow(host, joinPath(targetRoot, dir), () => true)) {
+      const path = joinPath(dir, below);
       const absolute = joinPath(targetRoot, path);
       if (!files.has(path) && host.kindOf(absolute) === "file") {
         files.set(path, host.readFile(absolute));
@@ -104,7 +91,7 @@ export function readTemplates(host: Host, targetRoot: string, analysis: Analysis
     delimiters: analysis.templateDelimiters,
     files: [...files]
       .map(([path, text]) => ({ path, text }))
-      .sort((a, b) => compare(a.path, b.path)),
+      .sort((a, b) => bytewise(a.path, b.path)),
   };
 }
 

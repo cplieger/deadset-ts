@@ -7,6 +7,8 @@
  */
 
 import { REPORT_SCHEMAS, type Report } from "./contract/report.generated.ts";
+import { bytewise } from "./text/compare.ts";
+import { isRecord } from "./json-document.ts";
 
 /** One value a schema refuses: its JSON Pointer, the keyword, and why. */
 interface SchemaRefusal {
@@ -41,10 +43,6 @@ function pattern(source: string): RegExp {
   return held;
 }
 
-function isObject(value: unknown): value is Readonly<Record<string, unknown>> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
 function typeOf(value: unknown): string {
   if (value === null) {
     return "null";
@@ -68,9 +66,9 @@ function canonical(value: unknown): string {
   if (Array.isArray(value)) {
     return `[${value.map(canonical).join(",")}]`;
   }
-  if (isObject(value)) {
+  if (isRecord(value)) {
     return `{${Object.keys(value)
-      .sort()
+      .sort(bytewise)
       .map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`)
       .join(",")}}`;
   }
@@ -101,11 +99,11 @@ class Checker {
     const target = file === "" ? doc : file;
     let schema: unknown = this.documents[target];
     for (const token of pointer.split("/").filter((one) => one !== "")) {
-      schema = isObject(schema)
+      schema = isRecord(schema)
         ? schema[token.replaceAll("~1", "/").replaceAll("~0", "~")]
         : undefined;
     }
-    if (!isObject(schema)) {
+    if (!isRecord(schema)) {
       throw new Error(`report schema: ${ref} names no schema`);
     }
     return [target, schema];
@@ -141,7 +139,7 @@ class Checker {
     this.checkValue(schema, value, refuse);
     if (Array.isArray(value)) {
       this.checkArray(doc, schema, value, at, found, refuse);
-    } else if (isObject(value)) {
+    } else if (isRecord(value)) {
       this.checkObject(doc, schema, value, at, found, refuse);
     }
     this.checkApplicators(doc, schema, value, at, found, refuse);
@@ -188,19 +186,19 @@ class Checker {
     found: SchemaRefusal[],
     refuse: (keyword: string, reason: string) => void,
   ): void {
-    const properties = isObject(schema["properties"]) ? schema["properties"] : {};
+    const properties = isRecord(schema["properties"]) ? schema["properties"] : {};
     const additional = schema["additionalProperties"];
-    for (const name of Object.keys(value).sort()) {
+    for (const name of Object.keys(value).sort(bytewise)) {
       const member = `${at}/${escape(name)}`;
       const declared = properties[name];
-      if (isObject(declared)) {
+      if (isRecord(declared)) {
         this.check(doc, declared, value[name], member, found);
       } else if (additional === false) {
         refuse(
           "additionalProperties",
           `the member ${JSON.stringify(name)} is not one the schema declares`,
         );
-      } else if (isObject(additional)) {
+      } else if (isRecord(additional)) {
         this.check(doc, additional, value[name], member, found);
       }
     }
@@ -227,7 +225,7 @@ class Checker {
     refuse: (keyword: string, reason: string) => void,
   ): void {
     const items = schema["items"];
-    if (isObject(items)) {
+    if (isRecord(items)) {
       value.forEach((item, i) => {
         this.check(doc, items, item, `${at}/${String(i)}`, found);
       });
@@ -273,12 +271,12 @@ class Checker {
         `the value matches ${String(matching("oneOf"))} of the alternatives, want exactly one`,
       );
     }
-    if (isObject(schema["not"]) && this.matches(doc, schema["not"], value, at)) {
+    if (isRecord(schema["not"]) && this.matches(doc, schema["not"], value, at)) {
       refuse("not", "the value matches a schema it must not match");
     }
-    if (isObject(schema["if"])) {
+    if (isRecord(schema["if"])) {
       const branch = this.matches(doc, schema["if"], value, at) ? schema["then"] : schema["else"];
-      if (isObject(branch)) {
+      if (isRecord(branch)) {
         this.check(doc, branch, value, at, found);
       }
     }

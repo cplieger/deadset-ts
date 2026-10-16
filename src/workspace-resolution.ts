@@ -9,9 +9,18 @@
 import { emittedFrom } from "./emit-map.ts";
 import { gitIgnored } from "./git-ignore.ts";
 import type { Host } from "./host.ts";
-import { dirnamePath, isAbsolutePath, joinPath, relativePath, resolvePath } from "./paths.ts";
+import {
+  ancestors,
+  dirnamePath,
+  isAbsolutePath,
+  joinPath,
+  relativePath,
+  resolvePath,
+} from "./paths.ts";
 import { satisfies } from "./version-range.ts";
 import type { Workspace, WorkspaceMember } from "./workspace.ts";
+import { isRecord } from "./json-document.ts";
+import { INSTALLED_PACKAGES, MANIFEST, manifestAt } from "./fs/manifest.ts";
 
 /** What the compiler's own resolution answered for one import. */
 export interface DefaultResolution {
@@ -46,10 +55,6 @@ const DEPENDENCY_MEMBERS = [
 
 const SOURCE = /(?<!\.d)\.(?:[mc]?ts|tsx)$/u;
 const OUTPUT = /(?:\.d\.[mc]?ts|\.[mc]?js|\.jsx)$/u;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 /** The package name a bare specifier names, or `undefined` for any other specifier. */
 export function packageNameOf(specifier: string): string | undefined {
@@ -216,7 +221,7 @@ export function workspaceResolver(host: Host, workspace: Workspace): WorkspaceRe
     if (links.has(key)) {
       return links.get(key);
     }
-    const candidate = joinPath(dir, "node_modules", name);
+    const candidate = joinPath(dir, INSTALLED_PACKAGES, name);
     let found: string | undefined;
     if (host.kindOf(candidate) === "absent") {
       const up = dirnamePath(dir);
@@ -245,15 +250,14 @@ export function workspaceResolver(host: Host, workspace: Workspace): WorkspaceRe
     if (manifests.has(dir)) {
       return manifests.get(dir);
     }
-    let found: { dir: string; manifest: Record<string, unknown> } | undefined;
-    try {
-      const value: unknown = JSON.parse(host.readFile(joinPath(dir, "package.json")));
-      found = isRecord(value) ? { dir, manifest: value } : undefined;
-    } catch {
-      const up = dirnamePath(dir);
-      found =
-        up === dir || root === undefined || !inside(root, up) ? undefined : nearestManifest(up);
-    }
+    const manifest = manifestAt(host, dir);
+    const up = dirnamePath(dir);
+    const found =
+      manifest !== undefined
+        ? { dir, manifest }
+        : up === dir || root === undefined || !inside(root, up)
+          ? undefined
+          : nearestManifest(up);
     manifests.set(dir, found);
     return found;
   };
@@ -265,7 +269,7 @@ export function workspaceResolver(host: Host, workspace: Workspace): WorkspaceRe
       const member = candidates.find((one) => one.dir === linked);
       return member === undefined ? { kind: "none" } : { kind: "member", member };
     }
-    const scope = workspace.memberOf(joinPath(fromDir, "package.json"));
+    const scope = workspace.memberOf(joinPath(fromDir, MANIFEST));
     if (scope?.name === name) {
       return { kind: "member", member: scope };
     }
@@ -300,7 +304,7 @@ export function workspaceResolver(host: Host, workspace: Workspace): WorkspaceRe
    * directory however its configuration writes it.
    */
   const mirrored = (member: WorkspaceMember, path: string): string | undefined => {
-    for (let dir = dirnamePath(path); inside(member.dir, dir); dir = dirnamePath(dir)) {
+    for (const dir of ancestors(dirnamePath(path), member.dir).filter((at) => at !== member.dir)) {
       const found = emittedFrom(path, { outDir: dir, sourceDirs: [member.dir] }).find(
         (candidate) =>
           SOURCE.test(candidate) && !ignored(candidate) && host.kindOf(candidate) === "file",

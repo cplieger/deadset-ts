@@ -4,6 +4,7 @@ import { partialNotes } from "../partial.ts";
 import { resolvePath } from "../paths.ts";
 import { resolveUnkinded } from "../resolve.ts";
 import { type Verb } from "./verb.ts";
+import { diagnose } from "../product.ts";
 
 /**
  * Writes the name of every project one run analyzes, one per line: the identifier the
@@ -24,7 +25,7 @@ export const printProjectsVerb: Verb = ({ out, err, host, inputs, scope, openCli
     unanswered: answer.unanswered,
     targetRoot: resolvePath(host.workingDirectory(), scoped.target.path),
   })) {
-    err.write(`deadset-ts: ${note}\n`);
+    diagnose(err, note);
   }
   return EXIT_CLEAN;
 };

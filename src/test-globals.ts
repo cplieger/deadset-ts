@@ -25,10 +25,12 @@ import {
 } from "@typescript/native/ast";
 import type { ParseFile } from "./configuration-files.ts";
 import type { Host } from "./host.ts";
-import { dirnamePath, joinPath } from "./paths.ts";
+import { ancestors, dirnamePath, joinPath } from "./paths.ts";
 import { UNANSWERED } from "./query.ts";
 import type { Engine, ProjectView } from "./session.ts";
 import { writtenPath, type WorkspaceProgram } from "./workspace-programs.ts";
+import { filesIn } from "./fs/tree.ts";
+import { holdsManifest, INSTALLED_PACKAGES } from "./fs/manifest.ts";
 
 /** The test runner whose configuration injects the globals, and the `types` entry declaring them. */
 export const GLOBALS_RUNNER = "vitest";
@@ -120,16 +122,7 @@ function setsGlobals(file: SourceFile): boolean {
 
 /** Whether the runner's configuration in one manifest's directory injects the globals. */
 function injectsGlobals(host: Host, parse: ParseFile, dir: string): boolean {
-  let names: readonly string[];
-  try {
-    names = host
-      .readDirectory(dir)
-      .filter((entry) => !entry.directory && RUNNER_CONFIG.test(entry.name))
-      .map((entry) => entry.name);
-  } catch {
-    return false;
-  }
-  return names.some((name) => {
+  return filesIn(host, dir, (name) => RUNNER_CONFIG.test(name)).some((name) => {
     const path = joinPath(dir, name);
     try {
       return setsGlobals(parse(path, host.readFile(path)));
@@ -141,26 +134,15 @@ function injectsGlobals(host: Host, parse: ParseFile, dir: string): boolean {
 
 /** Whether a file declaring the globals is installed where the configuration resolves packages from. */
 function globalsInstalled(host: Host, configFile: string): boolean {
-  for (let dir = dirnamePath(configFile); ; dir = dirnamePath(dir)) {
-    if (host.kindOf(joinPath(dir, "node_modules", GLOBALS_RUNNER, "globals.d.ts")) === "file") {
-      return true;
-    }
-    if (dirnamePath(dir) === dir) {
-      return false;
-    }
-  }
+  return ancestors(dirnamePath(configFile)).some(
+    (dir) =>
+      host.kindOf(joinPath(dir, INSTALLED_PACKAGES, GLOBALS_RUNNER, "globals.d.ts")) === "file",
+  );
 }
 
 /** The directory of the manifest nearest one configuration file, at or above its own. */
 function manifestDir(host: Host, configFile: string): string | undefined {
-  for (let dir = dirnamePath(configFile); ; dir = dirnamePath(dir)) {
-    if (host.kindOf(joinPath(dir, "package.json")) === "file") {
-      return dir;
-    }
-    if (dirnamePath(dir) === dir) {
-      return undefined;
-    }
-  }
+  return ancestors(dirnamePath(configFile)).find((dir) => holdsManifest(host, dir));
 }
 
 function typesOf(value: unknown): readonly string[] | undefined {

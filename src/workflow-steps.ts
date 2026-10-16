@@ -6,9 +6,10 @@
 
 import type { SourceFile } from "@typescript/native/ast";
 import type { Host } from "./host.ts";
-import { scriptTokens } from "./manifest.ts";
 import { joinPath, relativePath, resolvePath } from "./paths.ts";
 import type { SourceFiles } from "./source-files.ts";
+import { filesIn } from "./fs/tree.ts";
+import { commandsOf, scriptTokens, unquoted, withoutComment } from "./text/shell.ts";
 
 /** One file a workflow step names. */
 interface WorkflowEntry {
@@ -36,30 +37,16 @@ const HOOK_MANAGERS: readonly (readonly [string, RegExp])[] = [
 /** The names GNU make reads a makefile under, in the order it tries them. */
 const MAKEFILES = ["GNUmakefile", "makefile", "Makefile"] as const;
 
-/** The operators that end one shell command of a recipe line. */
-const COMMAND_SEPARATORS = /&&|\|\||;|\|/u;
-
 const BLOCK_SCALAR = /^[|>][+-]?$/u;
-
-const QUOTED = /^(["'])(.*)\1$/su;
 
 /** A token holding one of these is computed or a pattern, so it names no file. */
 const COMPUTED = /[${*?[]/u;
 
 const INDENT = /^\s*/u;
 
-/** The files directly in one directory whose name `accepts`, in name order. */
-function filesIn(host: Host, dir: string, accepts: (name: string) => boolean): readonly string[] {
-  let entries;
-  try {
-    entries = host.readDirectory(dir);
-  } catch {
-    return [];
-  }
-  return entries
-    .filter((entry) => !entry.directory && accepts(entry.name))
-    .map((entry) => joinPath(dir, entry.name))
-    .sort();
+/** The files directly in one directory whose name `accepts`, by path in name order. */
+function pathsIn(host: Host, dir: string, accepts: (name: string) => boolean): readonly string[] {
+  return filesIn(host, dir, accepts).map((name) => joinPath(dir, name));
 }
 
 function readText(host: Host, path: string): string | undefined {
@@ -80,7 +67,7 @@ export function runCommands(text: string, key: RegExp = RUN_LINE): readonly stri
       continue;
     }
     const column = (match[1] ?? "").length;
-    const value = (match[2] ?? "").trim().replace(QUOTED, "$2");
+    const value = unquoted((match[2] ?? "").trim());
     if (!BLOCK_SCALAR.test(value)) {
       found.push(value);
       continue;
@@ -113,7 +100,7 @@ function recipeLines(host: Host, root: string): readonly (readonly string[])[] {
     .replace(/\\\r?\n/gu, " ")
     .split(/\r?\n/u)
     .filter((line) => line.startsWith("\t"))
-    .map((line) => withoutComment(line.slice(1).replace(/^[@+-]+/u, "")).split(COMMAND_SEPARATORS));
+    .map((line) => commandsOf(withoutComment(line.slice(1).replace(/^[@+-]+/u, ""))));
 }
 
 /**
@@ -140,28 +127,6 @@ function recipeTokens(host: Host, root: string): readonly { token: string; dir: 
   return found;
 }
 
-/** One shell line up to its comment: a `#` that starts a word outside quotes. */
-function withoutComment(line: string): string {
-  let quote = "";
-  for (let at = 0; at < line.length; at += 1) {
-    const char = line[at];
-    if (quote !== "") {
-      if (char === quote) {
-        quote = "";
-      } else if (char === "\\" && quote === '"') {
-        at += 1;
-      }
-    } else if (char === "'" || char === '"') {
-      quote = char;
-    } else if (char === "\\") {
-      at += 1;
-    } else if (char === "#" && (at === 0 || /\s/u.test(line[at - 1] ?? ""))) {
-      return line.slice(0, at);
-    }
-  }
-  return line;
-}
-
 /**
  * Every command the target root's workflow steps, git hooks and makefile run: the `run:`
  * steps of the workflow files in `.github/workflows`, every line of each file in `.husky`
@@ -185,11 +150,11 @@ export function workflowTokens(host: Host, targetRoot: string): readonly string[
 /** The commands of the workflow steps, git hooks and hook managers at one root. */
 function stepCommands(host: Host, root: string): readonly string[] {
   const commands: string[] = [];
-  for (const path of filesIn(host, joinPath(root, WORKFLOWS), (name) => /\.ya?ml$/u.test(name))) {
+  for (const path of pathsIn(host, joinPath(root, WORKFLOWS), (name) => /\.ya?ml$/u.test(name))) {
     commands.push(...runCommands(readText(host, path) ?? ""));
   }
   for (const dir of HOOK_DIRS) {
-    for (const path of filesIn(host, joinPath(root, dir), () => true)) {
+    for (const path of pathsIn(host, joinPath(root, dir), () => true)) {
       commands.push(...(readText(host, path) ?? "").split(/\r?\n/u).map(withoutComment));
     }
   }

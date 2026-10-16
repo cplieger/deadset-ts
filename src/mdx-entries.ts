@@ -9,6 +9,7 @@ import { resolveRelativeSpecifier } from "./configuration-files.ts";
 import type { Host } from "./host.ts";
 import { dirnamePath, joinPath, resolvePath } from "./paths.ts";
 import type { SourceFiles } from "./source-files.ts";
+import { filesBelow } from "./fs/tree.ts";
 
 /** One file a document imports, the specifier that named it, and the export names it reads. */
 interface DocumentEntry {
@@ -17,9 +18,6 @@ interface DocumentEntry {
   /** The export names the import reads, or undefined for a namespace import, which reads them all. */
   readonly names: readonly string[] | undefined;
 }
-
-/** The directories no document is read below. */
-const SKIPPED: ReadonlySet<string> = new Set(["node_modules", ".git"]);
 
 /** The extensions of a document whose imports an MDX compiler reads. */
 const DOCUMENT = /\.mdx?$/u;
@@ -129,28 +127,6 @@ function clauseNames(clause: string): readonly string[] | undefined {
   return names;
 }
 
-/** Every document below `dir`, outside every skipped directory, by absolute path. */
-function documents(host: Host, dir: string): readonly string[] {
-  let entries;
-  try {
-    entries = host.readDirectory(dir);
-  } catch {
-    return [];
-  }
-  const found: string[] = [];
-  for (const entry of entries) {
-    const path = joinPath(dir, entry.name);
-    if (entry.directory) {
-      if (!SKIPPED.has(entry.name)) {
-        found.push(...documents(host, path));
-      }
-    } else if (DOCUMENT.test(entry.name)) {
-      found.push(path);
-    }
-  }
-  return found.sort();
-}
-
 /** The relative specifiers one document's import lines name, its fenced code blocks skipped. */
 function importedBy(
   text: string,
@@ -205,7 +181,8 @@ function documentImports(host: Host, root: string): readonly DocumentImports[] {
   if (known !== undefined) {
     return known;
   }
-  const found = documents(host, root).flatMap((path) => {
+  const found = filesBelow(host, root, (name) => DOCUMENT.test(name)).flatMap((below) => {
+    const path = joinPath(root, below);
     try {
       return [{ path, imports: importedBy(host.readFile(path)) }];
     } catch {
