@@ -9,6 +9,7 @@ import { CONFIG_MAX_BYTES } from "../contract/config.generated.ts";
 import type { Host } from "../host.ts";
 import { joinPath, relativePath } from "../paths.ts";
 import { message } from "../product.ts";
+import { utf8Bytes } from "../reporters/sha256.ts";
 import { UsageError } from "../usage.ts";
 
 /**
@@ -25,7 +26,7 @@ export class TargetDocumentError extends Error {
 
 /** Refuses a document past the Contract's bound with the usage code, naming it `label`. */
 export function refuseOverBound(label: string, text: string): void {
-  if (new TextEncoder().encode(text).length > CONFIG_MAX_BYTES) {
+  if (utf8Bytes(text).length > CONFIG_MAX_BYTES) {
     throw new UsageError(`${label}: holds more than ${String(CONFIG_MAX_BYTES)} bytes`);
   }
 }
