@@ -6,7 +6,7 @@
 
 import { EXIT_CLEAN, EXIT_FINDINGS, EXIT_PENDING } from "./contract/contract.generated.ts";
 import type { AnalysisInputs } from "./analysis.ts";
-import { fails, type Config } from "./config.ts";
+import { fails, type ResolvedConfig } from "./config.ts";
 import type { EdgeEvaluation } from "./edges.ts";
 import type { CompletedFinding, Finding } from "./finding.ts";
 import { decidedFindings, type Withheld } from "./findings/emitters.ts";
@@ -109,7 +109,7 @@ export function findingsPass(inputs: AnalysisInputs): PassResult {
  * suppression is stale or a finding's severity reaches the configured failing severity;
  * clean otherwise.
  */
-export function verdictOf(result: PassResult, config: Config): number {
+export function verdictOf(result: PassResult, config: ResolvedConfig): number {
   if (result.totals.pending > 0) {
     return EXIT_PENDING;
   }
@@ -117,7 +117,7 @@ export function verdictOf(result: PassResult, config: Config): number {
     return EXIT_FINDINGS;
   }
   const failing = result.findings.some((finding) =>
-    fails(finding.severity, config.reporters.failOn),
+    fails(finding.severity, config.reporters.fail_on),
   );
   return failing ? EXIT_FINDINGS : EXIT_CLEAN;
 }

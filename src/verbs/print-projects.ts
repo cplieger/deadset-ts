@@ -2,7 +2,7 @@ import { EXIT_CLEAN } from "../contract/contract.generated.ts";
 import { runProjects } from "../analysis.ts";
 import { partialNotes } from "../partial.ts";
 import { resolvePath } from "../paths.ts";
-import { resolveUnkinded } from "../resolve.ts";
+import { resolvePartial } from "../resolve.ts";
 import { type Verb } from "./verb.ts";
 import { diagnose } from "../product.ts";
 
@@ -14,7 +14,7 @@ import { diagnose } from "../product.ts";
  * instead, and one that fails the analysis fails this command the same way.
  */
 export const printProjectsVerb: Verb = ({ out, err, host, inputs, scope, openClient }) => {
-  const config = resolveUnkinded(inputs());
+  const config = resolvePartial(inputs());
   const scoped = scope();
   const answer = runProjects(openClient(config), host, scoped, config);
   for (const id of answer.configurations) {

@@ -15,7 +15,7 @@ const TARGET = fixture("projects", "type-query-alias");
 
 const CONFIG = ((): ReturnType<typeof resolve> => {
   const document = join(TARGET, "deadset.json");
-  return resolve({ repository: readFileSync(document, "utf8"), repositoryLabel: document });
+  return resolve({ repository: { text: readFileSync(document, "utf8"), label: document } });
 })();
 
 /** Every finding of the fixture's production sweep, as `code path:line name`. */

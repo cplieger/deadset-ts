@@ -39,8 +39,7 @@ function written(files: Readonly<Record<string, string>>): string {
 /** The configuration and provenance a repository document resolves to, beside any other input. */
 function configured(repository: unknown, inputs: Inputs = {}): ReturnType<typeof resolve> {
   return resolve({
-    repository: JSON.stringify(repository),
-    repositoryLabel: "deadset.json",
+    repository: { text: JSON.stringify(repository), label: "deadset.json" },
     ...inputs,
   });
 }
@@ -124,11 +123,13 @@ describe("the projects a run composes", () => {
     });
     try {
       const { config, provenance } = resolve({
-        repository: JSON.stringify({
-          target: { kind: "application" },
-          analysis: { configurations: [{ id: "app", project: "tsconfig.json" }] },
-        }),
-        repositoryLabel: "deadset.json",
+        repository: {
+          text: JSON.stringify({
+            target: { kind: "application" },
+            analysis: { configurations: [{ id: "app", project: "tsconfig.json" }] },
+          }),
+          label: "deadset.json",
+        },
       });
       const host = nodeHost();
       const scope = scopeForDir(host, root);
@@ -160,16 +161,18 @@ describe("the projects a run composes", () => {
     });
     try {
       const { config } = resolve({
-        repository: JSON.stringify({
-          target: { kind: "application" },
-          analysis: {
-            configurations: [
-              { id: "app", project: "tsconfig.json" },
-              { id: "broken", project: "broken/tsconfig.json" },
-            ],
-          },
-        }),
-        repositoryLabel: "deadset.json",
+        repository: {
+          text: JSON.stringify({
+            target: { kind: "application" },
+            analysis: {
+              configurations: [
+                { id: "app", project: "tsconfig.json" },
+                { id: "broken", project: "broken/tsconfig.json" },
+              ],
+            },
+          }),
+          label: "deadset.json",
+        },
       });
       const host = nodeHost();
       const swept = runSweep(
@@ -398,14 +401,16 @@ describe("the root set of a run", () => {
     ]);
   });
 
-  it("reports a root a flag names and nothing holds at the conventional document", () => {
+  it("reports a root a document outside the target names and nothing holds at the conventional document", () => {
     const root = written({ "src/main.ts": "export const one = 1;\n" });
     const host: Host = { ...nodeHost(), workingDirectory: () => root };
     const { config, provenance } = configured(
       { target: { kind: "application" } },
       {
-        flags: JSON.stringify({ "roots.patterns": ["ts://./src/main.ts#absent"] }),
-        flagLabels: new Map([["roots.patterns", "--roots"]]),
+        central: {
+          text: JSON.stringify({ roots: { patterns: ["ts://./src/main.ts#absent"] } }),
+          label: "../central.json",
+        },
       },
     );
 

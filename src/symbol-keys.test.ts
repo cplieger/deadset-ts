@@ -19,8 +19,7 @@ function findings(files: Readonly<Record<string, string>>): string[] {
   });
   roots.push(root);
   const { config } = resolve({
-    repository: '{ "target": { "kind": "application" } }',
-    repositoryLabel: "deadset.json",
+    repository: { text: '{ "target": { "kind": "application" } }', label: "deadset.json" },
   });
   return findingsOf(emitterInputOf(root, config)).map(
     ({ code, symbol, position }) => `${code} ${symbol.name} ${String(position.line)}`,

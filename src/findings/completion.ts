@@ -65,10 +65,9 @@ function everyDeclaredLoaded(boundary: Boundary): boolean {
  * naming its family, else the code's default.
  */
 function severityOf(input: EmitterInput, code: string, fallback: Severity): Severity {
-  const { config } = input;
-  return (
-    config.severity.get(code) ?? config.severity.get(code.slice(0, FAMILY_KEY_LENGTH)) ?? fallback
-  );
+  const { severity } = input.config;
+  const key = [code, code.slice(0, FAMILY_KEY_LENGTH)].find((one) => Object.hasOwn(severity, one));
+  return key === undefined ? fallback : (severity[key] ?? fallback);
 }
 
 /**
@@ -225,7 +224,7 @@ function rootsCeiling(
 ): Confidence {
   const unreachable = candidate?.relation === "reachability" || finding.unreachableOnly === true;
   const unseen = new Set((input.files.unseenLoads ?? []).map((load) => load.configuration));
-  const complete = input.config.ts.rootsComplete && !configurations.some((one) => unseen.has(one));
+  const complete = input.config.ts.roots_complete && !configurations.some((one) => unseen.has(one));
   return unreachable && !complete ? "probable" : "certain";
 }
 
@@ -585,7 +584,7 @@ export function dialsOf(
   input: EmitterInput,
   findings: readonly CompletedFinding[],
 ): Dials<CompletedFinding> {
-  const minConfidence = input.config.analysis.minConfidence;
+  const minConfidence = input.config.analysis.min_confidence;
   const components = new Set(
     findings
       .filter(

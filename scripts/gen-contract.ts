@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { format, resolveConfig } from "prettier";
+import { GENERATED_CONFIG, generatedConfig } from "./gen-config.ts";
 import { GENERATED_REPORT, generatedReport } from "./gen-report.ts";
 
 /**
@@ -260,4 +261,5 @@ export const fixturesReader: Reader = (path) => readFileSync(join(ROOT, "fixture
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   writeFileSync(join(ROOT, GENERATED), await generated(fixturesReader));
   writeFileSync(join(ROOT, GENERATED_REPORT), await generatedReport(fixturesReader));
+  writeFileSync(join(ROOT, GENERATED_CONFIG), await generatedConfig(fixturesReader));
 }

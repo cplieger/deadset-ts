@@ -6,9 +6,7 @@ import { nodeHost } from "../bin/node-host.ts";
 import { contractDocument, fixture } from "../__test-helpers__/fixtures.ts";
 import { writeProject } from "../__test-helpers__/projects.ts";
 import { runSweep, type RunSweep } from "./analysis.ts";
-import { defaultConfig } from "./config.ts";
 import {
-  EXEMPTION_CLASS_NAMES,
   TS_EXEMPTION_CLASSES,
   type ExemptionClass,
   type TSExemptionClass,
@@ -80,18 +78,21 @@ describe("the class registry", () => {
     // @ts-expect-error a class that runs on Go only
     const goOnly: TSExemptionClass = "encoding-reflection";
 
-    expect(EXEMPTION_CLASS_NAMES, "a name outside the vocabulary").not.toContain(unknown);
-    expect(EXEMPTION_CLASS_NAMES, "a class of the vocabulary another language runs").toContain(
-      goOnly,
-    );
+    const names = EXEMPTION_CLASSES.map((row) => row.class);
+
+    expect(names, "a name outside the vocabulary").not.toContain(unknown);
+    expect(names, "a class of the vocabulary another language runs").toContain(goOnly);
   });
 });
 
 describe("the per-class disable switch", () => {
-  const configured = (disabled: readonly ExemptionClass[]) => ({
-    ...defaultConfig(),
-    exemptionsDisabled: disabled,
-  });
+  const configured = (disabled: readonly ExemptionClass[]) =>
+    resolve({
+      repository: {
+        text: JSON.stringify({ target: { kind: "application" }, exemptions: { disabled } }),
+        label: "deadset.json",
+      },
+    }).config;
 
   it("switches off the classes it names, a class another language runs included", () => {
     expect([...disabledClasses(configured(["decorator", "encoding-reflection"]))]).toEqual([
@@ -428,8 +429,7 @@ const DETECTORS: Detectors = new Map<TSExemptionClass, Detector>([
 function sweepFixture(mode: Mode, target = TARGET, detectors = DETECTORS): RunSweep {
   const document = join(target, "deadset.json");
   const { config } = resolve({
-    repository: readFileSync(document, "utf8"),
-    repositoryLabel: document,
+    repository: { text: readFileSync(document, "utf8"), label: document },
   });
   const host = nodeHost();
   return runSweep(

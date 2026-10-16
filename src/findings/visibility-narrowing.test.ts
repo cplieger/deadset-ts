@@ -1,5 +1,6 @@
 import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { nodeHost } from "../../bin/node-host.ts";
 import { describe, expect, it } from "vitest";
 import { emitterInputOf, sweepOnly, findingsOf } from "../../__test-helpers__/emitter-input.ts";
 import { fixture } from "../../__test-helpers__/fixtures.ts";
@@ -9,7 +10,7 @@ import type { InventorySymbol } from "../inventory.ts";
 import { matrixOf, sweepMatrix } from "../matrix.ts";
 import type { Reference } from "../references.ts";
 import { resolve } from "../resolve.ts";
-import { evaluateEdges, type EdgeEvaluation } from "../edges.ts";
+import { evaluateEdges, readEdgeSides, type EdgeEvaluation } from "../edges.ts";
 import type { Boundary, EdgeSide } from "./boundary.ts";
 import type { EmitterInput } from "./emitter.ts";
 import { EMITTERS } from "./emitters.ts";
@@ -21,25 +22,9 @@ const REDUNDANT_KEYWORD = fixture("corpus", "redundant-export-keyword", "ts", "t
 /** The consumer the corpus case declares, as a scope would name it once loaded. */
 const CORPUS_CONSUMER = "@example/consumer";
 
-/**
- * The sides of the edges document at the root that name a TypeScript symbol, read as
- * the document writes them; a root with no document declares no edge.
- */
-function edgeSidesAt(root: string): EdgeSide[] {
-  let text: string;
-  try {
-    text = readFileSync(join(root, "deadset-edges.json"), "utf8");
-  } catch {
-    return [];
-  }
-  const document = JSON.parse(text) as {
-    edges: { id: string; provides: string; used_by: string }[];
-  };
-  return document.edges.flatMap((edge) =>
-    (["provides", "used_by"] as const)
-      .filter((side) => edge[side].startsWith("ts://"))
-      .map((side) => ({ edge: edge.id, side, symbol: edge[side] })),
-  );
+/** The sides of the edges document at the root that name a TypeScript symbol. */
+function edgeSidesAt(root: string): readonly EdgeSide[] {
+  return readEdgeSides(nodeHost(), root);
 }
 
 interface Case {
@@ -56,8 +41,7 @@ interface Case {
 function inputOf(root: string, given: Case = {}): EmitterInput {
   const path = join(root, "deadset.json");
   const { config } = resolve({
-    repository: given.document ?? readFileSync(path, "utf8"),
-    repositoryLabel: path,
+    repository: { text: given.document ?? readFileSync(path, "utf8"), label: path },
   });
   const input = emitterInputOf(root, config);
   return {
@@ -258,8 +242,10 @@ describe("the references a narrowing reads", () => {
     ]);
     const sweep = sweepMatrix(matrix, { marked, mode: { production: true } });
     const { config } = resolve({
-      repository: JSON.stringify({ target: { kind: "application" } }),
-      repositoryLabel: "deadset.json",
+      repository: {
+        text: JSON.stringify({ target: { kind: "application" } }),
+        label: "deadset.json",
+      },
     });
     return named(
       emitted(
@@ -327,8 +313,10 @@ describe("a declared cross-language edge", () => {
 describe("an export the write-only kind reports", () => {
   it("is left to that kind, which reports it once", () => {
     const { config } = resolve({
-      repository: JSON.stringify({ target: { kind: "application" } }),
-      repositoryLabel: "deadset.json",
+      repository: {
+        text: JSON.stringify({ target: { kind: "application" } }),
+        label: "deadset.json",
+      },
     });
     const findings = findingsOf(emitterInputOf(fixture("projects", "every-reference"), config));
 
@@ -471,11 +459,13 @@ describe("an export used only in a file a script token or a configuration string
     });
     try {
       const { config } = resolve({
-        repository: JSON.stringify({
-          target: { kind: "application" },
-          ts: { entry_files: ["src/main.ts"] },
-        }),
-        repositoryLabel: "deadset.json",
+        repository: {
+          text: JSON.stringify({
+            target: { kind: "application" },
+            ts: { entry_files: ["src/main.ts"] },
+          }),
+          label: "deadset.json",
+        },
       });
       expect(
         findingsOf(emitterInputOf(root, config))
@@ -499,11 +489,13 @@ describe("an export of a file a document imports", () => {
     });
     try {
       const { config } = resolve({
-        repository: JSON.stringify({
-          target: { kind: "application" },
-          ts: { entry_files: ["src/main.ts"] },
-        }),
-        repositoryLabel: "deadset.json",
+        repository: {
+          text: JSON.stringify({
+            target: { kind: "application" },
+            ts: { entry_files: ["src/main.ts"] },
+          }),
+          label: "deadset.json",
+        },
       });
       expect(
         findingsOf(emitterInputOf(root, config)).map(

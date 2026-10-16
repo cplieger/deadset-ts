@@ -47,8 +47,3 @@ const VISIBILITY: ReadonlyMap<TSExemptionClass, TypeScriptVisibility> = new Map(
 export function typescriptVisibilityOf(exemptionClass: TSExemptionClass): TypeScriptVisibility {
   return VISIBILITY.get(exemptionClass) ?? { private: false, privateName: false };
 }
-
-/** Every class of the vocabulary, whichever language it runs on, in the vocabulary's order. */
-export const EXEMPTION_CLASS_NAMES: readonly ExemptionClass[] = EXEMPTION_CLASSES.map(
-  (row) => row.class,
-);

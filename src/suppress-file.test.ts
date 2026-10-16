@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFixture } from "../__test-helpers__/fixtures.ts";
-import { ConfigError } from "./config.ts";
+import { UsageError } from "./usage.ts";
 import type { Host } from "./host.ts";
 import type { InventorySymbol } from "./inventory.ts";
 import { joinPath } from "./paths.ts";
@@ -108,7 +108,7 @@ function outcome(one: CorpusCase): string {
     }
     return held.records.length === 1 && held.records[0]?.bound !== "" ? "accepted" : "unbound";
   } catch (error: unknown) {
-    return error instanceof ConfigError ? "exit 2" : String(error);
+    return error instanceof UsageError ? "exit 2" : String(error);
   }
 }
 
@@ -180,7 +180,7 @@ describe("an ignore entry", () => {
         readIgnoreFile(hostWith({ [IGNORE_FILE]: text }), ROOT, []);
         return "read";
       } catch (error: unknown) {
-        return error instanceof ConfigError ? error.message : String(error);
+        return error instanceof UsageError ? error.message : String(error);
       }
     };
 
@@ -263,7 +263,7 @@ describe("a suppression document", () => {
     ["a comment", `{"ignore": [] // none\n}`],
     ["a trailing comma", `{"ignore": [],}`],
   ])("holding %s ends the run with a usage refusal", (_what, text) => {
-    expect(() => readIgnoreFile(hostWith({ [IGNORE_FILE]: text }), ROOT, [])).toThrow(ConfigError);
+    expect(() => readIgnoreFile(hostWith({ [IGNORE_FILE]: text }), ROOT, [])).toThrow(UsageError);
   });
 
   it("that is absent is an empty one", () => {
@@ -276,7 +276,7 @@ describe("a refused entry or document", () => {
     try {
       return JSON.stringify(readIgnoreFile(hostWith({ [IGNORE_FILE]: text }), ROOT, []));
     } catch (error: unknown) {
-      return error instanceof ConfigError ? error.message : `not a usage refusal: ${String(error)}`;
+      return error instanceof UsageError ? error.message : `not a usage refusal: ${String(error)}`;
     }
   };
 
@@ -302,17 +302,10 @@ describe("a refused entry or document", () => {
     );
   });
 
-  it("names why a document that is not JSON could not be parsed", () => {
-    const text = '{"ignore": [}';
-    let reason = "";
-    try {
-      JSON.parse(text);
-    } catch (error: unknown) {
-      reason = error instanceof Error ? error.message : String(error);
-    }
-
-    expect(refusalOf(text)).toBe(
-      `ignore ${IGNORE_FILE}: ${IGNORE_FILE}: ${reason}: want an object carrying the ignore array, and an optional description`,
+  it("names where and why a document is not JSON", () => {
+    expect(refusalOf('{"ignore": [}')).toBe(
+      `ignore ${IGNORE_FILE}:1:13: a value is expected: ` +
+        "want an object carrying the ignore array, and an optional description",
     );
   });
 });
@@ -462,6 +455,6 @@ describe("a record of the other language's scheme", () => {
       ignore: [{ code: "DS1001", symbol: "go://example.com/app#Catalog", path: "./catalog.go" }],
     });
 
-    expect(() => readIgnoreFile(hostWith({ [IGNORE_FILE]: text }), ROOT, [])).toThrow(ConfigError);
+    expect(() => readIgnoreFile(hostWith({ [IGNORE_FILE]: text }), ROOT, [])).toThrow(UsageError);
   });
 });

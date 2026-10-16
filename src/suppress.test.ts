@@ -299,9 +299,15 @@ function ignoreFileHost(document: string): Host {
 }
 
 describe("a suppression document refused as a whole", () => {
-  it("is named by its path alone, with no line or column", () => {
-    expect(() => readIgnoreFile(ignoreFileHost("{"), "/target", [])).toThrow(
+  it("is named by its path alone where it is JSON but not one object", () => {
+    expect(() => readIgnoreFile(ignoreFileHost("[]"), "/target", [])).toThrow(
       `ignore ${IGNORE_FILE}: ${IGNORE_FILE}: `,
+    );
+  });
+
+  it("is named at the line and column of the fault where it is not JSON", () => {
+    expect(() => readIgnoreFile(ignoreFileHost("{"), "/target", [])).toThrow(
+      `ignore ${IGNORE_FILE}:1:2: a member name is expected`,
     );
   });
 });

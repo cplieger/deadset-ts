@@ -8,7 +8,7 @@
 
 import { isStringLiteralLikeNode, type SourceFile } from "@typescript/native/ast";
 import { lineOf, readComponent } from "./component-files.ts";
-import { kindOf, type Config, type Provenance } from "./config.ts";
+import { kindOf, type PartialConfig, type Provenance, type ResolvedConfig } from "./config.ts";
 import {
   consumerLoads,
   consumerReferences,
@@ -139,7 +139,6 @@ import { ownErrors, workspaceRun } from "./workspace-run.ts";
 import { bytewise } from "./text/compare.ts";
 import { holdsManifest, inInstalledPackages, MANIFEST, manifestAt } from "./fs/manifest.ts";
 import { globExpression } from "./text/glob.ts";
-import { LANGUAGE } from "./product.ts";
 
 /** The setting whose source decides where a finding about a configured root sits. */
 const ROOTS_SETTING = "roots.patterns";
@@ -325,7 +324,7 @@ function readProjects<Answer>(
   engine: Engine,
   host: Host,
   scope: Scope,
-  config: Config,
+  config: PartialConfig,
   stage: <Brand>(project: ProjectView<Brand>, opened: OpenedProject) => Answer,
 ): ReadProjects<Answer> {
   const targetRoot = scope.target.path;
@@ -356,7 +355,7 @@ function readProjects<Answer>(
   // The nested packages are known only once every program is open, and every visit reads
   // the conventions and options they decide, so both are set in the session's first step.
   let nestedDirs: readonly string[] = [];
-  let conventions = readConventions(host, parse, [], config.ts.disabledConventions);
+  let conventions = readConventions(host, parse, [], config.ts.disabled_conventions);
   let options: RootOptions & { readonly parse: typeof parse; readonly conventions: Conventions };
   const readManifests = (opened: readonly OpenedFiles[]): void => {
     nestedDirs = nestedPackageDirs(
@@ -371,7 +370,7 @@ function readProjects<Answer>(
       host,
       parse,
       conventionManifests(host, absoluteRoot, memberDirs, nestedDirs),
-      config.ts.disabledConventions,
+      config.ts.disabled_conventions,
     );
     options = {
       host,
@@ -380,12 +379,12 @@ function readProjects<Answer>(
         ...(workspace?.entries ?? []),
         ...packageEntries(host, normalizePath(absoluteRoot), nestedDirs),
       ],
-      patterns: config.rootPatterns,
-      entryFiles: config.ts.entryFiles,
+      patterns: config.roots.patterns,
+      entryFiles: config.ts.entry_files,
       conventions,
-      testFiles: config.ts.testFiles,
+      testFiles: config.ts.test_files,
       parse,
-      publishedAPI: config.targetKind !== "" && kindOf(config.targetKind, LANGUAGE) === "library",
+      publishedAPI: config.target.kind !== undefined && kindOf(config.target.kind) === "library",
       publishedMembers: new Set(
         (workspace?.entries ?? []).filter((entry) => entry.published).map((entry) => entry.dir),
       ),
@@ -420,7 +419,7 @@ function readProjects<Answer>(
       unbuildable.push(...met);
     }
   };
-  const testPatterns = config.ts.testFiles.map(globExpression);
+  const testPatterns = config.ts.test_files.map(globExpression);
   const joins = discovered.derived
     ? joinedTestFiles(engine, host, absoluteRoot, discovered.configFiles, testPatterns)
     : new Map<string, readonly string[]>();
@@ -657,7 +656,12 @@ interface RunProjects {
  * for the errors and setup failures that decide whether it is analyzed, dropped or
  * fails the run, exactly as the analysis reads them.
  */
-export function runProjects(engine: Engine, host: Host, scope: Scope, config: Config): RunProjects {
+export function runProjects(
+  engine: Engine,
+  host: Host,
+  scope: Scope,
+  config: PartialConfig,
+): RunProjects {
   const read = readProjects(
     engine,
     host,
@@ -678,7 +682,7 @@ export function runRoots(
   engine: Engine,
   host: Host,
   scope: Scope,
-  config: Config,
+  config: ResolvedConfig,
   provenance: Provenance,
 ): RunRoots {
   const targetRoot = scope.target.path;
@@ -719,7 +723,7 @@ export function runRoots(
       bytewise(a.source, b.source),
   );
   const unmatched = unmatchedEverywhere(
-    config.rootPatterns,
+    config.roots.patterns,
     projects.map((answer) => answer.rooted),
   );
   return {
@@ -899,7 +903,7 @@ function readRun<Extra>(
   engine: Engine,
   host: Host,
   scope: Scope,
-  config: Config,
+  config: ResolvedConfig,
   mode: Mode,
   detectors: Detectors,
   extra: <Brand>(
@@ -912,13 +916,13 @@ function readRun<Extra>(
   const targetRoot = scope.target.path;
   const disabled = disabledClasses(config);
   const templates = disabled.has("template-field")
-    ? { delimiters: config.analysis.templateDelimiters, files: [] }
+    ? { delimiters: config.analysis.template_delimiters, files: [] }
     : readTemplates(host, targetRoot, config.analysis);
   const consumers = scope.consumers.map((consumer) => consumer.path);
   const read = readProjects<ReadProject<Extra>>(engine, host, scope, config, (project, opened) => {
     const projectRead = opened.read();
     const resolved = references(project, projectRead.held, targetRoot, {
-      testFiles: config.ts.testFiles,
+      testFiles: config.ts.test_files,
       testFileNames: projectRead.testFileNames,
     });
     const evidence = evidenceRecords(
@@ -929,7 +933,7 @@ function readRun<Extra>(
         templates,
         ts: config.ts,
         consumers,
-        ...(config.analysis.generatedFiles === "include"
+        ...(config.analysis.generated_files === "include"
           ? {}
           : { generated: projectRead.generated }),
       },
@@ -1281,7 +1285,7 @@ export function runSweep(
   engine: Engine,
   host: Host,
   scope: Scope,
-  config: Config,
+  config: ResolvedConfig,
   input: Pick<SweepInput, "marked" | "mode">,
   detectors: Detectors = DETECTORS,
 ): RunSweep {
@@ -1324,7 +1328,7 @@ export function readEmitterRun(
   engine: Engine,
   host: Host,
   scope: Scope,
-  config: Config,
+  config: ResolvedConfig,
   mode: Mode,
   detectors: Detectors,
 ): ReadRun<EmitterExtra> {
@@ -1417,7 +1421,7 @@ function nearestManifestDir(host: Host, root: string, file: string): string {
 export function emitterInputOver(
   host: Host,
   scope: Scope,
-  config: Config,
+  config: ResolvedConfig,
   read: ReadRun<EmitterExtra>,
   input: Pick<SweepInput, "marked" | "mode">,
   selfCheck: SelfCheckFacts,
@@ -1505,7 +1509,7 @@ function readAnalysis(
   engine: Engine,
   host: Host,
   scope: Scope,
-  config: Config,
+  config: ResolvedConfig,
   provenance: Provenance,
   mode: Mode,
   detectors: Detectors,
@@ -1526,7 +1530,7 @@ function readAnalysis(
         configFile: one.configFile,
       })),
       testFileRules: testFileRulesOf(
-        config.ts.testFiles,
+        config.ts.test_files,
         read.projects.flatMap((one) => one.configured.testFiles),
         read.projects.flatMap((one) => one.configured.supportFiles ?? []),
       ),
@@ -1557,7 +1561,7 @@ function readAnalysis(
 function inputsOver(
   host: Host,
   scope: Scope,
-  config: Config,
+  config: ResolvedConfig,
   provenance: Provenance,
   mode: Mode,
   read: ReadRun<EmitterExtra>,
@@ -1571,7 +1575,7 @@ function inputsOver(
   const facts: SelfCheckFacts = {
     refusals: suppressions.refusals,
     unmatchedRoots: unmatchedEverywhere(
-      config.rootPatterns,
+      config.roots.patterns,
       read.projects.map((one) => one.extra.rooted),
     ),
     rootsDocument: documentOf(host, provenance, ROOTS_SETTING, targetRoot),
@@ -1681,7 +1685,7 @@ export function runAnalysis(
   engine: Engine,
   host: Host,
   scope: Scope,
-  config: Config,
+  config: ResolvedConfig,
   provenance: Provenance,
   mode: Mode,
   detectors: Detectors = DETECTORS,
@@ -1737,7 +1741,7 @@ export function runBaselineWrite(
   engine: Engine,
   host: Host,
   scope: Scope,
-  config: Config,
+  config: ResolvedConfig,
   provenance: Provenance,
   mode: Mode,
   reason: string,

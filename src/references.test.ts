@@ -794,8 +794,7 @@ describe("a module URL", () => {
     const root = writeProject(MODULE_URLS);
     roots.push(root);
     const { config } = resolve({
-      repository: MODULE_URLS["deadset.json"] ?? "",
-      repositoryLabel: "deadset.json",
+      repository: { text: MODULE_URLS["deadset.json"] ?? "", label: "deadset.json" },
     });
     return findingsOf(emitterInputOf(root, config))
       .map((finding) => `${finding.code} ${finding.symbol.name}`)

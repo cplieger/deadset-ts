@@ -27,8 +27,7 @@ function importFindings(files: Readonly<Record<string, string>>, document: objec
   const root = writeProject(files);
   try {
     const { config } = resolve({
-      repository: JSON.stringify(document),
-      repositoryLabel: "deadset.json",
+      repository: { text: JSON.stringify(document), label: "deadset.json" },
     });
     return findingsOf(emitterInputOf(root, config))
       .filter((one) => one.symbol.kind === "import")

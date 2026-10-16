@@ -395,8 +395,10 @@ describe("the members a binding pattern reads", () => {
 describe("the unused members of a destructured tree", () => {
   it("are the members no pattern, access or rest copy reads", () => {
     const config = resolve({
-      repository: readFileSync(join(TARGET, "deadset.json"), "utf8"),
-      repositoryLabel: "deadset.json",
+      repository: {
+        text: readFileSync(join(TARGET, "deadset.json"), "utf8"),
+        label: "deadset.json",
+      },
     }).config;
     const findings = findingsOf(emitterInputOf(TARGET, config));
 

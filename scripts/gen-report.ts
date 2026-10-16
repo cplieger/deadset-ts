@@ -17,13 +17,16 @@ type Reader = (path: string) => string;
 /** The generated module's path, relative to the repository root. */
 export const GENERATED_REPORT = "src/contract/report.generated.ts";
 
-type Schema = Readonly<Record<string, unknown>>;
+export type Schema = Readonly<Record<string, unknown>>;
 
 /** The keywords that annotate a schema and that no check reads. */
 const ANNOTATIONS = new Set(["description", "title", "$comment", "examples", "default", "$schema"]);
 
+/** The keywords whose object's member names are names, never keywords. */
+const NAMING = new Set(["properties", "patternProperties", "$defs"]);
+
 /** A schema with every annotation removed, at every depth. */
-function stripped(value: unknown): unknown {
+export function stripped(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(stripped);
   }
@@ -31,10 +34,20 @@ function stripped(value: unknown): unknown {
     return Object.fromEntries(
       Object.entries(value)
         .filter(([key]) => !ANNOTATIONS.has(key) && !key.startsWith("x-"))
-        .map(([key, child]) => [key, stripped(child)]),
+        .map(([key, child]) => [key, NAMING.has(key) ? named(child) : stripped(child)]),
     );
   }
   return value;
+}
+
+/** An object of schemas under their names, each name kept and each schema stripped. */
+function named(value: unknown): unknown {
+  return Object.fromEntries(
+    Object.entries(value as Readonly<Record<string, unknown>>).map(([name, child]) => [
+      name,
+      stripped(child),
+    ]),
+  );
 }
 
 /** A member name spelled as a type name: each word capitalised. */
@@ -58,7 +71,7 @@ const RESERVED = new Set([
   "Error",
 ]);
 
-class Writer {
+export class Writer {
   readonly declarations: string[] = [];
   private readonly named = new Map<string, string>();
   private readonly used = new Set<string>();

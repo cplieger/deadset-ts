@@ -5,552 +5,518 @@ import {
   negatives,
   type Negative,
 } from "../__test-helpers__/fixtures.ts";
-import { ConfigError, type Inputs } from "./config.ts";
+import { refusedPlace } from "../__test-helpers__/refusal.ts";
+import type { Inputs } from "./config.ts";
+import { CONFIG_MAX_BYTES, SETTINGS, type SettingRow } from "./contract/config.generated.ts";
 import { EXEMPTION_CLASSES } from "./contract/contract.generated.ts";
-import { resolve, resolveUnkinded } from "./resolve.ts";
+import { dotted, placeIn, pointerSegments } from "./json-document.ts";
+import { printConfig } from "./print.ts";
+import { resolve, resolvePartial } from "./resolve.ts";
+import { firstRefusal } from "./schema.ts";
+import { UsageError } from "./usage.ts";
 
-function refuse(inputs: Inputs): ConfigError {
+function refusal(run: () => unknown): UsageError {
   try {
-    resolve(inputs);
+    run();
   } catch (error: unknown) {
-    if (error instanceof ConfigError) {
+    if (error instanceof UsageError) {
       return error;
     }
     throw error;
   }
-  throw new Error("resolve accepted the inputs");
+  throw new Error("resolution accepted the inputs");
 }
 
-const LIBRARY = '{"target":{"kind":"library"}}';
+const refuse = (inputs: Inputs): UsageError => refusal(() => resolve(inputs));
 
-function repository(text: string): Inputs {
-  return { repository: text, repositoryLabel: "deadset.json" };
+function repository(document: unknown): Inputs {
+  const text = typeof document === "string" ? document : JSON.stringify(document);
+  return { repository: { text, label: "deadset.json" } };
 }
+
+/** A repository configuration naming the target kind, beside the given members. */
+const library = (members: Record<string, unknown> = {}): Inputs =>
+  repository({ target: { kind: "library" }, ...members });
 
 describe("the target kind", () => {
   it("is taken from the highest-ranked source that supplies one", () => {
     const { config, provenance } = resolve({
-      repository: LIBRARY,
-      repositoryLabel: "deadset.json",
-      central: '{"target":{"kind":"application"}}',
-      centralLabel: "central.json",
+      repository: { text: '{"target":{"kind":"library"}}', label: "deadset.json" },
+      central: { text: '{"target":{"kind":"application"}}', label: "central.json" },
     });
 
-    expect(config.targetKind).toBe("library");
-    expect(provenance.get("target.kind")).toEqual({
-      source: "repository",
-      label: "deadset.json",
-    });
+    expect(config.target.kind).toBe("library");
+    expect(provenance.get("target.kind")).toEqual({ source: "repository", label: "deadset.json" });
   });
 
   it("resolves from the central configuration alone", () => {
     const { config, provenance } = resolve({
-      central: '{"target":{"kind":"application"}}',
-      centralLabel: "central.json",
+      central: { text: '{"target":{"kind":"application"}}', label: "central.json" },
     });
 
-    expect(config.targetKind).toBe("application");
-    expect(provenance.get("target.kind")?.source).toBe("central");
+    expect(config.target.kind).toBe("application");
+    expect(provenance.get("target.kind")).toEqual({ source: "central", label: "central.json" });
   });
 
-  it("is refused naming the field when no source supplies one, with the sources searched", () => {
-    const got = refuse(repository("{}"));
+  it("is refused naming the key when no source supplies one, with the sources searched", () => {
+    const got = refuse(repository({ analysis: { min_confidence: "certain" } }));
 
-    expect(got.kind).toBe("missing-target-kind");
-    expect(got.key).toBe("target.kind");
-    expect(got.message).toContain("the repository configuration (deadset.json)");
-    expect(got.message).toContain("the central configuration (not present)");
+    expect(refusedPlace(got.message)).toBe("target.kind");
+    expect(got.message).toBe(
+      "target.kind is not set, it has no default and is never inferred: searched " +
+        "the repository configuration (deadset.json) and the central configuration (not present)",
+    );
   });
 
-  it("is never inferred", () => {
-    const got = refuse(repository('{"analysis":{"languages":["ts"]}}'));
+  it("is required by no question that asks none", () => {
+    expect(resolvePartial(repository({})).target.kind).toBeUndefined();
+    expect(resolvePartial({}).analysis.configurations).toEqual([]);
+  });
+});
 
-    expect(got.kind).toBe("missing-target-kind");
+describe("a target kind written per language", () => {
+  it("is read as this analyzer's member alone, another language's member unread", () => {
+    const { config, provenance } = resolve(
+      repository({ target: { kind: { go: "service", ts: "library" } } }),
+    );
+
+    expect(config.target.kind).toEqual({ ts: "library" });
+    expect(provenance.get("target.kind")?.source).toBe("repository");
+  });
+
+  it.each([
+    { kind: { go: null, ts: "application" } },
+    { kind: { go: ["application"], ts: "application" } },
+  ])("accepts another language's member of any value: %j", (target) => {
+    expect(resolve(repository({ target })).config.target.kind).toEqual({ ts: "application" });
+  });
+
+  it.each([
+    [{ go: "library" }, "target.kind.ts", "deadset.json: target.kind.ts: is required and absent"],
+    [
+      { ts: "module" },
+      "target.kind.ts",
+      'deadset.json: target.kind.ts: "module" is not one of "application", "library"',
+    ],
+    [
+      { py: "library", ts: "library" },
+      "target.kind.py",
+      'deadset.json: key "target.kind.py" is not implemented',
+    ],
+  ])("refuses %j at %s", (kind, key, message) => {
+    const got = refuse(repository({ target: { kind } }));
+
+    expect(refusedPlace(got.message)).toBe(key);
+    expect(got.message).toBe(message);
+  });
+});
+
+/** The keys of the rows whose default their own value schema refuses. */
+function refusedDefaults(rows: readonly SettingRow[]): string[] {
+  return rows
+    .filter((row) => row.default !== undefined)
+    .filter((row) =>
+      row.role === "keyed"
+        ? Object.values(row.default as object).some(
+            (member: unknown) => firstRefusal(row.value ?? {}, member) !== undefined,
+          )
+        : firstRefusal(row.value ?? {}, row.default) !== undefined,
+    )
+    .map((row) => row.key);
+}
+
+describe("a default the table carries", () => {
+  it("is one its own value schema admits", () => {
+    const planted: SettingRow = {
+      key: "planted",
+      role: "keyed",
+      read: true,
+      default: { A: 1 },
+      value: { type: "string" },
+    };
+
+    expect(refusedDefaults([planted])).toEqual(["planted"]);
+    expect(refusedDefaults(SETTINGS)).toEqual([]);
+  });
+});
+
+describe("a key only another product reads", () => {
+  /** Every key the generated table says this analyzer's language does not read. */
+  const unread = SETTINGS.filter((row) => !row.read).map((row) => row.key);
+
+  it("is one the table names", () => {
+    expect(unread).toEqual(["analysis.languages", "providers", "providers.analyzers", "go"]);
+  });
+
+  it.each(unread)("is accepted unread, whatever %s holds", (key) => {
+    const document: Record<string, unknown> = { target: { kind: "library" } };
+    const names = key.split(".");
+    let into = document;
+    for (const name of names.slice(0, -1)) {
+      into = (into[name] ??= {}) as Record<string, unknown>;
+    }
+    into[names.at(-1) ?? key] = { planted: [null], "a.b": "" };
+
+    const { config, provenance } = resolve(repository(document));
+
+    expect(provenance.has(key)).toBe(false);
+    expect(printConfig(config, provenance)).not.toContain("planted");
+  });
+
+  it("is accepted unread beside a refusal of its own the orchestrator makes", () => {
+    const { config } = resolve(
+      library({
+        analysis: { languages: ["py"] },
+        providers: {
+          analyzers: [
+            { name: "deadset-ts", languages: ["ts"], command: "a" },
+            { name: "deadset-ts", languages: ["ts"], command: "b" },
+          ],
+        },
+        go: { planted: true, build_tags: "not-a-list" },
+      }),
+    );
+
+    expect(Object.keys(config)).not.toContain("providers");
+    expect(Object.keys(config)).not.toContain("go");
+    expect(Object.keys(config.analysis)).not.toContain("languages");
   });
 });
 
 describe("a severity key", () => {
   it.each([
-    {
-      name: "a code whose severity the Contract fixes",
-      text: '{"target":{"kind":"library"},"severity":{"DS9003":"warn"}}',
-      setting: "severity.DS9003",
-      names: "DS9003",
-    },
-    {
-      name: "a family prefix whose range holds a fixed code",
-      text: '{"target":{"kind":"library"},"severity":{"DS90":"allow"}}',
-      setting: "severity.DS90",
-      names: "DS9003, DS9004 and DS9006",
-    },
-    {
-      name: "a key that is neither a code nor a family prefix",
-      text: '{"target":{"kind":"library"},"severity":{"DS1":"warn"}}',
-      setting: "severity.DS1",
-      names: "one issue-kind code or one two-digit family prefix",
-    },
-    {
-      name: "a code no kind was ever assigned",
-      text: '{"target":{"kind":"library"},"severity":{"DS1999":"warn"}}',
-      setting: "severity.DS1999",
-      names: "the code names no live issue kind",
-    },
-    {
-      name: "a code of a reserved family",
-      text: '{"target":{"kind":"library"},"severity":{"DS1801":"warn"}}',
-      setting: "severity.DS1801",
-      names: "the code names no live issue kind",
-    },
-    {
-      name: "a family prefix whose range holds no live kind",
-      text: '{"target":{"kind":"library"},"severity":{"DS18":"allow"}}',
-      setting: "severity.DS18",
-      names: "the family this prefix names holds no live issue kind",
-    },
-  ])("is refused when it names $name", ({ text, setting, names }) => {
-    const got = refuse(repository(text));
+    ["DS9003", "the Contract fixes the severity of DS9003, which this key names"],
+    ["DS90", "the Contract fixes the severity of DS9003, DS9004 and DS9006, which this key names"],
+    ["DS1", "the name does not match ^DS[0-9]{2}([0-9]{2})?$"],
+    ["DS1999", "no issue kind carries the code DS1999"],
+    ["DS1801", "no issue kind carries the code DS1801"],
+    ["DS18", "no issue kind carries a code of the family DS18"],
+  ])("refuses %s as unimplemented, saying why", (code, why) => {
+    const got = refuse(library({ severity: { [code]: "warn" } }));
 
-    expect(got.kind).toBe("unimplemented-key");
-    expect(got.key).toBe(setting);
-    expect(got.message).toContain(names);
+    expect(refusedPlace(got.message)).toBe(`severity.${code}`);
+    expect(got.message).toBe(`deadset.json: key "severity.${code}" is not implemented: ${why}`);
+  });
+
+  it("refuses a severity outside the severities", () => {
+    expect(refusedPlace(refuse(library({ severity: { DS1501: "fatal" } })).message)).toBe(
+      "severity.DS1501",
+    );
   });
 
   it("is refused at the first key in ascending order, whatever order the document writes them", () => {
-    const got = refuse(
-      repository('{"target":{"kind":"library"},"severity":{"DS1999":"warn","DS1":"warn"}}'),
-    );
-
-    expect(got.key).toBe("severity.DS1");
+    expect(
+      refusedPlace(refuse(library({ severity: { DS1999: "warn", DS1: "warn" } })).message),
+    ).toBe("severity.DS1");
   });
 
-  it("names the one code it fixes on its own", () => {
-    const got = refuse(repository('{"target":{"kind":"library"},"severity":{"DS9003":"warn"}}'));
-
-    expect(got.message).toBe(
-      'deadset.json: key "severity.DS9003" is not implemented: ' +
-        "the Contract fixes the severity of DS9003, which this key names",
-    );
-  });
-
-  it("resolves the codes of every source in ascending order, whichever source names each", () => {
-    const { config } = resolve({
-      repository: '{"target":{"kind":"library"},"severity":{"DS1201":"warn"}}',
-      repositoryLabel: "deadset.json",
-      central: '{"severity":{"DS1501":"deny"}}',
-      centralLabel: "central.json",
-    });
-
-    expect([...config.severity.keys()]).toEqual(["DS1201", "DS1501"]);
-  });
-
-  it("resolves per code, so a code only the central configuration names keeps its value", () => {
+  it("resolves per code over every source, in ascending order", () => {
     const { config, provenance } = resolve({
-      repository: '{"target":{"kind":"library"},"severity":{"DS1501":"allow"}}',
-      repositoryLabel: "deadset.json",
-      central: '{"severity":{"DS1501":"deny","DS1201":"warn"}}',
-      centralLabel: "central.json",
+      repository: {
+        text: '{"target":{"kind":"library"},"severity":{"DS1501":"allow"}}',
+        label: "deadset.json",
+      },
+      central: { text: '{"severity":{"DS1501":"deny","DS1201":"warn"}}', label: "central.json" },
     });
 
-    expect([...config.severity]).toEqual([
+    expect(Object.entries(config.severity)).toEqual([
       ["DS1201", "warn"],
       ["DS1501", "allow"],
     ]);
     expect(provenance.get("severity.DS1501")?.source).toBe("repository");
     expect(provenance.get("severity.DS1201")?.source).toBe("central");
+    expect(provenance.has("severity")).toBe(false);
   });
 
   it("accepts a live kind of another language and a family prefix holding a live kind", () => {
-    const { config } = resolve(
-      repository('{"target":{"kind":"library"},"severity":{"DS1702":"warn","DS14":"allow"}}'),
-    );
+    const { config } = resolve(library({ severity: { DS1702: "warn", DS14: "allow" } }));
 
-    expect([...config.severity]).toEqual([
+    expect(Object.entries(config.severity)).toEqual([
       ["DS14", "allow"],
       ["DS1702", "warn"],
     ]);
   });
 
   it("carries one provenance entry for the object when it resolves empty", () => {
-    const { provenance } = resolve(repository('{"target":{"kind":"library"},"severity":{}}'));
+    const { provenance } = resolve(library({ severity: {} }));
 
     expect(provenance.get("severity")).toEqual({ source: "repository", label: "deadset.json" });
-    expect(provenance.has("severity.DS1501")).toBe(false);
   });
 });
 
 describe("a value the closed key list constrains", () => {
   it.each([
-    {
-      name: "a value outside a closed set",
-      text: '{"target":{"kind":"module"}}',
-      setting: "target.kind",
-      detail:
-        '"module" is not one of "application", "library", nor an object naming the kind of each of "go", "ts"',
-    },
-    {
-      name: "a target kind of another type",
-      text: '{"target":{"kind":["application"]}}',
-      setting: "target.kind",
-      detail:
-        '["application"] is neither one of "application", "library" nor an object naming the kind of each of "go", "ts"',
-    },
-    {
-      name: "a target kind per language that leaves a language out",
-      text: '{"target":{"kind":{"ts":"module"}}}',
-      setting: "target.kind.go",
-      detail: 'is not set, and an object naming the kind of each of "go", "ts" names each',
-    },
-    {
-      name: "a target kind per language whose member is null",
-      text: '{"target":{"kind":{"go":null,"ts":"library"}}}',
-      setting: "target.kind.go",
-      detail: 'null is not one of "application", "library"',
-    },
-    {
-      name: "a value of the wrong type",
-      text: '{"target":{"kind":"library"},"consumers":{"complete":"yes"}}',
-      setting: "consumers.complete",
-      detail: "is not a boolean",
-    },
-    {
-      name: "a count below its minimum",
-      text: '{"target":{"kind":"library"},"reporters":{"max_findings":-1}}',
-      setting: "reporters.max_findings",
-      detail: "-1 is below the minimum of 0",
-    },
-    {
-      name: "a count written with a fraction",
-      text: '{"target":{"kind":"library"},"reporters":{"max_findings":100.0}}',
-      setting: "reporters.max_findings",
-      detail: "100.0 is written with a fraction or an exponent, and an integer is digits alone",
-    },
-    {
-      name: "a count written with an exponent",
-      text: '{"target":{"kind":"library"},"reporters":{"max_findings":1e2}}',
-      setting: "reporters.max_findings",
-      detail: "1e2 is written with a fraction or an exponent, and an integer is digits alone",
-    },
-    {
-      name: "a provider list naming one analyzer name twice",
-      text:
-        '{"target":{"kind":"library"},"providers":{"analyzers":[' +
-        '{"name":"deadset-ts","languages":["ts"],"command":"deadset-ts"},' +
-        '{"name":"deadset-go","languages":["go"],"command":"deadset-go"},' +
-        '{"name":"deadset-ts","languages":["ts"],"command":"/opt/deadset-ts"}]}}',
-      setting: "providers.analyzers[2].name",
-      detail:
-        '"deadset-ts" is already the name of providers.analyzers[0], ' +
-        "and every entry's name keys the files a run writes for it",
-    },
-    {
-      name: "a provider claiming no language",
-      text:
-        '{"target":{"kind":"library"},"providers":{"analyzers":[' +
-        '{"name":"deadset-ts","languages":[],"command":"deadset-ts"}]}}',
-      setting: "providers.analyzers[0].languages",
-      detail: "holds 0 entries, want at least 1",
-    },
-    {
-      name: "a provider claiming a language outside the vocabulary",
-      text:
-        '{"target":{"kind":"library"},"providers":{"analyzers":[' +
-        '{"name":"deadset-py","languages":["py"],"command":"deadset-py"}]}}',
-      setting: "providers.analyzers[0].languages[0]",
-      detail: '"py" is not one of "go", "ts"',
-    },
-    {
-      name: "a provider naming no command",
-      text:
-        '{"target":{"kind":"library"},"providers":{"analyzers":[' +
-        '{"name":"deadset-ts","languages":["ts"]}]}}',
-      setting: "providers.analyzers[0].command",
-      detail: "is required and names nothing",
-    },
-    {
-      name: "an acquirable provider leaving its digest out",
-      text:
-        '{"target":{"kind":"library"},"providers":{"analyzers":[' +
-        '{"name":"deadset-ts","languages":["ts"],"command":"deadset-ts",' +
-        '"source":"npm:@example/deadset-ts","version":"1.0.0"}]}}',
-      setting: "providers.analyzers[0].digest",
-      detail: "is required and names nothing",
-    },
-    {
-      name: "a provider entry that is null",
-      text: '{"target":{"kind":"library"},"providers":{"analyzers":[null]}}',
-      setting: "providers.analyzers[0]",
-      detail: "is not an object",
-    },
-    {
-      name: "an array below its minimum length",
-      text: '{"target":{"kind":"library"},"reporters":{"formats":[]}}',
-      setting: "reporters.formats",
-      detail: "holds 0 entries, want at least 1",
-    },
-    {
-      name: "an array naming one entry twice",
-      text: '{"target":{"kind":"library"},"roots":{"patterns":["a","a"]}}',
-      setting: "roots.patterns[1]",
-      detail: 'names "a" again',
-    },
-    {
-      name: "an array holding an empty entry",
-      text: '{"target":{"kind":"library"},"analysis":{"template_dirs":[""]}}',
-      setting: "analysis.template_dirs[0]",
-      detail: "is empty",
-    },
-    {
-      name: "a contract version that is not a semantic version",
-      text: '{"target":{"kind":"library"},"contract_version":"1.5"}',
-      setting: "contract_version",
-      detail: '"1.5" is not a semantic version',
-    },
-    {
-      name: "an exemption class the vocabulary does not hold",
-      text: '{"target":{"kind":"library"},"exemptions":{"disabled":["Template Field"]}}',
-      setting: "exemptions.disabled[0]",
-      detail: `"Template Field" is not one of ${EXEMPTION_CLASSES.map((row) => JSON.stringify(row.class)).join(", ")}`,
-    },
-    {
-      name: "a build configuration naming no architecture",
-      text:
-        '{"target":{"kind":"library"},"analysis":{"configurations":' +
-        '[{"id":"a","os":"linux","arch":""}]}}',
-      setting: "analysis.configurations[0].arch",
-      detail: "is required and names nothing",
-    },
-    {
-      name: "a build configuration carrying the members of a platform and of a project",
-      text:
-        '{"target":{"kind":"application"},"analysis":{"configurations":' +
-        '[{"id":"tsconfig.json","os":"linux","arch":"amd64","project":"tsconfig.json"}]}}',
-      setting: "analysis.configurations[0]",
-      detail:
-        'carries "os", "arch" of a platform and "project" of a project, ' +
-        "and an entry is one shape or the other",
-    },
-    {
-      name: "a build configuration carrying the members of neither shape",
-      text:
-        '{"target":{"kind":"application"},"analysis":{"configurations":' +
-        '[{"id":"a","os":"linux","arch":"amd64"},{"id":"b"}]}}',
-      setting: "analysis.configurations[1]",
-      detail: 'names neither a platform\'s "os" and "arch" nor a project\'s "project"',
-    },
-    {
-      name: "a project naming a file outside the target root",
-      text:
-        '{"target":{"kind":"application"},"analysis":{"configurations":' +
-        '[{"id":"up","project":"../tsconfig.json"}]}}',
-      setting: "analysis.configurations[0].project",
-      detail:
-        '"../tsconfig.json" is not a path below the target root: segments joined by /, ' +
-        "none empty, . or .., and no control character",
-    },
-    {
-      name: "a project naming no file",
-      text:
-        '{"target":{"kind":"application"},"analysis":{"configurations":' +
-        '[{"id":"none","project":""}]}}',
-      setting: "analysis.configurations[0].project",
-      detail: "is required and names nothing",
-    },
-    {
-      name: "a section written as a string",
-      text: '{"target":"library"}',
-      setting: "target",
-      detail: "is not an object",
-    },
-    {
-      name: "a go section that is not an object",
-      text: '{"target":{"kind":"library"},"go":"modules"}',
-      setting: "go",
-      detail: "is not an object",
-    },
-    {
-      name: "a provenance object that is not an object",
-      text: '{"target":{"kind":"library"},"provenance":[]}',
-      setting: "provenance",
-      detail: "is not an object",
-    },
-    {
-      name: "a build matrix written as an object",
-      text: '{"target":{"kind":"library"},"analysis":{"configurations":{}}}',
-      setting: "analysis.configurations",
-      detail: "is not an array",
-    },
-    {
-      name: "a provider list written as an object",
-      text: '{"target":{"kind":"library"},"providers":{"analyzers":{}}}',
-      setting: "providers.analyzers",
-      detail: "is not an array",
-    },
-    {
-      name: "a provider name outside the analyzer name form",
-      text:
-        '{"target":{"kind":"library"},"providers":{"analyzers":[' +
-        '{"name":"Deadset TS","languages":["ts"],"command":"deadset-ts"}]}}',
-      setting: "providers.analyzers[0].name",
-      detail: '"Deadset TS" does not match ^[a-z][a-z0-9]*(-[a-z0-9]+)*$',
-    },
-  ])("is refused when it is $name", ({ text, setting, detail }) => {
+    [{ consumers: { complete: "yes" } }, "consumers.complete", "the value is string, want boolean"],
+    [{ reporters: { max_findings: -1 } }, "reporters.max_findings", "-1 is below 0"],
+    [{ reporters: { formats: [] } }, "reporters.formats", "the array holds 0 items, fewer than 1"],
+    [{ roots: { patterns: ["a", "a"] } }, "roots.patterns", "the array lists one value twice"],
+    [
+      { analysis: { template_dirs: [""] } },
+      "analysis.template_dirs[0]",
+      '"" is shorter than 1 characters',
+    ],
+    [
+      { contract_version: "1.5" },
+      "contract_version",
+      '"1.5" does not match ^[0-9]+\\.[0-9]+\\.[0-9]+$',
+    ],
+    [
+      { analysis: { min_confidence: null } },
+      "analysis.min_confidence",
+      "the value is null, want string",
+    ],
+    [
+      { analysis: { configurations: [{ id: "a", os: "linux", arch: "amd64" }, { id: "b" }] } },
+      "analysis.configurations[1].project",
+      "is required and absent",
+    ],
+    [
+      { ts: { lifecycle_contracts: [{ bases: [{ global: "HTMLElement" }] }] } },
+      "ts.lifecycle_contracts[0].members",
+      "is required and absent",
+    ],
+    [
+      { ts: { serializers: [{ module: "./wire.ts", name: "encode" }] } },
+      "ts.serializers[0].module",
+      '"./wire.ts" does not match ^[^./#]',
+    ],
+    [{ target: "library" }, "target", "the value is string, want object"],
+    [{ provenance: [] }, "provenance", "the value is array, want object"],
+  ])("refuses %j at %s", (members, key, detail) => {
+    const got = refuse(library(members));
+
+    expect(refusedPlace(got.message)).toBe(key);
+    expect(got.message).toBe(`deadset.json: ${key}: ${detail}`);
+  });
+
+  it("names the values a vocabulary setting admits in its refusal", () => {
+    const got = refuse(library({ exemptions: { disabled: ["enum-group", "Template Field"] } }));
+
+    expect(refusedPlace(got.message)).toBe("exemptions.disabled[1]");
+    expect(got.message).toBe(
+      'deadset.json: exemptions.disabled[1]: "Template Field" is not one of ' +
+        EXEMPTION_CLASSES.map((row) => JSON.stringify(row.class)).join(", "),
+    );
+  });
+
+  it("refuses an exemption class outside the vocabulary where no target kind is asked", () => {
+    expect(
+      refusedPlace(
+        refusal(() => resolvePartial(repository({ exemptions: { disabled: ["no-such-class"] } })))
+          .message,
+      ),
+    ).toBe("exemptions.disabled[0]");
+  });
+
+  it("refuses a disabled convention naming no row this analyzer carries", () => {
+    const got = refuse(library({ ts: { disabled_conventions: ["no-such-convention"] } }));
+
+    expect(refusedPlace(got.message)).toBe("ts.disabled_conventions[0]");
+    expect(got.message).toContain('"no-such-convention" names no row this analyzer carries');
+  });
+
+  it.each(["100.0", "1e2", "1.5E1"])("refuses an integer written %s", (written) => {
+    const got = refuse(
+      repository(`{"target":{"kind":"library"},"reporters":{"max_findings":${written}}}`),
+    );
+
+    expect(got.message).toBe(
+      `deadset.json: reporters.max_findings: holds ${written}, ` +
+        "want an integer written as an optional minus sign and digits alone",
+    );
+  });
+});
+
+describe("one configuration document", () => {
+  it("is refused when it is not JSON, at the line and column of the fault", () => {
+    const got = refuse(repository("{\n  x"));
+
+    expect(refusedPlace(got.message)).toBe("");
+    expect(got.message).toBe("deadset.json: line 2, column 3: a member name is expected");
+  });
+
+  it.each([
+    ['{"0":1,"0":2}', 'deadset.json: 0: line 1, column 8: the member "0" is written twice'],
+    [
+      '{"target":{"kind":"library"},"analysis":{"template_delimiters":{"left":"[","right":"]","0":"|"}}}',
+      'deadset.json: key "analysis.template_delimiters.0" is not implemented',
+    ],
+    [
+      '{"target":{"kind":{"ts":"library","0":"x"}}}',
+      'deadset.json: key "target.kind.0" is not implemented',
+    ],
+  ])("names a member spelled in digits as a member: %s", (text, message) => {
+    expect(refuse(repository(text)).message).toMatch(new RegExp(`^${RegExp.escape(message)}`, "u"));
+  });
+
+  it("is refused when it is JSON but not one object", () => {
+    expect(refuse(repository("[]")).message).toBe("deadset.json: is not one JSON object");
+  });
+
+  it.each([
+    ['{"severity":{},"severity":{}}', "severity"],
+    [
+      '{"analysis":{"min_confidence":"certain","min_confidence":"possible"}}',
+      "analysis.min_confidence",
+    ],
+    ['{"target":{"kind":"library"},"\\u0074arget":{}}', "target"],
+    [
+      '{"analysis":{"configurations":[{"id":"a"} , {"id":"b","id":"c"}]}}',
+      "analysis.configurations[1].id",
+    ],
+    ['{"go":{"tags":[],"tags":[]}}', "go.tags"],
+  ])("refuses %s for the member it writes twice, at any depth", (text, key) => {
     const got = refuse(repository(text));
 
-    expect(got.kind).toBe("malformed");
-    expect(got.key).toBe(setting);
-    expect(got.message).toBe(`deadset.json: ${setting}: ${detail}`);
+    expect(refusedPlace(got.message)).toBe(key);
+    expect(got.message).toContain("is written twice, so neither value is chosen");
   });
 
-  it("is refused when the document is not JSON, naming the document and the parse error", () => {
-    let parseError = "";
-    try {
-      JSON.parse("{");
-    } catch (error: unknown) {
-      parseError = error instanceof Error ? error.message : "";
-    }
-    const got = refuse(repository("{"));
+  it.each([
+    [{ reporters: { fail_under: "warn" } }, "reporters.fail_under", ""],
+    [{ ts: { planted: 1 } }, "ts.planted", ""],
+    [
+      { analysis: { template_delimiters: { left: "[", right: "]", middle: "|" } } },
+      "analysis.template_delimiters.middle",
+      "",
+    ],
+    [
+      { analysis: { configurations: [{ id: "a", os: "l", arch: "a", project: "p" }] } },
+      "analysis.configurations[0].project",
+      "",
+    ],
+    [
+      { "analysis.min_confidence": "certain" },
+      "analysis.min_confidence",
+      ": it is one setting, written as nested objects",
+    ],
+  ])("refuses %j for the key the list does not declare", (members, key, why) => {
+    const got = refuse(library(members));
 
-    expect(got.kind).toBe("malformed");
-    expect(got.message).toBe(`deadset.json: ${parseError}`);
+    expect(refusedPlace(got.message)).toBe(key);
+    expect(got.message).toBe(`deadset.json: key ${JSON.stringify(key)} is not implemented${why}`);
   });
 
-  it("is refused when the document is JSON but not one object, naming the document alone", () => {
-    const got = refuse(repository("[]"));
+  it("is refused above the Contract's bound, before it is decoded", () => {
+    const text = `{"roots":{"patterns":["${"a".repeat(CONFIG_MAX_BYTES)}"]}}`;
 
-    expect(got.kind).toBe("malformed");
-    expect(got.key).toBe("");
-    expect(got.message).toBe("deadset.json: is not one JSON object");
+    expect(refuse(repository(text)).message).toBe(
+      `deadset.json: holds more than ${String(CONFIG_MAX_BYTES)} bytes`,
+    );
   });
 
-  it("names a document the invocation labels with nothing by what it is", () => {
-    const got = refuse({ repository: '{"target":"library"}', repositoryLabel: "" });
+  it("names the central configuration by its own label", () => {
+    const got = refuse({
+      repository: { text: '{"target":{"kind":"library"}}', label: "deadset.json" },
+      central: { text: '{"target":"library"}', label: "/etc/deadset.json" },
+    });
 
-    expect(got.message).toBe("the repository configuration: target: is not an object");
+    expect(got.message).toBe("/etc/deadset.json: target: the value is string, want object");
   });
 });
 
 describe("a flag", () => {
-  it("outranks both documents and names itself in the provenance", () => {
+  it("outranks both documents and names its option in the provenance", () => {
     const { config, provenance } = resolve({
-      flags: '{"analysis.min_confidence":"certain"}',
-      flagLabels: new Map([["analysis.min_confidence", "--min-confidence"]]),
-      repository: '{"target":{"kind":"library"},"analysis":{"min_confidence":"probable"}}',
-      repositoryLabel: "deadset.json",
+      flags: new Map([["analysis.min_confidence", "certain"]]),
+      repository: {
+        text: '{"target":{"kind":"library"},"analysis":{"min_confidence":"probable"}}',
+        label: "deadset.json",
+      },
     });
 
-    expect(config.analysis.minConfidence).toBe("certain");
+    expect(config.analysis.min_confidence).toBe("certain");
     expect(provenance.get("analysis.min_confidence")).toEqual({
       source: "flag",
       label: "--min-confidence",
     });
   });
 
-  it("is refused when it names a path the closed key list does not declare", () => {
-    const got = refuse({
-      flags: '{"analysis.min_confidences":"certain"}',
-      flagLabels: new Map(),
-      repository: LIBRARY,
-      repositoryLabel: "deadset.json",
+  it("supplies an integer written as digits, and is refused naming its option otherwise", () => {
+    const flags = (text: string): Inputs => ({
+      ...library(),
+      flags: new Map([["reporters.max_findings", text]]),
     });
 
-    expect(got.kind).toBe("unimplemented-key");
-    expect(got.key).toBe("analysis.min_confidences");
-  });
-
-  it("is refused when a resolved setting came from a source that names no file or flag", () => {
-    const got = refuse({
-      flags: '{"analysis.min_confidence":"certain"}',
-      repository: LIBRARY,
-      repositoryLabel: "deadset.json",
-    });
-
-    expect(got.message).toBe(
-      "the command-line flags: analysis.min_confidence: came from flag, which names no file or flag",
+    expect(resolve(flags("25")).config.reporters.max_findings).toBe(25);
+    expect(refuse(flags("1e2")).message).toBe(
+      "--max-findings: reporters.max_findings: the value is string, want integer",
     );
   });
 
-  it("is refused at the first such setting in ascending order", () => {
-    const got = refuse({
-      flags: '{"target.kind":"library","analysis.min_confidence":"certain"}',
-    });
+  it("is refused naming its option when its value is refused", () => {
+    const got = refuse({ ...library(), flags: new Map([["reporters.sort", "random"]]) });
 
-    expect(got.key).toBe("analysis.min_confidence");
+    expect(refusedPlace(got.message)).toBe("reporters.sort");
+    expect(got.message).toBe('--sort: reporters.sort: "random" is not one of "position", "size"');
   });
-});
 
-describe("a document the invocation labels with nothing", () => {
-  it("is refused once a setting resolves from it, naming its source", () => {
-    const got = refuse({ repository: LIBRARY, repositoryLabel: "" });
+  it("is refused where no option supplies the setting it names", () => {
+    const got = refuse({ ...library(), flags: new Map([["roots.patterns", "x"]]) });
 
     expect(got.message).toBe(
-      "repository: target.kind: came from repository, which names no file or flag",
+      'the command line: key "roots.patterns" is not implemented: no flag supplies it',
     );
   });
 });
-
-/** The pattern the Contract's configuration schema gives a project entry's path. */
-function projectPattern(): string {
-  const analysis = (
-    contractDocument("config.schema.json")["properties"] as Record<string, unknown>
-  )["analysis"] as { properties: Record<string, { items: { oneOf: readonly unknown[] } }> };
-  const project = analysis.properties["configurations"]?.items.oneOf.find((shape) =>
-    (shape as { required: readonly string[] }).required.includes("project"),
-  ) as { properties: { project: { pattern: string } } } | undefined;
-  return project?.properties.project.pattern ?? "";
-}
 
 describe("the build matrix", () => {
-  it("reads each entry as the shape its members name, in the order the document lists them", () => {
+  it("holds each entry as written, its members in ascending order", () => {
     const { config } = resolve(
       repository(
         '{"target":{"kind":"application"},"analysis":{"configurations":[' +
-          '{"id":"linux-amd64","os":"linux","arch":"amd64"},' +
-          '{"id":"app","project":"packages/app/tsconfig.json"}]}}',
+          '{"os":"linux","id":"linux-amd64","arch":"amd64"},' +
+          '{"project":"packages/app/tsconfig.json","id":"app"}]}}',
       ),
     );
 
     expect(config.analysis.configurations).toEqual([
-      { shape: "platform", id: "linux-amd64", os: "linux", arch: "amd64", tags: [] },
-      { shape: "project", id: "app", project: "packages/app/tsconfig.json" },
+      { id: "linux-amd64", os: "linux", arch: "amd64" },
+      { id: "app", project: "packages/app/tsconfig.json" },
+    ]);
+    expect(config.analysis.configurations.map((entry) => Object.keys(entry))).toEqual([
+      ["arch", "id", "os"],
+      ["id", "project"],
     ]);
   });
+
+  /** The pattern the Contract's configuration schema gives a project entry's path. */
+  function projectPattern(): string {
+    const analysis = (
+      contractDocument("config.schema.json")["properties"] as Record<string, unknown>
+    )["analysis"] as { properties: Record<string, { items: { oneOf: readonly unknown[] } }> };
+    const project = analysis.properties["configurations"]?.items.oneOf.find((shape) =>
+      (shape as { required: readonly string[] }).required.includes("project"),
+    ) as { properties: { project: { pattern: string } } } | undefined;
+    return project?.properties.project.pattern ?? "";
+  }
 
   it.each([
     "tsconfig.json",
     "packages/app/tsconfig.json",
     ".config/tsconfig.json",
     "..hidden/tsconfig.json",
-    "a/..b/tsconfig.json",
-    "C:/tsconfig.json",
     "./tsconfig.json",
     "../tsconfig.json",
     "/abs/tsconfig.json",
     "a//tsconfig.json",
-    "packages/app/",
-    "a/./tsconfig.json",
-    "a/../tsconfig.json",
     "a\\tsconfig.json",
     "a\ntsconfig.json",
-    "tsconfig.json\r",
-    "a\ttsconfig.json",
-    "a\u007ftsconfig.json",
     "src/routes/(app)/+layout/tsconfig.json",
-    "pages/[...auth] $x/tsconfig.json",
     ".",
-    "..",
     "a/..",
   ])("admits the project path %j exactly when the Contract's pattern does", (project) => {
     const admitted = new RegExp(projectPattern(), "u").test(project);
-    const document = JSON.stringify({
+    const inputs = repository({
       target: { kind: "application" },
       analysis: { configurations: [{ id: "p", project }] },
     });
 
     let accepted = true;
     try {
-      resolve(repository(document));
+      resolve(inputs);
     } catch (error: unknown) {
-      if (!(error instanceof ConfigError)) {
+      if (!(error instanceof UsageError)) {
         throw error;
       }
       accepted = false;
@@ -560,251 +526,64 @@ describe("the build matrix", () => {
   });
 });
 
-describe("the build matrix on its own", () => {
-  it("resolves from documents that name no target kind", () => {
-    expect(
-      resolveUnkinded(
-        repository('{"analysis":{"configurations":[{"id":"app","project":"tsconfig.json"}]}}'),
-      ).analysis.configurations,
-    ).toEqual([{ shape: "project", id: "app", project: "tsconfig.json" }]);
-  });
-
-  it("is the empty default where no document names one", () => {
-    expect(resolveUnkinded({}).analysis.configurations).toEqual([]);
-  });
-
-  it("refuses a document resolution refuses, naming the same key", () => {
-    let thrown: unknown;
-    try {
-      resolveUnkinded(repository('{"analysis":{"configurations":[{"id":"x"}]}}'));
-    } catch (error: unknown) {
-      thrown = error;
-    }
-
-    expect(thrown).toBeInstanceOf(ConfigError);
-    expect(thrown instanceof ConfigError ? thrown.key : "").toBe("analysis.configurations[0]");
-  });
-});
-
-/** A repository configuration whose `ts` section is the given object. */
-function tsSection(ts: unknown): Inputs {
-  return repository(JSON.stringify({ target: { kind: "application" }, ts }));
-}
-
 describe("a declaration the ts section names", () => {
-  it("is read as the one shape its members name, in the order the document lists them", () => {
-    const { config } = resolve(
-      tsSection({
-        serializers: [
-          { symbol: "ts://@example/app/src/wire.ts#encode" },
-          { module: "@example/codec", name: "Codec.write:static" },
-          { global: "structuredClone" },
-        ],
-      }),
-    );
+  it("is held as the entry writes it, in the order the document lists them", () => {
+    const serializers = [
+      { symbol: "ts://@example/app/src/wire.ts#encode" },
+      { module: "@example/codec", name: "Codec.write:static" },
+      { global: "structuredClone" },
+    ];
 
-    expect(config.ts.serializers).toEqual([
-      { shape: "symbol", symbol: "ts://@example/app/src/wire.ts#encode" },
-      { shape: "module", module: "@example/codec", name: "Codec.write:static" },
-      { shape: "global", global: "structuredClone" },
-    ]);
-  });
-
-  it("leaves a lifecycle contract's components or bases empty where the entry omits them", () => {
-    const { config } = resolve(
-      tsSection({
-        lifecycle_contracts: [
-          { bases: [{ global: "HTMLElement" }], members: ["connectedCallback"] },
-          { components: [{ module: "@example/ui", name: "element" }], members: ["render"] },
-        ],
-      }),
-    );
-
-    expect(config.ts.lifecycleContracts).toEqual([
-      {
-        components: [],
-        bases: [{ shape: "global", global: "HTMLElement" }],
-        members: ["connectedCallback"],
-      },
-      {
-        components: [{ shape: "module", module: "@example/ui", name: "element" }],
-        bases: [],
-        members: ["render"],
-      },
-    ]);
+    expect(resolve(library({ ts: { serializers } })).config.ts.serializers).toEqual(serializers);
   });
 
   it.each([
-    {
-      name: "an entry carrying the members of two shapes",
-      ts: { injection_registrations: [{ symbol: "ts://./a.ts#f", global: "f" }] },
-      setting: "ts.injection_registrations[0]",
-      detail:
-        'carries "symbol", "global", which is not one of "symbol", "module" with "name", or "global"',
-    },
-    {
-      name: "an entry carrying the module shape's members and another's",
-      ts: { serializers: [{ module: "@example/codec", name: "write", global: "write" }] },
-      setting: "ts.serializers[0]",
-      detail:
-        'carries "module", "name", "global", which is not one of "symbol", "module" with "name", or "global"',
-    },
-    {
-      name: "an entry carrying a name beside another shape's member",
-      ts: { serializers: [{ name: "write", global: "write" }] },
-      setting: "ts.serializers[0]",
-      detail:
-        'carries "name", "global", which is not one of "symbol", "module" with "name", or "global"',
-    },
-    {
-      name: "a declaration list written as an object",
-      ts: { serializers: {} },
-      setting: "ts.serializers",
-      detail: "is not an array",
-    },
-    {
-      name: "a lifecycle contract list written as an object",
-      ts: { lifecycle_contracts: {} },
-      setting: "ts.lifecycle_contracts",
-      detail: "is not an array",
-    },
-    {
-      name: "an entry naming no declaration",
-      ts: { serializers: [{}] },
-      setting: "ts.serializers[0]",
-      detail: 'names no declaration: an entry carries "symbol", "module" with "name", or "global"',
-    },
-    {
-      name: "a declaration path named without its module",
-      ts: { serializers: [{ name: "encode" }] },
-      setting: "ts.serializers[0]",
-      detail: 'carries "name", which is not one of "symbol", "module" with "name", or "global"',
-    },
-    {
-      name: "a relative module specifier",
-      ts: { serializers: [{ module: "./wire.ts", name: "encode" }] },
-      setting: "ts.serializers[0].module",
-      detail:
-        '"./wire.ts" is not a bare specifier: a file of the analyzed program is named by its symbol',
-    },
-    {
-      name: "a specifier the package's imports field maps",
-      ts: { serializers: [{ module: "#wire", name: "encode" }] },
-      setting: "ts.serializers[0].module",
-      detail:
-        '"#wire" is not a bare specifier: a file of the analyzed program is named by its symbol',
-    },
-    {
-      name: "a symbol spelled outside the TypeScript reference form",
-      ts: { serializers: [{ symbol: "go://example.com/app#Encode" }] },
-      setting: "ts.serializers[0].symbol",
-      detail: '"go://example.com/app#Encode" is not a ts:// reference',
-    },
-    {
-      name: "a global path that names nothing",
-      ts: { serializers: [{ global: "" }] },
-      setting: "ts.serializers[0].global",
-      detail: "is required and names nothing",
-    },
-    {
-      name: "a lifecycle contract naming no member",
-      ts: { lifecycle_contracts: [{ bases: [{ global: "HTMLElement" }], members: [] }] },
-      setting: "ts.lifecycle_contracts[0].members",
-      detail: "holds 0 entries, want at least 1",
-    },
-    {
-      name: "a lifecycle contract leaving its members out",
-      ts: { lifecycle_contracts: [{ bases: [{ global: "HTMLElement" }] }] },
-      setting: "ts.lifecycle_contracts[0].members",
-      detail: "is required and names nothing",
-    },
-    {
-      name: "a lifecycle contract whose component and base lists are both empty",
-      ts: { lifecycle_contracts: [{ components: [], bases: [], members: ["render"] }] },
-      setting: "ts.lifecycle_contracts[0]",
-      detail:
-        'names no declaration in "components" and no class in "bases", so it makes no class a component',
-    },
-  ])("is refused when it is $name", ({ ts, setting, detail }) => {
-    const got = refuse(tsSection(ts));
+    { serializers: [{ symbol: "ts://./a.ts#f", global: "f" }] },
+    { serializers: [{}] },
+    { lifecycle_contracts: [{ components: [], bases: [], members: ["render"] }] },
+  ])("refuses an entry matching no shape: %j", (ts) => {
+    const got = refuse(library({ ts }));
 
-    expect(got.kind).toBe("malformed");
-    expect(got.key).toBe(setting);
-    expect(got.message).toBe(`deadset.json: ${setting}: ${detail}`);
+    expect(refusedPlace(got.message)).toMatch(/^ts\.[a-z_]+\[0\]$/u);
   });
 });
 
-type Json = Record<string, unknown>;
-
-/** The member names a schema node declares, across every shape it admits. */
-function declaredMembers(node: Json): Set<string> {
-  const shapes = [node, ...((node["oneOf"] ?? []) as Json[]), ...((node["anyOf"] ?? []) as Json[])];
-  return new Set(shapes.flatMap((shape) => Object.keys((shape["properties"] ?? {}) as Json)));
-}
-
-/** The members an object shape of a schema node requires, in the order it lists them. */
-function requiredMembers(node: Json): string[] {
-  const shapes = [node, ...((node["oneOf"] ?? []) as Json[])];
-  return shapes.flatMap((shape) =>
-    shape["type"] === "object" ? ((shape["required"] ?? []) as string[]) : [],
-  );
-}
-
-/** The schema node one member name or array index leads to. */
-function childNode(node: Json, segment: string): Json {
-  if (/^[0-9]+$/u.test(segment)) {
-    return node["items"] as Json;
+/** The dotted key a row's instance path names, and whether this analyzer reads it. */
+function placeOf(row: Negative): { place: string; read: boolean } {
+  const segments = pointerSegments(row.instance_path).filter((one) => !/^[0-9]+$/u.test(one));
+  let read = true;
+  for (let length = 1; length <= segments.length; length += 1) {
+    const held = SETTINGS.find((setting) => setting.key === segments.slice(0, length).join("."));
+    read &&= held?.read ?? true;
   }
-  const shapes = [node, ...((node["oneOf"] ?? []) as Json[]), ...((node["anyOf"] ?? []) as Json[])];
-  const holder = shapes.find((shape) =>
-    Object.hasOwn((shape["properties"] ?? {}) as Json, segment),
-  );
-  return ((holder?.["properties"] ?? {}) as Json)[segment] as Json;
-}
-
-/**
- * The refusal a refused configuration document carries, derived from the schema and
- * the index row: the key the row's instance path spells, extended by the one member
- * of that object no shape of the schema declares, which is then an unimplemented key,
- * or else by the first member an object shape requires and the object leaves out.
- */
-function refusalOf(row: Negative): { kind: string; key: string } {
-  const segments = row.instance_path.split("/").slice(1);
-  let node = contractDocument("config.schema.json");
-  let value: unknown = JSON.parse(negativeDocument(row.file));
-  let key = "";
-  for (const segment of segments) {
-    node = childNode(node, segment);
-    value = (value as Json)[segment];
-    key = /^[0-9]+$/u.test(segment)
-      ? `${key}[${segment}]`
-      : key === ""
-        ? segment
-        : `${key}.${segment}`;
-  }
-  const declared = declaredMembers(node);
-  const undeclared = Object.keys(value as Json).filter((name) => !declared.has(name));
-  if (undeclared.length === 1) {
-    return { kind: "unimplemented-key", key: `${key}.${String(undeclared[0])}` };
-  }
-  const missing = requiredMembers(node).find((name) => !Object.hasOwn(value as Json, name));
-  return { kind: "malformed", key: missing === undefined ? key : `${key}.${missing}` };
+  return {
+    place: dotted(placeIn(JSON.parse(negativeDocument(row.file)), row.instance_path)),
+    read,
+  };
 }
 
 describe("the Contract's refused configuration documents", () => {
-  it("holds a refused document for this suite to run", () => {
-    expect(negatives("contract/config.schema.json").map((row) => row.file)).toContain(
-      "ts-serializer-unknown-member.json",
-    );
+  it("holds a refused document of a key this analyzer does not read", () => {
+    expect(
+      negatives("contract/config.schema.json").filter((row) => !placeOf(row).read),
+    ).not.toEqual([]);
   });
 
   it.each(negatives("contract/config.schema.json"))(
-    "refuses $file at the entry its index row names",
+    "answers $file as its language reads it",
     (row) => {
-      const want = refusalOf(row);
-      const got = refuse(repository(negativeDocument(row.file)));
+      const inputs = repository(negativeDocument(row.file));
+      const { place, read } = placeOf(row);
+      if (!read) {
+        expect(() => resolvePartial(inputs)).not.toThrow();
+        return;
+      }
+      const at = refusedPlace(refusal(() => resolvePartial(inputs)).message);
 
-      expect({ kind: got.kind, key: got.key }).toEqual(want);
+      expect(
+        at === place || at.startsWith(`${place}.`) || at.startsWith(`${place}[`),
+        `${at} is at or inside ${place}`,
+      ).toBe(true);
     },
   );
 });

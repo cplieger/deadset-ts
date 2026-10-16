@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
+import type { Host } from "./host.ts";
 import {
   fixture,
   negativeDocument,
@@ -10,6 +11,7 @@ import {
   scopeExamples,
 } from "../__test-helpers__/fixtures.ts";
 import { readScope, scopeForDir, ScopeError } from "./scope.ts";
+import { UsageError } from "./usage.ts";
 
 const HOST = nodeHost();
 
@@ -44,64 +46,68 @@ describe("a scope document", () => {
     {
       name: "a target that is not an object",
       text: '{"target":"app"}',
-      detail: "target is not an object",
+      detail: "scope.json: target: the value is string, want object",
     },
-    { name: "an undeclared key", text: '{"targets":{}}', detail: "targets is not a declared key" },
-    { name: "no target", text: "{}", detail: "names no target" },
+    {
+      name: "an undeclared key",
+      text: '{"targets":{}}',
+      detail: 'targets: the member "targets" is not one the schema declares',
+    },
+    { name: "no target", text: "{}", detail: 'target: the member "target" is absent' },
     {
       name: "a role its position contradicts",
       text: '{"target":{"role":"consumer","path":"."}}',
-      detail: 'target.role is "consumer", want "target"',
+      detail: 'target.role: "consumer" is not one of "target"',
     },
     {
       name: "a target naming no path",
       text: '{"target":{"role":"target"}}',
-      detail: "target.path names nothing",
+      detail: 'target.path: the member "path" is absent',
     },
     {
       name: "an undeclared key inside a module",
       text: '{"target":{"path":".","kind":"x"}}',
-      detail: "target.kind is not a declared key",
+      detail: 'target.kind: the member "kind" is not one the schema declares',
     },
     {
       name: "a key written twice",
       text: '{"target":{"path":"a"},"target":{"path":"b"}}',
-      detail: 'member "target" is written twice',
+      detail: 'target: line 1, column 24: the member "target" is written twice',
     },
     {
       name: "a key written twice inside a consumer",
       text: '{"target":{"path":"."},"consumers":[{"path":"a","path":"b"}]}',
-      detail: "consumers[0].path",
+      detail: "consumers[0].path: line 1, column 49:",
     },
     {
       name: "a workspace that is null",
       text: '{"target":{"path":"."},"workspace":null}',
-      detail: "scope: workspace is not a string",
+      detail: "workspace: the value is null, want string",
     },
     {
       name: "a workspace naming nothing",
       text: '{"target":{"path":"."},"workspace":""}',
-      detail: "scope: workspace names nothing",
+      detail: 'workspace: "" is shorter than 1 characters',
     },
     {
       name: "a role that is null",
       text: '{"target":{"role":null,"path":"."}}',
-      detail: "target.role is not a string",
+      detail: "target.role: the value is null, want string",
     },
     {
       name: "a consumer list that is null",
       text: '{"target":{"path":"."},"consumers":null}',
-      detail: "consumers is not an array",
+      detail: "consumers: the value is null, want array",
     },
     {
       name: "a consumer that is null",
       text: '{"target":{"path":"."},"consumers":[null]}',
-      detail: "consumers[0] is not an object",
+      detail: "consumers[0]: the value is null, want object",
     },
     {
       name: "a consumer naming an empty id",
       text: '{"target":{"path":"."},"consumers":[{"id":"","path":"c"}]}',
-      detail: "consumers[0].id names nothing",
+      detail: 'consumers[0].id: "" is shorter than 1 characters',
     },
   ])("is refused for $name", ({ text, detail }) => {
     const file = join(scratch(), "scope.json");
@@ -111,17 +117,27 @@ describe("a scope document", () => {
     expect(() => readScope(HOST, file)).toThrow(detail);
   });
 
-  it("is refused when it is not JSON, naming the file and the parse error", () => {
+  it("is refused when it is not JSON, naming the file and where the fault is", () => {
     const file = join(scratch(), "scope.json");
     writeFileSync(file, "{");
-    let parseError = "";
+
+    expect(() => readScope(HOST, file)).toThrow(
+      new ScopeError(`scope: ${file}: line 1, column 2: a member name is expected`),
+    );
+  });
+
+  it("is a usage error, not a scope error, when the file it names cannot be read", () => {
+    const file = join(scratch(), "absent-scope.json");
+    let thrown: unknown;
     try {
-      JSON.parse("{");
+      readScope(HOST, file);
     } catch (error: unknown) {
-      parseError = error instanceof Error ? error.message : "";
+      thrown = error;
     }
 
-    expect(() => readScope(HOST, file)).toThrow(new ScopeError(`scope: ${file}: ${parseError}`));
+    expect(thrown).toBeInstanceOf(UsageError);
+    expect(thrown).not.toBeInstanceOf(ScopeError);
+    expect(thrown instanceof Error ? thrown.message : "").toContain(`scope: ${file}:`);
   });
 
   it("is read at the longest length it admits and refused one character past it", () => {
@@ -139,6 +155,38 @@ describe("a scope document", () => {
       new ScopeError(`scope: ${file} is longer than ${String(longest)} characters`),
     );
   });
+
+  it("is read no further than the bytes that settle its length", () => {
+    const dir = scratch();
+    const file = join(dir, "scope.json");
+    writeFileSync(file, '{"target":{"path":"."}}');
+    const limits: (number | undefined)[] = [];
+    const host: Host = {
+      ...HOST,
+      readFile: (path, limit) => {
+        limits.push(limit);
+        return HOST.readFile(path, limit);
+      },
+    };
+
+    readScope(host, file);
+
+    expect(limits).toEqual([3 * ((1 << 20) + 1)]);
+  });
+
+  it.each(["é", "😀", "\u{FFFD}"])(
+    "is refused past its longest length written in %s, whatever byte the read stops at",
+    (char) => {
+      const dir = scratch();
+      const file = join(dir, "scope.json");
+      const longest = 1 << 20;
+      writeFileSync(file, `{"target":{"path":"."}}${char.repeat(longest)}`);
+
+      expect(() => readScope(HOST, file)).toThrow(
+        new ScopeError(`scope: ${file} is longer than ${String(longest)} characters`),
+      );
+    },
+  );
 
   it("is refused when the target is not a directory", () => {
     expect(() =>

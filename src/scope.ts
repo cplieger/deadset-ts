@@ -1,13 +1,10 @@
-import { ConfigError } from "./config.ts";
+import { SCOPE_SCHEMA } from "./contract/config.generated.ts";
 import type { Host } from "./host.ts";
+import { dotted, locatedFault, placeIn, readStrict, StrictJSONError } from "./json-document.ts";
 import { dirnamePath, isAbsolutePath, joinPath, resolvePath } from "./paths.ts";
-import { checkDocument, type KeyNode } from "./schema.ts";
-import { isRecord } from "./json-document.ts";
 import { message } from "./product.ts";
-
-/** The roles a scope document declares for a module. */
-const ROLE_TARGET = "target";
-const ROLE_CONSUMER = "consumer";
+import { firstRefusal } from "./schema.ts";
+import { UsageError } from "./usage.ts";
 
 /**
  * A scope document above this length is refused rather than decoded. It names one
@@ -16,8 +13,14 @@ const ROLE_CONSUMER = "consumer";
 const MAX_DOCUMENT_LENGTH = 1 << 20;
 
 /**
- * A scope document that cannot be read as one. It ends the run with the failure
- * code: the run could not learn what to analyze, so it produced no answer.
+ * The bytes read of a scope document. A UTF-16 unit decodes from at most three bytes,
+ * so a document past the bound is past it within these.
+ */
+const MAX_DOCUMENT_BYTES = 3 * (MAX_DOCUMENT_LENGTH + 1);
+
+/**
+ * A scope that cannot be read as one. It ends the run with the failure code: the run
+ * could not learn what to analyze, so it produced no answer.
  */
 export class ScopeError extends Error {
   constructor(message: string) {
@@ -27,12 +30,8 @@ export class ScopeError extends Error {
 }
 
 /**
- * One module the run reads: the target or a declared consumer.
- *
- * The role a document declares is not carried here, because the resolved scope
- * holds exactly one target and a list of consumers, so a module's role is where it
- * sits. What a document declares is read and refused where it contradicts that
- * position, which is the only place the declaration can be wrong.
+ * One module the run reads: the target or a declared consumer. The role a document
+ * declares is not carried, because a module's role is where the scope holds it.
  */
 export interface Module {
   /** The package name. A document may state it; otherwise it is empty. */
@@ -47,131 +46,52 @@ export interface Scope {
   readonly consumers: readonly Module[];
 }
 
-const MODULE: KeyNode = {
-  kind: "section",
-  members: { id: { kind: "leaf" }, role: { kind: "leaf" }, path: { kind: "leaf" } },
-};
-
-/** The closed key list of the scope document, compared as bytes. */
-const SCOPE_ROOT: KeyNode = {
-  kind: "section",
-  members: {
-    target: MODULE,
-    workspace: { kind: "leaf" },
-    consumers: { kind: "list", members: MODULE.members ?? {} },
-  },
-};
-
-/**
- * One string member, or undefined where the document omits it. A member the
- * document writes is a string holding at least one character, so `null` and `""`
- * are refused rather than read as absent.
- */
-function stringMember(
-  parent: Record<string, unknown>,
-  name: string,
-  at: string,
-): string | undefined {
-  if (!Object.hasOwn(parent, name)) {
-    return undefined;
-  }
-  const value = parent[name];
-  if (typeof value !== "string") {
-    throw new ScopeError(`scope: ${at === "" ? name : `${at}.${name}`} is not a string`);
-  }
-  if (value === "") {
-    throw new ScopeError(`scope: ${at === "" ? name : `${at}.${name}`} names nothing`);
-  }
-  return value;
+interface DeclaredModule {
+  readonly id?: string;
+  readonly path: string;
 }
 
-function readModule(value: unknown, at: string, role: string, documentDir: string): Module {
-  if (!isRecord(value)) {
-    throw new ScopeError(`scope: ${at} is not an object`);
-  }
-  const declared = stringMember(value, "role", at);
-  if (declared !== undefined && declared !== role) {
-    throw new ScopeError(
-      `scope: ${at}.role is ${JSON.stringify(declared)}, want ${JSON.stringify(role)}`,
-    );
-  }
-  const path = stringMember(value, "path", at);
-  if (path === undefined) {
-    throw new ScopeError(`scope: ${at}.path names nothing`);
-  }
-  return {
-    id: stringMember(value, "id", at) ?? "",
-    path: isAbsolutePath(path) ? path : joinPath(documentDir, path),
-  };
+function refusal(file: string, place: string, reason: string): ScopeError {
+  return new ScopeError(`scope: ${file}: ${place === "" ? "" : `${place}: `}${reason}`);
 }
 
 /**
- * Walks the document's text against the closed key list, refusing a key the list
- * does not declare, compared as bytes, and a key one object writes twice, which a
- * parse cannot report because it keeps the last value.
- */
-function checkKeys(text: string, file: string): void {
-  try {
-    checkDocument(text, SCOPE_ROOT, `scope: ${file}`);
-  } catch (error: unknown) {
-    if (error instanceof ConfigError) {
-      // The configuration's refusal names the nearest configuration key, which a
-      // scope document does not have.
-      throw new ScopeError(
-        error.kind === "unimplemented-key"
-          ? `scope: ${file}: ${error.key} is not a declared key`
-          : error.message,
-      );
-    }
-    throw error;
-  }
-}
-
-/**
- * Decodes the scope document at `file`. Decoding is strict: an undeclared key, a
- * key written twice in one object, and a value of a type the document does not
- * admit, `null` included, are errors, and a relative path inside the document
- * resolves against the document's own directory.
- *
- * The `workspace` key the format declares is checked and carries nothing here: it
- * names the file a Go consumer resolves the target through, and a TypeScript
- * project resolves one through its own compiler configuration.
+ * Decodes the scope document at `file`, held to the Contract's scope schema, a relative
+ * path resolved against the document's own directory. A document that cannot be read is
+ * a usage error, one that is refused a scope error. `workspace` is read by Go consumers
+ * alone: a TypeScript project resolves the target through its own compiler configuration.
  */
 export function readScope(host: Host, file: string): Scope {
   const absolute = resolvePath(host.workingDirectory(), file);
   let text: string;
   try {
-    text = host.readFile(absolute);
+    text = host.readFile(absolute, MAX_DOCUMENT_BYTES);
   } catch (error: unknown) {
-    throw new ScopeError(`scope: ${file}: ${message(error)}`);
+    throw new UsageError(`scope: ${file}: ${message(error)}`);
   }
   if (text.length > MAX_DOCUMENT_LENGTH) {
     throw new ScopeError(`scope: ${file} is longer than ${String(MAX_DOCUMENT_LENGTH)} characters`);
   }
   let value: unknown;
   try {
-    value = JSON.parse(text);
+    value = readStrict(text).value;
   } catch (error: unknown) {
-    throw new ScopeError(`scope: ${file}: ${message(error)}`);
+    if (!(error instanceof StrictJSONError)) {
+      throw error;
+    }
+    throw refusal(file, dotted(error.place), locatedFault(text, error));
   }
-  if (!isRecord(value)) {
-    throw new ScopeError(`scope: ${file} is not one JSON object`);
+  const refused = firstRefusal(SCOPE_SCHEMA, value);
+  if (refused !== undefined) {
+    throw refusal(file, dotted(placeIn(value, refused.pointer, refused.member)), refused.reason);
   }
-  checkKeys(text, file);
-  stringMember(value, "workspace", "");
+  const declared = value as { target: DeclaredModule; consumers?: readonly DeclaredModule[] };
   const documentDir = dirnamePath(absolute);
-  if (!Object.hasOwn(value, "target")) {
-    throw new ScopeError(`scope: ${file} names no target`);
-  }
-  const target = readModule(value["target"], "target", ROLE_TARGET, documentDir);
-  const listed = Object.hasOwn(value, "consumers") ? value["consumers"] : [];
-  if (!Array.isArray(listed)) {
-    throw new ScopeError(`scope: ${file}: consumers is not an array`);
-  }
-  const consumers = (listed as unknown[]).map((entry, index) =>
-    readModule(entry, `consumers[${String(index)}]`, ROLE_CONSUMER, documentDir),
-  );
-  return { target, consumers };
+  const moduleOf = (module: DeclaredModule): Module => ({
+    id: module.id ?? "",
+    path: isAbsolutePath(module.path) ? module.path : joinPath(documentDir, module.path),
+  });
+  return { target: moduleOf(declared.target), consumers: (declared.consumers ?? []).map(moduleOf) };
 }
 
 /** The single-package scope one directory is, when no scope document is given. */

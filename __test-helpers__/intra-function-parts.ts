@@ -36,12 +36,14 @@ export function partsOf(main: readonly string[], options: PartsOptions = {}): st
   });
   try {
     const { config } = resolve({
-      repository: JSON.stringify({
-        target: { kind: "application" },
-        ts: { entry_files: ["src/main.ts"] },
-        ...options.repository,
-      }),
-      repositoryLabel: "deadset.json",
+      repository: {
+        text: JSON.stringify({
+          target: { kind: "application" },
+          ts: { entry_files: ["src/main.ts"] },
+          ...options.repository,
+        }),
+        label: "deadset.json",
+      },
     });
     return findingsOf(
       emitterInputOf(root, config, options.engine === undefined ? {} : { engine: options.engine }),

@@ -9,8 +9,7 @@ describe("decidedFindings", () => {
   /** A library with no consumer declared, decided under the given configuration document. */
   const decide = (document: unknown) => {
     const { config } = resolve({
-      repository: JSON.stringify(document),
-      repositoryLabel: "deadset.json",
+      repository: { text: JSON.stringify(document), label: "deadset.json" },
     });
     return decidedFindings(
       emitterInputOf(fixture("projects", "unused-declarations-library"), config),
@@ -31,8 +30,7 @@ describe("decidedFindings", () => {
 
   it("counts a withheld finding an edge side names, which the lowest minimum holds pending", () => {
     const { config } = resolve({
-      repository: JSON.stringify({ target: { kind: "library" } }),
-      repositoryLabel: "deadset.json",
+      repository: { text: JSON.stringify({ target: { kind: "library" } }), label: "deadset.json" },
     });
     const input = emitterInputOf(fixture("projects", "unused-declarations-library"), config);
     const symbol = "ts://@example/unused-declarations-library/src/index.ts#makePublished";
@@ -50,8 +48,10 @@ describe("the findings a gap or a component file's markup withholds", () => {
   /** The fixture of two packages of one name, swept as an application. */
   const twin = () => {
     const { config } = resolve({
-      repository: JSON.stringify({ target: { kind: "application" } }),
-      repositoryLabel: "deadset.json",
+      repository: {
+        text: JSON.stringify({ target: { kind: "application" } }),
+        label: "deadset.json",
+      },
     });
     return emitterInputOf(fixture("projects", "shared-package-name"), config);
   };

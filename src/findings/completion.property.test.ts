@@ -22,8 +22,7 @@ const SWEPT = {
 
 function configOf(kind: "application" | "library"): EmitterInput["config"] {
   return resolve({
-    repository: JSON.stringify({ target: { kind } }),
-    repositoryLabel: "deadset.json",
+    repository: { text: JSON.stringify({ target: { kind } }), label: "deadset.json" },
   }).config;
 }
 

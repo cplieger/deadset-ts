@@ -126,7 +126,7 @@ function reported(project: Readonly<Record<string, string>> = PROJECT): string[]
   const root = writeProject(project);
   roots.push(root);
   const repository = JSON.stringify({ target: { kind: "application" } });
-  const { config } = resolve({ repository, repositoryLabel: "deadset.json" });
+  const { config } = resolve({ repository: { text: repository, label: "deadset.json" } });
   return findingsOf(emitterInputOf(root, config))
     .map((finding) => `${finding.code} ${finding.symbol.name}`)
     .sort();

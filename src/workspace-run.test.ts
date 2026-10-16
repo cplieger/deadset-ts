@@ -83,8 +83,10 @@ function analyze(
   engine: Engine = componentEngine(),
 ): RunAnalysis {
   const { config, provenance } = resolve({
-    repository: JSON.stringify({ target: { kind: "application" }, ...repository }),
-    repositoryLabel: "deadset.json",
+    repository: {
+      text: JSON.stringify({ target: { kind: "application" }, ...repository }),
+      label: "deadset.json",
+    },
   });
   const host = nodeHost();
   return runAnalysis(engine, host, scopeForDir(host, target), config, provenance, {

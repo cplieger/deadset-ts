@@ -14,7 +14,7 @@ import { basename, dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { emitterInputOf, findingsOf } from "../../__test-helpers__/emitter-input.ts";
 import { contractDocument, fixture, ROOT } from "../../__test-helpers__/fixtures.ts";
-import { schemaRefusals } from "../report-schema.ts";
+import { schemaRefusals } from "../schema.ts";
 import type { CompletedFinding } from "../finding.ts";
 import { wireFinding } from "../report.ts";
 import { resolve } from "../resolve.ts";
@@ -124,7 +124,7 @@ describe("every finding the table reports", () => {
       ? readFileSync(path, "utf8")
       : JSON.stringify({ target: { kind: "application" } });
     const findings: readonly CompletedFinding[] = findingsOf(
-      emitterInputOf(root, resolve({ repository: document, repositoryLabel: path }).config),
+      emitterInputOf(root, resolve({ repository: { text: document, label: path } }).config),
     );
     return findings.flatMap((finding) =>
       validate(wireFinding(finding)).map(

@@ -79,7 +79,7 @@ The report names the target relative to the directory the run is invoked from. R
 | --- | --- |
 | 0 | No finding at or above `reporters.fail_on`, no stale suppression and no pending finding. Under `--exit-code=off`, every run with a verdict exits 0 |
 | 1 | The report holds a finding at or above `reporters.fail_on`, which is `deny` by default, or a stale suppression |
-| 2 | A usage error: a malformed invocation, a refused setting, no `target.kind`, an unreadable or unparsable template, or a request to edit source |
+| 2 | A usage error: a malformed invocation, a refused setting, no `target.kind`, a configuration file or scope document the invocation names that cannot be read, an unreadable or unparsable template, or a request to edit source |
 | 3 | A failure: a named project or a consumer that does not load, a setup failure, a target the report cannot name, or an unwritable rendering |
 | 4 | The report holds a pending finding, one a declared cross-language edge holds until a merge resolves it |
 

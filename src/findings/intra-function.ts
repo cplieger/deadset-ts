@@ -127,7 +127,7 @@ export const intraFunction: Emitter = (input) => {
     }),
   );
   const { declared, loaded } = input.boundary.consumers;
-  const closed = input.config.consumersComplete && declared.every((id) => loaded.includes(id));
+  const closed = input.config.consumers.complete && declared.every((id) => loaded.includes(id));
   const published = (id: string): boolean => {
     const symbol = byId.get(id);
     return (

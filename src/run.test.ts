@@ -8,7 +8,6 @@ import { nodeHost } from "../bin/node-host.ts";
 import { fixture, ROOT } from "../__test-helpers__/fixtures.ts";
 import type { Host } from "./host.ts";
 import { run, SETTING_OPTIONS, type Writer } from "./run.ts";
-import { declaresSetting } from "./schema.ts";
 import { openEngine, type Engine, type EngineOptions } from "./session.ts";
 
 class MemoryWriter implements Writer {
@@ -144,10 +143,14 @@ describe("the report-only guard", () => {
 });
 
 describe("the setting options", () => {
-  it("names a setting the Contract's key list declares for every option", () => {
-    const undeclared = [...SETTING_OPTIONS].filter(([, path]) => !declaresSetting(path));
-
-    expect(undeclared).toEqual([]);
+  it("are the options the Contract's command line gives this analyzer for a setting", () => {
+    expect([...SETTING_OPTIONS].sort()).toEqual([
+      ["cascade", "reporters.cascade"],
+      ["fail-on", "reporters.fail_on"],
+      ["max-findings", "reporters.max_findings"],
+      ["min-confidence", "analysis.min_confidence"],
+      ["sort", "reporters.sort"],
+    ]);
   });
 });
 
@@ -213,7 +216,7 @@ describe("print-config", () => {
     expect(got.code, got.err).toBe(2);
     expect(got.out).toBe("");
     expect(got.err).toContain("ts.disabled_conventions");
-    expect(got.err).toContain('"next-app-router" names no convention row');
+    expect(got.err).toContain('"next-app-router" names no row this analyzer carries');
   });
 
   it("names an unknown option and exits 2", () => {
@@ -263,6 +266,112 @@ describe("print-config", () => {
 
     expect(got.code, got.err).toBe(0);
     expect(JSON.parse(got.out)).toMatchObject({ target: { kind: "application" } });
+  });
+});
+
+/** A one-project tree of this test's own whose repository configuration is `document`. */
+function configuredTree(document: Readonly<Record<string, unknown>>): string {
+  const root = mkdtempSync(join(tmpdir(), "deadset-ts-configured-"));
+  onTestFinished(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+  writeFileSync(join(root, "deadset.json"), `${JSON.stringify(document)}\n`);
+  writeFileSync(join(root, "tsconfig.json"), '{"include":["main.ts"]}\n');
+  writeFileSync(join(root, "main.ts"), "export const main: number = 1;\n");
+  return root;
+}
+
+describe("a key only another product reads", () => {
+  const OTHERS = {
+    target: { kind: { go: "service", ts: "application" } },
+    analysis: { languages: ["py"] },
+    providers: {
+      analyzers: [
+        { name: "deadset-ts", languages: ["ts"], command: "a" },
+        { name: "deadset-ts", languages: ["ts"], command: "b" },
+      ],
+    },
+    go: { planted: null, build_tags: "not-a-list" },
+  };
+
+  it.each(["print-config", "print-projects", "print-roots"])("is accepted unread by %s", (verb) => {
+    const got = invoke([verb, `--target=${configuredTree(OTHERS)}`]);
+
+    expect(got.code, got.err).toBe(0);
+  });
+
+  it("is left out of the printed configuration, a per-language kind printed as its own member", () => {
+    const got = invoke(["print-config", `--target=${configuredTree(OTHERS)}`]);
+    const printed = JSON.parse(got.out) as {
+      target: unknown;
+      analysis: Record<string, unknown>;
+      provenance: Record<string, string>;
+    };
+
+    expect(printed.target).toEqual({ kind: { ts: "application" } });
+    expect(Object.keys(printed)).not.toContain("providers");
+    expect(Object.keys(printed)).not.toContain("go");
+    expect(Object.keys(printed.analysis)).not.toContain("languages");
+    expect(Object.keys(printed.provenance).filter((key) => key.startsWith("providers"))).toEqual(
+      [],
+    );
+  });
+});
+
+describe("a configuration document above the Contract's bound", () => {
+  it("is refused with the usage code before it is decoded", () => {
+    const got = invoke([
+      "print-config",
+      `--target=${configuredTree({ target: { kind: "library" }, roots: { patterns: ["a".repeat(1 << 20)] } })}`,
+    ]);
+
+    expect(got.code).toBe(2);
+    expect(got.err).toContain("holds more than 1048576 bytes");
+  });
+
+  it("is read no further than one byte past the bound, from every source", () => {
+    const root = configuredTree({ target: { kind: "library" } });
+    const document = join(root, "deadset.json");
+    const limits: (number | undefined)[] = [];
+    const host: Host = {
+      ...nodeHost(),
+      readFile: (path, limit) => {
+        if (path === document) {
+          limits.push(limit);
+        }
+        return nodeHost().readFile(path, limit);
+      },
+    };
+
+    expect(invoke(["print-config", `--target=${root}`], host).code).toBe(0);
+    expect(invoke(["print-config", `--config=${document}`], host).code).toBe(0);
+    expect(invoke(["print-config", `--target=${root}`, `--central=${document}`], host).code).toBe(
+      0,
+    );
+    expect(limits).toEqual([1048577, 1048577, 1048577, 1048577]);
+  });
+
+  /** A document of exactly `bytes` bytes, its padding two-byte characters. */
+  function sized(bytes: number): string {
+    const [head, tail] = ['{"target":{"kind":"library"},"roots":{"patterns":["', '"]}}'];
+    const fill = bytes - Buffer.byteLength(head + tail);
+    return head + "é".repeat(Math.floor(fill / 2)) + "a".repeat(fill % 2) + tail;
+  }
+
+  it.each([
+    [1048576, 0],
+    [1048577, 2],
+    [1048578, 2],
+  ])("of %i bytes of two-byte characters exits %i", (bytes, code) => {
+    const root = configuredTree({});
+    writeFileSync(join(root, "deadset.json"), sized(bytes));
+    const got = invoke(["print-config", `--target=${root}`]);
+
+    expect(Buffer.byteLength(sized(bytes))).toBe(bytes);
+    expect(got.code, got.err).toBe(code);
+    expect(got.err.split("\n")[0]).toBe(
+      code === 0 ? "" : `deadset-ts: ${join(root, "deadset.json")}: holds more than 1048576 bytes`,
+    );
   });
 });
 
@@ -775,11 +884,12 @@ describe("print-projects", () => {
     expect(got.out).toBe("tsconfig.test.json\n");
   });
 
-  it("exits 3 naming a scope document it cannot read", () => {
+  it("exits 2 naming a scope document the invocation names and it cannot read", () => {
     const got = invoke(["print-projects", `--scope=${fixture("projects", "no-such-scope.json")}`]);
 
-    expect(got.code).toBe(3);
+    expect(got.code).toBe(2);
     expect(got.err).toContain("no-such-scope.json");
+    expect(got.err).toContain(USAGE);
   });
 });
 

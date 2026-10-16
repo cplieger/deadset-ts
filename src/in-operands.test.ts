@@ -19,9 +19,10 @@ function findings(files: Readonly<Record<string, string>>): string[] {
   });
   roots.push(root);
   const { config } = resolve({
-    repository:
-      '{ "target": { "kind": "application" }, "analysis": { "min_confidence": "possible" } }',
-    repositoryLabel: "deadset.json",
+    repository: {
+      text: '{ "target": { "kind": "application" }, "analysis": { "min_confidence": "possible" } }',
+      label: "deadset.json",
+    },
   });
   return findingsOf(emitterInputOf(root, config)).map(
     ({ code, symbol, position, confidence }) =>

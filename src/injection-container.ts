@@ -53,7 +53,7 @@ function isInjected(node: Node): boolean {
 /** The classes of the target a call whose callee an entry names passes, with that call's entry. */
 function registrations<Brand>(input: DetectorInput<Brand>): readonly Registration[] {
   const { project, held } = input;
-  const resolved = resolveEntries(project, held, input.ts.injectionRegistrations);
+  const resolved = resolveEntries(project, held, input.ts.injection_registrations);
   if (!resolved.some(namesADeclaration)) {
     return [];
   }

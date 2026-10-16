@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { contractDocument } from "../__test-helpers__/fixtures.ts";
-import { schemaRefusals } from "./report-schema.ts";
+import { schemaRefusals } from "./schema.ts";
 import type { CompletedFinding } from "./finding.ts";
 import type { PassResult } from "./findings-pass.ts";
 import type { StaleSuppression } from "./findings/self-check.ts";

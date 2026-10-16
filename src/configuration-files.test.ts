@@ -23,7 +23,7 @@ const TARGET = fixture("projects", "configuration-files");
 /** The fixture's configuration, resolved from its own document. */
 function configOf(target: string): ReturnType<typeof resolve> {
   const document = join(target, "deadset.json");
-  return resolve({ repository: readFileSync(document, "utf8"), repositoryLabel: document });
+  return resolve({ repository: { text: readFileSync(document, "utf8"), label: document } });
 }
 
 /** The configuration of a written application, which applies no configuration rule of its own. */
@@ -35,7 +35,7 @@ function fileRoots(target: string, repository?: string): string[] {
   const { config, provenance } =
     repository === undefined
       ? configOf(target)
-      : resolve({ repository, repositoryLabel: "deadset.json" });
+      : resolve({ repository: { text: repository, label: "deadset.json" } });
   const answer = runRoots(
     openEngine({ collectTiming: false }),
     host,
@@ -54,7 +54,7 @@ function unusedOf(target: string, repository?: string): string[] {
   const { config } =
     repository === undefined
       ? configOf(target)
-      : resolve({ repository, repositoryLabel: "deadset.json" });
+      : resolve({ repository: { text: repository, label: "deadset.json" } });
   return emit === undefined
     ? []
     : emit(emitterInputOf(target, config)).map((finding) => finding.symbol.name);
@@ -210,8 +210,7 @@ describe("a configuration file no program holds", () => {
     });
     try {
       const { config } = resolve({
-        repository: '{ "target": { "kind": "application" } }',
-        repositoryLabel: "deadset.json",
+        repository: { text: '{ "target": { "kind": "application" } }', label: "deadset.json" },
       });
       const emit = EMITTERS.get("dependencies-and-module-machinery");
       const unused =
@@ -240,8 +239,7 @@ describe("a configuration file no program holds", () => {
     });
     try {
       const { config } = resolve({
-        repository: '{ "target": { "kind": "application" } }',
-        repositoryLabel: "deadset.json",
+        repository: { text: '{ "target": { "kind": "application" } }', label: "deadset.json" },
       });
       const emit = EMITTERS.get("dependencies-and-module-machinery");
       const unused =
@@ -368,8 +366,7 @@ describe("a configuration file a script names by its configuration flag", () => 
     const root = writeProject(files);
     try {
       const { config } = resolve({
-        repository: '{ "target": { "kind": "application" } }',
-        repositoryLabel: "deadset.json",
+        repository: { text: '{ "target": { "kind": "application" } }', label: "deadset.json" },
       });
       const emit = EMITTERS.get("dependencies-and-module-machinery");
       return emit === undefined

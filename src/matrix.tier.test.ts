@@ -38,7 +38,7 @@ function loaderFindings(importing: string): string[] {
     target: { kind: "application" },
     analysis: { min_confidence: "possible" },
   });
-  const { config } = resolve({ repository, repositoryLabel: "deadset.json" });
+  const { config } = resolve({ repository: { text: repository, label: "deadset.json" } });
   return findingsOf(emitterInputOf(root, config))
     .filter((finding) => finding.position.path === "support/loader.ts")
     .map(

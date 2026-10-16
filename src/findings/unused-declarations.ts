@@ -218,7 +218,7 @@ export const unusedDeclarations: Emitter = (input) => [
  */
 function unusedImports(input: EmitterInput): Finding[] {
   const generated =
-    input.config.analysis.generatedFiles === "include" ? undefined : input.files.generated;
+    input.config.analysis.generated_files === "include" ? undefined : input.files.generated;
   return input.intraFunction.imports.flatMap((binding) =>
     binding.used || generated?.has(binding.position.path) === true
       ? []

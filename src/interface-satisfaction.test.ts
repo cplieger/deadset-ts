@@ -5,7 +5,7 @@ import { nodeHost } from "../bin/node-host.ts";
 import { fixture } from "../__test-helpers__/fixtures.ts";
 import { writeProject } from "../__test-helpers__/projects.ts";
 import { runSweep, type RunSweep } from "./analysis.ts";
-import { defaultConfig } from "./config.ts";
+import { resolvePartial } from "./resolve.ts";
 import { discoverProjects } from "./discover.ts";
 import type { Evidence } from "./exempt.ts";
 import { interfaceSatisfaction } from "./interface-satisfaction.ts";
@@ -21,8 +21,7 @@ const TARGET = fixture("projects", "interface-satisfaction");
 function sweepFixture(): RunSweep {
   const document = join(TARGET, "deadset.json");
   const { config } = resolve({
-    repository: readFileSync(document, "utf8"),
-    repositoryLabel: document,
+    repository: { text: readFileSync(document, "utf8"), label: document },
   });
   const host = nodeHost();
   return runSweep(openEngine({ collectTiming: true }), host, scopeForDir(host, TARGET), config, {
@@ -49,11 +48,13 @@ function sweepWritten(files: Readonly<Record<string, string>>): Swept {
   });
   try {
     const { config } = resolve({
-      repository: JSON.stringify({
-        target: { kind: "application" },
-        ts: { entry_files: ["main.ts"] },
-      }),
-      repositoryLabel: "deadset.json",
+      repository: {
+        text: JSON.stringify({
+          target: { kind: "application" },
+          ts: { entry_files: ["main.ts"] },
+        }),
+        label: "deadset.json",
+      },
     });
     const host = nodeHost();
     const swept = runSweep(
@@ -123,7 +124,7 @@ function measure(root = TARGET): Measured {
       held,
       targetRoot: root,
       templates: { delimiters: { left: "{{", right: "}}" }, files: [] },
-      ts: defaultConfig().ts,
+      ts: resolvePartial({}).ts,
       consumers: [],
     });
     return { held, evidence, requests: engine.getTimingInfo().totals.requestCount - before };

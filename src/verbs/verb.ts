@@ -1,4 +1,4 @@
-import type { Config, Inputs } from "../config.ts";
+import type { Inputs, PartialConfig } from "../config.ts";
 import type { Host } from "../host.ts";
 import type { Writer } from "../run.ts";
 import type { Scope } from "../scope.ts";
@@ -21,7 +21,7 @@ interface Invocation {
    * Opens the compiler client for a run under `config`. A client the verb opened is
    * closed if the verb throws.
    */
-  readonly openClient: (config: Config) => Engine;
+  readonly openClient: (config: PartialConfig) => Engine;
   /** The arguments after the verb's name, as written. */
   readonly args: readonly string[];
   /** The last value one of the verb's own options was given, undefined where none was. */

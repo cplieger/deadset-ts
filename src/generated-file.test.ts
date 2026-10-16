@@ -31,7 +31,7 @@ function analyzed(generatedFiles: "exclude" | "include"): ReturnType<typeof emit
     target: { kind: "application" },
     analysis: { generated_files: generatedFiles },
   });
-  const { config } = resolve({ repository, repositoryLabel: "deadset.json" });
+  const { config } = resolve({ repository: { text: repository, label: "deadset.json" } });
   return emitterInputOf(root, config);
 }
 
@@ -80,11 +80,13 @@ describe("an export a generated file references only inside itself", () => {
     });
     roots.push(root);
     const { config } = resolve({
-      repository: JSON.stringify({
-        target: { kind: "application" },
-        analysis: { generated_files: generatedFiles },
-      }),
-      repositoryLabel: "deadset.json",
+      repository: {
+        text: JSON.stringify({
+          target: { kind: "application" },
+          analysis: { generated_files: generatedFiles },
+        }),
+        label: "deadset.json",
+      },
     });
     return findingsOf(emitterInputOf(root, config))
       .filter((finding) => finding.code === "DS1503")
@@ -170,8 +172,10 @@ describe("a file whose leading comments mark it generated", () => {
     });
     roots.push(root);
     const { config } = resolve({
-      repository: JSON.stringify({ target: { kind: "application" } }),
-      repositoryLabel: "deadset.json",
+      repository: {
+        text: JSON.stringify({ target: { kind: "application" } }),
+        label: "deadset.json",
+      },
     });
     const input = emitterInputOf(root, config);
 
@@ -195,8 +199,10 @@ describe("a file whose leading comments mark it generated", () => {
     });
     roots.push(root);
     const { config } = resolve({
-      repository: JSON.stringify({ target: { kind: "application" } }),
-      repositoryLabel: "deadset.json",
+      repository: {
+        text: JSON.stringify({ target: { kind: "application" } }),
+        label: "deadset.json",
+      },
     });
 
     expect(

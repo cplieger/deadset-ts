@@ -159,8 +159,7 @@ function projectOf(declarations: readonly Drawn[]): Record<string, string> {
 describe("an unreferenced declaration with no exemption", () => {
   it("is reported, under the code its place selects", () => {
     const { config } = resolve({
-      repository: '{ "target": { "kind": "application" } }',
-      repositoryLabel: "deadset.json",
+      repository: { text: '{ "target": { "kind": "application" } }', label: "deadset.json" },
     });
     // One client serves every draw, each in its own snapshot: a run closes the client it
     // is handed, so the run is handed one whose close is left to this test.

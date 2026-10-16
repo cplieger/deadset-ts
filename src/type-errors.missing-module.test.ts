@@ -22,8 +22,10 @@ function setupFailures(files: Readonly<Record<string, string>>, target = "."): r
   });
   const host = nodeHost();
   const { config } = resolve({
-    repository: JSON.stringify({ target: { kind: "application" } }),
-    repositoryLabel: "deadset.json",
+    repository: {
+      text: JSON.stringify({ target: { kind: "application" } }),
+      label: "deadset.json",
+    },
   });
   try {
     runProjects(

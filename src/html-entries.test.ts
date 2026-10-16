@@ -59,7 +59,7 @@ function neverImported(): string[] {
   const root = writeProject(PROJECT);
   roots.push(root);
   const repository = JSON.stringify({ target: { kind: "application" } });
-  const { config } = resolve({ repository, repositoryLabel: "deadset.json" });
+  const { config } = resolve({ repository: { text: repository, label: "deadset.json" } });
   return findingsOf(emitterInputOf(root, config))
     .filter((finding) => finding.code === "DS1602")
     .map((finding) => finding.position.path)
@@ -110,7 +110,7 @@ describe("a page that loads a configuration's compiled output", () => {
     });
     roots.push(root);
     const repository = JSON.stringify({ target: { kind: "application" } });
-    const { config } = resolve({ repository, repositoryLabel: "deadset.json" });
+    const { config } = resolve({ repository: { text: repository, label: "deadset.json" } });
 
     expect(
       findingsOf(emitterInputOf(root, config))

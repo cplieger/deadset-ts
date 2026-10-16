@@ -589,7 +589,7 @@ export const REPORT_SCHEMAS = {
           additionalProperties: false,
           required: ["edge", "side", "symbol", "state"],
           properties: {
-            edge: { type: "string", pattern: "^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$" },
+            edge: { $ref: "finding.schema.json#/$defs/edge_identifier" },
             side: { type: "string", enum: ["provides", "used_by"] },
             symbol: { type: "string" },
             state: { type: "string", enum: ["live", "dead", "absent"] },
@@ -969,7 +969,7 @@ export const REPORT_SCHEMAS = {
             uniqueItems: true,
             items: { type: "string", minLength: 1 },
           },
-          edge: { type: "string", pattern: "^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$" },
+          edge: { $ref: "#/$defs/edge_identifier" },
           sides: {
             type: "array",
             minItems: 1,
@@ -1125,6 +1125,7 @@ export const REPORT_SCHEMAS = {
       },
     ],
     $defs: {
+      edge_identifier: { type: "string", pattern: "^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$" },
       position: {
         type: "object",
         additionalProperties: false,

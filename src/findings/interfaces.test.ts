@@ -29,7 +29,7 @@ interface Reported {
 /** The fixture's emitter input, swept for production under its own configuration. */
 function emitterInput(): EmitterInput {
   const path = join(TARGET, "deadset.json");
-  const { config } = resolve({ repository: readFileSync(path, "utf8"), repositoryLabel: path });
+  const { config } = resolve({ repository: { text: readFileSync(path, "utf8"), label: path } });
   return emitterInputOf(TARGET, config);
 }
 
@@ -176,8 +176,7 @@ function reportedOver(main: string, panics = false): string[] {
   };
   try {
     const { config } = resolve({
-      repository: '{ "target": { "kind": "application" } }',
-      repositoryLabel: "deadset.json",
+      repository: { text: '{ "target": { "kind": "application" } }', label: "deadset.json" },
     });
     return lines(family(emitterInputOf(root, config, { engine })));
   } finally {
@@ -282,11 +281,13 @@ describe("an uncalled method of an interface a class matches by shape", () => {
       mkdirSync(join(root, "packages/b/node_modules"));
       symlinkSync(join(root, "packages/a"), join(root, "packages/b/node_modules/a"));
       const { config } = resolve({
-        repository: JSON.stringify({
-          target: { kind: "application" },
-          analysis: { configurations: [{ id: "b", project: "packages/b/tsconfig.json" }] },
-        }),
-        repositoryLabel: "deadset.json",
+        repository: {
+          text: JSON.stringify({
+            target: { kind: "application" },
+            analysis: { configurations: [{ id: "b", project: "packages/b/tsconfig.json" }] },
+          }),
+          label: "deadset.json",
+        },
       });
       expect(lines(family(emitterInputOf(root, config)))).toEqual(["DS1202 Channel.close [Pipe]"]);
     } finally {

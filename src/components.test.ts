@@ -21,8 +21,7 @@ const COMPONENTS = ((): RunSweep => {
   const target = fixture("projects", "components");
   const document = join(target, "deadset.json");
   const { config } = resolve({
-    repository: readFileSync(document, "utf8"),
-    repositoryLabel: document,
+    repository: { text: readFileSync(document, "utf8"), label: document },
   });
   const host = nodeHost();
   return runSweep(openEngine({ collectTiming: false }), host, scopeForDir(host, target), config, {
