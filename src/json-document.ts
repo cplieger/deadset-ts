@@ -42,7 +42,8 @@ interface StrictDocument {
 const MAX_DEPTH = 1000;
 
 const SPACE = /[ \t\n\r]*/uy;
-const STRING = /"(?:[ !#-/0-9:-@A-Z[\]-\u{10FFFF}]|\\(?:["\\/bfnrt]|u[0-9A-Fa-f]{4}))*"/uy;
+const STRING =
+  /"(?:[ !#$%&'()*+,\-./0-9:;<=>?@A-Z[\]-\u{10FFFF}]|\\(?:["\\/bfnrt]|u[0-9A-Fa-f]{4}))*"/uy;
 const NUMBER = /-?(?:0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?/uy;
 const LITERALS: ReadonlyMap<string, unknown> = new Map<string, unknown>([
   ["true", true],
