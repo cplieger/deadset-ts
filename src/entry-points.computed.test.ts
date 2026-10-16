@@ -261,4 +261,61 @@ describe("a file a makefile's recipe names", () => {
     },
     LOAD_TIMEOUT,
   );
+
+  it(
+    "is every file below the directory a computed path names through a non-null assertion",
+    () => {
+      expect(
+        computedRoots({
+          "src/app.ts": [
+            "declare const name: string;",
+            "export const a = await import(`./migrations/${name}`!);",
+            "",
+          ].join("\n"),
+          "src/migrations/one.ts": "export const up = 1;\n",
+        }),
+      ).toEqual([
+        "src/migrations/one.ts#\tcomputed-import\t./migrations/",
+        "src/migrations/one.ts#up\tcomputed-import\t./migrations/",
+      ]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "matches a configured entry pattern whose brace member holds a wildcard",
+    () => {
+      expect(
+        computedRoots({
+          "deadset.json": `${JSON.stringify({
+            target: { kind: "application" },
+            ts: { entry_files: ["src/{*.job,main}.ts"] },
+          })}\n`,
+          "src/app.ts": "export {};\n",
+          "src/nightly.job.ts": "export const nightly = 1;\n",
+        }),
+      ).toEqual([
+        "src/nightly.job.ts#\tentry-file\tsrc/{*.job,main}.ts",
+        "src/nightly.job.ts#nightly\tentry-file\tsrc/{*.job,main}.ts",
+      ]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "ends a command at a single &, as it ends one at ;",
+    () => {
+      expect(
+        computedRoots({
+          "src/app.ts": "export {};\n",
+          Makefile: ["jobs:", "\tcd src/jobs & node nightly.ts", ""].join("\n"),
+          "src/jobs/nightly.ts": "export const nightly = 1;\n",
+        }),
+      ).toEqual([
+        "src/jobs/nightly.ts#\tworkflow-step\tnightly.ts",
+        "src/jobs/nightly.ts#nightly\tworkflow-step\tnightly.ts",
+      ]);
+    },
+    LOAD_TIMEOUT,
+  );
 });

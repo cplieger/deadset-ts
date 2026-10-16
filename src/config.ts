@@ -5,6 +5,8 @@ import {
   type Language,
   type Severity,
 } from "./contract/contract.generated.ts";
+import type { ExemptionClass } from "./exempt-classes.ts";
+import { LANGUAGE, PRODUCT } from "./product.ts";
 
 /**
  * The name of the repository configuration at the target root, which is also the
@@ -192,7 +194,7 @@ export interface Config {
   readonly consumersComplete: boolean;
   readonly rootPatterns: readonly string[];
   readonly severity: ReadonlyMap<string, Severity>;
-  readonly exemptionsDisabled: readonly string[];
+  readonly exemptionsDisabled: readonly ExemptionClass[];
   readonly reporters: Reporters;
   readonly providers: Providers;
   readonly ts: TSSection;
@@ -230,7 +232,7 @@ export function defaultConfig(): Config {
     providers: {
       analyzers: [
         { shape: "installed", name: "deadset-go", languages: ["go"], command: "deadset-go" },
-        { shape: "installed", name: "deadset-ts", languages: ["ts"], command: "deadset-ts" },
+        { shape: "installed", name: PRODUCT, languages: [LANGUAGE], command: PRODUCT },
       ],
     },
     ts: {

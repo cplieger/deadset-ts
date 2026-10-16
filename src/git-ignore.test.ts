@@ -69,6 +69,57 @@ describe("the files a tree's .gitignore files ignore", () => {
     ).toEqual(["src/a.d.ts", "dist/keep.d.ts"]);
   });
 
+  it("reads bracket expressions, the .gitignore files above the root up to the repository's, and its info/exclude", () => {
+    const host: Host = {
+      ...hostWith({
+        ".gitignore": "*.[oa]\n",
+        ".git/info/exclude": "scratch/\n",
+        "pkg/.gitignore": "[!k]eep.log\n",
+      }),
+      kindOf: (path) => (path === "/repo/.git" ? "directory" : "absent"),
+    };
+    const ignored = gitIgnored(host, "/repo/pkg");
+
+    expect(
+      ["lib.o", "lib.a", "lib.c", "scratch/a.ts", "seep.log", "keep.log"].filter((path) =>
+        ignored(`/repo/pkg/${path}`),
+      ),
+    ).toEqual(["lib.o", "lib.a", "scratch/a.ts", "seep.log"]);
+  });
+
+  it("reads POSIX classes and a reversed range in a bracket expression as git does", () => {
+    expect(
+      ignoredOf({ ".gitignore": "file[[:digit:]].txt\n[z-a].log\n*.o\n" }, [
+        "file1.txt",
+        "filex.txt",
+        "z.log",
+        "m.log",
+        "lib.o",
+      ]),
+    ).toEqual(["file1.txt", "z.log", "lib.o"]);
+  });
+
+  it("reads a linked worktree's info/exclude from the repository's common directory", () => {
+    const texts: Readonly<Record<string, string>> = {
+      "/repo/.git": "gitdir: /main/.git/worktrees/repo\n",
+      "/main/.git/worktrees/repo/commondir": "../..\n",
+      "/main/.git/info/exclude": "scratch/\n",
+    };
+    const host: Host = {
+      ...hostWith({}),
+      readFile: (path) => {
+        const text = texts[path];
+        if (text === undefined) {
+          throw new Error(`${path}: absent`);
+        }
+        return text;
+      },
+      kindOf: (path) => (path === "/repo/.git" ? "file" : "absent"),
+    };
+
+    expect(gitIgnored(host, "/repo")("/repo/scratch/a.ts")).toBe(true);
+  });
+
   it("ignores nothing outside the tree's root", () => {
     expect(gitIgnored(hostWith({ ".gitignore": "*\n" }), "/repo")("/elsewhere/a.ts")).toBe(false);
   });

@@ -5,6 +5,7 @@ import {
   type Provenance,
   type Provider,
 } from "./config.ts";
+import { bytewise } from "./text/compare.ts";
 
 /** One declaration entry as a document writes it: the members of its shape alone. */
 function declarationOf(entry: DeclarationEntry): Record<string, string> {
@@ -61,7 +62,7 @@ export function printConfig(config: Config, provenance: Provenance): string {
     },
     consumers: { complete: config.consumersComplete },
     roots: { patterns: config.rootPatterns },
-    severity: Object.fromEntries([...config.severity].sort(([a], [b]) => (a < b ? -1 : 1))),
+    severity: Object.fromEntries([...config.severity].sort(([a], [b]) => bytewise(a, b))),
     exemptions: { disabled: config.exemptionsDisabled },
     reporters: {
       formats: config.reporters.formats,
@@ -88,7 +89,7 @@ export function printConfig(config: Config, provenance: Provenance): string {
     },
     provenance: Object.fromEntries(
       [...provenance]
-        .sort(([a], [b]) => (a < b ? -1 : 1))
+        .sort(([a], [b]) => bytewise(a, b))
         .map(([path, origin]) => [path, renderOrigin(origin)]),
     ),
   };

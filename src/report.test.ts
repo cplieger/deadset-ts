@@ -157,6 +157,15 @@ describe("the report", () => {
     ]);
   });
 
+  it("orders paths by their UTF-8 bytes, so a character above U+FFFF sorts after U+FF5E", () => {
+    const findings = [finding("src/\u{1F600}.ts", 1, 1), finding("src/\uFF5E.ts", 1, 1)];
+
+    expect(positions(buildReport(input(result(findings))))).toEqual([
+      "src/\uFF5E.ts:1:1 DS1002",
+      "src/\u{1F600}.ts:1:1 DS1002",
+    ]);
+  });
+
   it("orders stale suppressions by their own position, then code, then symbol", () => {
     const report = buildReport(
       input(

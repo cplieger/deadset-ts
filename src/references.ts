@@ -38,13 +38,13 @@ import {
   type ParameterDeclaration,
   type SourceFile,
 } from "@typescript/native/ast";
+import { parenthesesRemoved } from "./unwrap.ts";
 import type { Symbol as TSSymbol } from "@typescript/native/sync";
 import { aliasChains, type ChainTarget } from "./alias-chain.ts";
 import { contextualUses, type FlowAt, type LiteralAt } from "./contextual-uses.ts";
 import { destructuring, propertyReadsOf, type PropertyRead } from "./destructuring.ts";
 import { specifierCandidates } from "./configuration-files.ts";
 import { namespaceUses } from "./namespace-objects.ts";
-import { globExpression } from "./glob.ts";
 import {
   declarationsByName,
   isParameterProperty,
@@ -73,6 +73,8 @@ import {
   type KeyedAccess,
 } from "./symbol-keys.ts";
 import { handedOn, valuesOf } from "./value-flow.ts";
+import { bytewise } from "./text/compare.ts";
+import { globExpression } from "./text/glob.ts";
 
 /**
  * Every use one project's own files make of the project's own declarations.
@@ -315,15 +317,6 @@ function isName(node: Node): boolean {
   return node.kind === SyntaxKind.Identifier || node.kind === SyntaxKind.PrivateIdentifier;
 }
 
-/** The expression one node is, through however many parentheses are written around it. */
-function unparenthesized(node: Node): Node {
-  let held = node;
-  while (isParenthesizedExpression(held)) {
-    held = held.expression;
-  }
-  return held;
-}
-
 /**
  * Records the name one store writes into.
  *
@@ -333,7 +326,7 @@ function unparenthesized(node: Node): Node {
  * target writes each name it binds, through its spreads and nested patterns.
  */
 function markWrite(target: Node, writes: Set<number>, accesses: Set<Node>): void {
-  const held = unparenthesized(target);
+  const held = parenthesesRemoved(target);
   if (isName(held)) {
     writes.add(held.pos);
     return;
@@ -348,7 +341,7 @@ function markWrite(target: Node, writes: Set<number>, accesses: Set<Node>): void
     accesses.add(held);
     // A store through a member's value lands in storage every holder of the value
     // reads, so it reads the member; a variable only ever stored into stays written.
-    if (!isPropertyAccessExpression(unparenthesized(held.expression))) {
+    if (!isPropertyAccessExpression(parenthesesRemoved(held.expression))) {
       markWrite(held.expression, writes, accesses);
     }
     return;
@@ -524,7 +517,7 @@ interface FileSites {
 
 /** Whether one node is `import.meta.url`. */
 function isImportMetaURL(node: Node): boolean {
-  const at = unparenthesized(node);
+  const at = parenthesesRemoved(node);
   return (
     isPropertyAccessExpression(at) &&
     isMetaProperty(at.expression) &&
@@ -536,7 +529,7 @@ function isImportMetaURL(node: Node): boolean {
 /** The module URL one node builds, where it builds one. */
 function moduleURLOf(node: Node): ModuleURL | undefined {
   const relative = (argument: Node | undefined): string | undefined => {
-    const at = argument === undefined ? undefined : unparenthesized(argument);
+    const at = argument === undefined ? undefined : parenthesesRemoved(argument);
     return at !== undefined &&
       (isStringLiteral(at) || isNoSubstitutionTemplateLiteral(at)) &&
       /^\.\.?\//u.test(at.text)
@@ -551,7 +544,7 @@ function moduleURLOf(node: Node): ModuleURL | undefined {
       : undefined;
   }
   if (isCallExpression(node)) {
-    const callee = unparenthesized(node.expression);
+    const callee = parenthesesRemoved(node.expression);
     const specifier = relative(node.arguments[0]);
     if (
       specifier !== undefined &&
@@ -869,7 +862,7 @@ export function testFileRulesOf(
       };
     }),
     ...(support === 0 ? [] : [{ rule: TEST_SUPPORT_RULE, matched: support }]),
-  ].sort((a, b) => compare(a.rule, b.rule));
+  ].sort((a, b) => bytewise(a.rule, b.rule));
 }
 
 const importedCache = new WeakMap<
@@ -1003,20 +996,12 @@ function aloneIn(
           nodes.every((node) => sameTarget.some((one) => inside(node, one.value))),
       )
       .map(([name]) => name)
-      .sort(compare);
+      .sort(bytewise);
     if (names.length > 0) {
       result.push({ index: write.index, names });
     }
   }
   return result;
-}
-
-/** Two strings ordered bytewise, which is the order every set of a run is read in. */
-function compare(a: string, b: string): number {
-  if (a === b) {
-    return 0;
-  }
-  return a < b ? -1 : 1;
 }
 
 /**
@@ -1677,9 +1662,9 @@ export function references<Brand>(
   found.sort(
     (a, b) =>
       byPosition(a.position, b.position) ||
-      compare(a.to, b.to) ||
-      compare(a.from, b.from) ||
-      compare(a.use, b.use),
+      bytewise(a.to, b.to) ||
+      bytewise(a.from, b.from) ||
+      bytewise(a.use, b.use),
   );
 
   return {
@@ -1687,7 +1672,7 @@ export function references<Brand>(
       consumer === undefined
         ? found
         : found.map((reference) => ({ ...reference, consumer: consumer.id })),
-    testFilePaths: tests.sort(compare),
+    testFilePaths: tests.sort(bytewise),
     cost: {
       batched,
       fileBatches,

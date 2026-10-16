@@ -5,6 +5,7 @@ import { partialNotes } from "../partial.ts";
 import { resolvePath } from "../paths.ts";
 import { resolve } from "../resolve.ts";
 import { type Verb } from "./verb.ts";
+import { diagnose } from "../product.ts";
 
 /**
  * Writes every declaration an exemption held back in the production sweep a report is
@@ -28,7 +29,7 @@ export const printRetainedVerb: Verb = ({ out, err, host, inputs, scope, openCli
     unanswered: swept.unanswered,
     targetRoot: resolvePath(host.workingDirectory(), scoped.target.path),
   })) {
-    err.write(`deadset-ts: ${note}\n`);
+    diagnose(err, note);
   }
   return EXIT_CLEAN;
 };

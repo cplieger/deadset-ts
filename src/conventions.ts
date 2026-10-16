@@ -8,7 +8,6 @@
 
 import {
   isArrayLiteralExpression,
-  isAsExpression,
   isBinaryExpression,
   isCallExpression,
   isClassDeclaration,
@@ -22,27 +21,20 @@ import {
   isNamedExports,
   isNamespaceImport,
   isNoSubstitutionTemplateLiteral,
-  isNonNullExpression,
   isNumericLiteral,
   isObjectBindingPattern,
   isObjectLiteralExpression,
-  isParenthesizedExpression,
   isPropertyAccessExpression,
   isPropertyAssignment,
-  isSatisfiesExpression,
   isShorthandPropertyAssignment,
   isSpreadAssignment,
   isStringLiteral,
   isVariableStatement,
   SyntaxKind,
-  type AsExpression,
   type Identifier,
   type Node,
   type ObjectBindingPattern,
-  type NonNullExpression,
   type ObjectLiteralExpression,
-  type ParenthesizedExpression,
-  type SatisfiesExpression,
   type SourceFile,
 } from "@typescript/native/ast";
 import { lineOf } from "./component-files.ts";
@@ -60,13 +52,25 @@ import {
   type TestFileReading,
 } from "./convention-rows.ts";
 import { documentStrings } from "./configuration-files.ts";
-import { globExpression } from "./glob.ts";
 import type { Host } from "./host.ts";
-import { dirnamePath, joinPath, normalizePath, relativePath, resolvePath } from "./paths.ts";
+import {
+  ancestors,
+  dirnamePath,
+  joinPath,
+  normalizePath,
+  relativePath,
+  resolvePath,
+} from "./paths.ts";
 import type { SetupFailure } from "./setup-failure.ts";
 import type { SourceFiles } from "./source-files.ts";
 import { satisfies } from "./version-range.ts";
-import { yamlDocument } from "./yaml-document.ts";
+import { bytewise } from "./text/compare.ts";
+import { isRecord } from "./json-document.ts";
+import { unwrapped } from "./unwrap.ts";
+import { filesIn } from "./fs/tree.ts";
+import { INSTALLED_PACKAGES, MANIFEST, readJSON } from "./fs/manifest.ts";
+import { globExpression } from "./text/glob.ts";
+import { yamlDocument } from "./text/yaml.ts";
 
 /** One manifest the analysis reads. */
 export interface ConventionManifest {
@@ -171,18 +175,6 @@ const DEPENDENCY_SECTIONS = [
   "optionalDependencies",
 ] as const;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function readJSON(host: Host, path: string): unknown {
-  try {
-    return JSON.parse(host.readFile(path));
-  } catch {
-    return undefined;
-  }
-}
-
 function declares(
   manifest: unknown,
   name: string,
@@ -203,38 +195,15 @@ function declares(
  * none, or `undefined` where no `node_modules` holds it.
  */
 function installedVersion(host: Host, dir: string, name: string): string | undefined {
-  for (let at = normalizePath(dir); ; at = dirnamePath(at)) {
-    const path = joinPath(at, "node_modules", name, "package.json");
+  for (const at of ancestors(dir)) {
+    const path = joinPath(at, INSTALLED_PACKAGES, name, MANIFEST);
     if (host.kindOf(path) === "file") {
       const manifest = readJSON(host, path);
       const version = isRecord(manifest) ? manifest["version"] : undefined;
       return typeof version === "string" ? version : "";
     }
-    if (dirnamePath(at) === at) {
-      return undefined;
-    }
   }
-}
-
-/** Whether one node wraps an expression without changing its value. */
-function isWrapper(
-  node: Node,
-): node is ParenthesizedExpression | AsExpression | SatisfiesExpression | NonNullExpression {
-  return (
-    isParenthesizedExpression(node) ||
-    isAsExpression(node) ||
-    isSatisfiesExpression(node) ||
-    isNonNullExpression(node)
-  );
-}
-
-/** The expression a wrapper that changes no value holds. */
-function unwrapped(node: Node): Node {
-  let at = node;
-  while (isWrapper(at)) {
-    at = at.expression;
-  }
-  return at;
+  return undefined;
 }
 
 /** The key one property is written with, where it is written as a name or as literal text. */
@@ -823,16 +792,7 @@ function expand(
 /** The configuration files in one directory that one glob names, by name. */
 function configurationFiles(host: Host, dir: string, glob: string): readonly string[] {
   const expression = globExpression(glob);
-  let entries;
-  try {
-    entries = host.readDirectory(dir);
-  } catch {
-    return [];
-  }
-  return entries
-    .filter((entry) => !entry.directory && expression.test(entry.name))
-    .map((entry) => entry.name)
-    .sort();
+  return filesIn(host, dir, (name) => expression.test(name));
 }
 
 /** What one move resolved to: its directories, or the failure its property met. */
@@ -948,7 +908,7 @@ function shortNameUses(
       }
     }
   }
-  return [...used].filter((name) => declared.has(name)).sort(compare);
+  return [...used].filter((name) => declared.has(name)).sort(bytewise);
 }
 
 /**
@@ -1008,7 +968,7 @@ function prefixedNameUses(
       }
     }
   }
-  return [...used].sort(compare);
+  return [...used].sort(bytewise);
 }
 
 /** The declared dependencies an applied row's helper settings use. */
@@ -1092,14 +1052,6 @@ function packageKeyUses(
   );
 }
 
-/** Two strings ordered bytewise. */
-function compare(a: string, b: string): number {
-  if (a === b) {
-    return 0;
-  }
-  return a < b ? -1 : 1;
-}
-
 /**
  * What the rows decide over the manifests the analysis reads. A row `disabled` names
  * is skipped before anything is read for it.
@@ -1119,7 +1071,7 @@ export function readConventions(
   const selected = new Map<string, { starts: Set<number>; texts: string[] }>();
   const testFiles = new Set<string>();
   for (const manifest of manifests) {
-    const declared = readJSON(host, joinPath(manifest.dir, "package.json"));
+    const declared = readJSON(host, joinPath(manifest.dir, MANIFEST));
     const versions = new Map<string, string | undefined>();
     const missing = new Set<string>();
     for (const row of rows) {
@@ -1222,16 +1174,16 @@ export function readConventions(
   const unique = [...new Map(applied.map((one) => [JSON.stringify(one), one])).values()];
   unique.sort(
     (a, b) =>
-      compare(a.name, b.name) ||
-      compare(a.manifest, b.manifest) ||
-      compare(JSON.stringify(a), JSON.stringify(b)),
+      bytewise(a.name, b.name) ||
+      bytewise(a.manifest, b.manifest) ||
+      bytewise(JSON.stringify(a), JSON.stringify(b)),
   );
   return {
     applied: unique,
     globs,
     generated,
     failures,
-    uses: [...uses].sort(compare),
+    uses: [...uses].sort(bytewise),
     selected,
     testFiles,
   };

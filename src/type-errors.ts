@@ -21,12 +21,21 @@ import { packageOfSpecifier } from "./dependencies.ts";
 import type { LocatedDiagnostic } from "./discover.ts";
 import type { Host } from "./host.ts";
 import { nodeKey, type Inventory } from "./inventory.ts";
-import { dirnamePath, isAbsolutePath, joinPath, relativePath, resolvePath } from "./paths.ts";
+import {
+  ancestors,
+  dirnamePath,
+  isAbsolutePath,
+  joinPath,
+  relativePath,
+  resolvePath,
+} from "./paths.ts";
 import { isAnswered } from "./query.ts";
 import type { TypeErrorSkip } from "./report.ts";
 import type { Engine, ProjectView } from "./session.ts";
 import type { SetupFailure } from "./setup-failure.ts";
 import { findWorkspace, type Workspace } from "./workspace.ts";
+import { entriesOf } from "./fs/tree.ts";
+import { INSTALLED_PACKAGES, MANIFEST, manifestAt } from "./fs/manifest.ts";
 
 /** The compiler's codes for an import whose module it cannot find. */
 const MODULE_NOT_FOUND: ReadonlySet<number> = new Set([2307, 2792]);
@@ -38,7 +47,6 @@ const MODULE_NOT_FOUND: ReadonlySet<number> = new Set([2307, 2792]);
  */
 const CONFIGURATION_LEVEL: ReadonlySet<number> = new Set([5055, 5056, 6059, 6307]);
 
-const MANIFEST = "package.json";
 const MANIFEST_SECTIONS = [
   "dependencies",
   "devDependencies",
@@ -156,13 +164,9 @@ function provided(host: Host, path: string, fileOnly: boolean): boolean {
   }
   const dir = dirnamePath(path);
   const stem = `${path.slice(dir.length + 1)}.`;
-  try {
-    return host
-      .readDirectory(dir)
-      .some((entry) => entry.name.startsWith(stem) && counts(joinPath(dir, entry.name)));
-  } catch {
-    return false;
-  }
+  return entriesOf(host, dir).some(
+    (entry) => entry.name.startsWith(stem) && counts(joinPath(dir, entry.name)),
+  );
 }
 
 /** The manifest at or above `dir`, no higher than the target root, that declares `name`. */
@@ -172,28 +176,18 @@ function declaringManifest(
   targetRoot: string,
   name: string,
 ): string | undefined {
-  for (let at = dir; ; at = dirnamePath(at)) {
-    const path = joinPath(at, MANIFEST);
-    let manifest: unknown;
-    try {
-      manifest = JSON.parse(host.readFile(path)) as unknown;
-    } catch {
-      manifest = undefined;
-    }
-    if (typeof manifest === "object" && manifest !== null) {
-      const sections = manifest as Record<string, unknown>;
-      for (const section of MANIFEST_SECTIONS) {
-        const declared = sections[section];
-        if (typeof declared === "object" && declared !== null && Object.hasOwn(declared, name)) {
-          return path;
-        }
+  const chain = ancestors(dir, targetRoot);
+  // A directory outside the target root reads its own manifest alone.
+  for (const at of chain.length > 0 ? chain : [dir]) {
+    const manifest = manifestAt(host, at);
+    for (const section of MANIFEST_SECTIONS) {
+      const declared = manifest?.[section];
+      if (typeof declared === "object" && declared !== null && Object.hasOwn(declared, name)) {
+        return joinPath(at, MANIFEST);
       }
     }
-    // The target root is not below itself, so the walk stops after reading its manifest.
-    if (relativePath(targetRoot, at) === undefined) {
-      return undefined;
-    }
   }
+  return undefined;
 }
 
 /**
@@ -201,14 +195,9 @@ function declaringManifest(
  * `dir` or of any ancestor, above the target root too, as Node and the compiler look.
  */
 function installed(host: Host, dir: string, name: string): boolean {
-  for (let at = dir; ; at = dirnamePath(at)) {
-    if (host.kindOf(joinPath(at, "node_modules", name)) === "directory") {
-      return true;
-    }
-    if (dirnamePath(at) === at) {
-      return false;
-    }
-  }
+  return ancestors(dir).some(
+    (at) => host.kindOf(joinPath(at, INSTALLED_PACKAGES, name)) === "directory",
+  );
 }
 
 /**

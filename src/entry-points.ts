@@ -13,7 +13,6 @@
 
 import {
   isArrayLiteralExpression,
-  isAsExpression,
   isCallExpression,
   isExportAssignment,
   isIdentifier,
@@ -21,10 +20,8 @@ import {
   isNewExpression,
   isNoSubstitutionTemplateLiteral,
   isObjectLiteralExpression,
-  isParenthesizedExpression,
   isPropertyAccessExpression,
   isPropertyAssignment,
-  isSatisfiesExpression,
   isStringLiteral,
   SyntaxKind,
   type Node,
@@ -39,7 +36,6 @@ import {
 } from "./configuration-files.ts";
 import type { Selected } from "./conventions.ts";
 import { buildScriptEntries } from "./build-scripts.ts";
-import { globExpression } from "./glob.ts";
 import type { Host } from "./host.ts";
 import { htmlEntries } from "./html-entries.ts";
 import { documentEntries } from "./mdx-entries.ts";
@@ -49,6 +45,8 @@ import type { ProjectView } from "./session.ts";
 import type { SourceFiles } from "./source-files.ts";
 import { computedLoadDirectory, leadingLiteral } from "./unseen-loads.ts";
 import { workflowEntries } from "./workflow-steps.ts";
+import { unwrapped } from "./unwrap.ts";
+import { globExpression } from "./text/glob.ts";
 
 /** Which rule entered a file. */
 export type EntryRule =
@@ -164,15 +162,6 @@ function literalOf(node: Node | undefined): string | undefined {
     return node.text;
   }
   return undefined;
-}
-
-/** The expression a wrapper that changes no value holds: parentheses and type assertions. */
-function unwrapped(node: Node): Node {
-  let at = node;
-  while (isParenthesizedExpression(at) || isAsExpression(at) || isSatisfiesExpression(at)) {
-    at = at.expression;
-  }
-  return at;
 }
 
 /**

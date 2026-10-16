@@ -43,17 +43,19 @@ import {
 } from "./configuration-files.ts";
 import { conventionEntries, type Conventions } from "./conventions.ts";
 import { entryPoints, type EntryRule } from "./entry-points.ts";
-import { globExpression } from "./glob.ts";
 import type { Host } from "./host.ts";
 import { nodeKey, type Inventory, type InventorySymbol } from "./inventory.ts";
 import type { Manifest, ManifestEntry } from "./manifest.ts";
-import { dirnamePath, joinPath, relativePath, resolvePath } from "./paths.ts";
+import { ancestors, dirnamePath, relativePath, resolvePath } from "./paths.ts";
 import { byPosition } from "./position.ts";
 import { UNANSWERED } from "./query.ts";
 import type { ProjectView } from "./session.ts";
 import type { Symbol as TSSymbol, Type } from "@typescript/native/sync";
 import { sourceFilesOf, type SourceFiles } from "./source-files.ts";
 import { typeQueryAliases } from "./type-query-alias.ts";
+import { bytewise } from "./text/compare.ts";
+import { holdsManifest } from "./fs/manifest.ts";
+import { globExpression } from "./text/glob.ts";
 
 /** Why one declaration is a root. */
 export type RootKind =
@@ -197,15 +199,8 @@ const SOURCE_EXTENSION = /\.(?:d\.)?[cm]?[jt]sx?$/u;
 
 /** Whether no `package.json` sits between one file and the manifest's directory, which holds it. */
 function ofPackage(host: Host, dir: string, file: string): boolean {
-  for (let at = dirnamePath(file); at !== dir; at = dirnamePath(at)) {
-    if (
-      relativePath(dir, at) === undefined ||
-      host.kindOf(joinPath(at, "package.json")) === "file"
-    ) {
-      return false;
-    }
-  }
-  return true;
+  const between = ancestors(dirnamePath(file), dir);
+  return between.length > 0 && !between.slice(0, -1).some((at) => holdsManifest(host, at));
 }
 
 /**
@@ -329,14 +324,6 @@ export function matchRef(pattern: string, ref: string): boolean {
     return pattern === ref;
   }
   return matchGlob(Array.from(pattern), Array.from(ref));
-}
-
-/** Two strings ordered bytewise, which is the order every set of a run is read in. */
-function compare(a: string, b: string): number {
-  if (a === b) {
-    return 0;
-  }
-  return a < b ? -1 : 1;
 }
 
 /** The members of one declaration, indexed by the container that holds them. */
@@ -561,7 +548,7 @@ export function roots<Brand>(
     const left = sites.get(a.id);
     const right = sites.get(b.id);
     const site = left === undefined || right === undefined ? 0 : byPosition(left, right);
-    return site || compare(a.kind, b.kind) || compare(a.source, b.source);
+    return site || bytewise(a.kind, b.kind) || bytewise(a.source, b.source);
   });
 
   return {

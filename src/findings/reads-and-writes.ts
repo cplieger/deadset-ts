@@ -5,6 +5,7 @@ import type { MatrixCandidate } from "../matrix.ts";
 import { positionKey } from "../position.ts";
 import { declarationKey } from "../ref.ts";
 import type { Emitter, EmitterInput } from "./emitter.ts";
+import { bytewise } from "../text/compare.ts";
 
 /** The codes this emitter reports. */
 type ReadsAndWritesCode =
@@ -123,7 +124,7 @@ function writeOnlyMessage(
     : "never read";
   const cascade = [
     ...parametersOnlyNamedBy(run, namedBy, symbol).map((name) => `type parameter ${name}`),
-    ...[...held.alone].sort().map((name) => `import ${name}`),
+    ...[...held.alone].sort(bytewise).map((name) => `import ${name}`),
   ];
   const word = SUBJECT_WORDS[symbol.kind] ?? "member";
   const message = `${word} ${symbol.name} is written ${writes} and ${read}`;

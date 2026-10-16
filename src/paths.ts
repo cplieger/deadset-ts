@@ -1,11 +1,7 @@
 /**
- * Filesystem paths, as the supported platform spells them: a solidus separates
- * segments and a leading solidus makes a path absolute.
- *
- * They are written here rather than taken from the platform's own library because
- * every module below the command line stays free of the platform, and because the
- * supported platform set is one, so a second spelling would be a rule nothing
- * exercises.
+ * Filesystem paths as the supported platform spells them: a solidus between segments, a
+ * leading one for an absolute path. They are written here rather than taken from the
+ * platform's library so every module below the command line stays free of the platform.
  */
 
 const SEPARATOR = "/";
@@ -68,6 +64,25 @@ export function dirnamePath(path: string): string {
 }
 
 /**
+ * `dir` and every directory above it, nearest first, normalized. With `top`, the list ends
+ * at `top` and is empty where `dir` is neither `top` nor below it; without, it ends at the
+ * root of the path.
+ */
+export function ancestors(dir: string, top?: string): readonly string[] {
+  const end = top === undefined ? undefined : normalizePath(top);
+  const found: string[] = [];
+  for (let at = normalizePath(dir); ; at = dirnamePath(at)) {
+    if (end !== undefined && at !== end && relativePath(end, at) === undefined) {
+      return [];
+    }
+    found.push(at);
+    if (at === end || dirnamePath(at) === at) {
+      return found;
+    }
+  }
+}
+
+/**
  * The extension of one path's last segment, from its last full stop, or the empty string
  * where it has none. A segment that only starts with a full stop has none.
  */
@@ -101,14 +116,11 @@ export function queriedModulePath(specifier: string): string | undefined {
 }
 
 /**
- * One path as it reads below a root, or undefined when it is not below the root.
- * Both are normalized first, so a root written with a trailing separator or a `.`
- * segment reaches the same answer, and the comparison is then lexical, so a root
- * and a path spelled through different symbolic links name nothing in common. The
- * root itself is not below itself.
- *
- * The caller resolves both against the same directory before calling: a relative
- * root and an absolute path are two spellings this cannot reconcile.
+ * One path as it reads below a root, or undefined when it is not strictly below the root:
+ * the root itself is not below itself. Both are normalized, then compared lexically, so a
+ * root and a path spelled through different symbolic links name nothing in common. The
+ * caller resolves both against the same directory first: a relative root and an absolute
+ * path cannot be reconciled.
  */
 export function relativePath(root: string, path: string): string | undefined {
   const at = normalizePath(root);

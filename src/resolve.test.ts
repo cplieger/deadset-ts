@@ -6,6 +6,7 @@ import {
   type Negative,
 } from "../__test-helpers__/fixtures.ts";
 import { ConfigError, type Inputs } from "./config.ts";
+import { EXEMPTION_CLASSES } from "./contract/contract.generated.ts";
 import { resolve, resolveUnkinded } from "./resolve.ts";
 
 function refuse(inputs: Inputs): ConfigError {
@@ -305,10 +306,10 @@ describe("a value the closed key list constrains", () => {
       detail: '"1.5" is not a semantic version',
     },
     {
-      name: "an exemption class that is not a class name",
+      name: "an exemption class the vocabulary does not hold",
       text: '{"target":{"kind":"library"},"exemptions":{"disabled":["Template Field"]}}',
-      setting: "exemptions.disabled",
-      detail: '"Template Field" is not an exemption class name',
+      setting: "exemptions.disabled[0]",
+      detail: `"Template Field" is not one of ${EXEMPTION_CLASSES.map((row) => JSON.stringify(row.class)).join(", ")}`,
     },
     {
       name: "a build configuration naming no architecture",

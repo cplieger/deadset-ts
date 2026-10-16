@@ -10,10 +10,12 @@ import type { Finding } from "./finding.ts";
 import type { EdgeSide, EdgeSideName } from "./findings/boundary.ts";
 import type { Host } from "./host.ts";
 import type { InventorySymbol } from "./inventory.ts";
-import { positionAt, walkDocument } from "./json-document.ts";
+import { isRecord, positionAt, walkDocument } from "./json-document.ts";
 import { joinPath } from "./paths.ts";
 import { positionKey } from "./position.ts";
 import { isPartSubject } from "./suppress.ts";
+import { bytewise } from "./text/compare.ts";
+import { message } from "./product.ts";
 
 /** The name and the location the Contract fixes for the edges document. */
 export const EDGES_FILE = "deadset-edges.json";
@@ -74,16 +76,12 @@ function carriesWildcard(ref: string): boolean {
   return false;
 }
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 /** One edge, checked: the closed key list, the value types and the value forms. */
 function readEdge(value: unknown, at: string): { id: string; provides: string; usedBy: string } {
   const refuse = (text: string, want: string): never => {
     throw new EdgesError(at, text, want);
   };
-  if (!isObject(value)) {
+  if (!isRecord(value)) {
     return refuse(JSON.stringify(value), EDGE_WANT);
   }
   for (const [key, held] of Object.entries(value)) {
@@ -122,13 +120,9 @@ export function readEdgeSides(host: Host, targetRoot: string): readonly EdgeSide
   try {
     parsed = JSON.parse(text);
   } catch (error: unknown) {
-    throw new EdgesError(
-      EDGES_FILE,
-      error instanceof Error ? error.message : String(error),
-      DOCUMENT_WANT,
-    );
+    throw new EdgesError(EDGES_FILE, message(error), DOCUMENT_WANT);
   }
-  if (!isObject(parsed)) {
+  if (!isRecord(parsed)) {
     throw new EdgesError(EDGES_FILE, JSON.stringify(parsed), DOCUMENT_WANT);
   }
   const walk = walkDocument(text, "edges");
@@ -190,14 +184,6 @@ interface Evaluated<F extends Finding> {
   readonly evaluations: readonly EdgeEvaluation<F>[];
 }
 
-/** Two strings ordered bytewise. */
-function compare(a: string, b: string): number {
-  if (a === b) {
-    return 0;
-  }
-  return a < b ? -1 : 1;
-}
-
 /**
  * Evaluates every declared side of this language over the run's findings. A side naming a
  * symbol the run enumerates nothing under is `absent`; otherwise it is evaluated once per
@@ -242,6 +228,6 @@ export function evaluateEdges<F extends Finding>(
       return { ...side, state: "dead", finding };
     });
   });
-  evaluations.sort((a, b) => compare(a.edge, b.edge) || compare(a.side, b.side));
+  evaluations.sort((a, b) => bytewise(a.edge, b.edge) || bytewise(a.side, b.side));
   return { findings: findings.filter((_finding, at) => !pending.has(at)), evaluations };
 }

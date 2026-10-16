@@ -12,17 +12,16 @@ import {
 } from "@typescript/native/ast";
 import { resolveRelativeSpecifier, type ParseFile } from "./configuration-files.ts";
 import type { Host } from "./host.ts";
-import { dirnamePath, joinPath, relativePath, resolvePath } from "./paths.ts";
+import { ancestors, dirnamePath, joinPath, resolvePath } from "./paths.ts";
 import type { SourceFiles } from "./source-files.ts";
+import { filesBelow } from "./fs/tree.ts";
+import { holdsManifest } from "./fs/manifest.ts";
 
 /** One file a script loads, and the value or specifier that named it. */
 interface HTMLEntry {
   readonly file: SourceFile;
   readonly source: string;
 }
-
-/** The directory no HTML file is read below. */
-const SKIPPED = "node_modules";
 
 /** A `<script` start tag, its attribute text captured. */
 const SCRIPT_TAG = /<script(?=[\s>/])([^>]*)>/giu;
@@ -41,28 +40,6 @@ const CLASSIC_TYPES: ReadonlySet<string> = new Set(["text/javascript", "applicat
 
 /** The prefixes an inline script's specifier names a file of the target with. */
 const FILE_PREFIXES = ["/", "./", "../"] as const;
-
-/** Every HTML file below `dir`, outside every `node_modules` directory, by absolute path. */
-function htmlFiles(host: Host, dir: string): readonly string[] {
-  let entries;
-  try {
-    entries = host.readDirectory(dir);
-  } catch {
-    return [];
-  }
-  const found: string[] = [];
-  for (const entry of entries) {
-    const path = joinPath(dir, entry.name);
-    if (entry.directory) {
-      if (entry.name !== SKIPPED) {
-        found.push(...htmlFiles(host, path));
-      }
-    } else if (entry.name.endsWith(".html")) {
-      found.push(path);
-    }
-  }
-  return found.sort();
-}
 
 /** Each attribute of one start tag's attribute text, by its lowercase name. */
 function attributes(text: string): ReadonlyMap<string, string> {
@@ -127,12 +104,7 @@ function scriptValues(parse: ParseFile | undefined, path: string, text: string):
 
 /** The directory of the nearest `package.json` at or above `dir`, inside `root`, else `root`. */
 function manifestDirectory(host: Host, root: string, dir: string): string {
-  for (let at = dir; relativePath(root, at) !== undefined; at = dirnamePath(at)) {
-    if (host.kindOf(joinPath(at, "package.json")) === "file") {
-      return at;
-    }
-  }
-  return root;
+  return ancestors(dir, root).find((at) => holdsManifest(host, at)) ?? root;
 }
 
 /**
@@ -150,7 +122,8 @@ export function htmlEntries(
 ): readonly HTMLEntry[] {
   const root = resolvePath(host.workingDirectory(), targetRoot);
   const found: HTMLEntry[] = [];
-  for (const path of htmlFiles(host, root)) {
+  for (const below of filesBelow(host, root, (name) => name.endsWith(".html"))) {
+    const path = joinPath(root, below);
     let text: string;
     try {
       text = host.readFile(path);

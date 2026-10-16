@@ -9,9 +9,7 @@
 
 import { EXEMPTION_CLASSES } from "./contract/contract.generated.ts";
 import type { Config, TSSection } from "./config.ts";
-import { ConfigError } from "./config.ts";
 import {
-  isExemptionClass,
   TS_EXEMPTION_CLASSES,
   typescriptVisibilityOf,
   type ExemptionClass,
@@ -25,6 +23,7 @@ import { Unanswerable } from "./query.ts";
 import type { ProjectView } from "./session.ts";
 import type { Templates } from "./template-field.ts";
 import { sweep, type Exemption, type Implementing, type Mode, type SweepInput } from "./sweep.ts";
+import { bytewise } from "./text/compare.ts";
 
 /** One declaration a detector holds back, and where and why. */
 export interface Evidence {
@@ -73,24 +72,11 @@ interface Holding {
 }
 
 /**
- * The classes `exemptions.disabled` switches off. A name is refused unless the
- * vocabulary holds it; a class that runs on another language only is admitted and
- * switches nothing off here, so one configuration serves every analyzer.
+ * The classes `exemptions.disabled` switches off. A class that runs on another language
+ * only switches nothing off here, so one configuration serves every analyzer.
  */
 export function disabledClasses(config: Config): ReadonlySet<ExemptionClass> {
-  const disabled = new Set<ExemptionClass>();
-  for (const name of config.exemptionsDisabled) {
-    if (!isExemptionClass(name)) {
-      const known = EXEMPTION_CLASSES.map((row) => row.class).join(", ");
-      throw new ConfigError(
-        "malformed",
-        "exemptions.disabled",
-        `exemptions.disabled: ${JSON.stringify(name)} is not an exemption class: the classes are ${known}`,
-      );
-    }
-    disabled.add(name);
-  }
-  return disabled;
+  return new Set(config.exemptionsDisabled);
 }
 
 /**
@@ -221,14 +207,6 @@ export function heldRecords(records: readonly Exemption[], holding: Holding): De
   return { records: exemptionsOf(found), inTestFiles };
 }
 
-/** Two strings ordered bytewise. */
-function compare(a: string, b: string): number {
-  if (a === b) {
-    return 0;
-  }
-  return a < b ? -1 : 1;
-}
-
 /**
  * Records as a run holds them: ordered by site, then class, then declaration, and one
  * per declaration, class, detail and file it holds while live, the one at the first
@@ -236,7 +214,7 @@ function compare(a: string, b: string): number {
  */
 export function exemptionsOf(found: readonly Exemption[]): readonly Exemption[] {
   const ordered = [...found].sort(
-    (a, b) => byPosition(a.site, b.site) || compare(a.class, b.class) || compare(a.id, b.id),
+    (a, b) => byPosition(a.site, b.site) || bytewise(a.class, b.class) || bytewise(a.id, b.id),
   );
   const seen = new Set<string>();
   return ordered.filter((record) => {

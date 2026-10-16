@@ -22,7 +22,6 @@ type Reader = (path: string) => string;
 
 interface KindsDocument {
   readonly prefix: string;
-  readonly languages: readonly string[];
   readonly severities: readonly string[];
   readonly reachability_classes: readonly string[];
   readonly fixabilities: readonly string[];
@@ -112,7 +111,16 @@ export async function generated(read: Reader): Promise<string> {
       reporters: { properties: { formats: { items: { enum: readonly string[] } } } };
     };
   };
+  const languages = doc("contract/languages.json") as {
+    languages: readonly {
+      language: string;
+      analyzer?: string;
+      markers: readonly string[];
+      skipped_directories: readonly string[];
+    }[];
+  };
   const formats = config.properties.reporters.properties.formats.items.enum;
+  const languageIds = languages.languages.map((row) => row.language);
   const familyKeyLengths = new Set(kinds.ranges.map((range) => familyKey(range).length));
   if (familyKeyLengths.size !== 1) {
     throw new Error("contract/kinds.json: the ranges' family keys differ in length");
@@ -128,16 +136,47 @@ export async function generated(read: Reader): Promise<string> {
     `export const CODE_PREFIX = ${JSON.stringify(kinds.prefix)};`,
     `export const FAMILY_KEY_LENGTH = ${String(familyKeyLength)};`,
     "",
-    `export type Language = ${union(kinds.languages)};`,
+    `export type Language = ${union(languageIds)};`,
     `export type Severity = ${union(kinds.severities)};`,
     `export type Confidence = ${union(kinds.reachability_classes)};`,
     `export type Fixability = ${union(kinds.fixabilities)};`,
     `export type Subject = ${union(kinds.subjects)};`,
     `export type Format = ${union(formats)};`,
-    `export const LANGUAGES = ${JSON.stringify(kinds.languages)} as const satisfies readonly Language[];`,
+    `export const LANGUAGES = ${JSON.stringify(languageIds)} as const satisfies readonly Language[];`,
     `export const SEVERITIES = ${JSON.stringify(kinds.severities)} as const satisfies readonly Severity[];`,
     `export const CONFIDENCES = ${JSON.stringify(kinds.reachability_classes)} as const satisfies readonly Confidence[];`,
     `export const FORMATS = ${JSON.stringify(formats)} as const satisfies readonly Format[];`,
+    "",
+    "/** Each analyzed language's row: its analyzer, the names that mark it and the directories it skips. */",
+    `export const LANGUAGE_ROWS = ${JSON.stringify(
+      Object.fromEntries(
+        languages.languages.flatMap((row) =>
+          row.analyzer === undefined
+            ? []
+            : [
+                [
+                  row.language,
+                  {
+                    analyzer: row.analyzer,
+                    markers: row.markers,
+                    skippedDirectories: row.skipped_directories,
+                  },
+                ],
+              ],
+        ),
+      ),
+    )} as const satisfies Readonly<
+      Partial<
+        Record<
+          Language,
+          {
+            readonly analyzer: string;
+            readonly markers: readonly string[];
+            readonly skippedDirectories: readonly string[];
+          }
+        >
+      >
+    >;`,
     "",
     ...exits.exit_codes.map(
       (exit) => `export const EXIT_${exit.name.toUpperCase()} = ${String(exit.code)};`,

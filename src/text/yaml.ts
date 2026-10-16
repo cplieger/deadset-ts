@@ -6,6 +6,8 @@
  * as a JSON document that does not parse has none.
  */
 
+import { isRecord } from "../json-document.ts";
+
 /** One line of the document with its comment removed, by its indentation and its content. */
 interface Line {
   readonly indent: number;
@@ -374,4 +376,48 @@ export function yamlDocument(text: string): unknown {
     }
     throw error;
   }
+}
+
+/** What one top-level key of a YAML document holds, read by {@link yamlKey}. */
+type YamlKey =
+  | { readonly kind: "value"; readonly value: unknown }
+  | { readonly kind: "absent" }
+  | { readonly kind: "refused"; readonly reason: string };
+
+/** The key one line of the document's top-level mapping opens, or undefined where it opens none. */
+function topLevelKey(raw: string): string | undefined {
+  const content = withoutComment(raw).trimEnd();
+  const end = /^\s/u.test(content) ? -1 : keyEnd(content);
+  if (end < 0) {
+    return undefined;
+  }
+  try {
+    const key = scalar(content.slice(0, end));
+    return typeof key === "object" && key !== null ? undefined : String(key);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The value of one key of a document's top-level block mapping, read from that key's lines
+ * alone, so a document whose other keys lie outside the subset still yields it. A key
+ * declared twice, or one whose own lines lie outside the subset, is refused.
+ */
+export function yamlKey(text: string, key: string): YamlKey {
+  const lines = text.replace(/^\uFEFF/u, "").split(/\r?\n/u);
+  const starts = lines.flatMap((line, at) => (topLevelKey(line) === undefined ? [] : [at]));
+  const named = starts.filter((at) => topLevelKey(lines[at] ?? "") === key);
+  const [start] = named;
+  if (start === undefined) {
+    return { kind: "absent" };
+  }
+  if (named.length > 1) {
+    return { kind: "refused", reason: `the ${key} key is declared more than once` };
+  }
+  const end = starts.find((at) => at > start) ?? lines.length;
+  const value = yamlDocument(lines.slice(start, end).join("\n"));
+  return isRecord(value)
+    ? { kind: "value", value: value[key] }
+    : { kind: "refused", reason: `the value of ${key} is outside the YAML subset read here` };
 }

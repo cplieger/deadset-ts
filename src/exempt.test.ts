@@ -6,8 +6,13 @@ import { nodeHost } from "../bin/node-host.ts";
 import { contractDocument, fixture } from "../__test-helpers__/fixtures.ts";
 import { writeProject } from "../__test-helpers__/projects.ts";
 import { runSweep, type RunSweep } from "./analysis.ts";
-import { ConfigError, defaultConfig } from "./config.ts";
-import { isExemptionClass, TS_EXEMPTION_CLASSES, type TSExemptionClass } from "./exempt-classes.ts";
+import { defaultConfig } from "./config.ts";
+import {
+  EXEMPTION_CLASS_NAMES,
+  TS_EXEMPTION_CLASSES,
+  type ExemptionClass,
+  type TSExemptionClass,
+} from "./exempt-classes.ts";
 import {
   disabledClasses,
   evidenceRecords,
@@ -75,13 +80,15 @@ describe("the class registry", () => {
     // @ts-expect-error a class that runs on Go only
     const goOnly: TSExemptionClass = "encoding-reflection";
 
-    expect(isExemptionClass(unknown), "a name outside the vocabulary").toBe(false);
-    expect(isExemptionClass(goOnly), "a class of the vocabulary another language runs").toBe(true);
+    expect(EXEMPTION_CLASS_NAMES, "a name outside the vocabulary").not.toContain(unknown);
+    expect(EXEMPTION_CLASS_NAMES, "a class of the vocabulary another language runs").toContain(
+      goOnly,
+    );
   });
 });
 
 describe("the per-class disable switch", () => {
-  const configured = (disabled: readonly string[]) => ({
+  const configured = (disabled: readonly ExemptionClass[]) => ({
     ...defaultConfig(),
     exemptionsDisabled: disabled,
   });
@@ -91,22 +98,6 @@ describe("the per-class disable switch", () => {
       "decorator",
       "encoding-reflection",
     ]);
-  });
-
-  it("refuses a name the vocabulary does not hold as a malformed configuration", () => {
-    let refused: unknown;
-    try {
-      disabledClasses(configured(["decorator", "no-such-class"]));
-    } catch (error: unknown) {
-      refused = error;
-    }
-
-    expect(refused).toBeInstanceOf(ConfigError);
-    expect((refused as ConfigError).kind).toBe("malformed");
-    expect((refused as ConfigError).key).toBe("exemptions.disabled");
-    expect((refused as ConfigError).message).toMatch(
-      /^exemptions\.disabled: "no-such-class" is not an exemption class: the classes are interface-satisfaction, /u,
-    );
   });
 });
 
@@ -643,8 +634,8 @@ describe("print-retained", () => {
       expect(run(["print-retained", `--target=${root}`], out, err, nodeHost())).toBe(2);
       expect(out.text).toBe("");
       expect(err.text.split("\n")[0]).toBe(
-        'deadset-ts: exemptions.disabled: "no-such-class" is not an exemption class: the classes are ' +
-          EXEMPTION_CLASSES.map((row) => row.class).join(", "),
+        `deadset-ts: ${join(root, "deadset.json")}: exemptions.disabled[0]: "no-such-class" is not one of ` +
+          EXEMPTION_CLASSES.map((row) => JSON.stringify(row.class)).join(", "),
       );
     } finally {
       rmSync(root, { recursive: true, force: true });

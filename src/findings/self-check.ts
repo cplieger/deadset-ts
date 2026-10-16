@@ -12,6 +12,7 @@ import {
   type SuppressionRecord,
 } from "../suppress.ts";
 import type { Emitter } from "./emitter.ts";
+import { bytewise } from "../text/compare.ts";
 
 /** The subject kind of a finding about a configured declaration. */
 const DECLARATION_SUBJECT = "configured-declaration";
@@ -171,10 +172,10 @@ export function staleSuppressions(
     bySite.set(key, held);
   }
   return [...bySite.values()].map(({ first, records }) => {
-    const codes = [...new Set(records.map((one) => one.record.code))].sort();
+    const codes = [...new Set(records.map((one) => one.record.code))].sort(bytewise);
     const reports = [...new Set(records.flatMap((one) => one.reports))]
       .filter((code) => !codes.includes(code))
-      .sort();
+      .sort(bytewise);
     const rows = codes.filter(isUnsuppressibleCode);
     const dependencies = first.mechanism === "inline" ? codes.filter(isDependencyCode) : [];
     const settable = rows.filter((code) => !FIXED_SEVERITY_CODES.includes(code));

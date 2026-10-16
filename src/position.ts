@@ -1,5 +1,6 @@
 import type { SourceFile } from "@typescript/native/ast";
 import { relativePath } from "./paths.ts";
+import { bytewise } from "./text/compare.ts";
 
 /**
  * Where one declaration is written, as every report renders it.
@@ -87,7 +88,7 @@ export function positionKey(position: Position): string {
  */
 export function byPosition(a: Position, b: Position): number {
   if (a.path !== b.path) {
-    return a.path < b.path ? -1 : 1;
+    return bytewise(a.path, b.path);
   }
   if (a.line !== b.line) {
     return a.line - b.line;

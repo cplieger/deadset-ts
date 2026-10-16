@@ -8,6 +8,7 @@
 
 import { componentModule } from "../src/component-files.ts";
 import { extensionOf } from "../src/paths.ts";
+import { PRODUCT } from "../src/product.ts";
 
 /** One request or notification the compiler sends. */
 interface Message {
@@ -49,7 +50,7 @@ function answer(message: Message): object | undefined {
   });
   switch (message.method) {
     case "initialize":
-      return reply({ positionEncoding: "utf-16", diagnosticSource: "deadset-ts" });
+      return reply({ positionEncoding: "utf-16", diagnosticSource: PRODUCT });
     case "openProject":
       return reply({});
     case "closeProject":

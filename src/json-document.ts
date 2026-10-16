@@ -128,3 +128,8 @@ export function positionAt(text: string, file: string, offset: number): Position
   const lineStart = before.lastIndexOf("\n") + 1;
   return { path: file, line: before.split("\n").length, column: offset - lineStart + 1 };
 }
+
+/** Whether a decoded JSON value is an object: not `null` and not an array. */
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}

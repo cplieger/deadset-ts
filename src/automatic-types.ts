@@ -26,8 +26,10 @@ import {
   type Statement,
 } from "@typescript/native/ast";
 import type { ParseFile } from "./configuration-files.ts";
-import type { DirectoryEntry, Host } from "./host.ts";
-import { dirnamePath, joinPath, resolvePath } from "./paths.ts";
+import type { Host } from "./host.ts";
+import { ancestors, dirnamePath, joinPath, resolvePath } from "./paths.ts";
+import { entriesOf } from "./fs/tree.ts";
+import { manifestAt } from "./fs/manifest.ts";
 
 const TYPE_ROOT = "node_modules/@types";
 
@@ -122,19 +124,11 @@ function fileDeclarations(file: SourceFile, globals: string[], modules: string[]
 
 /** The entry declaration file of one installed type package's directory. */
 function entryOf(host: Host, dir: string): string {
-  try {
-    const manifest: unknown = JSON.parse(host.readFile(joinPath(dir, "package.json")));
-    const named =
-      typeof manifest === "object" && manifest !== null
-        ? ((manifest as Record<string, unknown>)["types"] ??
-          (manifest as Record<string, unknown>)["typings"])
-        : undefined;
-    if (typeof named === "string" && named !== "") {
-      const path = resolvePath(dir, named);
-      return path.endsWith(".ts") ? path : `${path}.d.ts`;
-    }
-  } catch {
-    // A package with no readable manifest is read from its index, as the compiler reads it.
+  const manifest = manifestAt(host, dir);
+  const named = manifest?.["types"] ?? manifest?.["typings"];
+  if (typeof named === "string" && named !== "") {
+    const path = resolvePath(dir, named);
+    return path.endsWith(".ts") ? path : `${path}.d.ts`;
   }
   return joinPath(dir, "index.d.ts");
 }
@@ -201,13 +195,7 @@ export function automaticTypes(
   };
   const read = new Set<string>();
   for (const root of typeRoots(configFile, options)) {
-    let entries: readonly DirectoryEntry[];
-    try {
-      entries = host.readDirectory(root);
-    } catch {
-      entries = [];
-    }
-    for (const entry of entries) {
+    for (const entry of entriesOf(host, root)) {
       if (read.has(entry.name) || host.kindOf(joinPath(root, entry.name)) !== "directory") {
         continue;
       }
@@ -236,11 +224,5 @@ function typeRoots(configFile: string, options: Readonly<Record<string, unknown>
       (root): root is string => typeof root === "string" && root.endsWith(`/${TYPE_ROOT}`),
     );
   }
-  const roots: string[] = [];
-  for (let dir = dirnamePath(configFile); ; dir = dirnamePath(dir)) {
-    roots.push(joinPath(dir, TYPE_ROOT));
-    if (dirnamePath(dir) === dir) {
-      return roots;
-    }
-  }
+  return ancestors(dirnamePath(configFile)).map((dir) => joinPath(dir, TYPE_ROOT));
 }

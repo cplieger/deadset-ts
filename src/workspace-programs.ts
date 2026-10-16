@@ -21,6 +21,8 @@ import type { Host } from "./host.ts";
 import { dirnamePath, resolvePath } from "./paths.ts";
 import type { Engine } from "./session.ts";
 import type { WorkspaceResolver } from "./workspace-resolution.ts";
+import { bytewise } from "./text/compare.ts";
+import { PRODUCT } from "./product.ts";
 
 /** One member import no member source answers for. */
 interface UnresolvedImport {
@@ -129,7 +131,7 @@ function unstatable(reading: Reading): string | undefined {
 export function writtenPath(host: Host, configFile: string): string {
   const stem = configFile.replace(/\.json$/u, "");
   for (let counter = 0; ; counter += 1) {
-    const path = `${stem}.deadset-ts${counter === 0 ? "" : `-${String(counter)}`}.json`;
+    const path = `${stem}.${PRODUCT}${counter === 0 ? "" : `-${String(counter)}`}.json`;
     if (host.kindOf(path) === "absent") {
       return path;
     }
@@ -181,10 +183,10 @@ function configurationOf(
     ...(exclude === undefined ? {} : { exclude }),
   });
   const file = writtenPath(host, reading.configFile);
-  const expected = [...reading.parsed.fileNames].sort().join("\u0000");
+  const expected = [...reading.parsed.fileNames].sort(bytewise).join("\u0000");
   const listed = (value: Record<string, unknown>): string | undefined => {
     try {
-      return [...engine.parseConfigJson(value, file).fileNames].sort().join("\u0000");
+      return [...engine.parseConfigJson(value, file).fileNames].sort(bytewise).join("\u0000");
     } catch {
       return undefined;
     }

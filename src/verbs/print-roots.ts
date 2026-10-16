@@ -4,6 +4,7 @@ import { partialNotes } from "../partial.ts";
 import { resolvePath } from "../paths.ts";
 import { resolve } from "../resolve.ts";
 import { type Verb } from "./verb.ts";
+import { diagnose } from "../product.ts";
 
 /**
  * One root as a line: the declaration's reference, why it is a root, and the string
@@ -42,7 +43,7 @@ export const printRootsVerb: Verb = ({ out, err, host, inputs, scope, openClient
     unanswered: answer.unanswered,
     targetRoot: resolvePath(host.workingDirectory(), scoped.target.path),
   })) {
-    err.write(`deadset-ts: ${note}\n`);
+    diagnose(err, note);
   }
   return answer.findings.length > 0 ? EXIT_FINDINGS : EXIT_CLEAN;
 };

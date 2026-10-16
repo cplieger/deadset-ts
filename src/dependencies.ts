@@ -42,17 +42,25 @@ import {
 import type { FindingPosition } from "./finding.ts";
 import type { Host } from "./host.ts";
 import { nodeKey, packageScope, type Inventory } from "./inventory.ts";
-import { scriptTokens } from "./manifest.ts";
-import { dirnamePath, isAbsolutePath, joinPath, relativePath, resolvePath } from "./paths.ts";
+import {
+  ancestors,
+  dirnamePath,
+  isAbsolutePath,
+  joinPath,
+  relativePath,
+  resolvePath,
+} from "./paths.ts";
 import type { DependencySection, Module } from "./ref.ts";
 import { UNANSWERED } from "./query.ts";
 import type { Handle, ProjectView } from "./session.ts";
 import { sourceFilesOf, type SourceFiles } from "./source-files.ts";
 import { workflowCommands, workflowTokens } from "./workflow-steps.ts";
+import { bytewise } from "./text/compare.ts";
+import { isRecord } from "./json-document.ts";
+import { inInstalledPackages, INSTALLED_PACKAGES, MANIFEST, readDocument } from "./fs/manifest.ts";
+import { commandsOf, scriptTokens } from "./text/shell.ts";
 
-const MANIFEST = "package.json";
-const MODULES_DIR = "node_modules";
-const MODULES_SEGMENT = `/${MODULES_DIR}/`;
+const MODULES_SEGMENT = `/${INSTALLED_PACKAGES}/`;
 const TYPES_SCOPE = "@types/";
 
 /** A script token naming a JavaScript file by a path no expansion changes. */
@@ -158,25 +166,6 @@ export interface Dependencies {
    * names, or that a dependency so needed names as a peer.
    */
   readonly heldBy: ReadonlyMap<string, readonly string[]>;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/** One JSON document's decoded value, or undefined where it cannot be read or parsed. */
-function readJSON(host: Host, path: string): { text: string; value: unknown } | undefined {
-  let text: string;
-  try {
-    text = host.readFile(path);
-  } catch {
-    return undefined;
-  }
-  try {
-    return { text, value: JSON.parse(text) };
-  } catch {
-    return undefined;
-  }
 }
 
 /**
@@ -429,7 +418,7 @@ export function projectNeeds<Brand>(
   }
   for (const { strings, manifestDirs } of configuration.documents) {
     for (const manifestDir of manifestDirs) {
-      const names = declaredAt(joinPath(manifestDir, "package.json"));
+      const names = declaredAt(joinPath(manifestDir, MANIFEST));
       for (const text of strings) {
         use([PROJECT_OWNER], dependenciesNamed(text, names), joinPath(manifestDir, MANIFEST));
       }
@@ -444,7 +433,7 @@ export function projectNeeds<Brand>(
   );
   for (const { file, manifestDirs } of [...configuration.outside, ...ranFiles]) {
     for (const manifestDir of manifestDirs) {
-      const names = declaredAt(joinPath(manifestDir, "package.json"));
+      const names = declaredAt(joinPath(manifestDir, MANIFEST));
       for (const { text } of moduleStrings(file)) {
         use([PROJECT_OWNER], dependenciesNamed(text, names), joinPath(manifestDir, MANIFEST));
       }
@@ -467,8 +456,8 @@ function scriptRunFiles(
   const root = resolvePath(host.workingDirectory(), targetRoot);
   const dirs = new Set<string>([root]);
   for (const name of files.byName.keys()) {
-    for (let dir = dirnamePath(name); !dirs.has(dir); dir = dirnamePath(dir)) {
-      if (relativePath(root, dir) === undefined) {
+    for (const dir of ancestors(dirnamePath(name), root)) {
+      if (dirs.has(dir)) {
         break;
       }
       dirs.add(dir);
@@ -478,7 +467,7 @@ function scriptRunFiles(
     [root, new Set(workflowTokens(host, root))],
   ]);
   for (const dir of dirs) {
-    const read = readJSON(host, joinPath(dir, MANIFEST));
+    const read = readDocument(host, joinPath(dir, MANIFEST));
     if (read !== undefined && isRecord(read.value)) {
       const own = scriptTokensOf(read.value);
       tokens.set(dir, dir === root ? new Set([...own, ...(tokens.get(root) ?? [])]) : own);
@@ -491,7 +480,8 @@ function scriptRunFiles(
       const below = path === undefined ? undefined : relativePath(root, path);
       if (
         path !== undefined &&
-        below?.split("/").includes(MODULES_DIR) === false &&
+        below !== undefined &&
+        !inInstalledPackages(below) &&
         !files.byName.has(path) &&
         host.kindOf(path) === "file"
       ) {
@@ -797,8 +787,8 @@ function lineAndColumn(text: string, offset: number): { line: number; column: nu
 
 /** The installed copy of one dependency, read where the package manager puts it for the target. */
 function installedOf(host: Host, root: string, name: string): InstalledDependency | undefined {
-  for (let dir = root; ; dir = dirnamePath(dir)) {
-    const read = readJSON(host, joinPath(dir, MODULES_DIR, name, MANIFEST));
+  for (const dir of ancestors(root)) {
+    const read = readDocument(host, joinPath(dir, INSTALLED_PACKAGES, name, MANIFEST));
     if (read !== undefined && isRecord(read.value)) {
       const bin = read.value["bin"];
       const peers = read.value["peerDependencies"];
@@ -815,10 +805,8 @@ function installedOf(host: Host, root: string, name: string): InstalledDependenc
               : [],
       };
     }
-    if (dirnamePath(dir) === dir) {
-      return undefined;
-    }
   }
+  return undefined;
 }
 
 /** Every dependency the manifest text at `path` declares, in the order the text writes them. */
@@ -904,9 +892,6 @@ const PRELOADING_PROGRAMS: ReadonlySet<string> = new Set([
 const LAUNCHERS: ReadonlySet<string> = new Set(["cross-env", "env", "npx"]);
 const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/u;
 
-/** The commands one script string runs, split at the shell's list and pipeline operators. */
-const COMMAND_SEPARATORS = /&&|\|\||;|\||&/u;
-
 /**
  * The command strings one manifest runs: each of its `scripts`, and the `exec` command of
  * nodemon's configuration, in the manifest's `nodemonConfig` or the `nodemon.json` beside
@@ -919,7 +904,10 @@ function manifestCommands(
   manifest: Record<string, unknown>,
 ): readonly string[] {
   const scripts = manifest["scripts"];
-  const nodemon = [manifest["nodemonConfig"], readJSON(host, joinPath(dir, "nodemon.json"))?.value];
+  const nodemon = [
+    manifest["nodemonConfig"],
+    readDocument(host, joinPath(dir, "nodemon.json"))?.value,
+  ];
   return [
     ...(isRecord(scripts) ? Object.values(scripts) : []),
     ...nodemon.map((config) => (isRecord(config) ? config["exec"] : undefined)),
@@ -934,7 +922,7 @@ function manifestCommands(
 function preloadsOf(scripts: readonly string[]): ReadonlySet<string> {
   const found = new Set<string>();
   for (const script of scripts) {
-    for (const command of script.split(COMMAND_SEPARATORS)) {
+    for (const command of commandsOf(script)) {
       const tokens = scriptTokens(command);
       let at = 0;
       while (
@@ -1076,7 +1064,7 @@ export function dependenciesOf(
   const peers = new Map<string, readonly string[]>();
   const uninstalledHere = new Set(nested);
   for (const [dir, path] of manifests) {
-    const read = readJSON(host, joinPath(dir, MANIFEST));
+    const read = readDocument(host, joinPath(dir, MANIFEST));
     if (read === undefined || !isRecord(read.value)) {
       continue;
     }
@@ -1154,10 +1142,7 @@ export function dependenciesOf(
   const heldBy = new Map<string, readonly string[]>();
   for (const [key, held] of holders) {
     if (!live.has(key) && !ran.has(key)) {
-      heldBy.set(
-        key,
-        [...held].sort((a, b) => (a < b ? -1 : 1)),
-      );
+      heldBy.set(key, [...held].sort(bytewise));
     }
   }
   const users = new Map<string, number>();
@@ -1169,10 +1154,7 @@ export function dependenciesOf(
   for (const id of candidates) {
     const sole = [...(uses.get(id) ?? [])].filter((one) => users.get(one) === 1 && names.has(one));
     if (sole.length > 0) {
-      lastUses.set(
-        id,
-        sole.sort((a, b) => (a < b ? -1 : 1)),
-      );
+      lastUses.set(id, sole.sort(bytewise));
     }
   }
   const owners = new Map<string, Set<string>>();
@@ -1184,7 +1166,7 @@ export function dependenciesOf(
     }
   }
   const fileLastUses = new Map<string, string[]>();
-  for (const [one, held] of [...owners].sort(([a], [b]) => (a < b ? -1 : 1))) {
+  for (const [one, held] of [...owners].sort(([a], [b]) => bytewise(a, b))) {
     const paths = new Set([...held].map((owner) => owner.replace(/:\d+:\d+$/u, "")));
     const [path] = paths;
     if (paths.size === 1 && path !== undefined && path !== PROJECT_OWNER) {

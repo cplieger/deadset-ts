@@ -335,8 +335,9 @@ describe("the reference grammar", () => {
     expect(isRef(`go://${shared}`), "the prefix is what refuses it").toBe(false);
   });
 
-  it("names both languages the Contract's issue-kind vocabulary does", () => {
-    const languages = contractDocument("kinds.json")["languages"] as string[];
+  it("names both languages the Contract's language registry does", () => {
+    const rows = contractDocument("languages.json")["languages"] as { language: string }[];
+    const languages = rows.map((row) => row.language);
 
     expect(languages).toEqual(["go", "ts"]);
     expect(

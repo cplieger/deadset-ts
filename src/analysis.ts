@@ -62,7 +62,6 @@ import {
 } from "./exempt.ts";
 import type { TSExemptionClass } from "./exempt-classes.ts";
 import { heldByInclusion, sourcePaths, sourceTree } from "./file-facts.ts";
-import { globExpression } from "./glob.ts";
 import type { Finding } from "./finding.ts";
 import { findingsPass, recordedFindings, rowKey, type PassResult } from "./findings-pass.ts";
 import type { EmitterInput } from "./findings/emitter.ts";
@@ -85,6 +84,7 @@ import {
   type SweepResult,
 } from "./matrix.ts";
 import {
+  ancestors,
   dirnamePath,
   extensionOf,
   joinPath,
@@ -94,7 +94,7 @@ import {
 } from "./paths.ts";
 import type { UnansweredQuestion } from "./query.ts";
 import { byPosition, isComponentFile, type Position } from "./position.ts";
-import { LANGUAGE, type TypeErrorSkip, type UnansweredCount } from "./report.ts";
+import type { TypeErrorSkip, UnansweredCount } from "./report.ts";
 import { SetupError, setupLine, type SetupFailure } from "./setup-failure.ts";
 import {
   pathsOf,
@@ -136,6 +136,10 @@ import { inlineDirectives, inlineSuppressions, type InlineDirective } from "./su
 import type { Exemption, Mode, SweepInput } from "./sweep.ts";
 import { readTemplates, templateField } from "./template-field.ts";
 import { ownErrors, workspaceRun } from "./workspace-run.ts";
+import { bytewise } from "./text/compare.ts";
+import { holdsManifest, inInstalledPackages, MANIFEST, manifestAt } from "./fs/manifest.ts";
+import { globExpression } from "./text/glob.ts";
+import { LANGUAGE } from "./product.ts";
 
 /** The setting whose source decides where a finding about a configured root sits. */
 const ROOTS_SETTING = "roots.patterns";
@@ -190,14 +194,6 @@ function documentOf(
   }
   const document = resolvePath(host.workingDirectory(), origin.label);
   return relativePath(resolvePath(host.workingDirectory(), targetRoot), document) ?? "";
-}
-
-/** Two strings ordered bytewise. */
-function compare(a: string, b: string): number {
-  if (a === b) {
-    return 0;
-  }
-  return a < b ? -1 : 1;
 }
 
 /** What every stage after the root set reads of one project. */
@@ -272,8 +268,8 @@ function conventionManifests(
   nestedDirs: readonly string[],
 ): readonly ConventionManifest[] {
   const found = new Map<string, ConventionManifest>();
-  if (host.kindOf(joinPath(targetRoot, "package.json")) === "file") {
-    found.set(targetRoot, { dir: targetRoot, path: "package.json" });
+  if (holdsManifest(host, targetRoot)) {
+    found.set(targetRoot, { dir: targetRoot, path: MANIFEST });
   }
   for (const [dirs, nested] of [
     [memberDirs, false],
@@ -303,23 +299,18 @@ function nestedPackageDirs(
   const seen = new Set<string>();
   const found: string[] = [];
   for (const file of files) {
-    for (
-      let dir = dirnamePath(file);
-      dir !== targetRoot && !seen.has(dir) && relativePath(targetRoot, dir) !== undefined;
-      dir = dirnamePath(dir)
-    ) {
+    for (const dir of ancestors(dirnamePath(file), targetRoot)) {
+      if (seen.has(dir) || relativePath(targetRoot, dir) === undefined) {
+        break;
+      }
       seen.add(dir);
       const below = relativePath(targetRoot, dir) ?? "";
-      if (
-        !below.split("/").includes("node_modules") &&
-        !known.has(dir) &&
-        host.kindOf(joinPath(dir, "package.json")) === "file"
-      ) {
+      if (!inInstalledPackages(below) && !known.has(dir) && holdsManifest(host, dir)) {
         found.push(dir);
       }
     }
   }
-  return found.sort(compare);
+  return found.sort(bytewise);
 }
 
 /**
@@ -723,7 +714,9 @@ export function runRoots(
 
   const ordered = [...merged.values()].sort(
     (a, b) =>
-      byPosition(a.position, b.position) || compare(a.kind, b.kind) || compare(a.source, b.source),
+      byPosition(a.position, b.position) ||
+      bytewise(a.kind, b.kind) ||
+      bytewise(a.source, b.source),
   );
   const unmatched = unmatchedEverywhere(
     config.rootPatterns,
@@ -872,20 +865,9 @@ function testEvidence(
     }
   }
   const manifests = new Map<string, Readonly<Record<string, unknown>> | undefined>();
-  const manifestAt = (dir: string): Readonly<Record<string, unknown>> | undefined => {
+  const manifestIn = (dir: string): Readonly<Record<string, unknown>> | undefined => {
     if (!manifests.has(dir)) {
-      let value: unknown;
-      try {
-        value = JSON.parse(host.readFile(joinPath(dir, "package.json")));
-      } catch {
-        value = undefined;
-      }
-      manifests.set(
-        dir,
-        typeof value === "object" && value !== null && !Array.isArray(value)
-          ? (value as Record<string, unknown>)
-          : undefined,
-      );
+      manifests.set(dir, manifestAt(host, dir));
     }
     return manifests.get(dir);
   };
@@ -895,16 +877,14 @@ function testEvidence(
   return {
     imports,
     devDependency: (path, name) => {
-      for (let dir = dirnamePath(joinPath(root, path)); ; dir = dirnamePath(dir)) {
-        const manifest = manifestAt(dir);
+      for (const dir of ancestors(dirnamePath(joinPath(root, path)), root)) {
+        const manifest = manifestIn(dir);
         const other = OTHER_SECTIONS.some((one) => declares(manifest?.[one], name));
         if (declares(manifest?.[DEV_SECTION], name) || other) {
           return !other;
         }
-        if (normalizePath(dir) === normalizePath(root) || dirnamePath(dir) === dir) {
-          return false;
-        }
       }
+      return false;
     },
   };
 }
@@ -1056,8 +1036,8 @@ function readRun<Extra>(
     const exempt = detected.records;
     const made = supportReferences([...one.references, ...(satisfied?.references ?? [])], support);
     const held = new Set(projectRead.held.symbols.map((symbol) => symbol.position.path));
-    const supportFiles = [...support].filter((path) => held.has(path)).sort();
-    const testUsedFiles = [...testUsed].filter((path) => held.has(path)).sort();
+    const supportFiles = [...support].filter((path) => held.has(path)).sort(bytewise);
+    const testUsedFiles = [...testUsed].filter((path) => held.has(path)).sort(bytewise);
     const configured: Configured = {
       configuration: projectRead.configuration,
       symbols: projectRead.held.symbols,
@@ -1285,7 +1265,7 @@ function sweptOf<Extra>(
     unanswered: read.unanswered,
     heldByUnanswered: [...held],
     skipped: read.projects.flatMap((one) => one.skipped),
-    componentFiles: [...new Set(read.projects.flatMap((one) => one.componentFiles))].sort(compare),
+    componentFiles: [...new Set(read.projects.flatMap((one) => one.componentFiles))].sort(bytewise),
   };
 }
 
@@ -1427,12 +1407,7 @@ function judgedMembers(
 
 /** The directory of the nearest `package.json` at or above a file, inside `root`, else `root`. */
 function nearestManifestDir(host: Host, root: string, file: string): string {
-  for (let dir = dirnamePath(file); relativePath(root, dir) !== undefined; dir = dirnamePath(dir)) {
-    if (host.kindOf(joinPath(dir, "package.json")) === "file") {
-      return dir;
-    }
-  }
-  return root;
+  return ancestors(dirnamePath(file), root).find((dir) => holdsManifest(host, dir)) ?? root;
 }
 
 /**

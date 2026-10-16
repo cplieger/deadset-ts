@@ -12,6 +12,8 @@ import { lineHashes, symbolFingerprint } from "./fingerprint.ts";
 import { RenderError, type RenderOptions } from "./reporter.ts";
 import { utf8Bytes } from "./sha256.ts";
 import { withheldLine } from "./text.ts";
+import { bytewise } from "../text/compare.ts";
+import { message } from "../product.ts";
 
 const SCHEMA =
   "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json";
@@ -133,9 +135,7 @@ function lineHashCache(read: (path: string) => string): (at: Located) => string 
       try {
         text = read(at.path);
       } catch (error: unknown) {
-        throw new RenderError(
-          `read ${at.path} for its line fingerprint: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        throw new RenderError(`read ${at.path} for its line fingerprint: ${message(error)}`);
       }
       hashes = lineHashes(text);
       held.set(at.path, hashes);
@@ -292,7 +292,7 @@ export function sarif(report: Report, options: RenderOptions): Iterable<string> 
     ...report.findings.map((found) => findingResult(found, index, hashOf, members)),
     ...report.stale_suppressions.map((stale) => staleResult(stale, index, hashOf)),
   ];
-  const languages = [...report.analyzer.languages].sort().join("+");
+  const languages = [...report.analyzer.languages].sort(bytewise).join("+");
   const withheld = withheldLine(report.totals);
   const log = {
     $schema: SCHEMA,
