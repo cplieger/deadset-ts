@@ -1,8 +1,8 @@
 import { rmSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
-import { writeProject } from "../__test-helpers__/projects.ts";
-import { discoverProjects } from "./discover.ts";
+import { targetConfigFiles, writeProject } from "../__test-helpers__/projects.ts";
+import { discoverProjects } from "./load/discover.ts";
 import { inventory } from "./inventory.ts";
 import { memberNames } from "./member-names.ts";
 import { scopeForDir } from "./scope.ts";
@@ -14,7 +14,7 @@ function indexOf(files: Readonly<Record<string, string>>): Record<string, string
   try {
     const host = nodeHost();
     const engine = openEngine({ collectTiming: false });
-    const { configFiles } = discoverProjects(engine, host, scopeForDir(host, root));
+    const configFiles = targetConfigFiles(discoverProjects(engine, host, scopeForDir(host, root)));
     const { projects } = runSession(engine, configFiles, (project) => {
       const held = inventory(project, host, root);
       return memberNames(project.ownSourceFiles(), held);

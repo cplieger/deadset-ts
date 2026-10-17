@@ -7,21 +7,17 @@
 
 import { CONFIG_MAX_BYTES } from "../contract/config.generated.ts";
 import type { Host } from "../host.ts";
+import { failureExit } from "../failure.ts";
 import { joinPath, relativePath } from "../paths.ts";
 import { message } from "../product.ts";
 import { utf8Bytes } from "../reporters/sha256.ts";
 import { UsageError } from "../usage.ts";
 
-/**
- * A document at the target root that is not one to read: its name resolves outside the
- * target root or to anything but a regular file, or the read fails. Nothing is read from
- * it, and the run ends with the failure code.
- */
-export class TargetDocumentError extends Error {
-  constructor(label: string, reason: string) {
-    super(`${label}: ${reason}`);
-    this.name = "TargetDocumentError";
-  }
+function unreadable(label: string, reason: string): Error {
+  return failureExit(
+    "unreadable-document",
+    `${label}: ${reason}: make it a regular file inside the target root that the run can read, or remove it`,
+  );
 }
 
 /** Refuses a document past the Contract's bound with the usage code, naming it `label`. */
@@ -31,44 +27,44 @@ export function refuseOverBound(label: string, text: string): void {
   }
 }
 
-/** What `read` returns, or its throw as the document's {@link TargetDocumentError}. */
-function attempt<T>(label: string, read: () => T): T {
-  try {
-    return read();
-  } catch (error: unknown) {
-    throw new TargetDocumentError(label, message(error));
-  }
-}
-
 /**
  * The text of the document `name` at the absolute `targetRoot`, undefined where nothing is
- * there, each refusal naming it `label`. A document past the bound is read one byte past
- * it and refused as {@link refuseOverBound} refuses it.
+ * there. One whose name resolves outside the target root or to anything but a regular file,
+ * or whose read fails, is refused by `refuse` naming it `label`, nothing read from it. A
+ * document past the bound is read one byte past it and refused as {@link refuseOverBound} does.
  */
 export function readTargetDocument(
   host: Host,
   targetRoot: string,
   name: string,
   label = name,
+  refuse: (label: string, reason: string) => Error = unreadable,
 ): string | undefined {
+  const attempt = <T>(read: () => T): T => {
+    try {
+      return read();
+    } catch (error: unknown) {
+      throw refuse(label, message(error));
+    }
+  };
   const path = joinPath(targetRoot, name);
-  const kind = attempt(label, () => host.kindOf(path));
+  const kind = attempt(() => host.kindOf(path));
   if (kind === "absent") {
     return undefined;
   }
-  const real = attempt(label, () => host.realPath(path));
+  const real = attempt(() => host.realPath(path));
   if (
     relativePath(
-      attempt(label, () => host.realPath(targetRoot)),
+      attempt(() => host.realPath(targetRoot)),
       real,
     ) === undefined
   ) {
-    throw new TargetDocumentError(label, `resolves to ${real}, outside the target root`);
+    throw refuse(label, `resolves to ${real}, outside the target root`);
   }
   if (kind !== "file") {
-    throw new TargetDocumentError(label, "is not a regular file");
+    throw refuse(label, "is not a regular file");
   }
-  const text = attempt(label, () => host.readFile(real, CONFIG_MAX_BYTES + 1));
+  const text = attempt(() => host.readFile(real, CONFIG_MAX_BYTES + 1));
   refuseOverBound(label, text);
   return text;
 }

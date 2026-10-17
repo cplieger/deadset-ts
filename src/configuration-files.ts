@@ -24,7 +24,13 @@ import type { SourceFiles } from "./source-files.ts";
 import { bytewise } from "./text/compare.ts";
 import { isRecord } from "./json-document.ts";
 import { filesIn } from "./fs/tree.ts";
-import { holdsManifest, inInstalledPackages, manifestAt, readJSON } from "./fs/manifest.ts";
+import {
+  DEPENDENCY_SECTIONS,
+  holdsManifest,
+  inInstalledPackages,
+  manifestAt,
+  readJSON,
+} from "./fs/manifest.ts";
 import { shellWords } from "./text/shell.ts";
 
 /** A configuration module's name, each form with the spelling a root reports it by. */
@@ -39,14 +45,6 @@ const MODULE_FORMS: readonly { readonly name: RegExp; readonly form: string }[] 
 
 /** A JSON configuration file's name. */
 const DOCUMENT_NAME = /^(?:[\w-]+(?:\.[\w-]+)?\.config\.json|\.[\w-]+rc(?:\.json)?)$/u;
-
-/** The manifest members a dependency is declared in. */
-const DEPENDENCY_MEMBERS = [
-  "dependencies",
-  "devDependencies",
-  "peerDependencies",
-  "optionalDependencies",
-] as const;
 
 /** The prefixes a string names a file with, relative to the file that writes it. */
 const RELATIVE_PREFIXES = ["./", "../"] as const;
@@ -474,7 +472,7 @@ export function declaredIn(host: Host, dir: string): readonly string[] {
     return [];
   }
   const names = new Set<string>();
-  for (const member of DEPENDENCY_MEMBERS) {
+  for (const member of DEPENDENCY_SECTIONS) {
     const section = value[member];
     if (isRecord(section)) {
       Object.keys(section).forEach((name) => names.add(name));

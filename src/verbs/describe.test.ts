@@ -28,6 +28,18 @@ const validateDescribe = schemaRefusals(
 
 const VERSIONED: Host = { ...nodeHost(), analyzerVersion: () => "1.2.3" };
 
+/** A host whose analyzer version cannot be read. */
+const UNVERSIONED: Host = {
+  ...nodeHost(),
+  analyzerVersion: () => {
+    throw new Error("no package.json above the command");
+  },
+};
+
+/** The one line a run that cannot read its own version ends with. */
+const UNKNOWN_VERSION =
+  "run failure: product-fault: deadset-ts cannot read its own version: no package.json above the command: reinstall deadset-ts, and report the fault to its maintainers if a reinstalled deadset-ts fails the same way";
+
 describe("describe", () => {
   it("writes the analyzer's description, with its conformance record, to the output stream alone and exits 0", () => {
     const got = invoke(["describe"], VERSIONED);
@@ -96,18 +108,14 @@ describe("describe", () => {
     });
   });
 
-  it("exits 3 when it cannot know its own version", () => {
-    const unversioned: Host = {
-      ...nodeHost(),
-      analyzerVersion: () => {
-        throw new Error("no package.json above the command");
-      },
-    };
-
-    expect(invoke(["describe"], unversioned)).toEqual({
-      code: 3,
-      out: "",
-      err: "deadset-ts: describe: no package.json above the command\n",
-    });
-  });
+  it.each(["describe", "version"])(
+    "%s exits 3 with the run failure product-fault when it cannot know its own version",
+    (verb) => {
+      expect(invoke([verb], UNVERSIONED)).toEqual({
+        code: 3,
+        out: "",
+        err: `${UNKNOWN_VERSION}\n`,
+      });
+    },
+  );
 });

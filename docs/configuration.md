@@ -56,7 +56,7 @@ Three mechanisms keep a finding out of a run. Each one needs a reason.
 - `deadset-ignore.json` at the target root, whose `ignore` array a maintainer writes. Each entry names `code`, `symbol`, `path` and `reason`. An entry that names no path is reported as `DS9002`. An entry can also keep a `DS1701` dependency, named by the `symbol.ref` and `position.path` its finding carries. An entry whose `symbol` starts with `go://` is left to the Go analyzer.
 - `deadset-baseline.json` at the target root, whose `baseline` rows `analyze --baseline-write` writes. A row has the same four members, so it moves into the ignore file by gaining a maintainer's reason.
 
-An ignore file or a baseline larger than 1 MiB is refused with exit code 2. One that is a link resolving outside the target root, or anything but a regular file, ends the run with exit code 3, and nothing is read from it.
+An ignore file or a baseline larger than 1 MiB is refused with exit code 2. One that is a link resolving outside the target root, anything but a regular file, or unreadable ends the run with exit code 3 and the line `setup failure: unreadable-document:` naming it, and nothing is read from it.
 
 ```json
 {
@@ -86,8 +86,8 @@ A library's published API has callers outside the target. `--scope=FILE` names a
 }
 ```
 
-Each consumer's compiler configurations open in the same session as the target's, and the report names every consumer it loaded. A scope document that cannot be read ends the run with exit code 2, and one the scope schema refuses with exit code 3. A consumer that is absent or does not load ends the run with exit code 3. [How deadset-ts works](how-it-works.md#libraries-and-their-consumers) explains how consumers change the confidence of a finding.
+Each consumer's compiler configurations open in the same session as the target's, and the report names every consumer it loaded. A scope document that cannot be read, or that the scope schema refuses, ends the run with exit code 2. A consumer that is absent or does not load ends the run with exit code 3. [How deadset-ts works](how-it-works.md#libraries-and-their-consumers) explains how consumers change the confidence of a finding.
 
 ## Cross-language edges
 
-`deadset-edges.json` at the target root declares edges between a TypeScript declaration and a declaration in another language, such as a generated client type and the Go server type it stands for. Its `edges` object holds each edge under its identifier, which names one edge, with `provides`, `used_by` and an optional `because`. deadset-ts never decides the other side. When the TypeScript side of an edge is dead, its finding is pending, and the run exits 4 until the [deadset](https://github.com/cplieger/deadset) merge reads both sides. The document is refused with exit code 2 when it is larger than 1 MiB, and the run ends with exit code 3 when it is a link resolving outside the target root, or anything but a regular file.
+`deadset-edges.json` at the target root declares edges between a TypeScript declaration and a declaration in another language, such as a generated client type and the Go server type it stands for. Its `edges` object holds each edge under its identifier, which names one edge, with `provides`, `used_by` and an optional `because`. deadset-ts never decides the other side. When the TypeScript side of an edge is dead, its finding is pending, and the run exits 4 until the [deadset](https://github.com/cplieger/deadset) merge reads both sides. The document is refused with exit code 2 when it is larger than 1 MiB, and the run ends with exit code 3 and an `unreadable-document` setup failure when it is a link resolving outside the target root, anything but a regular file, or unreadable.

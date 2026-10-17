@@ -1,29 +1,28 @@
 /**
  * The workspace a target sits in: the packages `pnpm-workspace.yaml` or a manifest's
- * `workspaces` declares in the nearest directory at or above the target root, up to
- * its repository root, where its patterns name the package the target is in, each
- * with the compiler configurations in its directory. A
- * member is the workspace root or a directory the patterns name that holds a named
- * manifest, never one below `node_modules`.
+ * `workspaces` declares in the nearest directory at or above the target root, up to its
+ * repository root, where its patterns name the package the target is in, each with the
+ * compiler configurations in its directory.
  */
 
-import { DiscoveryError, isConfigFile } from "./discover.ts";
+import { isConfigFile } from "./discover.ts";
+import { failureExit } from "../failure.ts";
 import type { EmitLayout } from "./emit-map.ts";
 import { commonDirectory } from "./emit-map.ts";
-import type { Host } from "./host.ts";
-import { ancestors, dirnamePath, joinPath, relativePath } from "./paths.ts";
-import { bytewise } from "./text/compare.ts";
-import { isRecord } from "./json-document.ts";
-import { directoriesIn, filesIn, repositoryOf } from "./fs/tree.ts";
+import type { Host } from "../host.ts";
+import { ancestors, dirnamePath, joinPath, relativePath } from "../paths.ts";
+import { bytewise } from "../text/compare.ts";
+import { isRecord } from "../json-document.ts";
+import { directoriesIn, filesIn, repositoryOf } from "../fs/tree.ts";
 import {
   holdsManifest,
   inInstalledPackages,
   INSTALLED_PACKAGES,
   MANIFEST,
   manifestAt,
-} from "./fs/manifest.ts";
-import { braceExpanded, pathMatches, segmentMatches } from "./text/glob.ts";
-import { yamlKey } from "./text/yaml.ts";
+} from "../fs/manifest.ts";
+import { braceExpanded, pathMatches, segmentMatches } from "../text/glob.ts";
+import { yamlKey } from "../text/yaml.ts";
 
 /** What one compiler configuration of a member says about where it reads and writes. */
 export interface ParsedLayout {
@@ -56,6 +55,8 @@ export interface WorkspaceMember {
 
 /** The workspace one target sits in. */
 export interface Workspace {
+  /** The directory that declares the workspace, absolute. */
+  readonly root: string;
   /** Every member, the root first, then by directory. */
   readonly members: readonly WorkspaceMember[];
   /** The members one package name names; two members may share a name. */
@@ -84,9 +85,9 @@ function declarationAt(
     if (!Array.isArray(listed) || !listed.every((entry) => typeof entry === "string")) {
       const reason =
         read.kind === "refused" ? read.reason : "packages is not a sequence of strings";
-      throw new DiscoveryError(
-        `${pnpm}: ${reason}; the workspace's packages are read from a sequence of strings`,
-        [],
+      throw failureExit(
+        "no-program",
+        `${pnpm}: ${reason}; the workspace's packages are read from a sequence of strings: correct the declaration`,
       );
     }
     return { file: pnpm, patterns: listed };
@@ -98,9 +99,9 @@ function declarationAt(
   const declared = manifest["workspaces"];
   const list = isRecord(declared) ? declared["packages"] : declared;
   if (!Array.isArray(list) || !list.every((entry) => typeof entry === "string")) {
-    throw new DiscoveryError(
-      `${joinPath(dir, MANIFEST)}: workspaces is neither an array of strings nor an object whose packages is one`,
-      [],
+    throw failureExit(
+      "no-program",
+      `${joinPath(dir, MANIFEST)}: workspaces is neither an array of strings nor an object whose packages is one: correct the declaration`,
     );
   }
   return { file: joinPath(dir, MANIFEST), patterns: list };
@@ -291,12 +292,14 @@ function nearestDeclaration(
  * from the target root up to its repository root declares one with a member beside
  * its root, or the nearest one does not name the highest package below it, at or
  * above the target root, among its members. `parse` reads one compiler configuration,
- * or answers `undefined` where it does not read.
+ * or answers `undefined` where it does not read. `known`, a workspace already read, is the
+ * answer where the nearest declaration is its own, so its members are not listed again.
  */
 export function findWorkspace(
   host: Host,
   targetRoot: string,
   parse: (configFile: string) => ParsedLayout | undefined,
+  known?: Workspace,
 ): Workspace | undefined {
   const declared = nearestDeclaration(host, targetRoot);
   if (declared === undefined) {
@@ -307,6 +310,9 @@ export function findWorkspace(
     !namesDirectory(declared.root, declared.patterns, declared.highestPackage)
   ) {
     return undefined;
+  }
+  if (known?.root === declared.root) {
+    return known;
   }
   const members: WorkspaceMember[] = [];
   for (const dir of memberDirectories(host, declared.root, declared.patterns)) {
@@ -347,6 +353,7 @@ export function findWorkspace(
     return found;
   };
   return {
+    root: declared.root,
     members,
     named,
     memberOf: (path) => {

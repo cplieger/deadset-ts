@@ -1,12 +1,12 @@
-import { EXIT_CLEAN, EXIT_FAILURE, EXIT_FINDINGS } from "./contract/contract.generated.ts";
+import { EXIT_CLEAN, EXIT_FAILURE, EXIT_FINDINGS } from "../contract/contract.generated.ts";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
-import { nodeHost } from "../bin/node-host.ts";
-import { TSCONFIG } from "../__test-helpers__/projects.ts";
-import type { Host } from "./host.ts";
-import { run, type Writer } from "./run.ts";
+import { nodeHost } from "../../bin/node-host.ts";
+import { TSCONFIG } from "../../__test-helpers__/projects.ts";
+import type { Host } from "../host.ts";
+import { run, type Writer } from "../run.ts";
 
 /** The bound on one case, each of which loads a target and its consumers. */
 const LOAD_TIMEOUT = 60_000;
@@ -400,6 +400,91 @@ describe("a consumer the run cannot load", () => {
           "mu",
         ),
       );
+      expect(analyzed.report).toBeUndefined();
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "ends the run naming the consumer whose own workspace member declares a dependency not installed",
+    () => {
+      const root = workspace({
+        "target/lib.ts": "export const used = 1;\n",
+        "consumer/package.json": `${JSON.stringify({
+          name: "@example/consumer",
+          private: true,
+          workspaces: ["packages/*"],
+        })}\n`,
+        "consumer/packages/a/package.json": `${JSON.stringify({
+          name: "@example/a",
+          private: true,
+          type: "module",
+          dependencies: { "@example/absent": "1.0.0" },
+        })}\n`,
+        "consumer/packages/a/tsconfig.json": TSCONFIG,
+        "consumer/packages/a/main.ts":
+          'import { used } from "../../../target/lib.js";\nimport { pad } from "@example/absent";\n\nconsole.log(pad(used));\n',
+      });
+      rmSync(join(root, "consumer", "tsconfig.json"));
+
+      const analyzed = analyze(root);
+
+      expect(analyzed.code, analyzed.err).toBe(EXIT_FAILURE);
+      expect(analyzed.err.trimEnd().split("\n")).toEqual([
+        `setup failure: missing-consumer: the consumer ${join(root, "consumer")} does not build, its dependencies not installed: packages/a/main.ts:2: packages/a/main.ts imports "@example/absent", a dependency packages/a/package.json declares that is not installed: run the package manager's install`,
+      ]);
+      expect(analyzed.report).toBeUndefined();
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "reads the references of a consumer whose workspace declaration cannot be read where no import asks it",
+    () => {
+      const root = workspace({
+        "target/lib.ts": "export const used = 1;\n",
+        "consumer/package.json": `${JSON.stringify({
+          name: "@example/consumer",
+          private: true,
+          workspaces: "packages/*",
+        })}\n`,
+        "consumer/main.ts": 'import { used } from "../target/lib.js";\n\nconsole.log(used);\n',
+      });
+
+      const analyzed = analyze(root);
+
+      expect(analyzed.code, analyzed.err).toBe(EXIT_CLEAN);
+      expect(claims(analyzed.report)).toEqual([]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "ends the run naming the consumer whose workspace declaration cannot be read where an import asks it",
+    () => {
+      const root = workspace({
+        "target/lib.ts": "export const used = 1;\n",
+        "consumer/package.json": `${JSON.stringify({
+          name: "@example/consumer",
+          private: true,
+          workspaces: "packages/*",
+        })}\n`,
+        "consumer/sub/package.json": `${JSON.stringify({
+          name: "@example/sub",
+          private: true,
+          type: "module",
+          dependencies: { "@example/absent": "1.0.0" },
+        })}\n`,
+        "consumer/sub/main.ts":
+          'import { used } from "../../target/lib.js";\nimport { pad } from "@example/absent";\n\nconsole.log(pad(used));\n',
+      });
+
+      const analyzed = analyze(root);
+
+      expect(analyzed.code, analyzed.err).toBe(EXIT_FAILURE);
+      expect(analyzed.err.trimEnd().split("\n")).toEqual([
+        `setup failure: missing-consumer: the consumer ${join(root, "consumer")} imports a dependency a package below it declares, and its workspace declaration cannot be read to tell whether that package is a member: ${join(root, "consumer", "package.json")}: workspaces is neither an array of strings nor an object whose packages is one: correct the declaration`,
+      ]);
       expect(analyzed.report).toBeUndefined();
     },
     LOAD_TIMEOUT,

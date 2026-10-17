@@ -2,8 +2,8 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { nodeHost } from "../bin/node-host.ts";
-import { DiscoveryError } from "./discover.ts";
+import { nodeHost } from "../../bin/node-host.ts";
+import { FailureExit } from "../failure.ts";
 import { findWorkspace, referenceOnlyIn, type ParsedLayout } from "./workspace.ts";
 
 const written: string[] = [];
@@ -262,7 +262,7 @@ describe("findWorkspace", () => {
       "pnpm-workspace.yaml": "packages: &all\n  - a\n",
     });
 
-    expect(() => findWorkspace(nodeHost(), root, NO_LAYOUT)).toThrow(DiscoveryError);
+    expect(() => findWorkspace(nodeHost(), root, NO_LAYOUT)).toThrow(FailureExit);
     expect(() => findWorkspace(nodeHost(), root, NO_LAYOUT)).toThrow(/pnpm-workspace\.yaml/u);
   });
 
@@ -310,7 +310,7 @@ describe("findWorkspace", () => {
       "packages/a/package.json": named("a"),
     });
 
-    expect(() => findWorkspace(nodeHost(), root, NO_LAYOUT)).toThrow(DiscoveryError);
+    expect(() => findWorkspace(nodeHost(), root, NO_LAYOUT)).toThrow(FailureExit);
     expect(() => findWorkspace(nodeHost(), root, NO_LAYOUT)).toThrow(
       /package\.json: workspaces is neither an array of strings/u,
     );
@@ -441,6 +441,23 @@ describe("findWorkspace", () => {
     });
 
     expect(memberDirs(root)).toEqual([".", "packages/a"]);
+  });
+
+  it("answers a workspace already read where the nearest declaration is its own, and reads another afresh", () => {
+    const root = writeTree({
+      ".git/": "",
+      "package.json": JSON.stringify({ name: "root", workspaces: ["packages/*"] }),
+      "packages/a/package.json": named("a"),
+      "packages/b/package.json": named("b"),
+      "other/package.json": JSON.stringify({ name: "other", workspaces: ["*"] }),
+      "other/c/package.json": named("c"),
+    });
+    const known = findWorkspace(nodeHost(), root, NO_LAYOUT);
+
+    expect(findWorkspace(nodeHost(), join(root, "packages/b"), NO_LAYOUT, known)).toBe(known);
+    const other = findWorkspace(nodeHost(), join(root, "other"), NO_LAYOUT, known);
+    expect(other).not.toBe(known);
+    expect(other?.members.map((member) => member.name)).toEqual(["other", "c"]);
   });
 
   it("answers no member for a path under no manifest, and holds no such file only for references", () => {

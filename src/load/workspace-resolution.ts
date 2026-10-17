@@ -7,20 +7,20 @@
  */
 
 import { emittedFrom } from "./emit-map.ts";
-import { gitIgnored } from "./git-ignore.ts";
-import type { Host } from "./host.ts";
-import {
-  ancestors,
-  dirnamePath,
-  isAbsolutePath,
-  joinPath,
-  relativePath,
-  resolvePath,
-} from "./paths.ts";
-import { satisfies } from "./version-range.ts";
+import { packageOfSpecifier } from "../dependencies.ts";
+import { gitIgnored } from "../git-ignore.ts";
+import type { Host } from "../host.ts";
+import { ancestors, dirnamePath, joinPath, relativePath, resolvePath } from "../paths.ts";
+import { satisfies } from "../version-range.ts";
 import type { Workspace, WorkspaceMember } from "./workspace.ts";
-import { isRecord } from "./json-document.ts";
-import { INSTALLED_PACKAGES, MANIFEST, manifestAt } from "./fs/manifest.ts";
+import { isRecord } from "../json-document.ts";
+import { MANIFEST } from "../fs/manifest.ts";
+import {
+  dependencySpecifiers,
+  installedPackage,
+  manifestsAbove,
+  type ManifestAt,
+} from "./module-lookup.ts";
 
 /** What the compiler's own resolution answered for one import. */
 export interface DefaultResolution {
@@ -45,34 +45,8 @@ export type MemberResolution =
 /** The manifest members that name an entry point for the subpath `.` without `exports`. */
 const LEGACY_MEMBERS = ["types", "typings", "module", "main"] as const;
 
-/** The dependency members a manifest declares other packages under. */
-const DEPENDENCY_MEMBERS = [
-  "dependencies",
-  "devDependencies",
-  "peerDependencies",
-  "optionalDependencies",
-] as const;
-
 const SOURCE = /(?<!\.d)\.(?:[mc]?ts|tsx)$/u;
 const OUTPUT = /(?:\.d\.[mc]?ts|\.[mc]?js|\.jsx)$/u;
-
-/** The package name a bare specifier names, or `undefined` for any other specifier. */
-export function packageNameOf(specifier: string): string | undefined {
-  if (
-    specifier === "" ||
-    specifier.startsWith(".") ||
-    specifier.startsWith("#") ||
-    isAbsolutePath(specifier) ||
-    specifier.includes(":")
-  ) {
-    return undefined;
-  }
-  const [first, second] = specifier.split("/");
-  if (specifier.startsWith("@")) {
-    return second === undefined || second === "" ? undefined : `${first ?? ""}/${second}`;
-  }
-  return first;
-}
 
 function inside(dir: string, path: string): boolean {
   return relativePath(dir, path) !== undefined;
@@ -215,51 +189,32 @@ type Linked =
 /** The member imports of one workspace, read from the members' sources. */
 export function workspaceResolver(host: Host, workspace: Workspace): WorkspaceResolver {
   const links = new Map<string, string | undefined>();
-  /** The directory `node_modules/<name>` names from one directory, links followed. */
+  /** The directory the package `name` installed for one directory is, links followed. */
   const linkedFrom = (name: string, dir: string): string | undefined => {
     const key = `${name}\u0000${dir}`;
-    if (links.has(key)) {
-      return links.get(key);
-    }
-    const candidate = joinPath(dir, INSTALLED_PACKAGES, name);
-    let found: string | undefined;
-    if (host.kindOf(candidate) === "absent") {
-      const up = dirnamePath(dir);
-      found = up === dir ? undefined : linkedFrom(name, up);
-    } else {
+    if (!links.has(key)) {
+      const installed = installedPackage(host, dir, name);
+      let found: string | undefined;
       try {
-        found = host.realPath(candidate);
+        found = installed === undefined ? undefined : host.realPath(installed);
       } catch {
         found = undefined;
       }
+      links.set(key, found);
     }
-    links.set(key, found);
-    return found;
+    return links.get(key);
   };
 
   const root = workspace.members[0]?.dir;
   const ignored = root === undefined ? () => false : gitIgnored(host, root);
-  const manifests = new Map<
-    string,
-    { dir: string; manifest: Record<string, unknown> } | undefined
-  >();
+  const manifests = new Map<string, ManifestAt | undefined>();
   /** The nearest manifest at or above one directory, up to the workspace's root. */
-  const nearestManifest = (
-    dir: string,
-  ): { dir: string; manifest: Record<string, unknown> } | undefined => {
-    if (manifests.has(dir)) {
-      return manifests.get(dir);
+  const nearestManifest = (dir: string): ManifestAt | undefined => {
+    if (!manifests.has(dir)) {
+      const [nearest] = manifestsAbove(host, dir, root ?? dir);
+      manifests.set(dir, nearest);
     }
-    const manifest = manifestAt(host, dir);
-    const up = dirnamePath(dir);
-    const found =
-      manifest !== undefined
-        ? { dir, manifest }
-        : up === dir || root === undefined || !inside(root, up)
-          ? undefined
-          : nearestManifest(up);
-    manifests.set(dir, found);
-    return found;
+    return manifests.get(dir);
   };
 
   const linkOf = (candidates: readonly WorkspaceMember[], fromDir: string): Linked => {
@@ -276,11 +231,9 @@ export function workspaceResolver(host: Host, workspace: Workspace): WorkspaceRe
     // A package below the root that no workspace lists depends on a member as a member does.
     const owner = scope ?? nearestManifest(fromDir);
     const manifest = owner?.manifest;
-    const declared = DEPENDENCY_MEMBERS.flatMap((field) => {
-      const held = manifest?.[field];
-      const specifier = isRecord(held) ? held[name] : undefined;
-      return typeof specifier === "string" ? [specifier] : [];
-    });
+    const declared = (manifest === undefined ? [] : dependencySpecifiers(manifest, name)).filter(
+      (specifier) => typeof specifier === "string",
+    );
     const matched = candidates.filter((member) =>
       declared.some((specifier) => dependsOn(specifier, member, owner?.dir ?? fromDir)),
     );
@@ -383,11 +336,11 @@ export function workspaceResolver(host: Host, workspace: Workspace): WorkspaceRe
     workspace,
     sourceOf,
     names: (specifier) => {
-      const name = packageNameOf(specifier);
+      const name = packageOfSpecifier(specifier);
       return name !== undefined && workspace.named.has(name);
     },
     resolve(specifier, fromDir, conditions, answered) {
-      const name = packageNameOf(specifier);
+      const name = packageOfSpecifier(specifier);
       const candidates = name === undefined ? undefined : workspace.named.get(name);
       if (name === undefined || candidates === undefined) {
         return { kind: "default" };

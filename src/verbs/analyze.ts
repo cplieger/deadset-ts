@@ -1,25 +1,18 @@
-import {
-  CONTRACT_VERSION,
-  EXIT_CLEAN,
-  EXIT_FAILURE,
-  type Format,
-} from "../contract/contract.generated.ts";
+import { CONTRACT_VERSION, EXIT_CLEAN, type Format } from "../contract/contract.generated.ts";
 import {
   runAnalysis,
   runBaselineWrite,
   unansweredCounts,
-  type ComponentWarning,
   type RunAnalysis,
   type RunProject,
 } from "../analysis.ts";
 import { kindOf } from "../config.ts";
 import { CONFORMANCE, DECLARED_GAPS } from "../conformance.ts";
-import { moduleIdentity } from "../consumers.ts";
 import { analyzerProvenance, verdictOf } from "../findings-pass.ts";
 import { dirnamePath, joinPath, normalizePath, relativePath, resolvePath } from "../paths.ts";
 import type { Host } from "../host.ts";
 import type { ManifestEntry } from "../manifest.ts";
-import type { NotBuilt } from "../discover.ts";
+import { moduleIdentity, type NotBuilt } from "../load/discover.ts";
 import { partialNotes } from "../partial.ts";
 import {
   buildReport,
@@ -29,7 +22,6 @@ import {
   type ReportNotBuilt,
   type ReportNote,
 } from "../report.ts";
-import type { Report } from "../contract/report.generated.ts";
 import { reportRefusals } from "../report-schema.ts";
 import { json } from "../reporters/json.ts";
 import { RENDERINGS } from "../reporters/reporters.ts";
@@ -40,7 +32,9 @@ import type { UnseenLoad } from "../unseen-loads.ts";
 import { type Verb, type VerbOptions } from "./verb.ts";
 import { UsageError } from "../usage.ts";
 import { bytewise } from "../text/compare.ts";
+import { productFault, failureExit } from "../failure.ts";
 import { diagnose, message } from "../product.ts";
+import { ownVersion } from "./version.ts";
 
 /** The options `analyze` takes beside the ones every verb takes. */
 export const ANALYZE_OPTIONS: VerbOptions = {
@@ -51,14 +45,6 @@ export const ANALYZE_OPTIONS: VerbOptions = {
 /** The two values `--exit-code` takes; on, the default, puts the run's verdict in the exit code. */
 const EXIT_CODE_ON = "on";
 const EXIT_CODE_OFF = "off";
-
-/** A path of the run no report can name, which ends the run with the failure code. */
-class ReportPathError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "ReportPathError";
-  }
-}
 
 /** The formats this analyzer renders, for a message that names them. */
 function formatNames(): string {
@@ -94,7 +80,8 @@ function runRelative(invoked: string, path: string): string {
   }
   const below = relativePath(invoked, path);
   if (below === undefined) {
-    throw new ReportPathError(
+    throw failureExit(
+      "unreportable-path",
       `a report names its target relative to the directory the run was invoked from, and ${invoked} does not contain ${path}: run from a directory that does`,
     );
   }
@@ -146,8 +133,9 @@ function notBuiltOf(dropped: readonly NotBuilt[], targetRoot: string): readonly 
   return dropped.map((one) => {
     const project = relativePath(targetRoot, one.configFile);
     if (project === undefined) {
-      throw new ReportPathError(
-        `the project ${one.id} would be opened from ${one.configFile}, which is not below the target ${targetRoot}, so no report can name it`,
+      throw failureExit(
+        "unreportable-path",
+        `the project ${one.id} would be opened from ${one.configFile}, which is not below the target ${targetRoot}, so no report can name it: analyze a target that holds it`,
       );
     }
     return { id: one.id, project, error: one.error };
@@ -162,12 +150,31 @@ function configurationsOf(
   return projects.map((one) => {
     const project = relativePath(targetRoot, one.configFile);
     if (project === undefined) {
-      throw new ReportPathError(
-        `the project ${one.id} is opened from ${one.configFile}, which is not below the target ${targetRoot}, so no report can name it`,
+      throw failureExit(
+        "unreportable-path",
+        `the project ${one.id} is opened from ${one.configFile}, which is not below the target ${targetRoot}, so no report can name it: analyze a target that holds it`,
       );
     }
     return { id: one.id, project };
   });
+}
+
+/**
+ * Writes one document the run was asked for. A document that cannot be produced or written
+ * ends the run with the run failure that names it and `fix`, the documents written before it
+ * kept.
+ */
+function writeDocument(
+  host: Host,
+  path: string,
+  fix: string,
+  produce: () => Iterable<string>,
+): void {
+  try {
+    host.writeDocument(path, produce());
+  } catch (error: unknown) {
+    throw failureExit("unwritten-output", `${path}: ${message(error)}: ${fix}`);
+  }
 }
 
 /** A count with its noun, so a message reads for one record as well as for several. */
@@ -250,126 +257,112 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
   const scoped = scope();
   const targetRoot = scoped.target.path;
 
-  let version: string;
-  try {
-    version = host.analyzerVersion();
-  } catch (error: unknown) {
-    diagnose(err, message(error));
-    return EXIT_FAILURE;
-  }
+  const version = ownVersion(host);
 
-  let report: Report;
   let recorded: readonly Recorded[];
-  let verdict: number;
-  let partial: readonly string[];
-  let warnings: readonly ComponentWarning[];
-  let unread: readonly string[];
-  let unfound: readonly string[];
-  try {
-    const root = runRelative(invoked, targetRoot);
-    const mode = { production: true };
-    let analysis: RunAnalysis;
-    if (documents.baseline === undefined) {
-      analysis = runAnalysis(openClient(config), host, scoped, config, provenance, mode);
-      recorded = [];
-    } else {
-      const reason = rowReason(analyzerProvenance(version));
-      const write = runBaselineWrite(
-        openClient(config),
-        host,
-        scoped,
-        config,
-        provenance,
-        mode,
-        reason,
-      );
-      analysis = write.first;
-      recorded = write.rows;
-    }
-    const { result, run } = analysis;
-    warnings = run.componentWarnings;
-    unread = run.componentsUnread.map(
-      ({ configFile, reason }) =>
-        `${relativePath(resolvePath(invoked, targetRoot), configFile) ?? configFile}: its component files are not read: ${reason}`,
+  const root = runRelative(invoked, targetRoot);
+  const mode = { production: true };
+  let analysis: RunAnalysis;
+  if (documents.baseline === undefined) {
+    analysis = runAnalysis(openClient(config), host, scoped, config, provenance, mode);
+    recorded = [];
+  } else {
+    const reason = rowReason(analyzerProvenance(version));
+    const write = runBaselineWrite(
+      openClient(config),
+      host,
+      scoped,
+      config,
+      provenance,
+      mode,
+      reason,
     );
-    unfound = run.librariesUnfound.map(
-      ({ configFile, error }) =>
-        `${relativePath(resolvePath(invoked, targetRoot), configFile) ?? configFile}: ${error}: the configuration is analyzed without that library`,
-    );
-    partial = partialNotes({
-      notBuilt: run.notBuilt,
-      unanswered: run.unanswered,
-      targetRoot: resolvePath(invoked, targetRoot),
-    });
-    const built = buildReport({
-      contractVersion: CONTRACT_VERSION,
-      version,
-      conformance: CONFORMANCE,
-      declaredGaps: DECLARED_GAPS,
-      target: {
-        kind: kindOf(config.target.kind),
-        root,
-        identity: moduleIdentity(host, scoped.target),
-      },
-      configurations: configurationsOf(run.projects, targetRoot),
-      notBuilt: notBuiltOf(run.notBuilt, targetRoot),
-      loaded: run.consumers.map((consumer) => ({
-        id: consumer.id,
-        path: runRelative(invoked, consumer.path),
-      })),
-      unavailable: [],
-      result,
-      testFileRules: run.testFileRules,
-      typeErrorSkips: run.typeErrorSkips,
-      unanswered: unansweredCounts(analysis),
-      conventionsApplied: run.conventionsApplied,
-      listsComponents: config.reporters.cascade === "full",
-      notes: [
-        ...unmappedNotes(run.unmappedEntries, resolvePath(invoked, targetRoot)),
-        ...unseenLoadNotes(run.unseenLoads),
-      ],
-    });
-    report = capFindings(sortFindings(built, config.reporters.sort), config.reporters.max_findings);
-    verdict = verdictOf(result, config);
-  } catch (error: unknown) {
-    if (!(error instanceof ReportPathError)) {
-      throw error;
-    }
-    diagnose(err, error.message);
-    return EXIT_FAILURE;
+    analysis = write.first;
+    recorded = write.rows;
   }
+  const { result, run } = analysis;
+  const warnings = run.componentWarnings;
+  const unread = run.componentsUnread.map(
+    ({ configFile, reason }) =>
+      `${relativePath(resolvePath(invoked, targetRoot), configFile) ?? configFile}: its component files are not read: ${reason}`,
+  );
+  const unfound = run.librariesUnfound.map(
+    ({ configFile, error }) =>
+      `${relativePath(resolvePath(invoked, targetRoot), configFile) ?? configFile}: ${error}: the configuration is analyzed without that library`,
+  );
+  const partial = partialNotes({
+    notBuilt: run.notBuilt,
+    unanswered: run.unanswered,
+    targetRoot: resolvePath(invoked, targetRoot),
+  });
+  const built = buildReport({
+    contractVersion: CONTRACT_VERSION,
+    version,
+    conformance: CONFORMANCE,
+    declaredGaps: DECLARED_GAPS,
+    target: {
+      kind: kindOf(config.target.kind),
+      root,
+      identity: moduleIdentity(host, scoped.target),
+    },
+    configurations: configurationsOf(run.projects, targetRoot),
+    notBuilt: notBuiltOf(run.notBuilt, targetRoot),
+    loaded: run.consumers.map((consumer) => ({
+      id: consumer.id,
+      path: runRelative(invoked, consumer.path),
+    })),
+    unavailable: [],
+    result,
+    testFileRules: run.testFileRules,
+    typeErrorSkips: run.typeErrorSkips,
+    unanswered: unansweredCounts(analysis),
+    conventionsApplied: run.conventionsApplied,
+    listsComponents: config.reporters.cascade === "full",
+    notes: [
+      ...unmappedNotes(run.unmappedEntries, resolvePath(invoked, targetRoot)),
+      ...unseenLoadNotes(run.unseenLoads),
+    ],
+  });
+  const report = capFindings(
+    sortFindings(built, config.reporters.sort),
+    config.reporters.max_findings,
+  );
+  const verdict = verdictOf(result, config);
 
-  try {
-    const [refused] = reportRefusals(report);
-    if (refused !== undefined) {
-      throw new Error(
-        `the report breaks the report schema at ${refused.pointer || "the document"}: ${refused.keyword}: ${refused.reason}`,
+  const [refused] = reportRefusals(report);
+  if (refused !== undefined) {
+    throw productFault(
+      `built a report that breaks the report schema at ${refused.pointer || "the document"}: ${refused.keyword}: ${refused.reason}`,
+    );
+  }
+  writeDocument(host, documents.report, "name a path the run can write", () => json(report));
+  const options = {
+    readSource: (path: string) => host.readFile(joinPath(targetRoot, path)),
+    template,
+  };
+  for (const format of documents.formats) {
+    const rendering = RENDERINGS.get(format);
+    if (rendering !== undefined) {
+      writeDocument(
+        host,
+        documents.report + rendering.suffix,
+        "name a path the run can write, or correct the template that renders it",
+        () => rendering.render(report, options),
       );
     }
-    host.writeDocument(documents.report, json(report));
-    const options = {
-      readSource: (path: string) => host.readFile(joinPath(targetRoot, path)),
-      template,
-    };
-    for (const format of documents.formats) {
-      const rendering = RENDERINGS.get(format);
-      if (rendering !== undefined) {
-        host.writeDocument(documents.report + rendering.suffix, rendering.render(report, options));
-      }
-    }
-    if (documents.baseline !== undefined) {
-      const kept =
-        host.kindOf(documents.baseline) === "file"
-          ? otherSchemeRows(host.readFile(documents.baseline))
-          : [];
-      host.writeDocument(
-        documents.baseline,
-        writeBaseline(recorded, analyzerProvenance(version), kept),
-      );
-    }
-  } catch (error: unknown) {
-    diagnose(err, message(error));
-    return EXIT_FAILURE;
+  }
+  const baselinePath = documents.baseline;
+  if (baselinePath !== undefined) {
+    writeDocument(
+      host,
+      baselinePath,
+      "name a path the run can write, or repair the rows of the baseline the run would keep",
+      () => {
+        const kept =
+          host.kindOf(baselinePath) === "file" ? otherSchemeRows(host.readFile(baselinePath)) : [];
+        return writeBaseline(recorded, analyzerProvenance(version), kept);
+      },
+    );
   }
 
   for (const note of partial) {

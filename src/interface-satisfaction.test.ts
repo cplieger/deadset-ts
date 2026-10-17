@@ -3,10 +3,10 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
 import { fixture } from "../__test-helpers__/fixtures.ts";
-import { writeProject } from "../__test-helpers__/projects.ts";
+import { targetConfigFiles, writeProject } from "../__test-helpers__/projects.ts";
 import { runSweep, type RunSweep } from "./analysis.ts";
 import { resolvePartial } from "./resolve.ts";
-import { discoverProjects } from "./discover.ts";
+import { discoverProjects } from "./load/discover.ts";
 import type { Evidence } from "./exempt.ts";
 import { interfaceSatisfaction } from "./interface-satisfaction.ts";
 import { inventory, type Inventory } from "./inventory.ts";
@@ -115,7 +115,7 @@ function requestsOf(files: Readonly<Record<string, string>>): number {
 function measure(root = TARGET): Measured {
   const host = nodeHost();
   const engine = openEngine({ collectTiming: true });
-  const { configFiles } = discoverProjects(engine, host, scopeForDir(host, root));
+  const configFiles = targetConfigFiles(discoverProjects(engine, host, scopeForDir(host, root)));
   const { projects } = runSession(engine, configFiles, (project) => {
     const held = inventory(project, host, root);
     const before = engine.getTimingInfo().totals.requestCount;

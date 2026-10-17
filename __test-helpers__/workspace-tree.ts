@@ -2,13 +2,13 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { nodeHost } from "../bin/node-host.ts";
-import { findWorkspace, type ParsedLayout } from "../src/workspace.ts";
+import { findWorkspace, type ParsedLayout } from "../src/load/workspace.ts";
 import {
   workspaceResolver,
   type DefaultResolution,
   type MemberResolution,
   type WorkspaceResolver,
-} from "../src/workspace-resolution.ts";
+} from "../src/load/workspace-resolution.ts";
 
 const written: string[] = [];
 

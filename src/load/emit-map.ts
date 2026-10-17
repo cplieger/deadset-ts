@@ -5,7 +5,7 @@
  * whether the path is the target's own or a workspace package's.
  */
 
-import { dirnamePath, joinPath, relativePath } from "./paths.ts";
+import { dirnamePath, joinPath, relativePath } from "../paths.ts";
 
 /** The source extensions the compiler emits each output extension from. */
 const EMITTED: readonly { readonly emitted: string; readonly sources: readonly string[] }[] = [

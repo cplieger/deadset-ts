@@ -2,9 +2,9 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { nodeHost } from "../bin/node-host.ts";
-import { writeProject } from "../__test-helpers__/projects.ts";
-import { run, type Writer } from "./run.ts";
+import { nodeHost } from "../../bin/node-host.ts";
+import { writeProject } from "../../__test-helpers__/projects.ts";
+import { run, type Writer } from "../run.ts";
 
 const DISCARD: Writer = { write: () => undefined };
 

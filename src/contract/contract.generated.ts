@@ -1135,14 +1135,24 @@ export const EVIDENCE = [
   },
 ] as const;
 
-export const SETUP_CLASSES = [
-  { class: "missing-module", languages: ["go", "ts"] },
-  { class: "incomplete-module-sum", languages: ["go"] },
-  { class: "missing-consumer", languages: ["go", "ts"] },
-  { class: "workspace-member-without-source", languages: ["ts"] },
-  { class: "convention-not-literal", languages: ["ts"] },
-  { class: "no-program", languages: ["go", "ts"] },
-] as const;
+/** Each group of failure classes, and the text opening the line that names one of its failures. */
+export const FAILURE_PREFIXES = { setup: "setup failure: ", run: "run failure: " } as const;
 
-/** The text opening the line of the error stream that names one setup failure. */
-export const SETUP_FAILURE_PREFIX = "setup failure: ";
+/** Each failure class the Contract names, and its group. */
+export const FAILURE_CLASSES = {
+  "missing-module": "setup",
+  "incomplete-module-sum": "setup",
+  "missing-consumer": "setup",
+  "workspace-member-without-source": "setup",
+  "convention-not-literal": "setup",
+  "no-program": "setup",
+  "unreadable-document": "setup",
+  "unwritten-output": "run",
+  "unreportable-path": "run",
+  "memory-exhausted": "run",
+  "missing-analyzer": "run",
+  "unadmitted-analyzer": "run",
+  "unresolved-edge": "run",
+  "interrupted-run": "run",
+  "product-fault": "run",
+} as const;

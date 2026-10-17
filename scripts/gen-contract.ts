@@ -101,8 +101,9 @@ export async function generated(read: Reader): Promise<string> {
   };
   const exits = doc("contract/exit-codes.json") as {
     exit_codes: readonly { code: number; name: string }[];
-    setup_failures: readonly { class: string; languages: readonly string[] }[];
-    setup_failure_prefix: string;
+    failure_classes: Readonly<
+      Record<string, { prefix: string; classes: readonly { class: string }[] }>
+    >;
   };
   const confidence = doc("contract/confidence.json") as {
     evidence: readonly Readonly<Record<string, unknown>>[];
@@ -245,10 +246,11 @@ export async function generated(read: Reader): Promise<string> {
       ),
     )} as const;`,
     "",
-    `export const SETUP_CLASSES = ${JSON.stringify(exits.setup_failures.map((row) => ({ class: row.class, languages: row.languages })))} as const;`,
+    "/** Each group of failure classes, and the text opening the line that names one of its failures. */",
+    `export const FAILURE_PREFIXES = ${JSON.stringify(Object.fromEntries(Object.entries(exits.failure_classes).map(([group, row]) => [group, row.prefix])))} as const;`,
     "",
-    "/** The text opening the line of the error stream that names one setup failure. */",
-    `export const SETUP_FAILURE_PREFIX = ${JSON.stringify(exits.setup_failure_prefix)};`,
+    "/** Each failure class the Contract names, and its group. */",
+    `export const FAILURE_CLASSES = ${JSON.stringify(Object.fromEntries(Object.entries(exits.failure_classes).flatMap(([group, row]) => row.classes.map((one) => [one.class, group]))))} as const;`,
     "",
   ];
   const path = join(ROOT, GENERATED);

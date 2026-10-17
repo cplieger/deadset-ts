@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Symbol as TSSymbol } from "@typescript/native/sync";
 import { nodeHost } from "../bin/node-host.ts";
-import { discoverProjects } from "../src/discover.ts";
+import { discoverProjects, isTargetConfiguration, type Discovery } from "../src/load/discover.ts";
 import { inventory, type Inventory } from "../src/inventory.ts";
 import { readManifest } from "../src/manifest.ts";
 import { relativePath } from "../src/paths.ts";
@@ -28,6 +28,10 @@ import {
  * fixtures cannot hold: a tree that carries a dependency directory, and the
  * generated trees a property draws.
  */
+
+export function targetConfigFiles(discovery: Discovery): readonly string[] {
+  return discovery.configurations.filter(isTargetConfiguration).map((one) => one.configFile);
+}
 
 /** The compiler configuration a written project carries unless a case writes its own. */
 export const TSCONFIG = `${JSON.stringify(
@@ -191,7 +195,7 @@ export function analyzeRoot(root: string, options: AnalyzeOptions = {}): Analyze
             return opened.ask(accessor, locations, question);
           },
         };
-  const configFiles = discoverProjects(engine, host, scopeForDir(host, root)).configFiles;
+  const configFiles = targetConfigFiles(discoverProjects(engine, host, scopeForDir(host, root)));
   const programFiles: string[] = [];
   const tally: Tally = { members: [], exports: [] };
   const resolved: References[] = [];

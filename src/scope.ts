@@ -2,6 +2,8 @@ import { SCOPE_SCHEMA } from "./contract/config.generated.ts";
 import type { Host } from "./host.ts";
 import { dotted, locatedFault, placeIn, readStrict, StrictJSONError } from "./json-document.ts";
 import { dirnamePath, isAbsolutePath, joinPath, resolvePath } from "./paths.ts";
+import { MARKERS } from "./load/discover.ts";
+import { failureExit } from "./failure.ts";
 import { message } from "./product.ts";
 import { firstRefusal } from "./schema.ts";
 import { UsageError } from "./usage.ts";
@@ -17,17 +19,6 @@ const MAX_DOCUMENT_LENGTH = 1 << 20;
  * so a document past the bound is past it within these.
  */
 const MAX_DOCUMENT_BYTES = 3 * (MAX_DOCUMENT_LENGTH + 1);
-
-/**
- * A scope that cannot be read as one. It ends the run with the failure code: the run
- * could not learn what to analyze, so it produced no answer.
- */
-export class ScopeError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "ScopeError";
-  }
-}
 
 /**
  * One module the run reads: the target or a declared consumer. The role a document
@@ -51,14 +42,14 @@ interface DeclaredModule {
   readonly path: string;
 }
 
-function refusal(file: string, place: string, reason: string): ScopeError {
-  return new ScopeError(`scope: ${file}: ${place === "" ? "" : `${place}: `}${reason}`);
+function refusal(file: string, place: string, reason: string): UsageError {
+  return new UsageError(`scope: ${file}: ${place === "" ? "" : `${place}: `}${reason}`);
 }
 
 /**
  * Decodes the scope document at `file`, held to the Contract's scope schema, a relative
- * path resolved against the document's own directory. A document that cannot be read is
- * a usage error, one that is refused a scope error. `workspace` is read by Go consumers
+ * path resolved against the document's own directory. A document that cannot be read or is
+ * refused is a usage error, as any document the invocation names. `workspace` is read by Go consumers
  * alone: a TypeScript project resolves the target through its own compiler configuration.
  */
 export function readScope(host: Host, file: string): Scope {
@@ -70,7 +61,7 @@ export function readScope(host: Host, file: string): Scope {
     throw new UsageError(`scope: ${file}: ${message(error)}`);
   }
   if (text.length > MAX_DOCUMENT_LENGTH) {
-    throw new ScopeError(`scope: ${file} is longer than ${String(MAX_DOCUMENT_LENGTH)} characters`);
+    throw new UsageError(`scope: ${file} is longer than ${String(MAX_DOCUMENT_LENGTH)} characters`);
   }
   let value: unknown;
   try {
@@ -94,15 +85,18 @@ export function readScope(host: Host, file: string): Scope {
   return { target: moduleOf(declared.target), consumers: (declared.consumers ?? []).map(moduleOf) };
 }
 
-/** The single-package scope one directory is, when no scope document is given. */
+/**
+ * The single-package scope one directory is, when no scope document is given. A target that is
+ * no directory holds no program.
+ */
 export function scopeForDir(host: Host, dir: string): Scope {
   const path = resolvePath(host.workingDirectory(), dir);
   const kind = host.kindOf(path);
-  if (kind === "absent") {
-    throw new ScopeError(`scope: ${path} does not exist`);
-  }
   if (kind !== "directory") {
-    throw new ScopeError(`scope: ${path} is not a directory`);
+    throw failureExit(
+      "no-program",
+      `the target ${path} ${kind === "absent" ? "does not exist" : "is not a directory"}, so it holds no compiler configuration, no file named ${MARKERS.join(", ")}: name the directory that holds one`,
+    );
   }
   return { target: { id: "", path }, consumers: [] };
 }

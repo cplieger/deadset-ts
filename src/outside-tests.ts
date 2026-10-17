@@ -20,7 +20,7 @@ import {
   type SourceFile,
 } from "@typescript/native/ast";
 import { RESOLVED_EXTENSIONS, type ParseFile } from "./configuration-files.ts";
-import { emittedFrom } from "./emit-map.ts";
+import { emittedFrom } from "./load/emit-map.ts";
 import type { Host } from "./host.ts";
 import type { Inventory } from "./inventory.ts";
 import { namesImported } from "./module-declarations.ts";

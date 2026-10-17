@@ -6,14 +6,16 @@ import { isIdentifier, type Node, type SourceFile } from "@typescript/native/ast
 import type { Snapshot, Symbol as TSSymbol, TimingInfo } from "@typescript/native/sync";
 import { nodeHost } from "../bin/node-host.ts";
 import { fixture } from "../__test-helpers__/fixtures.ts";
-import { writeProject } from "../__test-helpers__/projects.ts";
+import { targetConfigFiles, writeProject } from "../__test-helpers__/projects.ts";
 import type { Host } from "./host.ts";
-import { diagnosticErrors, discoverProjects, DiscoveryError } from "./discover.ts";
+import { diagnosticErrors } from "./load/diagnostics.ts";
+import { discoverProjects } from "./load/discover.ts";
 import { scopeForDir } from "./scope.ts";
 import { isAnswered } from "./query.ts";
 import {
   diagnosticsOf,
   openEngine,
+  openSession,
   runSession,
   type Engine,
   type Handle,
@@ -248,7 +250,9 @@ describe("the compiler client", () => {
 describe("the run lifetime", () => {
   it("opens one snapshot holding every project and disposes it once", () => {
     const { engine, recorded } = recordingEngine(openEngine({ collectTiming: false }));
-    const configFiles = discoverProjects(engine, HOST, scopeForDir(HOST, TWO_PROJECTS)).configFiles;
+    const configFiles = targetConfigFiles(
+      discoverProjects(engine, HOST, scopeForDir(HOST, TWO_PROJECTS)),
+    );
 
     const { projects } = runSession(engine, configFiles, (project) => project.configFile);
 
@@ -261,7 +265,9 @@ describe("the run lifetime", () => {
 
   it("disposes the snapshot and releases the client when a project's work throws", () => {
     const { engine, recorded } = recordingEngine(openEngine({ collectTiming: false }));
-    const configFiles = discoverProjects(engine, HOST, scopeForDir(HOST, TWO_PROJECTS)).configFiles;
+    const configFiles = targetConfigFiles(
+      discoverProjects(engine, HOST, scopeForDir(HOST, TWO_PROJECTS)),
+    );
 
     expect(() =>
       runSession(engine, configFiles, () => {
@@ -274,11 +280,9 @@ describe("the run lifetime", () => {
 
   it("visits the projects in the order the configurations are named, and answers in it", () => {
     const engine = openEngine({ collectTiming: false });
-    const [first, second] = discoverProjects(
-      engine,
-      HOST,
-      scopeForDir(HOST, TWO_PROJECTS),
-    ).configFiles;
+    const [first, second] = targetConfigFiles(
+      discoverProjects(engine, HOST, scopeForDir(HOST, TWO_PROJECTS)),
+    );
     if (first === undefined || second === undefined) {
       throw new Error("the fixture holds two projects");
     }
@@ -288,9 +292,11 @@ describe("the run lifetime", () => {
     expect(projects).toEqual([second, first]);
   });
 
-  it("ends the run when the snapshot opens no project for a named configuration", () => {
+  it("visits no configuration where the snapshot opens no project for one it is named", () => {
     const real = openEngine({ collectTiming: false });
-    const configFiles = discoverProjects(real, HOST, scopeForDir(HOST, TWO_PROJECTS)).configFiles;
+    const configFiles = targetConfigFiles(
+      discoverProjects(real, HOST, scopeForDir(HOST, TWO_PROJECTS)),
+    );
     const engine: Engine = {
       ...real,
       createSnapshot: (openProjects) => {
@@ -300,13 +306,19 @@ describe("the run lifetime", () => {
         return short;
       },
     };
+    const visited: string[] = [];
 
-    expect(() => runSession(engine, configFiles, () => 0)).toThrow(DiscoveryError);
+    expect(() =>
+      runSession(engine, configFiles, (project) => visited.push(project.configFile)),
+    ).toThrow(new Error(`${String(configFiles[0])} opened no project`));
+    expect(visited).toEqual([]);
   });
 
-  it("names a configuration the snapshot opens no project for, and visits the rest, where told to record it", () => {
+  it("hands over a view for each configuration the snapshot opens, and none for the others", () => {
     const real = openEngine({ collectTiming: false });
-    const configFiles = discoverProjects(real, HOST, scopeForDir(HOST, TWO_PROJECTS)).configFiles;
+    const configFiles = targetConfigFiles(
+      discoverProjects(real, HOST, scopeForDir(HOST, TWO_PROJECTS)),
+    );
     const engine: Engine = {
       ...real,
       createSnapshot: (openProjects) => {
@@ -317,20 +329,18 @@ describe("the run lifetime", () => {
       },
     };
 
-    const { projects, unopened } = runSession(
-      engine,
-      configFiles,
-      (project) => project.configFile,
-      "record",
+    const projects = openSession(engine, configFiles, {}, (opened) =>
+      opened.views.map((view) => view.configFile),
     );
 
-    expect(unopened).toEqual(configFiles.slice(0, 1));
     expect(projects).toEqual(configFiles.slice(1));
   });
 
   it("reports what one snapshot over two projects cost", () => {
     const engine = openEngine({ collectTiming: true });
-    const configFiles = discoverProjects(engine, HOST, scopeForDir(HOST, TWO_PROJECTS)).configFiles;
+    const configFiles = targetConfigFiles(
+      discoverProjects(engine, HOST, scopeForDir(HOST, TWO_PROJECTS)),
+    );
 
     const { timing } = runSession(engine, configFiles, (project) => {
       diagnosticsOf(project);
@@ -345,7 +355,9 @@ describe("the run lifetime", () => {
 
   it("reports collection off when the run does not ask for it", () => {
     const engine = openEngine({ collectTiming: false });
-    const configFiles = discoverProjects(engine, HOST, scopeForDir(HOST, TWO_PROJECTS)).configFiles;
+    const configFiles = targetConfigFiles(
+      discoverProjects(engine, HOST, scopeForDir(HOST, TWO_PROJECTS)),
+    );
 
     const { timing }: { timing: TimingInfo } = runSession(engine, configFiles, () => 0);
 
@@ -356,7 +368,9 @@ describe("the run lifetime", () => {
 describe("a project's own files", () => {
   it("holds the sources each project's own configuration names and no library file", () => {
     const engine = openEngine({ collectTiming: false });
-    const configFiles = discoverProjects(engine, HOST, scopeForDir(HOST, TWO_PROJECTS)).configFiles;
+    const configFiles = targetConfigFiles(
+      discoverProjects(engine, HOST, scopeForDir(HOST, TWO_PROJECTS)),
+    );
 
     const { projects } = runSession(engine, configFiles, (project) => ({
       configFile: project.configFile,
@@ -488,7 +502,9 @@ describe("a project's view", () => {
 describe("a symbol's declaration", () => {
   it("resolves in this project's program, whichever project first saw the symbol", () => {
     const engine = openEngine({ collectTiming: false });
-    const configFiles = discoverProjects(engine, HOST, scopeForDir(HOST, TWO_PROJECTS)).configFiles;
+    const configFiles = targetConfigFiles(
+      discoverProjects(engine, HOST, scopeForDir(HOST, TWO_PROJECTS)),
+    );
 
     const { projects } = runSession(engine, configFiles, (project) => {
       const file = project.ownSourceFiles().find((held) => held.fileName.endsWith("catalog.ts"));

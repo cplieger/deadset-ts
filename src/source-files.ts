@@ -5,7 +5,7 @@
  */
 
 import type { SourceFile } from "@typescript/native/ast";
-import { commonDirectory, emittedFrom } from "./emit-map.ts";
+import { commonDirectory, emittedFrom } from "./load/emit-map.ts";
 import { dirnamePath, joinPath, relativePath, resolvePath } from "./paths.ts";
 import type { ProjectView } from "./session.ts";
 

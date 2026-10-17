@@ -310,7 +310,7 @@ describe("readConventions", () => {
   it("fails as missing-module where no installed manifest is found", () => {
     const decided = decide({ "/repo/package.json": '{ "dependencies": { "tool": "2" } }' });
 
-    expect(decided.failures.map((one) => one.failure.setupClass)).toEqual(["missing-module"]);
+    expect(decided.failures.map((one) => one.failure.failureClass)).toEqual(["missing-module"]);
     expect(decided.failures[0]?.failure.detail).toContain("package.json declares tool");
     expect(decided.applied).toEqual([]);
   });
@@ -322,7 +322,7 @@ describe("readConventions", () => {
       [ROW, { ...ROW, range: ">=3.0.0 <4.0.0" }],
     );
 
-    expect(decided.failures.map((one) => one.failure.setupClass)).toEqual(["missing-module"]);
+    expect(decided.failures.map((one) => one.failure.failureClass)).toEqual(["missing-module"]);
   });
 
   it("fails as missing-module once in each manifest that declares the package", () => {
@@ -391,7 +391,7 @@ describe("readConventions", () => {
     });
 
     expect(decided.applied).toEqual([]);
-    expect(decided.failures.map((one) => one.failure.setupClass)).toEqual([
+    expect(decided.failures.map((one) => one.failure.failureClass)).toEqual([
       "convention-not-literal",
     ]);
     expect(decided.failures[0]?.failure.detail).toMatch(

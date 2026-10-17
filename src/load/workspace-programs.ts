@@ -16,13 +16,14 @@ import type {
 } from "@typescript/native/sync";
 import { isStringLiteralLikeNode } from "@typescript/native/ast";
 import type { StringLiteralLikeNode } from "@typescript/native/ast";
-import { baseUrlPaths } from "./base-url.ts";
-import type { Host } from "./host.ts";
-import { dirnamePath, resolvePath } from "./paths.ts";
-import type { Engine } from "./session.ts";
+import type { Host } from "../host.ts";
+import { dirnamePath, resolvePath } from "../paths.ts";
+import type { Engine, ProgramBuild } from "../session.ts";
 import type { WorkspaceResolver } from "./workspace-resolution.ts";
-import { bytewise } from "./text/compare.ts";
-import { PRODUCT } from "./product.ts";
+import { bytewise } from "../text/compare.ts";
+import { PRODUCT } from "../product.ts";
+import type { Parsed } from "./discover.ts";
+import type { Build, CompilerOptions } from "./plan.ts";
 
 /** One member import no member source answers for. */
 interface UnresolvedImport {
@@ -45,32 +46,33 @@ export interface MemberReading {
   readonly componentsUnread: string | undefined;
 }
 
-/** How a snapshot reads one configuration that imports a member. */
-export type WorkspaceProgram =
-  | { readonly kind: "program"; readonly params: CreateSnapshotProgramParams }
-  /** A configuration only the snapshot holds, at a path no file has. */
-  | { readonly kind: "configuration"; readonly file: string; readonly text: string };
+/** One configuration as a written configuration or a described program. */
+type Written = Exclude<Build, { readonly kind: "project" }>;
 
 /** The programs one run builds instead of opening projects, with what reading them did. */
 interface WorkspacePrograms {
   /** Per configuration that imports a member, how the snapshot reads it. */
-  readonly programs: ReadonlyMap<string, WorkspaceProgram>;
+  readonly programs: ReadonlyMap<string, Written>;
   readonly readings: readonly MemberReading[];
 }
 
-type Parsed = ReturnType<Engine["parseConfigFile"]>;
+/** One configuration the rounds read: its parse and the options the plan builds it with. */
+export interface PlannedConfiguration {
+  readonly configFile: string;
+  readonly parsed: Parsed;
+  readonly options: CompilerOptions;
+}
 
 /** The most questions one round trip carries. */
 const BATCH = 2048;
 
 /**
- * The options a configuration's program is built with: its own, less the ones that
- * lay out an emitted program's inputs and outputs, and with `paths` read against the
- * effective `baseUrl` as {@link baseUrlPaths} states. The analysis emits nothing, and a
- * member's source is outside the importer's root directory by construction, which
- * the compiler refuses under such a layout.
+ * The options a configuration's program is built with: the plan's, less the ones that lay
+ * out an emitted program's inputs and outputs. The analysis emits nothing, and a member's
+ * source is outside the importer's root directory by construction, which the compiler
+ * refuses under such a layout.
  */
-function analysisOptions(parsed: Parsed): CreateSnapshotProgramParams["compilerOptions"] {
+function analysisOptions(options: CompilerOptions): CreateSnapshotProgramParams["compilerOptions"] {
   const {
     composite,
     rootDir: _rootDir,
@@ -78,10 +80,8 @@ function analysisOptions(parsed: Parsed): CreateSnapshotProgramParams["compilerO
     declarationDir: _declarationDir,
     tsBuildInfoFile: _tsBuildInfoFile,
     ...kept
-  } = parsed.options;
-  const paths = baseUrlPaths(parsed.options);
-  const options = paths === undefined ? kept : { ...kept, paths };
-  return composite === true ? { ...options, declaration: true } : options;
+  } = options;
+  return composite === true ? { ...kept, declaration: true } : kept;
 }
 
 /** The conditions an `exports` lookup under one configuration and one resolution mode reads. */
@@ -103,9 +103,7 @@ function resolutionMode(kind: ModuleKind): ResolutionMode | undefined {
 }
 
 /** One configuration's state across the rounds. */
-interface Reading {
-  readonly configFile: string;
-  readonly parsed: Parsed;
+interface Reading extends PlannedConfiguration {
   readonly entries: ModuleResolutionEntry[];
   readonly seen: Set<string>;
   /** Per member specifier, every file an import of it is read as. */
@@ -149,16 +147,17 @@ function configurationOf(
   engine: Engine,
   host: Host,
   reading: Reading,
-): WorkspaceProgram | { readonly kind: "unread"; readonly reason: string } {
+): Written | { readonly kind: "unread"; readonly reason: string } {
   const reason = unstatable(reading);
   if (reason !== undefined) {
     return { kind: "unread", reason };
   }
-  const { options, projectReferences: references = [] } = reading.parsed;
+  const { options } = reading;
+  const references = reading.parsed.projectReferences ?? [];
   const raw: unknown = (options as Record<string, unknown>)["pathsBasePath"];
   const base = typeof raw === "string" ? raw : dirnamePath(reading.configFile);
   const paths: Record<string, string[]> = {};
-  for (const [key, targets] of Object.entries(baseUrlPaths(options) ?? options.paths ?? {})) {
+  for (const [key, targets] of Object.entries(options.paths ?? {})) {
     paths[key] = targets.map((target) => resolvePath(base, target));
   }
   for (const entry of reading.entries) {
@@ -204,7 +203,7 @@ function configurationOf(
       };
     }
   }
-  return { kind: "configuration", file, text: `${JSON.stringify(value, null, 2)}\n` };
+  return { kind: "configuration", value };
 }
 
 /** The program one configuration is built as, under the answers it holds so far. */
@@ -212,7 +211,7 @@ function programOf(
   engine: Engine,
   reading: Reading,
 ): { readonly params: CreateSnapshotProgramParams; readonly resolver: ModuleResolver } {
-  const compilerOptions = analysisOptions(reading.parsed);
+  const compilerOptions = analysisOptions(reading.options);
   const references = reading.parsed.projectReferences ?? [];
   const resolver = engine.createModuleResolver(compilerOptions, reading.entries);
   return {
@@ -338,6 +337,23 @@ type Built =
     }
   | { readonly kind: "configuration"; readonly file: string; readonly text: string };
 
+function configurationText(value: Readonly<Record<string, unknown>>): string {
+  return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+/** One configuration value as the snapshot holds it, beside the configuration it stands for. */
+export function writtenConfiguration(
+  host: Host,
+  configFile: string,
+  value: Readonly<Record<string, unknown>>,
+): Extract<ProgramBuild, { readonly kind: "configuration" }> {
+  return {
+    kind: "configuration",
+    file: writtenPath(host, configFile),
+    text: configurationText(value),
+  };
+}
+
 /**
  * Answers the member imports of every reading `build` describes, round by round, all
  * the readings still adding answers built in one snapshot per round. A reading `build`
@@ -393,28 +409,16 @@ function readRounds(
 export function workspacePrograms(
   engine: Engine,
   host: Host,
-  configFiles: readonly string[],
+  configurations: readonly PlannedConfiguration[],
   resolver: WorkspaceResolver,
 ): WorkspacePrograms {
-  const readings: Reading[] = configFiles.flatMap((configFile) => {
-    let parsed: Parsed;
-    try {
-      parsed = engine.parseConfigFile(configFile);
-    } catch {
-      // A configuration that does not read is opened as a project, which states why.
-      return [];
-    }
-    return [
-      {
-        configFile,
-        parsed,
-        entries: [],
-        seen: new Set<string>(),
-        bound: new Map<string, Set<string>>(),
-        unresolved: [],
-      },
-    ];
-  });
+  const readings: Reading[] = configurations.map((configuration) => ({
+    ...configuration,
+    entries: [],
+    seen: new Set<string>(),
+    bound: new Map<string, Set<string>>(),
+    unresolved: [],
+  }));
   readRounds(engine, readings, resolver, (reading) => ({
     kind: "program",
     ...programOf(engine, reading),
@@ -422,10 +426,12 @@ export function workspacePrograms(
   if (engine.readsComponents) {
     readRounds(engine, readings, resolver, (reading) => {
       const one = configurationOf(engine, host, reading);
-      return one.kind === "configuration" ? one : undefined;
+      return one.kind === "configuration"
+        ? writtenConfiguration(host, reading.configFile, one.value)
+        : undefined;
     });
   }
-  const programs = new Map<string, WorkspaceProgram>();
+  const programs = new Map<string, Written>();
   const unread = new Map<string, string>();
   for (const reading of readings) {
     if (reading.entries.length === 0) {

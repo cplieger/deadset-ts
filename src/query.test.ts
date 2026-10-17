@@ -10,8 +10,8 @@ import type {
   Type,
 } from "@typescript/native/sync";
 import { nodeHost } from "../bin/node-host.ts";
-import { writeProject } from "../__test-helpers__/projects.ts";
-import { discoverProjects } from "./discover.ts";
+import { targetConfigFiles, writeProject } from "../__test-helpers__/projects.ts";
+import { discoverProjects } from "./load/discover.ts";
 import {
   isAnswered,
   must,
@@ -23,7 +23,7 @@ import {
   type Batch,
 } from "./query.ts";
 import { scopeForDir } from "./scope.ts";
-import { openEngine, runSession } from "./session.ts";
+import { openEngine, openSession } from "./session.ts";
 
 /** The text the compiler server answers a question with when the question panicked. */
 const PANIC = "panic: interface conversion: checker.TypeData is *checker.TypeReference";
@@ -419,28 +419,31 @@ describe("a question the compiler server panics on", () => {
     roots.push(root);
     const host = nodeHost();
     const engine = openEngine({ collectTiming: false });
-    const configFiles = discoverProjects(engine, host, scopeForDir(host, root)).configFiles;
+    const configFiles = targetConfigFiles(discoverProjects(engine, host, scopeForDir(host, root)));
 
-    const { projects, unanswered } = runSession(engine, configFiles, (project) => {
-      const file = project.ownSourceFiles().find((one) => one.fileName.endsWith("a.ts"));
-      if (file === undefined) {
-        throw new Error("the project holds src/a.ts");
-      }
-      const [module] = project.symbolsAt([project.handle(file)]);
-      const table = typeof module === "object" ? project.queries.exportsOf(module) : UNANSWERED;
-      const value = table === UNANSWERED ? undefined : table.get("value");
-      if (value === undefined) {
-        throw new Error("the module exports value");
-      }
-      // The server asserts that the symbol it is asked to step along is an alias.
-      const stepped = project.queries.immediateAliased(value);
-      const type = project.queries.typeOfSymbol(value);
-      return {
-        stepped: stepped === UNANSWERED ? "unanswered" : "answered",
-        type:
-          type === UNANSWERED || type === undefined ? "none" : project.queries.typeToString(type),
-      };
-    });
+    const { projects, unanswered } = openSession(engine, configFiles, {}, (opened, asked) => ({
+      projects: opened.views.map((project) => {
+        const file = project.ownSourceFiles().find((one) => one.fileName.endsWith("a.ts"));
+        if (file === undefined) {
+          throw new Error("the project holds src/a.ts");
+        }
+        const [module] = project.symbolsAt([project.handle(file)]);
+        const table = typeof module === "object" ? project.queries.exportsOf(module) : UNANSWERED;
+        const value = table === UNANSWERED ? undefined : table.get("value");
+        if (value === undefined) {
+          throw new Error("the module exports value");
+        }
+        // The server asserts that the symbol it is asked to step along is an alias.
+        const stepped = project.queries.immediateAliased(value);
+        const type = project.queries.typeOfSymbol(value);
+        return {
+          stepped: stepped === UNANSWERED ? "unanswered" : "answered",
+          type:
+            type === UNANSWERED || type === undefined ? "none" : project.queries.typeToString(type),
+        };
+      }),
+      unanswered: asked(),
+    }));
 
     expect(projects).toEqual([{ stepped: "unanswered", type: "string" }]);
     expect(unanswered.map((one) => [one.configFile, one.accessor])).toEqual([

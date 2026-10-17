@@ -23,14 +23,16 @@ import {
   type Node,
   type SourceFile,
 } from "@typescript/native/ast";
-import type { ParseFile } from "./configuration-files.ts";
-import type { Host } from "./host.ts";
-import { ancestors, dirnamePath, joinPath } from "./paths.ts";
-import { UNANSWERED } from "./query.ts";
-import type { Engine, ProjectView } from "./session.ts";
-import { writtenPath, type WorkspaceProgram } from "./workspace-programs.ts";
-import { filesIn } from "./fs/tree.ts";
-import { holdsManifest, INSTALLED_PACKAGES } from "./fs/manifest.ts";
+import type { ParseFile } from "../configuration-files.ts";
+import type { Host } from "../host.ts";
+import { isRecord } from "../json-document.ts";
+import { ancestors, dirnamePath, joinPath } from "../paths.ts";
+import { UNANSWERED } from "../query.ts";
+import type { ProjectView } from "../session.ts";
+import { filesIn } from "../fs/tree.ts";
+import { holdsManifest, INSTALLED_PACKAGES } from "../fs/manifest.ts";
+import { isTargetConfiguration } from "./discover.ts";
+import type { ProgramPlan } from "./plan.ts";
 
 /** The test runner whose configuration injects the globals, and the `types` entry declaring them. */
 export const GLOBALS_RUNNER = "vitest";
@@ -150,75 +152,67 @@ function typesOf(value: unknown): readonly string[] | undefined {
 }
 
 /**
- * How the snapshot reads each configuration of `configFiles` whose nearest manifest's
- * runner configuration injects the globals and that can resolve their declarations: as
- * `programs` reads it, else as itself, with the globals' declarations added to its `types`.
- * A configuration the compiler cannot read is left for its project to refuse.
+ * The plans with the globals' declarations added to the `types` of each target configuration
+ * whose nearest manifest's runner configuration injects them and that can resolve them.
  */
-export function withTestGlobals(
-  engine: Engine,
+export function testGlobals(
   host: Host,
   parse: ParseFile,
-  configFiles: readonly string[],
-  programs: ReadonlyMap<string, WorkspaceProgram>,
-): ReadonlyMap<string, WorkspaceProgram> {
-  const found = new Map(programs);
+  plans: readonly ProgramPlan[],
+): readonly ProgramPlan[] {
   const injects = new Map<string, boolean>();
-  for (const configFile of configFiles) {
-    const dir = manifestDir(host, configFile);
-    if (dir === undefined || !globalsInstalled(host, configFile)) {
-      continue;
+  return plans.map((plan): ProgramPlan => {
+    const dir = manifestDir(host, plan.configFile);
+    if (
+      !isTargetConfiguration(plan) ||
+      dir === undefined ||
+      !globalsInstalled(host, plan.configFile)
+    ) {
+      return plan;
     }
     if (!injects.has(dir)) {
       injects.set(dir, injectsGlobals(host, parse, dir));
     }
+    const base = typesOf(plan.options.types) ?? [];
+    const { build } = plan;
     if (injects.get(dir) !== true) {
-      continue;
+      return plan;
     }
-    let base: readonly string[];
-    try {
-      base = typesOf(engine.parseConfigFile(configFile).options.types) ?? [];
-    } catch {
-      continue;
+    if (build.kind === "program") {
+      const listed = typesOf(build.params.compilerOptions.types) ?? base;
+      return listed.includes(GLOBALS_TYPES)
+        ? plan
+        : {
+            ...plan,
+            build: {
+              kind: "program",
+              params: {
+                ...build.params,
+                compilerOptions: {
+                  ...build.params.compilerOptions,
+                  types: [...listed, GLOBALS_TYPES],
+                },
+              },
+            },
+          };
     }
-    const held = found.get(configFile);
-    if (held?.kind === "program") {
-      const listed = typesOf(held.params.compilerOptions.types) ?? base;
-      if (!listed.includes(GLOBALS_TYPES)) {
-        found.set(configFile, {
-          kind: "program",
-          params: {
-            ...held.params,
-            compilerOptions: { ...held.params.compilerOptions, types: [...listed, GLOBALS_TYPES] },
-          },
-        });
-      }
-      continue;
-    }
-    let written: Record<string, unknown> = { extends: configFile };
-    if (held !== undefined) {
-      try {
-        written = JSON.parse(held.text) as Record<string, unknown>;
-      } catch {
-        continue;
-      }
-    }
-    const options = (written["compilerOptions"] ?? {}) as Record<string, unknown>;
+    const written = build.kind === "configuration" ? build.value : { extends: plan.configFile };
+    const held = written["compilerOptions"];
+    const options = isRecord(held) ? held : {};
     const listed = typesOf(options["types"]) ?? base;
-    if (listed.includes(GLOBALS_TYPES)) {
-      continue;
-    }
-    found.set(configFile, {
-      kind: "configuration",
-      file: held?.file ?? writtenPath(host, configFile),
-      text: `${JSON.stringify(
-        { ...written, compilerOptions: { ...options, types: [...listed, GLOBALS_TYPES] } },
-        null,
-        2,
-      )}\n`,
-    });
-  }
-  return found;
+    return listed.includes(GLOBALS_TYPES)
+      ? plan
+      : {
+          ...plan,
+          build: {
+            kind: "configuration",
+            value: {
+              ...written,
+              compilerOptions: { ...options, types: [...listed, GLOBALS_TYPES] },
+            },
+          },
+        };
+  });
 }
 
 /**

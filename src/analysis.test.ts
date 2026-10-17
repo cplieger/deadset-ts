@@ -19,12 +19,11 @@ import {
 import type { Inputs } from "./config.ts";
 import type { Detector, Detectors } from "./exempt.ts";
 import type { TSExemptionClass } from "./exempt-classes.ts";
-import { DiscoveryError } from "./discover.ts";
 import type { Host } from "./host.ts";
 import { Unanswerable } from "./query.ts";
 import { resolve } from "./resolve.ts";
 import { scopeForDir } from "./scope.ts";
-import { SetupError } from "./setup-failure.ts";
+import { FailureExit } from "./failure.ts";
 import { openEngine, type Engine } from "./session.ts";
 
 /** Writes one tree for the case, removed when the case ends. */
@@ -280,10 +279,13 @@ describe("the projects a run composes", () => {
         config,
       ),
     ).toThrow(
-      new DiscoveryError(
-        "no configuration discovery derived could be built; broken/tsconfig.json: broken/tsconfig.json: TS1109: Expression expected.",
-        [],
-      ),
+      new FailureExit([
+        {
+          failureClass: "no-program",
+          detail:
+            "no configuration discovery derived could be built; broken/tsconfig.json: broken/tsconfig.json: TS1109: Expression expected.",
+        },
+      ]),
     );
   });
 
@@ -326,7 +328,34 @@ describe("the projects a run composes", () => {
     };
 
     expect(() => runProjects(hiding(hidden), host, scope, config)).toThrow(
-      new DiscoveryError(`${hidden} opened no project`, []),
+      new FailureExit([
+        {
+          failureClass: "missing-consumer",
+          detail: `the compiler opened no project for ${hidden}, for the consumer ${join(root, "consumer")}: check the consumer out at ${join(root, "consumer")} and install its dependencies`,
+        },
+      ]),
+    );
+  });
+
+  it("fail where the compiler opened no project for a declared configuration", () => {
+    const root = written({
+      "tsconfig.json": including("src/**/*.ts"),
+      "src/main.ts": "export const one = 1;\n",
+    });
+    const host = nodeHost();
+    const { config } = configured({
+      target: { kind: "application" },
+      analysis: { configurations: [{ id: "app", project: "tsconfig.json" }] },
+    });
+    const hidden = join(root, "tsconfig.json");
+
+    expect(() => runProjects(hiding(hidden), host, scopeForDir(host, root), config)).toThrow(
+      new FailureExit([
+        {
+          failureClass: "no-program",
+          detail: `the compiler opened no project for ${hidden}: correct the configuration, or name the configurations to analyze`,
+        },
+      ]),
     );
   });
 
@@ -952,9 +981,17 @@ describe("the consumers of a run", () => {
       consumers: [{ id: "@example/consumer", path: join(root, "consumer") }],
     };
 
-    expect(() => runProjects(openEngine({ collectTiming: false }), host, scope, config)).toThrow(
-      /^4 error\(s\), so no answer was produced$/u,
-    );
+    let thrown: unknown;
+    try {
+      runProjects(openEngine({ collectTiming: false }), host, scope, config);
+    } catch (error: unknown) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(FailureExit);
+    const failure = thrown instanceof FailureExit ? thrown : undefined;
+    expect(failure?.failures.map((one) => one.failureClass)).toEqual(["missing-consumer"]);
+    expect(failure?.diagnostics).toHaveLength(4);
   });
 
   it("hold what a consumer's unanswered reference names", () => {
@@ -1055,9 +1092,9 @@ describe("the consumers of a run", () => {
     };
 
     expect(() => runProjects(openEngine({ collectTiming: false }), host, scope, config)).toThrow(
-      new SetupError([
+      new FailureExit([
         {
-          setupClass: "missing-consumer",
+          failureClass: "missing-consumer",
           detail: `the consumer ${join(root, "consumer")} does not build, its dependencies not installed: ${join(root, "target", "extra", "helper.ts")}:1: ${join(root, "target", "extra", "helper.ts")} imports "./generated.js", which names no file of the target: run the generator or the build that writes it`,
         },
       ]),

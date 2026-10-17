@@ -2,14 +2,15 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { nodeHost } from "../bin/node-host.ts";
-import { runAnalysis, type RunAnalysis } from "./analysis.ts";
-import type { Host } from "./host.ts";
-import { resolve } from "./resolve.ts";
-import { run } from "./run.ts";
-import { scopeForDir } from "./scope.ts";
-import { openEngine, type Engine } from "./session.ts";
+import { nodeHost } from "../../bin/node-host.ts";
+import { runAnalysis, type RunAnalysis } from "../analysis.ts";
+import type { Host } from "../host.ts";
+import { resolve } from "../resolve.ts";
+import { run } from "../run.ts";
+import { scopeForDir } from "../scope.ts";
+import { openEngine, type Engine } from "../session.ts";
 import { writtenPath } from "./workspace-programs.ts";
+import { baseUrlPaths } from "./plan.ts";
 import { workspaceRun } from "./workspace-run.ts";
 
 /**
@@ -111,7 +112,16 @@ function workspaceOf(
     engine,
     nodeHost(),
     root,
-    configFiles.map((configFile) => join(root, configFile)),
+    configFiles.map((name) => {
+      const configFile = join(root, name);
+      const parsed = engine.parseConfigFile(configFile);
+      const paths = baseUrlPaths(parsed.options);
+      return {
+        configFile,
+        parsed,
+        options: paths === undefined ? parsed.options : { ...parsed.options, paths },
+      };
+    }),
     { entries: [], declaresExports: false },
   );
 }
@@ -903,7 +913,10 @@ describe("a configuration that imports a workspace package, in a run that reads 
       root,
       written:
         program?.kind === "configuration"
-          ? { file: program.file.slice(root.length + 1), json: JSON.parse(program.text) as unknown }
+          ? {
+              file: writtenPath(nodeHost(), join(root, configFile)).slice(root.length + 1),
+              json: program.value,
+            }
           : { kind: program?.kind },
     };
   }

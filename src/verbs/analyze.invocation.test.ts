@@ -103,7 +103,7 @@ describe("an analyze invocation", () => {
     expect(got.err).toContain("and none was named");
   });
 
-  it("names on the error stream why the analyzer's version cannot be read, and fails", () => {
+  it("ends with the run failure product-fault naming why the analyzer's version cannot be read", () => {
     const got = analyze(CLEAN_APPLICATION, [], {
       analyzerVersion: () => {
         throw new Error("the package manifest cannot be read");
@@ -112,7 +112,7 @@ describe("an analyze invocation", () => {
 
     expect(got).toEqual({
       code: 3,
-      err: "deadset-ts: the package manifest cannot be read\n",
+      err: "run failure: product-fault: deadset-ts cannot read its own version: the package manifest cannot be read: reinstall deadset-ts, and report the fault to its maintainers if a reinstalled deadset-ts fails the same way\n",
       written: [],
     });
   });
