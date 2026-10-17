@@ -3,12 +3,13 @@ import { describe, expect, it } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
 import { contractDocument, fixture } from "../__test-helpers__/fixtures.ts";
 import {
+  type Analyzed,
   analyzeProject,
   analyzeRoot,
-  type Analyzed,
+  targetConfigFiles,
   writeProject,
 } from "../__test-helpers__/projects.ts";
-import { discoverProjects } from "./discover.ts";
+import { discoverProjects } from "./load/discover.ts";
 import { inventory, type InventorySymbol, type Visibility } from "./inventory.ts";
 import { positionKey } from "./position.ts";
 import { UNANSWERED } from "./query.ts";
@@ -472,7 +473,9 @@ describe("a parameter property", () => {
     const host = nodeHost();
     const engine = openEngine({ collectTiming: false });
     try {
-      const configFiles = discoverProjects(engine, host, scopeForDir(host, root)).configFiles;
+      const configFiles = targetConfigFiles(
+        discoverProjects(engine, host, scopeForDir(host, root)),
+      );
       const { projects } = runSession(engine, configFiles, (project) =>
         inventory(
           answered

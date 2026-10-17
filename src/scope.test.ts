@@ -10,7 +10,8 @@ import {
   negatives,
   scopeExamples,
 } from "../__test-helpers__/fixtures.ts";
-import { readScope, scopeForDir, ScopeError } from "./scope.ts";
+import { FailureExit } from "./failure.ts";
+import { readScope, scopeForDir } from "./scope.ts";
 import { UsageError } from "./usage.ts";
 
 const HOST = nodeHost();
@@ -113,7 +114,7 @@ describe("a scope document", () => {
     const file = join(scratch(), "scope.json");
     writeFileSync(file, text);
 
-    expect(() => readScope(HOST, file)).toThrow(ScopeError);
+    expect(() => readScope(HOST, file)).toThrow(UsageError);
     expect(() => readScope(HOST, file)).toThrow(detail);
   });
 
@@ -122,11 +123,11 @@ describe("a scope document", () => {
     writeFileSync(file, "{");
 
     expect(() => readScope(HOST, file)).toThrow(
-      new ScopeError(`scope: ${file}: line 1, column 2: a member name is expected`),
+      new UsageError(`scope: ${file}: line 1, column 2: a member name is expected`),
     );
   });
 
-  it("is a usage error, not a scope error, when the file it names cannot be read", () => {
+  it("is a usage error when the file it names cannot be read", () => {
     const file = join(scratch(), "absent-scope.json");
     let thrown: unknown;
     try {
@@ -136,7 +137,6 @@ describe("a scope document", () => {
     }
 
     expect(thrown).toBeInstanceOf(UsageError);
-    expect(thrown).not.toBeInstanceOf(ScopeError);
     expect(thrown instanceof Error ? thrown.message : "").toContain(`scope: ${file}:`);
   });
 
@@ -152,7 +152,7 @@ describe("a scope document", () => {
     writeFileSync(file, text.padEnd(longest + 1));
 
     expect(() => readScope(HOST, file)).toThrow(
-      new ScopeError(`scope: ${file} is longer than ${String(longest)} characters`),
+      new UsageError(`scope: ${file} is longer than ${String(longest)} characters`),
     );
   });
 
@@ -183,7 +183,7 @@ describe("a scope document", () => {
       writeFileSync(file, `{"target":{"path":"."}}${char.repeat(longest)}`);
 
       expect(() => readScope(HOST, file)).toThrow(
-        new ScopeError(`scope: ${file} is longer than ${String(longest)} characters`),
+        new UsageError(`scope: ${file} is longer than ${String(longest)} characters`),
       );
     },
   );
@@ -203,7 +203,12 @@ describe("a scope document", () => {
 
 describe("a target with no scope document", () => {
   it("is refused when nothing is at the path", () => {
-    expect(() => scopeForDir(HOST, join(scratch(), "absent"))).toThrow("does not exist");
+    const absent = join(scratch(), "absent");
+
+    expect(() => scopeForDir(HOST, absent)).toThrow(FailureExit);
+    expect(() => scopeForDir(HOST, absent)).toThrow(
+      `setup failure: no-program: the target ${absent} does not exist, so it holds no compiler configuration, no file named tsconfig*.json: name the directory that holds one`,
+    );
   });
 });
 
@@ -228,7 +233,7 @@ describe("the Contract's scope documents", () => {
     const path = join(scratch(), "scope.json");
     writeFileSync(path, negativeDocument(file));
 
-    expect(() => readScope(HOST, path)).toThrow(ScopeError);
+    expect(() => readScope(HOST, path)).toThrow(UsageError);
     expect(() => readScope(HOST, path)).toThrow(names);
   });
 

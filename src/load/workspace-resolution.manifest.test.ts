@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { removeWorkspaces, source, workspaceAt } from "../__test-helpers__/workspace-tree.ts";
+import { removeWorkspaces, source, workspaceAt } from "../../__test-helpers__/workspace-tree.ts";
 
 afterEach(removeWorkspaces);
 

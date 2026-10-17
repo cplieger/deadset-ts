@@ -2,9 +2,9 @@ import { rmSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { isIdentifier, isVariableDeclaration, type Node } from "@typescript/native/ast";
 import { nodeHost } from "../bin/node-host.ts";
-import { writeProject } from "../__test-helpers__/projects.ts";
+import { targetConfigFiles, writeProject } from "../__test-helpers__/projects.ts";
 import { typesAt } from "./class-members.ts";
-import { discoverProjects } from "./discover.ts";
+import { discoverProjects } from "./load/discover.ts";
 import { inventory } from "./inventory.ts";
 import { scopeForDir } from "./scope.ts";
 import { openEngine, runSession } from "./session.ts";
@@ -24,7 +24,7 @@ function reachOf(
   try {
     const host = nodeHost();
     const engine = openEngine({ collectTiming: false });
-    const configFiles = discoverProjects(engine, host, scopeForDir(host, root)).configFiles;
+    const configFiles = targetConfigFiles(discoverProjects(engine, host, scopeForDir(host, root)));
     const { projects } = runSession(engine, configFiles, (project) => {
       const held = inventory(project, host, root);
       const nameOf = new Map(held.symbols.map((symbol) => [symbol.id, symbol.name]));

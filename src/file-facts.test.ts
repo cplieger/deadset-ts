@@ -1,8 +1,8 @@
 import { rmSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
-import { writeProject } from "../__test-helpers__/projects.ts";
-import { discoverProjects } from "./discover.ts";
+import { targetConfigFiles, writeProject } from "../__test-helpers__/projects.ts";
+import { discoverProjects } from "./load/discover.ts";
 import { heldByInclusion, sourcePaths, sourceTree } from "./file-facts.ts";
 import type { DirectoryEntry, Host } from "./host.ts";
 import { scopeForDir } from "./scope.ts";
@@ -100,7 +100,7 @@ function included(files: Readonly<Record<string, string>>): readonly string[] {
   try {
     const host = nodeHost();
     const engine = openEngine({ collectTiming: false });
-    const { configFiles } = discoverProjects(engine, host, scopeForDir(host, root));
+    const configFiles = targetConfigFiles(discoverProjects(engine, host, scopeForDir(host, root)));
     return runSession(engine, configFiles, (project) =>
       heldByInclusion(project, root),
     ).projects.flat();

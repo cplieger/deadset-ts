@@ -1,8 +1,8 @@
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { nodeHost } from "../bin/node-host.ts";
-import { removeWorkspaces, workspaceAt } from "../__test-helpers__/workspace-tree.ts";
-import { readManifest, type ManifestEntry } from "./manifest.ts";
+import { nodeHost } from "../../bin/node-host.ts";
+import { removeWorkspaces, workspaceAt } from "../../__test-helpers__/workspace-tree.ts";
+import { readManifest, type ManifestEntry } from "../manifest.ts";
 import { memberEntries, targetManifestIn } from "./workspace-manifests.ts";
 
 afterEach(removeWorkspaces);

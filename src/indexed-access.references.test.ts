@@ -1,9 +1,9 @@
 import { rmSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
-import { writeProject } from "../__test-helpers__/projects.ts";
+import { targetConfigFiles, writeProject } from "../__test-helpers__/projects.ts";
 import { aliasChains } from "./alias-chain.ts";
-import { discoverProjects } from "./discover.ts";
+import { discoverProjects } from "./load/discover.ts";
 import { indexedAccessReferences } from "./indexed-access.ts";
 import { inventory } from "./inventory.ts";
 import { scopeForDir } from "./scope.ts";
@@ -34,7 +34,7 @@ function referencesOf(main: string, unanswered?: string): readonly string[] {
         return opened.ask(accessor, locations, question);
       },
     };
-    const configFiles = discoverProjects(engine, host, scopeForDir(host, root)).configFiles;
+    const configFiles = targetConfigFiles(discoverProjects(engine, host, scopeForDir(host, root)));
     const found = new Set<string>();
     runSession(engine, configFiles, (project) => {
       const held = inventory(project, host, root);

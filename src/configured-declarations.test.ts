@@ -1,7 +1,7 @@
 import { rmSync } from "node:fs";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
-import { writeProject } from "../__test-helpers__/projects.ts";
+import { targetConfigFiles, writeProject } from "../__test-helpers__/projects.ts";
 import { aliasChains } from "./alias-chain.ts";
 import { calleeName, callsOf, resolvedTargets } from "./calls.ts";
 import type { DeclarationEntry } from "./config.ts";
@@ -13,7 +13,7 @@ import {
   resolveEntries,
   spelledEntry,
 } from "./configured-declarations.ts";
-import { discoverProjects } from "./discover.ts";
+import { discoverProjects } from "./load/discover.ts";
 import { inventory, type Inventory } from "./inventory.ts";
 import { Unanswerable } from "./query.ts";
 import { scopeForDir } from "./scope.ts";
@@ -172,7 +172,7 @@ function inProject<Result>(
 ): Result {
   const root = written();
   const host = nodeHost();
-  const { configFiles } = discoverProjects(engine, host, scopeForDir(host, root));
+  const configFiles = targetConfigFiles(discoverProjects(engine, host, scopeForDir(host, root)));
   const { projects } = runSession(engine, configFiles, (project) =>
     visit(project, inventory(project, host, root)),
   );

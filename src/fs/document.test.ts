@@ -79,28 +79,49 @@ function analyze(
   return { code, err: err.text, read, limits };
 }
 
-/** The exit code a document the run cannot read ends it with. */
-const UNREADABLE: readonly (readonly [string, number])[] = [
-  [EDGES_FILE, 3],
-  [IGNORE_FILE, 3],
-  [BASELINE_FILE, 3],
-  ["deadset.json", 2],
+function setupLead(name: string): string {
+  return `setup failure: unreadable-document: ${name}`;
+}
+
+/**
+ * The exit code a document the run cannot read ends it with, and how the line naming it
+ * starts: the repository configuration is a configuration document, refused with the usage code.
+ */
+const UNREADABLE: readonly (readonly [string, number, (target: string) => string])[] = [
+  [EDGES_FILE, 3, () => setupLead(EDGES_FILE)],
+  [IGNORE_FILE, 3, () => setupLead(IGNORE_FILE)],
+  [BASELINE_FILE, 3, () => setupLead(BASELINE_FILE)],
+  ["deadset.json", 2, (target) => `deadset-ts: ${join(target, "deadset.json")}`],
 ];
 
 describe("a document at the target root", () => {
-  it.each(UNREADABLE)("named %s that is a directory ends the run with %i", (name, code) => {
+  it.each(UNREADABLE)("named %s that is a directory ends the run with %i", (name, code, lead) => {
     const { top, target } = tree();
     mkdirSync(join(target, name));
 
     const got = analyze(top, target);
 
     expect(got.code, got.err).toBe(code);
-    expect(got.err).toContain(`${name}: is not a regular file`);
+    expect(got.err).toContain(`${lead(target)}: is not a regular file`);
   });
+
+  it.each([EDGES_FILE, IGNORE_FILE, BASELINE_FILE])(
+    "named %s that cannot be read prints its setup failure with the fix, and only that line",
+    (name) => {
+      const { top, target } = tree();
+      mkdirSync(join(target, name));
+
+      const got = analyze(top, target);
+
+      expect(got.err).toBe(
+        `${setupLead(name)}: is not a regular file: make it a regular file inside the target root that the run can read, or remove it\n`,
+      );
+    },
+  );
 
   it.each(UNREADABLE)(
     "named %s that links outside the target root ends the run with %i, nothing read from it",
-    (name, code) => {
+    (name, code, lead) => {
       const { top, target } = tree();
       const outside = join(top, "outside.json");
       writeFileSync(outside, VALID[name] ?? "");
@@ -109,51 +130,54 @@ describe("a document at the target root", () => {
       const got = analyze(top, target);
 
       expect(got.code, got.err).toBe(code);
-      expect(got.err).toContain(`${name}: resolves to ${outside}, outside the target root`);
+      expect(got.err).toContain(`${lead(target)}: resolves to ${outside}, outside the target root`);
       expect(got.read).not.toContain(outside);
       expect(got.read).not.toContain(join(target, name));
     },
   );
 
-  it.each(UNREADABLE)("named %s that is a named pipe ends the run with %i", (name, code) => {
+  it.each(UNREADABLE)("named %s that is a named pipe ends the run with %i", (name, code, lead) => {
     const { top, target } = tree();
     execFileSync("mkfifo", [join(target, name)]);
 
     const got = analyze(top, target);
 
     expect(got.code, got.err).toBe(code);
-    expect(got.err).toContain(`${name}: is not a regular file`);
+    expect(got.err).toContain(`${lead(target)}: is not a regular file`);
   });
 
   it.each(UNREADABLE)(
     "named %s that is a symbolic link loop ends the run with %i",
-    (name, code) => {
+    (name, code, lead) => {
       const { top, target } = tree();
       symlinkSync(name, join(target, name));
 
       const got = analyze(top, target);
 
       expect(got.code, got.err).toBe(code);
-      expect(got.err).toContain(`${name}: ELOOP`);
+      expect(got.err).toContain(`${lead(target)}: ELOOP`);
     },
   );
 
-  it.each(UNREADABLE)("named %s whose kind cannot be read ends the run with %i", (name, code) => {
-    const { top, target } = tree();
-    const document = join(target, name);
+  it.each(UNREADABLE)(
+    "named %s whose kind cannot be read ends the run with %i",
+    (name, code, lead) => {
+      const { top, target } = tree();
+      const document = join(target, name);
 
-    const got = analyze(top, target, {
-      kindOf: (path) => {
-        if (path === document) {
-          throw new Error(`EIO: i/o error, stat '${path}'`);
-        }
-        return nodeHost().kindOf(path);
-      },
-    });
+      const got = analyze(top, target, {
+        kindOf: (path) => {
+          if (path === document) {
+            throw new Error(`EIO: i/o error, stat '${path}'`);
+          }
+          return nodeHost().kindOf(path);
+        },
+      });
 
-    expect(got.code, got.err).toBe(code);
-    expect(got.err).toContain(`${name}: EIO: i/o error`);
-  });
+      expect(got.code, got.err).toBe(code);
+      expect(got.err).toContain(`${lead(target)}: EIO: i/o error`);
+    },
+  );
 
   it.each(UNREADABLE.map(([name]) => name))(
     "named %s that links to a file inside the target root is read",

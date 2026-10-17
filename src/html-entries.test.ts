@@ -2,8 +2,8 @@ import { rmSync } from "node:fs";
 import { afterAll, describe, expect, it } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
 import { emitterInputOf, findingsOf } from "../__test-helpers__/emitter-input.ts";
-import { writeProject } from "../__test-helpers__/projects.ts";
-import { discoverProjects } from "./discover.ts";
+import { targetConfigFiles, writeProject } from "../__test-helpers__/projects.ts";
+import { discoverProjects } from "./load/discover.ts";
 import { htmlEntries } from "./html-entries.ts";
 import { relativePath } from "./paths.ts";
 import { resolve } from "./resolve.ts";
@@ -129,7 +129,7 @@ function entriesOf(files: Readonly<Record<string, string>>, parse = true): strin
   try {
     const host = nodeHost();
     const engine = openEngine({ collectTiming: false });
-    const configFiles = discoverProjects(engine, host, scopeForDir(host, root)).configFiles;
+    const configFiles = targetConfigFiles(discoverProjects(engine, host, scopeForDir(host, root)));
     const found: string[] = [];
     runSession(engine, configFiles, (project) => {
       const entries = htmlEntries(

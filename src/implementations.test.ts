@@ -1,8 +1,8 @@
 import { rmSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
-import { writeProject } from "../__test-helpers__/projects.ts";
-import { discoverProjects } from "./discover.ts";
+import { targetConfigFiles, writeProject } from "../__test-helpers__/projects.ts";
+import { discoverProjects } from "./load/discover.ts";
 import { implementations, mergeImplementations, type Implementations } from "./implementations.ts";
 import { inventory } from "./inventory.ts";
 import { scopeForDir } from "./scope.ts";
@@ -43,7 +43,7 @@ function implementationsIn(
         return opened.ask(accessor, locations, question);
       },
     };
-    const configFiles = discoverProjects(engine, host, scopeForDir(host, root)).configFiles;
+    const configFiles = targetConfigFiles(discoverProjects(engine, host, scopeForDir(host, root)));
     const read: Read[] = [];
     runSession(engine, configFiles, (project) => {
       const held = inventory(project, host, root);

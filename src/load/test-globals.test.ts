@@ -2,9 +2,9 @@ import { cpSync, mkdtempSync, renameSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
-import { nodeHost } from "../bin/node-host.ts";
-import { fixture } from "../__test-helpers__/fixtures.ts";
-import { run, type Writer } from "./run.ts";
+import { nodeHost } from "../../bin/node-host.ts";
+import { fixture } from "../../__test-helpers__/fixtures.ts";
+import { run, type Writer } from "../run.ts";
 
 class MemoryWriter implements Writer {
   text = "";

@@ -8,6 +8,14 @@ export const MANIFEST = "package.json";
 /** The directory a package manager installs packages into, whose files are no project's own. */
 export const INSTALLED_PACKAGES = "node_modules";
 
+/** The manifest members a package declares the packages it depends on under. */
+export const DEPENDENCY_SECTIONS = [
+  "dependencies",
+  "devDependencies",
+  "peerDependencies",
+  "optionalDependencies",
+] as const;
+
 /** Whether one path passes through an installed-packages directory. */
 export function inInstalledPackages(path: string): boolean {
   return path.split("/").includes(INSTALLED_PACKAGES);

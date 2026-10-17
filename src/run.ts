@@ -1,12 +1,12 @@
 import { CONFIG_MAX_BYTES, SETTINGS } from "./contract/config.generated.ts";
 import { EXIT_FAILURE, EXIT_USAGE } from "./contract/contract.generated.ts";
 import { REPOSITORY_DOCUMENT, type Document, type Inputs } from "./config.ts";
-import { DiscoveryError, renderDiagnostic } from "./discover.ts";
-import { readTargetDocument, TargetDocumentError } from "./fs/document.ts";
+import { readTargetDocument } from "./fs/document.ts";
 import type { Host } from "./host.ts";
 import { joinPath, resolvePath } from "./paths.ts";
-import { readScope, ScopeError, scopeForDir, type Scope } from "./scope.ts";
-import { SetupError, setupLine } from "./setup-failure.ts";
+import { renderDiagnostic } from "./load/diagnostics.ts";
+import { FailureExit, failureLines, productFault } from "./failure.ts";
+import { readScope, scopeForDir, type Scope } from "./scope.ts";
 import { UsageError } from "./usage.ts";
 import { openEngine, type Engine, type EngineOptions } from "./session.ts";
 import { printConfigVerb } from "./verbs/print-config.ts";
@@ -135,12 +135,14 @@ function documentAt(host: Host, label: string): Document {
 function repositoryAt(host: Host, target: string): Document | undefined {
   const label = joinPath(target, REPOSITORY_DOCUMENT);
   const root = resolvePath(host.workingDirectory(), target);
-  try {
-    const text = readTargetDocument(host, root, REPOSITORY_DOCUMENT, label);
-    return text === undefined ? undefined : { text, label };
-  } catch (error: unknown) {
-    throw error instanceof TargetDocumentError ? new UsageError(error.message) : error;
-  }
+  const text = readTargetDocument(
+    host,
+    root,
+    REPOSITORY_DOCUMENT,
+    label,
+    (named, reason) => new UsageError(`${named}: ${reason}`),
+  );
+  return text === undefined ? undefined : { text, label };
 }
 
 /**
@@ -253,29 +255,28 @@ function invoke(
   }
 }
 
-/** Turns one refusal into the exit code the Contract's table gives it. */
+/**
+ * Turns one refusal into the exit code the Contract's table gives it. An error no class names
+ * is a fault of this analyzer, printed with its stack for the maintainers it asks the user to
+ * report it to.
+ */
 function refuse(error: unknown, err: Writer): number {
   if (error instanceof UsageError) {
     diagnose(err, error.message);
     err.write(USAGE);
     return EXIT_USAGE;
   }
-  if (error instanceof DiscoveryError) {
-    for (const diagnostic of error.diagnostics) {
-      err.write(`${renderDiagnostic(diagnostic)}\n`);
+  if (!(error instanceof FailureExit)) {
+    if (error instanceof Error && error.stack !== undefined) {
+      err.write(`${error.stack}\n`);
     }
-    diagnose(err, error.message);
-    return EXIT_FAILURE;
+    return refuse(productFault(`meets an error none of its classes names: ${message(error)}`), err);
   }
-  if (error instanceof SetupError) {
-    for (const failure of error.failures) {
-      err.write(`${setupLine(failure)}\n`);
-    }
-    return EXIT_FAILURE;
+  for (const diagnostic of error.diagnostics) {
+    err.write(`${renderDiagnostic(diagnostic)}\n`);
   }
-  if (error instanceof ScopeError || error instanceof TargetDocumentError) {
-    diagnose(err, error.message);
-    return EXIT_FAILURE;
+  for (const line of failureLines(error.failures)) {
+    err.write(`${line}\n`);
   }
-  throw error;
+  return EXIT_FAILURE;
 }

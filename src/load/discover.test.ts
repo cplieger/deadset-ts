@@ -4,20 +4,16 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, onTestFinished } from "vitest";
 import { DiagnosticCategory, type Diagnostic } from "@typescript/native/sync";
 import type { RootedFilePath } from "@typescript/native/ast";
-import { nodeHost } from "../bin/node-host.ts";
-import { fixture } from "../__test-helpers__/fixtures.ts";
-import type { BuildConfiguration } from "./config.ts";
-import {
-  consumerProjects,
-  diagnosticErrors,
-  discoverProjects,
-  DiscoveryError,
-  projectErrors,
-  renderDiagnostic,
-  targetRelative,
-} from "./discover.ts";
-import { scopeForDir, type Scope } from "./scope.ts";
-import { openEngine, type Engine } from "./session.ts";
+import { nodeHost } from "../../bin/node-host.ts";
+import { fixture } from "../../__test-helpers__/fixtures.ts";
+import { targetConfigFiles } from "../../__test-helpers__/projects.ts";
+import type { BuildConfiguration } from "../config.ts";
+import { LANGUAGE_ROWS } from "../contract/contract.generated.ts";
+import { diagnosticErrors, projectErrors, renderDiagnostic } from "./diagnostics.ts";
+import { discoverProjects, targetRelative } from "./discover.ts";
+import { FailureExit } from "../failure.ts";
+import { scopeForDir, type Scope } from "../scope.ts";
+import { openEngine, type Engine } from "../session.ts";
 
 const HOST = nodeHost();
 const opened: Engine[] = [];
@@ -91,11 +87,14 @@ describe("project discovery", () => {
 
     const found = discoverProjects(engine(), HOST, scopeForDir(HOST, root));
 
-    expect(found.configFiles).toEqual([
+    expect(targetConfigFiles(found)).toEqual([
       join(root, "app", "tsconfig.json"),
       join(root, "core", "tsconfig.json"),
     ]);
-    expect(found.fromScope, "a scope naming a directory names no configuration").toEqual([]);
+    expect(
+      found.configurations.map((one) => one.origin),
+      "a scope naming a directory names no configuration",
+    ).toEqual(["derived", "derived"]);
   });
 
   it("reads a configuration the scope names before the walk", () => {
@@ -103,8 +102,10 @@ describe("project discovery", () => {
 
     const found = discoverProjects(engine(), HOST, scopeOf(core));
 
-    expect(found.fromScope).toEqual([core]);
-    expect(found.configFiles).toEqual([core]);
+    expect(found.configurations.map((one) => [one.configFile, one.origin])).toEqual([
+      [core, "scope"],
+    ]);
+    expect(targetConfigFiles(found)).toEqual([core]);
   });
 
   it("follows no reference to a configuration outside the target root, which is an outside project", () => {
@@ -118,7 +119,7 @@ describe("project discovery", () => {
 
     const found = discoverProjects(engine(), HOST, scopeForDir(HOST, join(root, "dom")));
 
-    expect(found.configFiles).toEqual([
+    expect(targetConfigFiles(found)).toEqual([
       join(root, "dom", "lib", "tsconfig.json"),
       join(root, "dom", "tsconfig.json"),
     ]);
@@ -137,7 +138,7 @@ describe("project discovery", () => {
 
     const found = discoverProjects(engine(), HOST, scopeOf(target));
 
-    expect(found.configFiles).toEqual([target, join(root, "app", "lib", "tsconfig.json")]);
+    expect(targetConfigFiles(found)).toEqual([target, join(root, "app", "lib", "tsconfig.json")]);
   });
 
   it("reads no configuration a consumer's path names, which is the consumer's own", () => {
@@ -145,10 +146,10 @@ describe("project discovery", () => {
 
     const found = discoverProjects(engine(), HOST, {
       target: { id: "", path: join(root, "core", "tsconfig.json") },
-      consumers: [{ id: "", path: join(root, "app", "tsconfig.json") }],
+      consumers: [{ id: "app", path: join(root, "app") }],
     });
 
-    expect(found.configFiles).toEqual([join(root, "core", "tsconfig.json")]);
+    expect(targetConfigFiles(found)).toEqual([join(root, "core", "tsconfig.json")]);
   });
 
   it("does not descend into an ignored directory", () => {
@@ -159,7 +160,29 @@ describe("project discovery", () => {
 
     const found = discoverProjects(engine(), HOST, scopeForDir(HOST, root));
 
-    expect(found.configFiles).toEqual([join(root, "tsconfig.json")]);
+    expect(targetConfigFiles(found)).toEqual([join(root, "tsconfig.json")]);
+  });
+
+  it("skips exactly the directories the language row names, so detection and discovery agree", () => {
+    const root = scratch();
+    write(root, {
+      "tsconfig.json": EMPTY,
+      ".config/tsconfig.json": EMPTY,
+      "testdata/tsconfig.json": EMPTY,
+      "vendor/tsconfig.json": EMPTY,
+      ".git/tsconfig.json": EMPTY,
+      "node_modules/dep/tsconfig.json": EMPTY,
+    });
+
+    const found = discoverProjects(engine(), HOST, scopeForDir(HOST, root));
+
+    expect(LANGUAGE_ROWS.ts.skippedDirectories).toEqual(["node_modules", ".git"]);
+    expect(found.configurations.map((one) => one.id)).toEqual([
+      ".config/tsconfig.json",
+      "testdata/tsconfig.json",
+      "tsconfig.json",
+      "vendor/tsconfig.json",
+    ]);
   });
 
   it("reads every configuration whose name the walk recognises", () => {
@@ -170,7 +193,7 @@ describe("project discovery", () => {
 
     const found = discoverProjects(engine(), HOST, scopeForDir(HOST, root));
 
-    expect(found.configFiles).toEqual([
+    expect(targetConfigFiles(found)).toEqual([
       join(root, "tsconfig.build.json"),
       join(root, "tsconfig.json"),
     ]);
@@ -186,7 +209,7 @@ describe("project discovery", () => {
 
     const found = discoverProjects(engine(), HOST, scopeForDir(HOST, root));
 
-    expect(found.configFiles).toEqual([
+    expect(targetConfigFiles(found)).toEqual([
       join(root, "app", "tsconfig.json"),
       join(root, "other.json"),
     ]);
@@ -198,7 +221,7 @@ describe("project discovery", () => {
 
     const found = discoverProjects(engine(), HOST, scopeForDir(HOST, root));
 
-    expect(found.configFiles).toEqual([join(root, "tsconfig.json")]);
+    expect(targetConfigFiles(found)).toEqual([join(root, "tsconfig.json")]);
     expect(found.notBuilt.map((one) => [one.id, one.configFile])).toEqual([
       ["gone/tsconfig.json", join(root, "gone", "tsconfig.json")],
     ]);
@@ -223,7 +246,7 @@ describe("project discovery", () => {
 
     const found = discoverProjects(engine(), HOST, scopeForDir(HOST, root));
 
-    expect(found.configFiles).toEqual([
+    expect(targetConfigFiles(found)).toEqual([
       join(root, "tsconfig.json"),
       join(root, "user", "tsconfig.json"),
     ]);
@@ -250,8 +273,8 @@ describe("project discovery", () => {
       discoverProjects(engine(), HOST, scopeOf(root), [{ id: "named", project: "tsconfig.json" }]),
     );
 
-    expect(thrown).toBeInstanceOf(DiscoveryError);
-    expect(thrown instanceof DiscoveryError ? thrown.message : "").toContain(
+    expect(thrown).toBeInstanceOf(FailureExit);
+    expect(thrown instanceof FailureExit ? thrown.message : "").toContain(
       `the project "named" (${join(root, "tsconfig.json")}) cannot be read as a compiler configuration: TS18000: Circularity detected while resolving configuration: ${join(root, "tsconfig.json")}`,
     );
   });
@@ -267,7 +290,7 @@ describe("project discovery", () => {
       discoverProjects(engine(), HOST, scopeOf(root), [{ id: "named", project: "tsconfig.json" }]),
     );
 
-    expect(thrown instanceof DiscoveryError ? thrown.message : "").toContain(
+    expect(thrown instanceof FailureExit ? thrown.message : "").toContain(
       `resolving configuration: ${join(root, "tsconfig.json")}`,
     );
   });
@@ -282,8 +305,8 @@ describe("project discovery", () => {
       thrown = error;
     }
 
-    expect(thrown).toBeInstanceOf(DiscoveryError);
-    expect(thrown instanceof DiscoveryError ? thrown.message : "").toContain(missing);
+    expect(thrown).toBeInstanceOf(FailureExit);
+    expect(thrown instanceof FailureExit ? thrown.message : "").toContain(missing);
   });
 
   it("follows a reference that names a configuration file rather than a directory", () => {
@@ -295,7 +318,10 @@ describe("project discovery", () => {
 
     const found = discoverProjects(engine(), HOST, scopeForDir(HOST, root));
 
-    expect(found.configFiles).toEqual([join(root, "tsconfig.json"), join(root, "other.json")]);
+    expect(targetConfigFiles(found)).toEqual([
+      join(root, "tsconfig.json"),
+      join(root, "other.json"),
+    ]);
     expect(found.notBuilt).toEqual([]);
   });
 
@@ -312,7 +338,7 @@ describe("project discovery", () => {
 
     const found = discoverProjects(engine(), HOST, scopeForDir(HOST, root));
 
-    expect(found.configFiles).toEqual([join(root, "tsconfig.json")]);
+    expect(targetConfigFiles(found)).toEqual([join(root, "tsconfig.json")]);
     expect(found.notBuilt).toEqual([]);
   });
 });
@@ -323,11 +349,16 @@ describe("a consumer's projects", () => {
     write(root, { "tsconfig.json": EMPTY });
     const file = join(root, "tsconfig.json");
 
-    const thrown = thrownBy(() => consumerProjects(engine(), HOST, file));
+    const thrown = thrownBy(() =>
+      discoverProjects(engine(), HOST, {
+        target: { id: "", path: root },
+        consumers: [{ id: "", path: file }],
+      }),
+    );
 
-    expect(thrown).toBeInstanceOf(DiscoveryError);
-    expect(thrown instanceof DiscoveryError ? thrown.message : "").toBe(
-      `the consumer ${file} is not a directory`,
+    expect(thrown).toBeInstanceOf(FailureExit);
+    expect(thrown instanceof FailureExit ? thrown.message : "").toBe(
+      `setup failure: missing-consumer: the scope declares the consumer ${file}, which is not a directory: check the consumer out at ${file}`,
     );
   });
 });
@@ -348,11 +379,13 @@ describe("a declared matrix", () => {
       { id: "tsconfig.json", project: "tsconfig.json" },
     ]);
 
-    expect(found.projects).toEqual([
-      { id: "app", configFile: join(root, "packages", "app", "tsconfig.json") },
-      { id: "tsconfig.json", configFile: join(root, "tsconfig.json") },
+    expect(
+      found.configurations.map(({ id, configFile, origin }) => ({ id, configFile, origin })),
+    ).toEqual([
+      { id: "app", configFile: join(root, "packages", "app", "tsconfig.json"), origin: "declared" },
+      { id: "tsconfig.json", configFile: join(root, "tsconfig.json"), origin: "declared" },
     ]);
-    expect(found.configFiles).toEqual([
+    expect(targetConfigFiles(found)).toEqual([
       join(root, "packages", "app", "tsconfig.json"),
       join(root, "tsconfig.json"),
     ]);
@@ -369,8 +402,8 @@ describe("a declared matrix", () => {
       discoverProjects(engine(), HOST, scopeOf(root), [{ id: "a", project: "a/tsconfig.json" }]),
     );
 
-    expect(thrown).toBeInstanceOf(DiscoveryError);
-    const message = thrown instanceof DiscoveryError ? thrown.message : "";
+    expect(thrown).toBeInstanceOf(FailureExit);
+    const message = thrown instanceof FailureExit ? thrown.message : "";
     expect(message).toContain(`the project "a" (${join(root, "a", "tsconfig.json")}) references`);
     expect(message).toContain(
       `${join(root, "b", "tsconfig.json")}, which the build matrix does not name`,
@@ -388,7 +421,7 @@ describe("a declared matrix", () => {
       { id: "dom", project: "tsconfig.json" },
     ]);
 
-    expect(found.configFiles).toEqual([join(root, "dom", "tsconfig.json")]);
+    expect(targetConfigFiles(found)).toEqual([join(root, "dom", "tsconfig.json")]);
   });
 
   it("reads the references of a commented declared configuration", () => {
@@ -403,8 +436,8 @@ describe("a declared matrix", () => {
       discoverProjects(engine(), HOST, scopeOf(root), [{ id: "a", project: "a/tsconfig.json" }]),
     );
 
-    expect(thrown).toBeInstanceOf(DiscoveryError);
-    expect(thrown instanceof DiscoveryError ? thrown.message : "").toContain(
+    expect(thrown).toBeInstanceOf(FailureExit);
+    expect(thrown instanceof FailureExit ? thrown.message : "").toContain(
       `${join(root, "b", "tsconfig.json")}, which the build matrix does not name`,
     );
   });
@@ -421,13 +454,13 @@ describe("a declared matrix", () => {
       { id: "core", project: "b/tsconfig.json" },
     ]);
 
-    expect(found.projects).toEqual([
+    expect(found.configurations.map(({ id, configFile }) => ({ id, configFile }))).toEqual([
       { id: "a", configFile: join(root, "a", "tsconfig.json") },
       { id: "core", configFile: join(root, "b", "tsconfig.json") },
     ]);
   });
 
-  it("reads none of the configuration files the scope names", () => {
+  it("reads a declared consumer's configurations as the consumer's, after the matrix's", () => {
     const root = scratch();
     write(root, { "tsconfig.json": EMPTY, "other/tsconfig.json": EMPTY });
 
@@ -436,13 +469,16 @@ describe("a declared matrix", () => {
       HOST,
       {
         target: { id: "", path: root },
-        consumers: [{ id: "", path: join(root, "other", "tsconfig.json") }],
+        consumers: [{ id: "other", path: join(root, "other") }],
       },
       [{ id: "root", project: "tsconfig.json" }],
     );
 
-    expect(found.configFiles).toEqual([join(root, "tsconfig.json")]);
-    expect(found.fromScope).toEqual([]);
+    expect(targetConfigFiles(found)).toEqual([join(root, "tsconfig.json")]);
+    expect(found.configurations.map((one) => [one.configFile, one.origin])).toEqual([
+      [join(root, "tsconfig.json"), "declared"],
+      [join(root, "other", "tsconfig.json"), "consumer"],
+    ]);
   });
 
   it("keeps the first identifier of a configuration two entries name", () => {
@@ -454,7 +490,9 @@ describe("a declared matrix", () => {
       { id: "second", project: "tsconfig.json" },
     ]);
 
-    expect(found.projects).toEqual([{ id: "first", configFile: join(root, "tsconfig.json") }]);
+    expect(found.configurations.map(({ id, configFile }) => ({ id, configFile }))).toEqual([
+      { id: "first", configFile: join(root, "tsconfig.json") },
+    ]);
   });
 
   it("leaves an empty reference path to the compiler, which refuses it in the project's own diagnostics", () => {
@@ -465,7 +503,7 @@ describe("a declared matrix", () => {
       { id: "build", project: "tsconfig.build.json" },
     ]);
 
-    expect(found.configFiles).toEqual([join(root, "tsconfig.build.json")]);
+    expect(targetConfigFiles(found)).toEqual([join(root, "tsconfig.build.json")]);
   });
 
   it("ends the run naming an entry whose file the compiler cannot read", () => {
@@ -487,10 +525,10 @@ describe("a declared matrix", () => {
       ]),
     );
 
-    expect(thrown).toBeInstanceOf(DiscoveryError);
-    expect(thrown instanceof DiscoveryError ? thrown.message : "").toBe(
-      `the project "named" (${configFile}) cannot be read as a compiler configuration: ` +
-        `api: client error: could not read file "${configFile}"`,
+    expect(thrown).toBeInstanceOf(FailureExit);
+    expect(thrown instanceof FailureExit ? thrown.message : "").toBe(
+      `setup failure: no-program: the project "named" (${configFile}) cannot be read as a compiler configuration: ` +
+        `api: client error: could not read file "${configFile}": correct the configuration, or name the configurations to analyze`,
     );
   });
 
@@ -509,8 +547,8 @@ describe("a declared matrix", () => {
       discoverProjects(engine(), HOST, scopeOf(root), [{ id: "named", project: "tsconfig.json" }]),
     );
 
-    expect(thrown).toBeInstanceOf(DiscoveryError);
-    const message = thrown instanceof DiscoveryError ? thrown.message : "";
+    expect(thrown).toBeInstanceOf(FailureExit);
+    const message = thrown instanceof FailureExit ? thrown.message : "";
     expect(message).toContain('"named"');
     expect(message).toContain(join(root, "tsconfig.json"));
     expect(message).toContain(says);
@@ -523,7 +561,7 @@ describe("a derived matrix", () => {
 
     const found = discoverProjects(engine(), HOST, scopeForDir(HOST, root));
 
-    expect(found.projects.map((project) => project.id)).toEqual([
+    expect(found.configurations.map((project) => project.id)).toEqual([
       "app/tsconfig.json",
       "core/tsconfig.json",
     ]);
@@ -535,7 +573,7 @@ describe("a derived matrix", () => {
 
     const found = discoverProjects(engine(), HOST, scopeForDir(HOST, root), [PLATFORM]);
 
-    expect(found.projects.map((project) => project.id)).toEqual([
+    expect(found.configurations.map((project) => project.id)).toEqual([
       "tools/tsconfig.json",
       "tsconfig.json",
     ]);

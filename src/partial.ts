@@ -1,4 +1,4 @@
-import type { NotBuilt } from "./discover.ts";
+import type { NotBuilt } from "./load/discover.ts";
 import { relativePath } from "./paths.ts";
 import type { UnansweredQuestion } from "./query.ts";
 import { bytewise } from "./text/compare.ts";

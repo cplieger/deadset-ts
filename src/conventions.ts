@@ -61,14 +61,14 @@ import {
   relativePath,
   resolvePath,
 } from "./paths.ts";
-import type { SetupFailure } from "./setup-failure.ts";
+import type { Failure } from "./failure.ts";
 import type { SourceFiles } from "./source-files.ts";
 import { satisfies } from "./version-range.ts";
 import { bytewise } from "./text/compare.ts";
 import { isRecord } from "./json-document.ts";
 import { unwrapped } from "./unwrap.ts";
 import { filesIn } from "./fs/tree.ts";
-import { INSTALLED_PACKAGES, MANIFEST, readJSON } from "./fs/manifest.ts";
+import { DEPENDENCY_SECTIONS, INSTALLED_PACKAGES, MANIFEST, readJSON } from "./fs/manifest.ts";
 import { globExpression } from "./text/glob.ts";
 import { yamlDocument } from "./text/yaml.ts";
 
@@ -115,7 +115,7 @@ interface GeneratedDirectory {
 /** A setup failure a row met, at the directory of the manifest that declared it. */
 interface ConventionFailure {
   readonly dir: string;
-  readonly failure: SetupFailure;
+  readonly failure: Failure;
 }
 
 /** What the rows decided for one run. */
@@ -168,12 +168,6 @@ const JSON_RC = /^\.[\w-]+rc$/u;
 
 /** The sections an installed package is required by, so its absence fails the run. */
 const REQUIRED_SECTIONS = ["dependencies", "devDependencies"] as const;
-
-const DEPENDENCY_SECTIONS = [
-  ...REQUIRED_SECTIONS,
-  "peerDependencies",
-  "optionalDependencies",
-] as const;
 
 function declares(
   manifest: unknown,
@@ -1094,7 +1088,7 @@ export function readConventions(
         failures.push({
           dir: manifest.dir,
           failure: {
-            setupClass: "missing-module",
+            failureClass: "missing-module",
             detail:
               `${manifest.path} declares ${row.package}, which no node_modules at or ` +
               `above its directory holds: run the package manager's install`,
@@ -1120,7 +1114,7 @@ export function readConventions(
         failures.push({
           dir: manifest.dir,
           failure: {
-            setupClass: "convention-not-literal",
+            failureClass: "convention-not-literal",
             detail: where === "." ? failed : `${where}/${failed}`,
           },
         });
@@ -1241,7 +1235,7 @@ export function conventionFailuresFor(
   conventions: Conventions,
   configFile: string,
   ownFiles: readonly string[],
-): readonly SetupFailure[] {
+): readonly Failure[] {
   return conventions.failures
     .filter(
       ({ dir }) =>

@@ -5,7 +5,7 @@ import {
   source,
   workspaceAt,
   type TreeLayout,
-} from "../__test-helpers__/workspace-tree.ts";
+} from "../../__test-helpers__/workspace-tree.ts";
 
 afterEach(removeWorkspaces);
 

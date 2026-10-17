@@ -57,7 +57,7 @@ A template is written in a subset of Go's `text/template` action grammar over th
 
 `--exit-code=off` exits 0 whatever the verdict and names the verdict on standard error.
 
-The report names the target relative to the directory the run is invoked from. Run it from the target or a directory above it, because a target outside that directory fails with exit code 3.
+The report names the target relative to the directory the run is invoked from. Run it from the target or a directory above it, because a target outside that directory fails with exit code 3 and `run failure: unreportable-path`.
 
 ## explain
 
@@ -69,9 +69,9 @@ The report names the target relative to the directory the run is invoked from. R
 
 `print-config`, `print-projects`, `print-roots` and `print-retained` print what their row of the verb table says and exit 0. The last three read the projects as `analyze` does, so a setup failure or a named project that does not load ends them with exit code 3. `print-roots` exits 1 when it reports a `DS9004`, a `roots.patterns` entry that matches nothing.
 
-`describe` writes its JSON document to standard output and exits 0. It names the analyzer and Contract versions, the report schema versions it accepts, its language and its result over the Contract's conformance corpus. The gaps that result allows for are listed in [`conformance.json`](../conformance.json).
+`describe` writes its JSON document to standard output and exits 0, or 3 with `run failure: product-fault` when it cannot read its own version. It names the analyzer and Contract versions, the report schema versions it accepts, its language and its result over the Contract's conformance corpus. The gaps that result allows for are listed in [`conformance.json`](../conformance.json).
 
-`version` prints the analyzer version and the Contract version it implements, and exits 0.
+`version` prints the analyzer version and the Contract version it implements, and exits 0, or 3 as `describe` does.
 
 ## Exit codes
 
@@ -79,8 +79,8 @@ The report names the target relative to the directory the run is invoked from. R
 | --- | --- |
 | 0 | No finding at or above `reporters.fail_on`, no stale suppression and no pending finding. Under `--exit-code=off`, every run with a verdict exits 0 |
 | 1 | The report holds a finding at or above `reporters.fail_on`, which is `deny` by default, or a stale suppression |
-| 2 | A usage error: a malformed invocation, a refused setting, no `target.kind`, a configuration file or scope document the invocation names that cannot be read, an unreadable or unparsable template, or a request to edit source |
-| 3 | A failure: a named project or a consumer that does not load, a setup failure, a target the report cannot name, or an unwritable rendering |
+| 2 | A usage error: a malformed invocation, a refused setting, no `target.kind`, a configuration file or scope document the invocation names that cannot be read, a scope document the scope schema refuses, an unreadable or unparsable template, or a request to edit source |
+| 3 | A failure, and every one prints exactly one line naming its class, for the first cause found. Each further cause follows on its own line, its class and the fix with no `setup failure:` or `run failure:` opening it. A cause in the project prints a `setup failure:` line: a target with no compiler configuration, a named project or a consumer that does not load, a missing module or member build, or a document at the target root that cannot be read. A cause in the run prints a `run failure:` line: a report, rendering or baseline that cannot be written (`unwritten-output`), a target the report cannot name (`unreportable-path`), or a fault of the analyzer itself, such as a version it cannot read or an error it does not expect (`product-fault`) |
 | 4 | The report holds a pending finding, one a declared cross-language edge holds until a merge resolves it |
 
 Codes 2 and 3 end a run before any verdict exists, and no finding list is printed. When a rendering cannot be written, the report itself is already written. When more than one verdict holds, the highest code wins, so 4 outranks 1 and 1 outranks 0.

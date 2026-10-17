@@ -414,7 +414,7 @@ describe("print-projects", () => {
     });
 
     expect(got.code, got.err).toBe(3);
-    expect(got.err).toMatch(/holds no compiler configuration, so the run holds no program/u);
+    expect(got.err).toMatch(/^setup failure: no-program: .* holds no compiler configuration/u);
   });
 
   it("analyzes a nested package whose enabling package nothing installs, applying no row", () => {
@@ -658,7 +658,7 @@ describe("print-projects", () => {
     expect(got.err).toContain(join(target, "packages", "gone", "tsconfig.json"));
   });
 
-  it("exits 3 with the setup failure when it drops every project discovery derived", () => {
+  it("exits 3 with one setup-failure line when it drops every project discovery derived, the further failures below it", () => {
     const ungenerated = 'export { made } from "./generated.js";\n';
     const target = matrixTree({
       "src/main.ts": ungenerated,
@@ -670,7 +670,10 @@ describe("print-projects", () => {
 
     expect(got.code).toBe(3);
     expect(got.out).toBe("");
-    expect(got.err).toMatch(/^setup failure: missing-module: src\/main\.ts:1: /mu);
+    const [first, ...further] = got.err.trimEnd().split("\n");
+    expect(first).toMatch(/^setup failure: missing-module: /u);
+    expect(further).toHaveLength(2);
+    expect(further).toContainEqual(expect.stringMatching(/^missing-module: src\/main\.ts:1: /u));
   });
 
   it.each([

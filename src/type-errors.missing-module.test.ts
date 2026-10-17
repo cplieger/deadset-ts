@@ -6,7 +6,7 @@ import { TSCONFIG, writeProject } from "../__test-helpers__/projects.ts";
 import { runProjects } from "./analysis.ts";
 import { resolve } from "./resolve.ts";
 import { scopeForDir } from "./scope.ts";
-import { SetupError, setupLine } from "./setup-failure.ts";
+import { FailureExit, failureLine } from "./failure.ts";
 import { openEngine } from "./session.ts";
 
 const LOAD_TIMEOUT = 60_000;
@@ -35,8 +35,8 @@ function setupFailures(files: Readonly<Record<string, string>>, target = "."): r
       config,
     );
   } catch (error) {
-    if (error instanceof SetupError) {
-      return error.failures.map(setupLine);
+    if (error instanceof FailureExit) {
+      return error.failures.map(failureLine);
     }
     throw error;
   }

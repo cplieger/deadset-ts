@@ -1,8 +1,8 @@
 import { rmSync } from "node:fs";
 import { afterAll, describe, expect, it } from "vitest";
-import { emitterInputOf, findingsOf } from "../__test-helpers__/emitter-input.ts";
-import { writeProject } from "../__test-helpers__/projects.ts";
-import { resolve } from "./resolve.ts";
+import { emitterInputOf, findingsOf } from "../../__test-helpers__/emitter-input.ts";
+import { writeProject } from "../../__test-helpers__/projects.ts";
+import { resolve } from "../resolve.ts";
 
 const LIBRARY = JSON.stringify({ target: { kind: "library" } });
 

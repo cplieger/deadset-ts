@@ -5,24 +5,26 @@
  * the members' manifests name. A target in no workspace reads none of it.
  */
 
-import type { LocatedDiagnostic } from "./discover.ts";
-import type { Host } from "./host.ts";
-import type { Manifest, ManifestEntry } from "./manifest.ts";
-import { relativePath } from "./paths.ts";
-import type { Engine } from "./session.ts";
-import { findWorkspace, referenceOnlyIn, type ParsedLayout } from "./workspace.ts";
+import type { Host } from "../host.ts";
+import type { Manifest, ManifestEntry } from "../manifest.ts";
+import { relativePath } from "../paths.ts";
+import type { Engine } from "../session.ts";
+import type { LocatedDiagnostic } from "./diagnostics.ts";
+import type { Build } from "./plan.ts";
+import { findWorkspace, referenceOnlyIn, type ParsedLayout, type Workspace } from "./workspace.ts";
 import { memberEntries, targetManifestIn } from "./workspace-manifests.ts";
 import {
   workspacePrograms,
   type MemberReading,
-  type WorkspaceProgram,
+  type PlannedConfiguration,
 } from "./workspace-programs.ts";
 import { workspaceResolver } from "./workspace-resolution.ts";
 
 /** One run's workspace. */
-interface WorkspaceRun {
+export interface WorkspaceRun {
+  readonly workspace: Workspace;
   /** Per configuration that imports a member, how the snapshot reads it. */
-  readonly programs: ReadonlyMap<string, WorkspaceProgram>;
+  readonly programs: ReadonlyMap<string, Exclude<Build, { readonly kind: "project" }>>;
   /**
    * Per configuration whose component files the run cannot read, the reason, in the
    * order the configurations are named.
@@ -96,7 +98,7 @@ export function workspaceRun(
   engine: Engine,
   host: Host,
   targetRoot: string,
-  configFiles: readonly string[],
+  configurations: readonly PlannedConfiguration[],
   manifest: Manifest,
 ): WorkspaceRun | undefined {
   const workspace = findWorkspace(host, targetRoot, (configFile) => layoutOf(engine, configFile));
@@ -104,7 +106,7 @@ export function workspaceRun(
     return undefined;
   }
   const resolver = workspaceResolver(host, workspace);
-  const read = workspacePrograms(engine, host, configFiles, resolver);
+  const read = workspacePrograms(engine, host, configurations, resolver);
   const readings = new Map(read.readings.map((reading) => [reading.configFile, reading]));
   const referenceOnly = (
     configFile: string,
@@ -115,6 +117,7 @@ export function workspaceRun(
       new Set([...(readings.get(configFile)?.fileNames ?? []), ...compiled]),
     );
   return {
+    workspace,
     programs: read.programs,
     componentsUnread: read.readings.flatMap(({ configFile, componentsUnread }) =>
       componentsUnread === undefined ? [] : [{ configFile, reason: componentsUnread }],

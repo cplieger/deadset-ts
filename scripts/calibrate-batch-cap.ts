@@ -2,7 +2,8 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { nodeHost } from "../bin/node-host.ts";
-import { discoverProjects, projectErrors, renderDiagnostic } from "../src/discover.ts";
+import { projectErrors, renderDiagnostic } from "../src/load/diagnostics.ts";
+import { discoverProjects, isTargetConfiguration } from "../src/load/discover.ts";
 import { inventory, type InventoryCost } from "../src/inventory.ts";
 import { references, type ReferenceCost, type ReferenceOptions } from "../src/references.ts";
 import { scopeForDir } from "../src/scope.ts";
@@ -189,7 +190,9 @@ function onePass(dir: string, cap: Cap): Pass {
   const started = process.hrtime.bigint();
   let configFiles: readonly string[];
   try {
-    configFiles = discoverProjects(engine, host, scope).configFiles;
+    configFiles = discoverProjects(engine, host, scope)
+      .configurations.filter(isTargetConfiguration)
+      .map((one) => one.configFile);
   } catch (error: unknown) {
     engine.close();
     throw error;

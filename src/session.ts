@@ -15,9 +15,7 @@ import type {
 } from "@typescript/native/sync";
 import type { Node, SourceFile } from "@typescript/native/ast";
 import { componentLayer, mapperManifest } from "./component-layer.ts";
-import { DiscoveryError } from "./discover.ts";
 import type { Host, TemporaryDirectory } from "./host.ts";
-import type { WorkspaceProgram } from "./workspace-programs.ts";
 import { joinPath } from "./paths.ts";
 import {
   queriesOf,
@@ -37,8 +35,8 @@ import { MANIFEST } from "./fs/manifest.ts";
 export interface Engine {
   /**
    * Resolves one compiler configuration file, or throws with the reason it cannot
-   * be read. The result is spelled through the client's own signature: the type
-   * the compiler package returns here is not one of its exported names.
+   * be read. The result is spelled through the client's own signature: the type the
+   * compiler package returns here is not one of its exported names.
    */
   parseConfigFile(file: DocumentIdentifier): ReturnType<API["parseConfigFile"]>;
   /** Resolves one configuration's JSON as if `configFile` held it, which no file need. */
@@ -272,13 +270,6 @@ export interface ProjectView<Brand> {
  */
 export type ProjectVisitor<Result> = <Brand>(project: ProjectView<Brand>) => Result;
 
-/** One project a session opened: its configuration and the files of its own program. */
-export interface OpenedFiles {
-  readonly configFile: string;
-  /** The program's source files no default library and no external library holds. */
-  readonly fileNames: () => readonly string[];
-}
-
 /**
  * The source files of one program that `own` admits, in the program's order, none of
  * them one of the compiler's default libraries.
@@ -472,19 +463,30 @@ export function diagnosticsOf<Brand>(project: ProjectView<Brand>): ProjectDiagno
   };
 }
 
+/** How a snapshot builds one configuration other than by opening the project it names. */
+export type ProgramBuild =
+  | { readonly kind: "program"; readonly params: CreateSnapshotProgramParams }
+  /** A configuration only the snapshot holds, at a path no file has. */
+  | { readonly kind: "configuration"; readonly file: string; readonly text: string };
+
 /** One run's result: what the visitor answered for each project, and what it cost. */
 export interface SessionResult<Result> {
-  /** One answer per configuration the snapshot opened a project for, in the order named. */
+  /** One answer per configuration, in the order named. */
   readonly projects: readonly Result[];
-  /** The configurations the snapshot opened no project for, in the order named. */
-  readonly unopened: readonly string[];
   readonly timing: TimingInfo;
-  /** Every question the checker could not answer, each once, in the order first asked. */
-  readonly unanswered: readonly UnansweredQuestion[];
 }
 
-/** What a run does about a configuration the snapshot opened no project for. */
-type Unopened = "refuse" | "record";
+/** One open snapshot's projects, valid only while the session that handed it out runs. */
+export interface OpenedSession {
+  /** One view per configuration the snapshot opened a project for, in the order named. */
+  readonly views: readonly ProjectView<unknown>[];
+}
+
+/** How one session opens its configurations. */
+export interface SessionOptions {
+  /** How the snapshot builds each configuration it does not open as its project. */
+  readonly programs?: ReadonlyMap<string, ProgramBuild> | undefined;
+}
 
 /**
  * The projects one snapshot holds for the configurations named, by configuration file. A
@@ -513,22 +515,18 @@ function projectsOf(
 }
 
 /**
- * Runs `visit` over every project the compiler configurations name, inside one never updated
- * snapshot of one client, and answers in their order. A configuration `programs` describes is
- * built as that program, or opened from the configuration it writes. One the snapshot holds
- * nothing for ends the run under `"refuse"` and is named in the result under `"record"`.
- * `first` runs over every opened project before the first visit and `last` after the last,
- * both while the client answers; the snapshot and the client are then released.
+ * Opens every project the compiler configurations name in one never updated snapshot of one
+ * client, and hands them to `use` while the client answers; the snapshot and the client are
+ * then released. A configuration `options.programs` describes is built as that program, or
+ * opened from the configuration it writes. One the snapshot holds nothing for has no view.
  */
-export function runSession<Result>(
+export function openSession<Result>(
   engine: Engine,
   configFiles: readonly string[],
-  visit: ProjectVisitor<Result>,
-  unopened: Unopened = "refuse",
-  programs: ReadonlyMap<string, WorkspaceProgram> = new Map(),
-  last: () => void = () => undefined,
-  first: (opened: readonly OpenedFiles[]) => void = () => undefined,
-): SessionResult<Result> {
+  options: SessionOptions,
+  use: (opened: OpenedSession, unanswered: () => readonly UnansweredQuestion[]) => Result,
+): Result {
+  const programs = options.programs ?? new Map<string, ProgramBuild>();
   try {
     const built: string[] = [];
     const params: CreateSnapshotProgramParams[] = [];
@@ -553,36 +551,37 @@ export function runSession<Result>(
       const opened = projectsOf(snapshot, built, written);
       const log = new UnansweredLog();
       const views: ProjectView<unknown>[] = [];
-      const missing: string[] = [];
       for (const configFile of configFiles) {
         const project = opened.get(configFile);
-        if (project === undefined) {
-          if (unopened === "refuse") {
-            throw new DiscoveryError(`${configFile} opened no project`, []);
-          }
-          missing.push(configFile);
-          continue;
+        if (project !== undefined) {
+          views.push(viewOf(project, configFile, engine, log));
         }
-        views.push(viewOf(project, configFile, engine, log));
       }
-      first(
-        views.map((view) => ({
-          configFile: view.configFile,
-          fileNames: () => view.ownSourceFiles().map((file) => file.fileName),
-        })),
-      );
-      const projects = views.map((view) => visit(view));
-      last();
-      return {
-        projects,
-        unopened: missing,
-        timing: engine.getTimingInfo(),
-        unanswered: log.questions,
-      };
+      return use({ views }, () => log.questions);
     } finally {
       snapshot.dispose();
     }
   } finally {
     engine.close();
   }
+}
+
+/**
+ * Runs `visit` over the project {@link openSession} opens for each configuration, and answers
+ * in their order; a configuration the snapshot opens nothing for throws before any visit.
+ */
+export function runSession<Result>(
+  engine: Engine,
+  configFiles: readonly string[],
+  visit: ProjectVisitor<Result>,
+): SessionResult<Result> {
+  return openSession(engine, configFiles, {}, (opened) => {
+    const unopened = configFiles.find(
+      (configFile) => !opened.views.some((view) => view.configFile === configFile),
+    );
+    if (unopened !== undefined) {
+      throw new Error(`${unopened} opened no project`);
+    }
+    return { projects: opened.views.map((view) => visit(view)), timing: engine.getTimingInfo() };
+  });
 }

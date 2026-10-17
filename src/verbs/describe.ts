@@ -1,13 +1,13 @@
 import {
   CONTRACT_VERSION,
   EXIT_CLEAN,
-  EXIT_FAILURE,
   EXIT_USAGE,
   SCHEMA_VERSIONS,
 } from "../contract/contract.generated.ts";
 import { CONFORMANCE, type Conformance } from "../conformance.ts";
 import { type Verb } from "./verb.ts";
-import { diagnose, LANGUAGE, message, PRODUCT } from "../product.ts";
+import { diagnose, LANGUAGE, PRODUCT } from "../product.ts";
+import { ownVersion } from "./version.ts";
 
 /**
  * The document `describe` writes: the analyzer, the Contract version it implements, the
@@ -34,19 +34,12 @@ export function describeDocument(version: string, recorded: Conformance | undefi
   return `${JSON.stringify(document, null, 2)}\n`;
 }
 
-/** Writes this analyzer's description to the output stream, and nothing to the error stream. */
+/** Writes this analyzer's description to the output stream. */
 export const describeVerb: Verb = ({ out, err, host, args }) => {
   if (args.length > 0) {
     diagnose(err, `describe takes no argument, got ${JSON.stringify(args[0])}`);
     return EXIT_USAGE;
   }
-  let version: string;
-  try {
-    version = host.analyzerVersion();
-  } catch (error: unknown) {
-    diagnose(err, `describe: ${message(error)}`);
-    return EXIT_FAILURE;
-  }
-  out.write(describeDocument(version, CONFORMANCE));
+  out.write(describeDocument(ownVersion(host), CONFORMANCE));
   return EXIT_CLEAN;
 };

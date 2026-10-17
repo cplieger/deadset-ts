@@ -7,12 +7,12 @@
  */
 
 import { emittedFrom } from "./emit-map.ts";
-import type { Host } from "./host.ts";
-import { readManifest, type Manifest, type ManifestEntry } from "./manifest.ts";
-import { joinPath, relativePath } from "./paths.ts";
+import type { Host } from "../host.ts";
+import { readManifest, type Manifest, type ManifestEntry } from "../manifest.ts";
+import { joinPath, relativePath } from "../paths.ts";
 import type { WorkspaceMember } from "./workspace.ts";
 import type { WorkspaceResolver } from "./workspace-resolution.ts";
-import { MANIFEST } from "./fs/manifest.ts";
+import { MANIFEST } from "../fs/manifest.ts";
 
 /** The one character a subpath pattern of a manifest's `exports` holds. */
 const SUBPATH_WILDCARD = "*";

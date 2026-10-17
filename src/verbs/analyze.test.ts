@@ -516,7 +516,9 @@ describe("the exit code", () => {
       const got = analyze(project(CLEAN_APPLICATION));
 
       expect(got.code).toBe(3);
-      expect(got.err).toContain("relative to the directory the run was invoked from");
+      expect(got.err).toMatch(
+        /^run failure: unreportable-path: a report names its target relative to the directory the run was invoked from, .*: run from a directory that does\n$/u,
+      );
       expect(readdirSync(got.dir)).toEqual([]);
     },
     LOAD_TIMEOUT,
@@ -617,7 +619,15 @@ describe("the baseline", () => {
       const held = `${JSON.stringify({ baseline: [{ code: "DS1001", symbol: "go://example.com/app#Unused", line: 3 }] })}\n`;
       writeFileSync(baseline, held);
 
-      expect(analyze(tree, [`--baseline-write=${baseline}`], tree).code).toBe(3);
+      const got = analyze(tree, [`--baseline-write=${baseline}`], tree);
+
+      expect(got.code).toBe(3);
+      expect(got.err).toMatch(
+        new RegExp(
+          `^run failure: unwritten-output: ${baseline}: deadset-baseline\\.json cannot be rewritten keeping the other language's rows: .*: name a path the run can write, or repair the rows of the baseline the run would keep\n$`,
+          "u",
+        ),
+      );
       expect(readFileSync(baseline, "utf8")).toBe(held);
     },
     LOAD_TIMEOUT,
@@ -793,7 +803,9 @@ describe("the renderings beside the report", () => {
       ]);
 
       expect(got.code).toBe(3);
-      expect(got.err).toBe('deadset-ts: the document has no member "nothing_here" here\n');
+      expect(got.err).toBe(
+        `run failure: unwritten-output: ${join(got.dir, "report.json")}.tmpl: the document has no member "nothing_here" here: name a path the run can write, or correct the template that renders it\n`,
+      );
       expect(readdirSync(got.dir)).toEqual(["report.json"]);
     },
     LOAD_TIMEOUT,

@@ -1,7 +1,6 @@
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { removeWorkspaces, source, workspaceAt } from "../__test-helpers__/workspace-tree.ts";
-import { packageNameOf } from "./workspace-resolution.ts";
+import { removeWorkspaces, source, workspaceAt } from "../../__test-helpers__/workspace-tree.ts";
 
 afterEach(removeWorkspaces);
 
@@ -31,23 +30,6 @@ const A_LAYOUT = {
     rootDir: "packages/a/src",
   },
 };
-
-describe("packageNameOf", () => {
-  it.each([
-    ["a", "a"],
-    ["a/deep/path", "a"],
-    ["@scope/a", "@scope/a"],
-    ["@scope/a/sub", "@scope/a"],
-    ["./a", undefined],
-    ["#internal", undefined],
-    ["node:fs", undefined],
-    ["@scope", undefined],
-    ["@scope/", undefined],
-    ["", undefined],
-  ])("reads %s as %s", (specifier, name) => {
-    expect(packageNameOf(specifier)).toBe(name);
-  });
-});
 
 describe("a member import's resolution", () => {
   it("reads the output a link reaches back to the source it is compiled from", () => {

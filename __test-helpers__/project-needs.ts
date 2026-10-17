@@ -1,8 +1,8 @@
 import { rmSync } from "node:fs";
 import { nodeHost } from "../bin/node-host.ts";
-import { writeProject } from "./projects.ts";
+import { targetConfigFiles, writeProject } from "./projects.ts";
 import { projectNeeds } from "../src/dependencies.ts";
-import { discoverProjects } from "../src/discover.ts";
+import { discoverProjects } from "../src/load/discover.ts";
 import { inventory } from "../src/inventory.ts";
 import { relativePath } from "../src/paths.ts";
 import { scopeForDir } from "../src/scope.ts";
@@ -33,7 +33,7 @@ export function needsOf(
     const host = nodeHost();
     let armed = false;
     const engine = engineOf(() => armed);
-    const configFiles = discoverProjects(engine, host, scopeForDir(host, root)).configFiles;
+    const configFiles = targetConfigFiles(discoverProjects(engine, host, scopeForDir(host, root)));
     const found: Needs[] = [];
     runSession(engine, configFiles, (project) => {
       const held = inventory(project, host, root);
