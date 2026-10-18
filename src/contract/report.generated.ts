@@ -27,6 +27,9 @@ export interface FindingSymbol {
     | "type-member"
     | "interface-method"
     | "enum-member"
+    | "message"
+    | "service"
+    | "rpc"
     | "satisfaction-assertion"
     | "type-parameter"
     | "parameter"
@@ -101,7 +104,7 @@ export interface Details {
 export interface Finding {
   readonly code: string;
   readonly kind: string;
-  readonly language: "go" | "ts";
+  readonly language: "go" | "ts" | "proto";
   readonly position: Position;
   readonly symbol: FindingSymbol;
   readonly reachability_class: "certain" | "probable" | "possible";
@@ -131,7 +134,7 @@ export interface Conformance {
 export interface Analyzer {
   readonly name: string;
   readonly version: string;
-  readonly languages: readonly ("go" | "ts")[];
+  readonly languages: readonly ("go" | "ts" | "proto")[];
   readonly schema_versions_accepted: readonly string[];
   readonly conformance: Conformance;
 }
@@ -168,7 +171,7 @@ export interface MergedFromEntry {
   readonly name: string;
   readonly version: string;
   readonly digest: string;
-  readonly languages: readonly ("go" | "ts")[];
+  readonly languages: readonly ("go" | "ts" | "proto")[];
   readonly totals: Totals;
 }
 
@@ -180,7 +183,7 @@ export interface LanguageKinds {
 
 /** The object at report.schema.json#/properties/target. */
 export interface Target {
-  readonly kind: "application" | "library" | "mixed";
+  readonly kind?: "application" | "library" | "mixed";
   readonly language_kinds?: LanguageKinds;
   readonly root: string;
   readonly identity: string;
@@ -304,14 +307,19 @@ export interface TypeErrorSkipsEntry {
 /** The object at report.schema.json#/properties/notes/items. */
 export interface NotesEntry {
   readonly kind:
+    | "binding-unsupported"
     | "computed-load"
+    | "generation-config-unread"
     | "module-not-loaded"
     | "published-package"
+    | "schema-unparsed"
+    | "unbound-schema"
     | "unmapped-entry"
     | "unread-command"
+    | "unresolved-import"
     | "unresolved-specifier";
   readonly path: string;
-  readonly key?: "roots.patterns" | "ts.entry_files";
+  readonly key?: "proto.import_paths" | "proto.plugins" | "roots.patterns" | "ts.entry_files";
   readonly message: string;
 }
 
@@ -381,6 +389,26 @@ export const REPORT_SCHEMAS = {
       "conventions_applied",
       "totals",
     ],
+    allOf: [
+      {
+        if: {
+          required: ["analyzer"],
+          properties: {
+            analyzer: {
+              required: ["languages"],
+              properties: { languages: { items: { enum: ["proto"] } } },
+            },
+          },
+        },
+        then: {
+          properties: {
+            configurations: { maxItems: 0 },
+            target: { not: { anyOf: [{ required: ["kind"] }, { required: ["language_kinds"] }] } },
+          },
+        },
+        else: { properties: { configurations: { minItems: 1 }, target: { required: ["kind"] } } },
+      },
+    ],
     properties: {
       schema_version: { type: "string", pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
       contract_version: { type: "string", pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
@@ -398,7 +426,7 @@ export const REPORT_SCHEMAS = {
             type: "array",
             minItems: 1,
             uniqueItems: true,
-            items: { type: "string", enum: ["go", "ts"] },
+            items: { type: "string", enum: ["go", "ts", "proto"] },
           },
           schema_versions_accepted: {
             type: "array",
@@ -440,8 +468,8 @@ export const REPORT_SCHEMAS = {
       target: {
         type: "object",
         additionalProperties: false,
-        required: ["kind", "root", "identity"],
-        if: { properties: { kind: { const: "mixed" } } },
+        required: ["root", "identity"],
+        if: { required: ["kind"], properties: { kind: { const: "mixed" } } },
         then: { required: ["language_kinds"] },
         else: { not: { required: ["language_kinds"] } },
         properties: {
@@ -465,7 +493,6 @@ export const REPORT_SCHEMAS = {
       },
       configurations: {
         type: "array",
-        minItems: 1,
         uniqueItems: true,
         items: {
           oneOf: [
@@ -734,6 +761,26 @@ export const REPORT_SCHEMAS = {
               then: { not: { required: ["key"] } },
             },
             {
+              if: { properties: { kind: { const: "unbound-schema" } } },
+              then: { required: ["key"] },
+            },
+            {
+              if: { properties: { kind: { const: "unresolved-import" } } },
+              then: { required: ["key"] },
+            },
+            {
+              if: { properties: { kind: { const: "generation-config-unread" } } },
+              then: { required: ["key"] },
+            },
+            {
+              if: { properties: { kind: { const: "binding-unsupported" } } },
+              then: { not: { required: ["key"] } },
+            },
+            {
+              if: { properties: { kind: { const: "schema-unparsed" } } },
+              then: { not: { required: ["key"] } },
+            },
+            {
               if: { properties: { kind: { const: "unread-command" } } },
               then: { not: { required: ["key"] } },
             },
@@ -746,11 +793,16 @@ export const REPORT_SCHEMAS = {
             kind: {
               type: "string",
               enum: [
+                "binding-unsupported",
                 "computed-load",
+                "generation-config-unread",
                 "module-not-loaded",
                 "published-package",
+                "schema-unparsed",
+                "unbound-schema",
                 "unmapped-entry",
                 "unread-command",
+                "unresolved-import",
                 "unresolved-specifier",
               ],
             },
@@ -759,7 +811,10 @@ export const REPORT_SCHEMAS = {
               pattern:
                 "^(?:\\.|(?:[^/.\\x00-\\x1f\\x7f][^/\\x00-\\x1f\\x7f]*|\\.[^/.\\x00-\\x1f\\x7f][^/\\x00-\\x1f\\x7f]*|\\.\\.[^/\\x00-\\x1f\\x7f]+)(?:/(?:[^/.\\x00-\\x1f\\x7f][^/\\x00-\\x1f\\x7f]*|\\.[^/.\\x00-\\x1f\\x7f][^/\\x00-\\x1f\\x7f]*|\\.\\.[^/\\x00-\\x1f\\x7f]+))*)$",
             },
-            key: { type: "string", enum: ["roots.patterns", "ts.entry_files"] },
+            key: {
+              type: "string",
+              enum: ["proto.import_paths", "proto.plugins", "roots.patterns", "ts.entry_files"],
+            },
             message: { type: "string", minLength: 1, pattern: "^[^\\r\\n]+$" },
           },
         },
@@ -868,7 +923,7 @@ export const REPORT_SCHEMAS = {
     properties: {
       code: { type: "string", pattern: "^DS[0-9]{4}$" },
       kind: { type: "string", pattern: "^[a-z][a-z0-9]*(-[a-z0-9]+)*$" },
-      language: { type: "string", enum: ["go", "ts"] },
+      language: { type: "string", enum: ["go", "ts", "proto"] },
       position: { $ref: "#/$defs/position" },
       symbol: {
         type: "object",
@@ -894,6 +949,9 @@ export const REPORT_SCHEMAS = {
               "type-member",
               "interface-method",
               "enum-member",
+              "message",
+              "service",
+              "rpc",
               "satisfaction-assertion",
               "type-parameter",
               "parameter",

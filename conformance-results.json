@@ -2,7 +2,7 @@
   "corpus_version": "6.0.0",
   "product": { "name": "deadset-ts", "version": "0.1.0", "language": "ts" },
   "result": "pass",
-  "totals": { "fixtures": 305, "pass": 298, "gap": 0, "fail": 0, "pending": 7 },
+  "totals": { "fixtures": 321, "pass": 298, "gap": 0, "fail": 0, "pending": 23 },
   "fixtures": [
     {
       "fixture": "abstract-member-through-this",
@@ -5787,6 +5787,111 @@
       "unexpected": []
     },
     {
+      "fixture": "proto-facts-leave-report-unchanged-ts",
+      "result": "pending",
+      "expectations": [],
+      "unexpected": [],
+      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+    },
+    {
+      "fixture": "proto-facts-unevaluated-before-serializers",
+      "result": "pending",
+      "expectations": [],
+      "unexpected": [],
+      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+    },
+    {
+      "fixture": "proto-field-read-in-one-language",
+      "result": "pending",
+      "expectations": [],
+      "unexpected": [],
+      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+    },
+    {
+      "fixture": "proto-field-written-only",
+      "result": "pending",
+      "expectations": [],
+      "unexpected": [],
+      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+    },
+    {
+      "fixture": "proto-hand-serializer-reads",
+      "result": "pending",
+      "expectations": [],
+      "unexpected": [],
+      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+    },
+    {
+      "fixture": "proto-oneof-protobuf-es",
+      "result": "pending",
+      "expectations": [],
+      "unexpected": [],
+      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+    },
+    {
+      "fixture": "proto-protobuf-es-v2-tags",
+      "result": "pending",
+      "expectations": [],
+      "unexpected": [],
+      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+    },
+    {
+      "fixture": "proto-protojson-unmarshal-caps",
+      "result": "pending",
+      "expectations": [],
+      "unexpected": [],
+      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+    },
+    {
+      "fixture": "proto-rpc-called-from-ts",
+      "result": "pending",
+      "expectations": [],
+      "unexpected": [],
+      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+    },
+    {
+      "fixture": "proto-transport-reads-nothing",
+      "result": "pending",
+      "expectations": [],
+      "unexpected": [],
+      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+    },
+    {
+      "fixture": "proto-ts-create-literal-writes",
+      "result": "pending",
+      "expectations": [],
+      "unexpected": [],
+      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+    },
+    {
+      "fixture": "proto-ts-equals-reads",
+      "result": "pending",
+      "expectations": [],
+      "unexpected": [],
+      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+    },
+    {
+      "fixture": "proto-ts-proto-default-rpc-only",
+      "result": "pending",
+      "expectations": [],
+      "unexpected": [],
+      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+    },
+    {
+      "fixture": "proto-ts-proto-message-fns",
+      "result": "pending",
+      "expectations": [],
+      "unexpected": [],
+      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+    },
+    {
+      "fixture": "proto-ts-serialization-contract",
+      "result": "pending",
+      "expectations": [],
+      "unexpected": [],
+      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+    },
+    {
       "fixture": "published-accessor-pair-types",
       "result": "pass",
       "expectations": [
@@ -8547,6 +8652,13 @@
         }
       ],
       "unexpected": []
+    },
+    {
+      "fixture": "ts-generated-fact-evidence",
+      "result": "pending",
+      "expectations": [],
+      "unexpected": [],
+      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
     },
     {
       "fixture": "type-argument-reaches-its-constraint",

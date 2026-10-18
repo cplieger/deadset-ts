@@ -101,6 +101,16 @@ const PARAMETERS: readonly { holder: string; name: string; input: string }[] = [
 ];
 
 const RENDERED: readonly { module: Module; fragment: Fragment; input: string }[] = [
+  {
+    module: { package: "@example/app", path: "gen/v1/service_pb.ts" },
+    fragment: declaration([name("Backrest"), name("getConfig")]),
+    input: "ts://@example/app/gen/v1/service_pb.ts#Backrest.getConfig",
+  },
+  {
+    module: { package: "@example/app", path: "gen/eliza_connect.ts" },
+    fragment: declaration([name("ElizaService"), name("methods"), name("say")]),
+    input: "ts://@example/app/gen/eliza_connect.ts#ElizaService.methods.say",
+  },
   { module: APP, fragment: { of: "module" }, input: "ts://@example/app/src/wire.ts#" },
   {
     module: APP,
@@ -335,11 +345,11 @@ describe("the reference grammar", () => {
     expect(isRef(`go://${shared}`), "the prefix is what refuses it").toBe(false);
   });
 
-  it("names both languages the Contract's language registry does", () => {
+  it("names the languages the Contract's language registry does", () => {
     const rows = contractDocument("languages.json")["languages"] as { language: string }[];
     const languages = rows.map((row) => row.language);
 
-    expect(languages).toEqual(["go", "ts"]);
+    expect(languages).toEqual(["go", "ts", "proto"]);
     expect(
       REF_EXPRESSIONS.every((expression) => expression.startsWith("^ts://")),
       "every expression of this analyzer is anchored on its own language prefix",
@@ -368,8 +378,11 @@ describe("the canonical spelling of one reference", () => {
       IMPORT_BINDING,
       ...PARAMETERS.map((row) => row.input),
     ]);
+    // No declaration this analyzer reads is a union constituent yet, so it renders no case reference.
     const accepted = corpus()
-      .filter((token) => token.language === "ts" && token.accepted)
+      .filter(
+        (token) => token.language === "ts" && token.accepted && token.form !== "case-constituent",
+      )
       .map((token) => token.input);
 
     expect([...rendered].sort()).toEqual([...accepted].sort());

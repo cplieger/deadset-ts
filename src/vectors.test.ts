@@ -112,7 +112,9 @@ describe("the published configuration vectors", () => {
       "member-written-as-null",
       "missing-target-kind",
       "provenance-on-input",
+      "provider-claims-schema-language-refused",
       "provider-name-duplicated",
+      "provider-named-like-in-process-reader-refused",
       "quoted-key-with-a-dot",
       "resolved-configuration-round-trip",
       "severity-key-names-no-kind",
@@ -136,7 +138,9 @@ describe("the published configuration vectors", () => {
 
   it("runs a case listing products only where it lists this analyzer", () => {
     expect(configVectorCases().filter((name) => !applies(name))).toEqual([
+      "provider-claims-schema-language-refused",
       "provider-name-duplicated",
+      "provider-named-like-in-process-reader-refused",
       "target-kind-empty-object",
       "target-kind-member-null",
       "target-kind-missing-before-a-refused-value",

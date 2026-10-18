@@ -44,7 +44,7 @@ deadset-ts reads up to three JSON documents. A command-line option wins over `de
 | `ts.lifecycle_contracts` | `[]` | Per framework, the decorators, calls or base classes that make a component, and the members the framework calls |
 | `ts.serializers` | `[]` | Declarations whose call reads its arguments' data members by name, such as a schema validator's `parse` |
 
-`analysis.languages`, `providers` and `go` are accepted without being checked, and `print-config` leaves them out. The [deadset](https://github.com/cplieger/deadset) command and the Go analyzer read and check them.
+`analysis.languages`, `providers`, `go` and `proto` are accepted without being checked, and `print-config` leaves them out. The [deadset](https://github.com/cplieger/deadset) command, the Go analyzer and deadset's Protocol Buffers reader read and check them.
 
 The Contract's [configuration schema](https://github.com/cplieger/deadset-spec) defines every key in full.
 

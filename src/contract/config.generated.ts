@@ -194,6 +194,12 @@ export const SETTINGS: readonly SettingRow[] = [
       "DS17",
       "DS1701",
       "DS1702",
+      "DS18",
+      "DS1801",
+      "DS1802",
+      "DS1803",
+      "DS1804",
+      "DS1805",
       "DS9001",
       "DS9002",
       "DS9005",
@@ -224,6 +230,9 @@ export const SETTINGS: readonly SettingRow[] = [
           "injection-container",
           "framework-lifecycle",
           "serialization-contract",
+          "schema-option",
+          "schema-vendored",
+          "schema-default-value",
         ],
       },
     },
@@ -483,6 +492,11 @@ export const SETTINGS: readonly SettingRow[] = [
     default: false,
     value: { type: "boolean" },
   },
+  { key: "proto", role: "section", read: false },
+  { key: "proto.closed", role: "setting", read: false },
+  { key: "proto.plugins", role: "setting", read: false },
+  { key: "proto.import_paths", role: "setting", read: false },
+  { key: "proto.vendored_paths", role: "setting", read: false },
   {
     key: "provenance",
     role: "ignored",
@@ -702,6 +716,9 @@ export interface ResolvedConfig {
       | "injection-container"
       | "framework-lifecycle"
       | "serialization-contract"
+      | "schema-option"
+      | "schema-vendored"
+      | "schema-default-value"
     )[];
   };
   readonly reporters: {
@@ -770,6 +787,9 @@ export interface PartialConfig {
       | "injection-container"
       | "framework-lifecycle"
       | "serialization-contract"
+      | "schema-option"
+      | "schema-vendored"
+      | "schema-default-value"
     )[];
   };
   readonly reporters: {
