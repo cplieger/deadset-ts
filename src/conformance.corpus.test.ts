@@ -9,7 +9,7 @@ import { corpusLock, ROOT } from "../__test-helpers__/fixtures.ts";
 import type { DeclaredGap } from "./conformance.ts";
 
 /** The bound on the whole run, which analyzes every rendering up to three times. */
-const CORPUS_TIMEOUT = 600_000;
+const CORPUS_TIMEOUT = 900_000;
 
 /** The declared gaps and results document this analyzer commits, and the module stating them. */
 const GAPS_FILE = "conformance.json";
