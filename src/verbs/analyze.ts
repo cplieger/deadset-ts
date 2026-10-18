@@ -12,6 +12,7 @@ import { analyzerProvenance, verdictOf } from "../findings-pass.ts";
 import { dirnamePath, joinPath, normalizePath, relativePath, resolvePath } from "../paths.ts";
 import type { Host } from "../host.ts";
 import type { ManifestEntry } from "../manifest.ts";
+import type { HeldScripts } from "../roots.ts";
 import { moduleIdentity, type NotBuilt } from "../load/discover.ts";
 import { partialNotes } from "../partial.ts";
 import {
@@ -29,6 +30,9 @@ import { parseTemplate, TemplateError, type Template } from "../reporters/templa
 import { resolve } from "../resolve.ts";
 import { otherSchemeRows, rowReason, writeBaseline, type Recorded } from "../suppress-file.ts";
 import type { UnseenLoad } from "../unseen-loads.ts";
+import type { UnreadInput } from "../load/plan.ts";
+import type { UnresolvedSpecifier } from "../load/specifiers.ts";
+
 import { type Verb, type VerbOptions } from "./verb.ts";
 import { UsageError } from "../usage.ts";
 import { bytewise } from "../text/compare.ts";
@@ -126,6 +130,40 @@ function unseenLoadNotes(loads: readonly UnseenLoad[]): readonly ReportNote[] {
       }),
     ).values(),
   ];
+}
+
+/** One note per package whose command strings name files a configuration holds, naming every such file. */
+function heldScriptNotes(held: readonly HeldScripts[], targetRoot: string): readonly ReportNote[] {
+  const files = new Map<string, Set<string>>();
+  for (const one of held) {
+    files.set(one.dir, new Set([...(files.get(one.dir) ?? []), ...one.files]));
+  }
+  return [...files].map(([dir, paths]) => ({
+    kind: "unread-command",
+    path: relativePath(targetRoot, dir) ?? ".",
+    message: `commands the analysis does not read name ${[...paths].sort(bytewise).join(", ")}, so no finding is reported about ${paths.size === 1 ? "that file itself or the names it exports" : "those files themselves or the names they export"}`,
+  }));
+}
+
+function unresolvedNotes(specifiers: readonly UnresolvedSpecifier[]): readonly ReportNote[] {
+  return specifiers.map(({ specifier, position }) => ({
+    kind: "unresolved-specifier",
+    path: dirnamePath(position.path),
+    message: `${position.path}:${String(position.line)}:${String(position.column)} loads ${JSON.stringify(specifier)}, which resolves to no file, so it references nothing`,
+  }));
+}
+
+function unreadLine(input: UnreadInput, targetRoot: string): string {
+  switch (input.kind) {
+    case "manifest": {
+      const path = relativePath(targetRoot, input.manifest) ?? input.manifest;
+      return input.reason === undefined
+        ? `${path} does not parse, so the manifest facts of the program formed for its package are unanswered: correct the manifest`
+        : `${path} cannot be read, so the manifest facts of the program formed for its package are unanswered: give the run read access to it: ${input.reason}`;
+    }
+    case "ignore-file":
+      return `${relativePath(targetRoot, input.path) ?? input.path} cannot be read, so the JavaScript files it would ignore are analyzed: ${input.reason}`;
+  }
 }
 
 /** Each project the run dropped as a report names it, by its configuration file below the target. */
@@ -290,6 +328,8 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
     ({ configFile, error }) =>
       `${relativePath(resolvePath(invoked, targetRoot), configFile) ?? configFile}: ${error}: the configuration is analyzed without that library`,
   );
+  const unreadInputs = run.unread.map((one) => unreadLine(one, resolvePath(invoked, targetRoot)));
+
   const partial = partialNotes({
     notBuilt: run.notBuilt,
     unanswered: run.unanswered,
@@ -321,6 +361,8 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
     notes: [
       ...unmappedNotes(run.unmappedEntries, resolvePath(invoked, targetRoot)),
       ...unseenLoadNotes(run.unseenLoads),
+      ...unresolvedNotes(run.unresolvedSpecifiers),
+      ...heldScriptNotes(run.heldScripts, resolvePath(invoked, targetRoot)),
     ],
   });
   const report = capFindings(
@@ -368,7 +410,7 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
   for (const note of partial) {
     diagnose(err, note);
   }
-  for (const line of [...unread, ...unfound]) {
+  for (const line of [...unread, ...unfound, ...unreadInputs]) {
     diagnose(err, line);
   }
   for (const warning of warnings) {

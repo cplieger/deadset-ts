@@ -20,7 +20,7 @@ deadset-ts reads up to three JSON documents. A command-line option wins over `de
 | --- | --- | --- |
 | `target.kind` | required | `application` or `library`, or an object naming the kind of `go` and of `ts` |
 | `contract_version` | `8.0.0` | The Contract version the file is written against |
-| `analysis.configurations` | `[]` | Entries shaped `{id, project}`, each naming a `tsconfig`. With none, every `tsconfig` project under the target. Platform entries are for the Go analyzer |
+| `analysis.configurations` | `[]` | Entries shaped `{id, project}`, each naming a `tsconfig` or `jsconfig`, or a `package.json` whose directory's JavaScript files form one program. With none, every such project under the target, and a program for each package's other JavaScript files. Platform entries are for the Go analyzer |
 | `analysis.matrix.complete` | `false` | Declares that `configurations` lists every build, so a file no configuration builds is reported as `DS1601` |
 | `analysis.min_confidence` | `probable` | The lowest confidence reported: `certain`, `probable` or `possible` |
 | `analysis.generated_files` | `exclude` | Whether a declaration in a generated file is reported. `exclude` holds it back, and `include` reports it as a finding no edit may act on |

@@ -73,6 +73,9 @@ function reported(findings: readonly Finding[]): string[] {
 }
 
 describe("DS1601 under the build matrix", () => {
+  const FORMED =
+    "a matrix naming no project is derived, so scripts/run.mjs forms a program and nothing imports it";
+
   it("reports each source file no project of a complete matrix includes, at the scope of its own package", async () => {
     const findings = emit(inputFor(MATRIX, configOf(MATRIX)));
 
@@ -135,7 +138,7 @@ describe("DS1601 under the build matrix", () => {
     expect(reported(emit(inputFor(MATRIX, config)))).toEqual([]);
   });
 
-  it("reports nothing where the configuration declares completeness of a matrix it lists no project of", () => {
+  it("reports no DS1601 where the configuration declares completeness of a matrix it lists no project of", () => {
     const config = configOf(
       MATRIX,
       JSON.stringify({
@@ -145,10 +148,10 @@ describe("DS1601 under the build matrix", () => {
       }),
     );
 
-    expect(reported(emit(inputFor(MATRIX, config)))).toEqual([]);
+    expect(reported(emit(inputFor(MATRIX, config))), FORMED).toEqual(["DS1602 scripts/run.mjs"]);
   });
 
-  it("reports nothing where the matrix declared complete lists platforms, which name no project", () => {
+  it("reports no DS1601 where the matrix declared complete lists platforms, which name no project", () => {
     const config = configOf(
       MATRIX,
       JSON.stringify({
@@ -161,7 +164,7 @@ describe("DS1601 under the build matrix", () => {
       }),
     );
 
-    expect(reported(emit(inputFor(MATRIX, config)))).toEqual([]);
+    expect(reported(emit(inputFor(MATRIX, config))), FORMED).toEqual(["DS1602 scripts/run.mjs"]);
   });
 
   it("counts a file a project includes as built though it declares nothing", () => {

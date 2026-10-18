@@ -1,11 +1,12 @@
 /**
  * The generated-file class on TypeScript: every declaration in a file that marks itself
- * generated, or below a directory an applied convention row names as generated, is
- * retained, because a generator owns the file and a deletion there is undone at the next
+ * generated, below a directory an applied convention row names as generated, or minified,
+ * is retained, because a generator owns the file and a deletion there is undone at the next
  * generation.
  */
 
 import type { DetectorInput, Evidence } from "./exempt.ts";
+import { minified } from "./javascript-file.ts";
 import type { SourceFiles } from "./source-files.ts";
 
 /** The generated-code header, matched against each line of a leading comment. */
@@ -75,7 +76,7 @@ export function generatedByComment(text: string): string | undefined {
 /**
  * Every own file of one project that is generated, by its path below the target root,
  * with the detail a retention in it names: its leading comments' mark, else the row
- * naming its directory as generated.
+ * naming its directory as generated, else its minified text.
  */
 export function generatedFilesOf(
   files: SourceFiles,
@@ -87,7 +88,9 @@ export function generatedFilesOf(
     const detail =
       generatedByComment(file.text) ??
       (row === undefined
-        ? undefined
+        ? minified(file.fileName, file.text)
+          ? "generated as a minified JavaScript file"
+          : undefined
         : `generated below a directory the convention row ${row} names`);
     if (detail !== undefined) {
       found.set(path, detail);

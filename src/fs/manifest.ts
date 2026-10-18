@@ -1,6 +1,7 @@
 import type { Host } from "../host.ts";
 import { isRecord } from "../json-document.ts";
 import { joinPath } from "../paths.ts";
+import { message } from "../product.ts";
 
 /** The file a package's manifest is read from. */
 export const MANIFEST = "package.json";
@@ -52,6 +53,37 @@ export function readJSON(host: Host, path: string): unknown {
 export function manifestAt(host: Host, dir: string): Record<string, unknown> | undefined {
   const value = readJSON(host, joinPath(dir, MANIFEST));
   return isRecord(value) ? value : undefined;
+}
+
+/**
+ * What one directory's manifest reads as: none, an object, a file that does not parse as one,
+ * or a file that cannot be read, with the read's error. Either of the last two still bounds
+ * the package it would declare.
+ */
+export type ManifestRead =
+  | { readonly kind: "absent" }
+  | { readonly kind: "read"; readonly manifest: Record<string, unknown> }
+  | { readonly kind: "malformed" }
+  | { readonly kind: "unread"; readonly reason: string };
+
+/** The manifest in one directory, as {@link ManifestRead} tells its states apart. */
+export function readManifestAt(host: Host, dir: string): ManifestRead {
+  if (!holdsManifest(host, dir)) {
+    return { kind: "absent" };
+  }
+  let text: string;
+  try {
+    text = host.readFile(joinPath(dir, MANIFEST));
+  } catch (error: unknown) {
+    return { kind: "unread", reason: message(error) };
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return { kind: "malformed" };
+  }
+  return isRecord(value) ? { kind: "read", manifest: value } : { kind: "malformed" };
 }
 
 /** Whether one directory holds a manifest file. */

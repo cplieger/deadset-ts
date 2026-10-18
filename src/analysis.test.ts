@@ -1228,6 +1228,8 @@ describe("the unanswered-question counts of a run", () => {
           { id: "app", configFile: "/t/tsconfig.json" },
           { id: "tools", configFile: "/t/tools/tsconfig.json" },
         ],
+        unread: [],
+        heldScripts: [],
         unanswered: [
           { configFile: "/t/tsconfig.json", accessor: "typeAt", location: "a.ts:1" },
           { configFile: "/t/tsconfig.json", accessor: "symbolAt", location: "a.ts:9" },
@@ -1253,6 +1255,8 @@ describe("the unanswered-question counts of a run", () => {
           { id: "app", configFile: "/t/tsconfig.json" },
           { id: "tools", configFile: "/t/tools/tsconfig.json" },
         ],
+        unread: [],
+        heldScripts: [],
         unanswered: [
           { configFile: "/t/tools/tsconfig.json", accessor: "typeAt", location: "b.ts:1" },
         ],
@@ -1266,6 +1270,57 @@ describe("the unanswered-question counts of a run", () => {
 
     expect(unansweredCounts(analysis)).toEqual([
       { configuration: "tools", questions: 1, declarations: 1 },
+    ]);
+  });
+
+  it("count a formed program's manifest that does not parse as one question, and an unreadable ignore file as none", () => {
+    const analysis = {
+      run: {
+        projects: [
+          { id: "package.json", configFile: "/t/jsconfig.deadset-ts.json" },
+          { id: "tools/package.json", configFile: "/t/tools/jsconfig.deadset-ts.json" },
+        ],
+        unread: [
+          {
+            kind: "manifest",
+            configFile: "/t/tools/jsconfig.deadset-ts.json",
+            manifest: "/t/tools/package.json",
+          },
+          { kind: "ignore-file", path: "/t/.gitignore", reason: "EACCES" },
+        ],
+        heldScripts: [],
+        unanswered: [],
+      },
+      swept: { heldByUnanswered: [] },
+      configured: [],
+    } as unknown as RunAnalysis;
+
+    expect(unansweredCounts(analysis)).toEqual([
+      { configuration: "tools/package.json", questions: 1, declarations: 0 },
+    ]);
+  });
+
+  it("count a manifest whose scripts name files a configuration holds as one question of that configuration", () => {
+    const symbol = (id: string): { id: string } => ({ id });
+    const analysis = {
+      run: {
+        projects: [
+          { id: "app", configFile: "/t/tsconfig.json" },
+          { id: "tools", configFile: "/t/tools/tsconfig.json" },
+        ],
+        unread: [],
+        heldScripts: [{ dir: "/t", files: ["setup.ts"], configFile: "/t/tsconfig.json" }],
+        unanswered: [],
+      },
+      swept: { heldByUnanswered: ["a#setup"] },
+      configured: [
+        { configuration: "app", symbols: [symbol("a#setup"), symbol("a#free")] },
+        { configuration: "tools", symbols: [symbol("tools#free")] },
+      ],
+    } as unknown as RunAnalysis;
+
+    expect(unansweredCounts(analysis)).toEqual([
+      { configuration: "app", questions: 1, declarations: 1 },
     ]);
   });
 });

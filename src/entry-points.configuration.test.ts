@@ -71,8 +71,8 @@ describe("a file a configuration file names", () => {
           "tool.config.mjs": 'export default { plugin: "./plugins/outside.ts" };\n',
         }),
       ).toEqual([
-        "plugins/outside.ts#\tconfiguration-string\t./plugins/outside.ts",
-        "plugins/outside.ts#value\tconfiguration-string\t./plugins/outside.ts",
+        "plugins/outside.ts#\tconfiguration-string\t./plugins/outside.ts\ttsconfig.json",
+        "plugins/outside.ts#value\tconfiguration-string\t./plugins/outside.ts\ttsconfig.json",
       ]);
     },
     LOAD_TIMEOUT,

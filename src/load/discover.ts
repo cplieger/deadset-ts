@@ -1,6 +1,6 @@
 import type { BuildConfiguration, ProjectConfiguration } from "../config.ts";
 import { LANGUAGE_ROWS } from "../contract/contract.generated.ts";
-import { filesBelow } from "../fs/tree.ts";
+import { filesBelow, filesIn } from "../fs/tree.ts";
 import type { Host } from "../host.ts";
 import { packageScope } from "../inventory.ts";
 import { dirnamePath, joinPath, relativePath, resolvePath } from "../paths.ts";
@@ -8,14 +8,15 @@ import { LANGUAGE, message } from "../product.ts";
 import type { Module, Scope } from "../scope.ts";
 import type { Engine } from "../session.ts";
 import { globExpression } from "../text/glob.ts";
-import { failureExit } from "../failure.ts";
+import { failureExit, type FailureExit } from "../failure.ts";
+import { MANIFEST } from "../fs/manifest.ts";
 
 /** The names of the files a program of the language is read from. */
 export const MARKERS = LANGUAGE_ROWS[LANGUAGE].markers;
 const MARKER_EXPRESSIONS = MARKERS.map(globExpression);
 
 /** Whether one file name is a compiler configuration's: one of the language row's markers. */
-export function isConfigFile(name: string): boolean {
+function isConfigFile(name: string): boolean {
   return MARKER_EXPRESSIONS.some((marker) => marker.test(name));
 }
 
@@ -48,6 +49,11 @@ export interface Configuration {
   readonly parsed: Parsed;
   /** The consumer the configuration loads, for one whose origin is `consumer`. */
   readonly consumer?: LoadedConsumer | undefined;
+  /**
+   * The configuration of a program the run forms for JavaScript files, which no file holds,
+   * so `configFile` is a free path the snapshot alone holds it at.
+   */
+  readonly written?: Readonly<Record<string, unknown>> | undefined;
 }
 
 /** Whether the run analyzes one configuration as the target's. */
@@ -68,15 +74,31 @@ export interface NotBuilt {
   readonly error: string;
 }
 
-/** Every configuration a run opens, the target's in discovery order, then each consumer's. */
+/**
+ * One entry of the target's matrix: a configuration discovery read, or a tree the plan forms
+ * programs over for the JavaScript files no configuration lists.
+ */
+type Target =
+  | { readonly kind: "configuration"; readonly configuration: Configuration }
+  /** The target tree of a derived matrix. */
+  | { readonly kind: "derived" }
+  /** The directory of a matrix entry naming its `package.json`, at the absolute `manifest`. */
+  | { readonly kind: "declared"; readonly id: string; readonly manifest: string };
+
+/** Every configuration file a run opens, the target's in discovery order, then each consumer's. */
 export interface Discovery {
   /** Whether the matrix is the configuration document's or one discovery derived. */
   readonly mode: "declared" | "derived";
+  /** The target's entries, in the order a declared matrix lists them, a derived tree last. */
+  readonly targets: readonly Target[];
+  /** Every configuration of {@link targets}, in its order, then each consumer's. */
   readonly configurations: readonly Configuration[];
   /** The derived configurations the compiler could not read, in discovery order. */
   readonly notBuilt: readonly NotBuilt[];
   /** Every declared consumer, in the scope's order. */
   readonly consumers: readonly LoadedConsumer[];
+  /** The consumers holding no configuration, which the plan forms programs over. */
+  readonly unconfigured: readonly LoadedConsumer[];
 }
 
 /**
@@ -91,9 +113,28 @@ export function targetRelative(text: string, targetRoot: string): string {
   return spelled === "" ? "the configuration could not be built" : spelled;
 }
 
-/** The configuration files below `root`, by absolute path in ascending order. */
+/**
+ * Whether a derived matrix leaves one configuration file unopened: a `jsconfig.json` beside a
+ * `tsconfig.json`, because the compiler's editor host opens the directory's `tsconfig.json`
+ * first and so never its `jsconfig.json`.
+ */
+function shadowed(host: Host, configFile: string): boolean {
+  return (
+    configFile.endsWith("/jsconfig.json") &&
+    host.kindOf(joinPath(dirnamePath(configFile), "tsconfig.json")) === "file"
+  );
+}
+
+/** The configuration files directly in `dir` a derived matrix opens, by name. */
+export function configFilesIn(host: Host, dir: string): readonly string[] {
+  return filesIn(host, dir, isConfigFile).filter((name) => !shadowed(host, joinPath(dir, name)));
+}
+
+/** The configuration files below `root` a derived matrix opens, by absolute path in ascending order. */
 function configFilesUnder(host: Host, root: string): readonly string[] {
-  return filesBelow(host, root, isConfigFile).map((path) => joinPath(root, path));
+  return filesBelow(host, root, isConfigFile)
+    .map((path) => joinPath(root, path))
+    .filter((path) => !shadowed(host, path));
 }
 
 export type Parsed = ReturnType<Engine["parseConfigFile"]>;
@@ -178,11 +219,11 @@ export function moduleIdentity(host: Host, module: Module): string {
 
 /**
  * The compiler configurations one consumer is loaded through: every one under its root and
- * each one those reference, transitively. A consumer that is absent, no directory, holds no
- * configuration or holds one the compiler cannot read ends the run naming it, because a
- * finding computed without a declared consumer would claim a reference set the run never read.
+ * each one those reference, transitively. A consumer that is absent, no directory or holds a
+ * configuration the compiler cannot read ends the run naming it, because a finding computed
+ * without a declared consumer would claim a reference set the run never read.
  */
-function consumerProjects(engine: Engine, host: Host, root: string): readonly Read[] {
+function consumerProjects(engine: Engine, host: Host, root: string): readonly Configuration[] {
   const kind = host.kindOf(root);
   if (kind === "absent") {
     throw failureExit(
@@ -208,13 +249,28 @@ function consumerProjects(engine: Engine, host: Host, root: string): readonly Re
       );
     },
   );
-  if (found.length === 0) {
-    throw failureExit(
-      "missing-consumer",
-      `the consumer ${root} holds no compiler configuration, so none of its references can be read: check the consumer out at ${root} with its ${MARKERS.join(", ")}`,
-    );
-  }
-  return found;
+  return found.map(({ configFile, parsed }) => ({
+    id: configFile,
+    configFile,
+    origin: "consumer" as const,
+    parsed,
+  }));
+}
+
+/** The failure of a consumer that holds no configuration and no JavaScript file a program is formed over. */
+export function consumerWithoutSources(root: string): FailureExit {
+  return failureExit(
+    "missing-consumer",
+    `the consumer ${root} holds no compiler configuration and no JavaScript file, so none of its references can be read: check the consumer out at ${root} with its ${MARKERS.join(", ")} or its JavaScript sources`,
+  );
+}
+
+/** The failure of a target that holds no configuration and no JavaScript file a program is formed over. */
+export function targetWithoutSources(target: string): FailureExit {
+  return failureExit(
+    "no-program",
+    `${target} holds no compiler configuration, no file named ${MARKERS.join(", ")}, and no JavaScript file: run from the directory that holds one, or name the languages to analyze`,
+  );
 }
 
 /** A target configuration a matrix or the invocation names that cannot be built, ending the run. */
@@ -226,21 +282,23 @@ function unbuilt(named: string, reason: string): never {
 }
 
 /**
- * The projects a build matrix declares, in its order, each entry a file below the target
- * root: an entry naming an absent file, a directory or a file the compiler cannot read ends
- * the run naming it, and one naming an earlier entry's file adds nothing. A reference below
- * the root the matrix does not name ends the run naming both, because the compiler builds a
- * referenced project's sources into the referencing program without reporting their
- * diagnostics. A reference outside the root is an outside project.
+ * The projects a build matrix declares, in its order, each a file below the target root, a
+ * `package.json` entry a tree for the plan to form in its place. An entry naming an absent file,
+ * a directory or a file the compiler cannot read ends the run naming it; one naming an earlier
+ * entry's file adds nothing. A reference below the root the matrix does not name ends the run
+ * naming both, because the compiler builds a referenced project's sources into the referencing
+ * program without reporting their diagnostics. A reference outside the root is an outside project.
  */
 function declaredProjects(
   engine: Engine,
   host: Host,
   targetRoot: string,
   entries: readonly ProjectConfiguration[],
-): readonly Configuration[] {
+): { readonly targets: readonly Target[]; readonly notBuilt: readonly NotBuilt[] } {
+  const targets: Target[] = [];
   const projects: Configuration[] = [];
   const references = new Map<string, readonly string[]>();
+  const manifests = new Set<string>();
   for (const entry of entries) {
     const configFile = joinPath(targetRoot, entry.project);
     const named = `the project ${JSON.stringify(entry.id)} (${configFile})`;
@@ -253,7 +311,12 @@ function declaredProjects(
           : "is a directory, and a project names its compiler configuration file",
       );
     }
-    if (references.has(configFile)) {
+    if (references.has(configFile) || manifests.has(configFile)) {
+      continue;
+    }
+    if (configFile.endsWith(`/${MANIFEST}`)) {
+      manifests.add(configFile);
+      targets.push({ kind: "declared", id: entry.id, manifest: configFile });
       continue;
     }
     const read = readConfiguration(engine, configFile);
@@ -261,7 +324,14 @@ function declaredProjects(
       unbuilt(named, `cannot be read as a compiler configuration: ${read.reason}`);
     }
     references.set(configFile, referencesOf(read.parsed));
-    projects.push({ id: entry.id, configFile, origin: "declared", parsed: read.parsed });
+    const configuration: Configuration = {
+      id: entry.id,
+      configFile,
+      origin: "declared",
+      parsed: read.parsed,
+    };
+    projects.push(configuration);
+    targets.push({ kind: "configuration", configuration });
   }
   for (const project of projects) {
     const unnamed = references
@@ -274,7 +344,7 @@ function declaredProjects(
       );
     }
   }
-  return projects;
+  return { targets, notBuilt: [] };
 }
 
 /**
@@ -282,13 +352,14 @@ function declaredProjects(
  * names for the target where its path names one, every compiler configuration under the
  * target root outside a skipped directory, then each configuration below the root those
  * reference, transitively, each once. A configuration the scope names ends the run where it
- * cannot be read; one the walk found is dropped and named.
+ * cannot be read; one the walk found is dropped and named. Where the scope names none, the
+ * plan forms programs over the target's JavaScript files no configuration lists.
  */
 function derivedProjects(
   engine: Engine,
   host: Host,
   scope: Scope,
-): { readonly configurations: readonly Configuration[]; readonly notBuilt: readonly NotBuilt[] } {
+): { readonly targets: readonly Target[]; readonly notBuilt: readonly NotBuilt[] } {
   const targetRoot = scope.target.path;
   const fromScope = scope.target.path.endsWith(".json")
     ? [resolvePath(host.workingDirectory(), scope.target.path)]
@@ -316,23 +387,28 @@ function derivedProjects(
       });
     },
   );
+  const configurations = found.map(({ configFile, parsed }): Configuration => ({
+    id: idOf(configFile),
+    configFile,
+    origin: fromScope.includes(configFile) ? "scope" : "derived",
+    parsed,
+  }));
   return {
-    configurations: found.map(({ configFile, parsed }) => ({
-      id: idOf(configFile),
-      configFile,
-      origin: fromScope.includes(configFile) ? "scope" : "derived",
-      parsed,
-    })),
+    targets: [
+      ...configurations.map((configuration) => ({ kind: "configuration" as const, configuration })),
+      ...(fromScope.length > 0 ? [] : [{ kind: "derived" as const }]),
+    ],
     notBuilt,
   };
 }
 
 /**
- * Every configuration one run opens: the build matrix's project entries in its order, or,
- * where it holds none, those derived from the scope and the target tree, then each declared
- * consumer's, a configuration the target or an earlier consumer opens being theirs alone. A
- * target holding none ends the run with the setup failure `no-program`. No build output is
- * read: a project is the files its configuration names.
+ * Every configuration file one run opens: the build matrix's project entries in its order,
+ * or, where it holds none, those derived from the scope and the target tree, then each
+ * declared consumer's, a configuration the target or an earlier consumer opens being theirs
+ * alone. The consumers are read first, so one that cannot be read ends the run before any
+ * failure of the target: the Contract's failure-class table lists `missing-consumer` before
+ * `no-program`.
  */
 export function discoverProjects(
   engine: Engine,
@@ -340,6 +416,10 @@ export function discoverProjects(
   scope: Scope,
   configurations: readonly BuildConfiguration[] = [],
 ): Discovery {
+  const consumers = scope.consumers.map((module) => {
+    const projects = consumerProjects(engine, host, module.path);
+    return { consumer: { id: moduleIdentity(host, module), path: module.path }, projects };
+  });
   const declared = configurations.filter(
     (entry): entry is ProjectConfiguration => "project" in entry,
   );
@@ -347,32 +427,29 @@ export function discoverProjects(
     declared.length > 0
       ? {
           mode: "declared" as const,
-          configurations: declaredProjects(engine, host, scope.target.path, declared),
-          notBuilt: [],
+          ...declaredProjects(engine, host, scope.target.path, declared),
         }
       : { mode: "derived" as const, ...derivedProjects(engine, host, scope) };
-  if (target.configurations.length === 0 && target.notBuilt.length === 0) {
-    throw failureExit(
-      "no-program",
-      `${scope.target.path} holds no compiler configuration, no file named ${MARKERS.join(", ")}: run from the directory that holds one, or name the languages to analyze`,
-    );
-  }
-  const opened = new Set(target.configurations.map((one) => one.configFile));
-  const consumers: LoadedConsumer[] = [];
+
+  const read = target.targets.flatMap((one) =>
+    one.kind === "configuration" ? [one.configuration] : [],
+  );
+  const opened = new Set(read.map((one) => one.configFile));
   const consumed: Configuration[] = [];
-  for (const module of scope.consumers) {
-    const read = consumerProjects(engine, host, module.path);
-    const consumer = { id: moduleIdentity(host, module), path: module.path };
-    consumers.push(consumer);
-    for (const { configFile, parsed } of read.filter((one) => !opened.has(one.configFile))) {
-      opened.add(configFile);
-      consumed.push({ id: configFile, configFile, origin: "consumer", parsed, consumer });
+  for (const { consumer, projects } of consumers) {
+    for (const one of projects.filter(({ configFile }) => !opened.has(configFile))) {
+      opened.add(one.configFile);
+      consumed.push({ ...one, consumer });
     }
   }
   return {
     mode: target.mode,
-    configurations: [...target.configurations, ...consumed],
+    targets: target.targets,
+    configurations: [...read, ...consumed],
     notBuilt: target.notBuilt,
-    consumers,
+    consumers: consumers.map(({ consumer }) => consumer),
+    unconfigured: consumers
+      .filter(({ projects }) => projects.length === 0)
+      .map(({ consumer }) => consumer),
   };
 }

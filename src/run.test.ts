@@ -491,6 +491,29 @@ describe("print-projects", () => {
     );
   });
 
+  it("prints a matrix interleaving package.json and compiler configuration entries in its order", () => {
+    const target = matrixTree({
+      "web/package.json": '{"name":"@example/web","type":"module"}\n',
+      "web/main.js": 'console.log("web");\n',
+      "tools/package.json": '{"name":"@example/tools","type":"module"}\n',
+      "tools/cli.js": 'console.log("tools");\n',
+      "deadset.json": JSON.stringify({
+        analysis: {
+          configurations: [
+            { id: "web", project: "web/package.json" },
+            { id: "main", project: "tsconfig.json" },
+            { id: "tools", project: "tools/package.json" },
+          ],
+        },
+      }),
+    });
+
+    const got = invoke(["print-projects", `--target=${target}`]);
+
+    expect(got.code, got.err).toBe(0);
+    expect(got.out).toBe("web\nmain\ntools\n");
+  });
+
   it("derives every project of the tree with no declared matrix, one holding a type error among them", () => {
     const got = invoke(["print-projects", `--target=${matrixTree()}`]);
 

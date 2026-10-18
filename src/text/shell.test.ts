@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { commandsOf, scriptTokens } from "./shell.ts";
+import { commandsOf, scriptTokens, withoutComment } from "./shell.ts";
 
 describe("scriptTokens", () => {
   it.each([
@@ -25,5 +25,17 @@ describe("commandsOf", () => {
       "node a.ts > log 2>&1 ",
       " node b.ts &>log",
     ]);
+  });
+});
+
+describe("withoutComment", () => {
+  it.each([
+    ["node a.js # run it", "node a.js "],
+    ["node 'a # b.js'", "node 'a # b.js'"],
+    ['node "a \\" # b.js"', 'node "a \\" # b.js"'],
+    ["node a#b.js", "node a#b.js"],
+    ["# all of it", ""],
+  ])("reads %j up to its comment as %j", (line, kept) => {
+    expect(withoutComment(line)).toEqual(kept);
   });
 });

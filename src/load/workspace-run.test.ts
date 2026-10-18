@@ -11,7 +11,8 @@ import { scopeForDir } from "../scope.ts";
 import { openEngine, type Engine } from "../session.ts";
 import { writtenPath } from "./workspace-programs.ts";
 import { baseUrlPaths } from "./plan.ts";
-import { workspaceRun } from "./workspace-run.ts";
+import { layoutOf, workspaceRun } from "./workspace-run.ts";
+import { findWorkspace } from "./workspace.ts";
 
 /**
  * Workspaces written to a fresh directory per case, because a package manager's links
@@ -123,10 +124,11 @@ function workspaceOf(
       };
     }),
     { entries: [], declaresExports: false },
+    findWorkspace(nodeHost(), root, (configFile) => layoutOf(engine, configFile)),
   );
 }
 
-/** Two packages: `b` uses one export of `a`, which publishes it from an unbuilt `dist/`. */
+/** `b` uses one export of `a`, which publishes it from an unbuilt `dist/`. */
 const UNBUILT: Readonly<Record<string, string>> = {
   "package.json": manifest({ name: "root", private: true, workspaces: ["packages/*"] }),
   "packages/a/package.json": manifest({
@@ -578,6 +580,25 @@ describe("a component file of a workspace package", () => {
     expect(found(analysis)).toEqual(["DS1001 packages/a/src/index.ts usedByNobody"]);
     expect(analysis.swept.componentFiles).toEqual(["packages/b/src/Widget.vue"]);
     expect(opened).toEqual({ written: 1, built: 0 });
+  });
+
+  it("is read where the configuration imports a JavaScript member, its own JavaScript files kept out of its file list", () => {
+    const root = writeWorkspace({
+      "package.json": manifest({ name: "root", private: true, workspaces: ["packages/*"] }),
+      "packages/a/package.json": manifest({ name: "a", exports: "./index.js" }),
+      "packages/a/index.js":
+        "export function usedBySibling() {\n  return 1;\n}\n\nexport function usedByNobody() {\n  return 2;\n}\n",
+      "packages/b/package.json": manifest({ name: "b", dependencies: { a: "1.0.0" } }),
+      "packages/b/tsconfig.json": tsconfig({}, { include: ["src"] }),
+      "packages/b/src/main.ts": 'import Widget from "./Widget.vue";\n\nconsole.log(Widget);\n',
+      "packages/b/src/Widget.vue":
+        '<script setup lang="ts">\nimport { usedBySibling } from "a";\nconst count = usedBySibling();\n</script>\n\n<template>{{ count }}</template>\n',
+      "packages/b/src/legacy.js": 'console.log("legacy");\n',
+    });
+    const analysis = analyze(root);
+
+    expect(analysis.run.componentsUnread).toEqual([]);
+    expect(analysis.swept.componentFiles).toEqual(["packages/b/src/Widget.vue"]);
   });
 
   /**

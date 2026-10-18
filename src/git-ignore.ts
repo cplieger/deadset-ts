@@ -5,6 +5,7 @@
 
 import type { Host } from "./host.ts";
 import { ancestors, dirnamePath, joinPath, relativePath } from "./paths.ts";
+import { message } from "./product.ts";
 import { gitignoreExpression } from "./text/glob.ts";
 import { repositoryOf } from "./fs/tree.ts";
 
@@ -45,33 +46,43 @@ function rulesOf(text: string): readonly Rule[] {
   return rules;
 }
 
-function rulesIn(host: Host, path: string): readonly Rule[] {
+/** Told each ignore file that exists and cannot be read, with why. */
+type UnreadIgnoreFile = (path: string, reason: string) => void;
+
+function rulesIn(host: Host, path: string, unread: UnreadIgnoreFile): readonly Rule[] {
   try {
     return rulesOf(host.readFile(path));
-  } catch {
+  } catch (error: unknown) {
+    if (host.kindOf(path) !== "absent") {
+      unread(path, message(error));
+    }
     return [];
   }
 }
 
 /**
- * Whether git ignores one absolute path below `root`: by the repository's `info/exclude`,
- * then the `.gitignore` files from the repository's root down to the path's directory, a
- * later pattern overriding an earlier one. A path outside `root` is not ignored, and a file
- * below an ignored directory stays ignored whatever a later pattern says, as git cannot
- * re-include it. With no repository at or above `root`, the files at and below it are read;
- * with one, the directories above `root` give patterns but are not themselves tested.
+ * Whether git ignores one absolute path below `root`: by the repository's `info/exclude`, then
+ * the `.gitignore` files from its root down to the path's directory, a later pattern overriding
+ * an earlier one, though a file below an ignored directory stays ignored, as git cannot re-include
+ * it. A path outside `root` is not ignored. With no repository, the files at and below `root` are
+ * read; with one, the directories above `root` give patterns but are not tested. An unreadable
+ * ignore file ignores nothing, and `unread` is told it.
  */
-export function gitIgnored(host: Host, root: string): (path: string) => boolean {
+export function gitIgnored(
+  host: Host,
+  root: string,
+  unread: UnreadIgnoreFile = () => undefined,
+): (path: string) => boolean {
   const found = repositoryOf(host, root);
   const repository = found?.root;
   const above =
     repository === undefined ? [] : [...ancestors(dirnamePath(root), repository)].reverse();
-  const excluded = found?.exclude === undefined ? [] : rulesIn(host, found.exclude);
+  const excluded = found?.exclude === undefined ? [] : rulesIn(host, found.exclude, unread);
   const read = new Map<string, readonly Rule[]>();
   const rulesAt = (dir: string): readonly Rule[] => {
     let rules = read.get(dir);
     if (rules === undefined) {
-      rules = rulesIn(host, joinPath(dir, ".gitignore"));
+      rules = rulesIn(host, joinPath(dir, ".gitignore"), unread);
       read.set(dir, rules);
     }
     return rules;

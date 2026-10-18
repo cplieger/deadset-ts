@@ -303,7 +303,13 @@ export interface TypeErrorSkipsEntry {
 
 /** The object at report.schema.json#/properties/notes/items. */
 export interface NotesEntry {
-  readonly kind: "computed-load" | "module-not-loaded" | "published-package" | "unmapped-entry";
+  readonly kind:
+    | "computed-load"
+    | "module-not-loaded"
+    | "published-package"
+    | "unmapped-entry"
+    | "unread-command"
+    | "unresolved-specifier";
   readonly path: string;
   readonly key?: "roots.patterns" | "ts.entry_files";
   readonly message: string;
@@ -727,11 +733,26 @@ export const REPORT_SCHEMAS = {
               if: { properties: { kind: { const: "computed-load" } } },
               then: { not: { required: ["key"] } },
             },
+            {
+              if: { properties: { kind: { const: "unread-command" } } },
+              then: { not: { required: ["key"] } },
+            },
+            {
+              if: { properties: { kind: { const: "unresolved-specifier" } } },
+              then: { not: { required: ["key"] } },
+            },
           ],
           properties: {
             kind: {
               type: "string",
-              enum: ["computed-load", "module-not-loaded", "published-package", "unmapped-entry"],
+              enum: [
+                "computed-load",
+                "module-not-loaded",
+                "published-package",
+                "unmapped-entry",
+                "unread-command",
+                "unresolved-specifier",
+              ],
             },
             path: {
               type: "string",

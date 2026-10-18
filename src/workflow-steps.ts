@@ -26,12 +26,18 @@ const RUN_LINE = /^(\s*(?:- )?)run:(.*)$/u;
 /** The directories whose every file is a git hook script, run as the shell runs it. */
 const HOOK_DIRS = [".husky", ".githooks"] as const;
 
+/** A line setting the directory a workflow step, or each step a `defaults.run` covers, runs in. */
+const WORKING_DIRECTORY = /^(\s*(?:- )?)working-directory:(.*)$/u;
+
+const LEFTHOOK_FILES = ["lefthook.yml", "lefthook.yaml", ".lefthook.yml"] as const;
+
+/** A line setting the directory a lefthook command runs in. */
+const LEFTHOOK_ROOT = /^(\s*(?:- )?)root:(.*)$/u;
+
 /** The hook manager files whose commands are written under a key, with that key. */
 const HOOK_MANAGERS: readonly (readonly [string, RegExp])[] = [
   [".pre-commit-config.yaml", /^(\s*(?:- )?)entry:(.*)$/u],
-  ["lefthook.yml", RUN_LINE],
-  ["lefthook.yaml", RUN_LINE],
-  [".lefthook.yml", RUN_LINE],
+  ...LEFTHOOK_FILES.map((name) => [name, RUN_LINE] as const),
 ];
 
 /** The names GNU make reads a makefile under, in the order it tries them. */
@@ -57,7 +63,7 @@ function readText(host: Host, path: string): string | undefined {
   }
 }
 
-/** Every command line one workflow file's `run:` steps, or the steps under `key`, hold. */
+/** Every line one workflow file's `run:` steps hold, or every line of the values written under `key`. */
 export function runCommands(text: string, key: RegExp = RUN_LINE): readonly string[] {
   const lines = text.split(/\r?\n/u);
   const found: string[] = [];
@@ -138,6 +144,27 @@ export function workflowCommands(host: Host, targetRoot: string): readonly strin
   return [...stepCommands(host, root), ...recipeLines(host, root).flat()];
 }
 
+/**
+ * Every directory the target root's workflow steps and lefthook commands are set to run in, as
+ * written: each `working-directory` of a workflow file and each `root` of a lefthook file.
+ */
+export function commandDirectories(host: Host, targetRoot: string): readonly string[] {
+  const root = resolvePath(host.workingDirectory(), targetRoot);
+  return [
+    ...workflowFiles(host, root).flatMap((path) =>
+      runCommands(readText(host, path) ?? "", WORKING_DIRECTORY),
+    ),
+    ...LEFTHOOK_FILES.flatMap((name) =>
+      runCommands(readText(host, joinPath(root, name)) ?? "", LEFTHOOK_ROOT),
+    ),
+  ];
+}
+
+/** The workflow files in `.github/workflows` at one root, by path in name order. */
+function workflowFiles(host: Host, root: string): readonly string[] {
+  return pathsIn(host, joinPath(root, WORKFLOWS), (name) => /\.ya?ml$/u.test(name));
+}
+
 /** Every token the commands {@link workflowCommands} reads hold. */
 export function workflowTokens(host: Host, targetRoot: string): readonly string[] {
   const root = resolvePath(host.workingDirectory(), targetRoot);
@@ -150,7 +177,7 @@ export function workflowTokens(host: Host, targetRoot: string): readonly string[
 /** The commands of the workflow steps, git hooks and hook managers at one root. */
 function stepCommands(host: Host, root: string): readonly string[] {
   const commands: string[] = [];
-  for (const path of pathsIn(host, joinPath(root, WORKFLOWS), (name) => /\.ya?ml$/u.test(name))) {
+  for (const path of workflowFiles(host, root)) {
     commands.push(...runCommands(readText(host, path) ?? ""));
   }
   for (const dir of HOOK_DIRS) {

@@ -1,28 +1,46 @@
 import type { CreateSnapshotProgramParams } from "@typescript/native/sync";
 import type { PartialConfig } from "../config.ts";
 import { readConventions, type ConventionManifest, type Conventions } from "../conventions.ts";
-import { holdsManifest, inInstalledPackages, MANIFEST } from "../fs/manifest.ts";
+import { holdsManifest, inInstalledPackages, MANIFEST, readManifestAt } from "../fs/manifest.ts";
+import { gitIgnored } from "../git-ignore.ts";
 import type { Host } from "../host.ts";
 import { packageEntries, readManifest, type Manifest, type ManifestEntry } from "../manifest.ts";
-import { ancestors, dirnamePath, normalizePath, relativePath, resolvePath } from "../paths.ts";
+import {
+  ancestors,
+  dirnamePath,
+  joinPath,
+  normalizePath,
+  relativePath,
+  resolvePath,
+} from "../paths.ts";
 import type { Scope } from "../scope.ts";
 import type { Engine, ProgramBuild } from "../session.ts";
 import { bytewise } from "../text/compare.ts";
 import { globExpression } from "../text/glob.ts";
 import {
+  consumerWithoutSources,
   discoverProjects,
   isTargetConfiguration,
+  targetWithoutSources,
   type Configuration,
   type Discovery,
   type LoadedConsumer,
   type Parsed,
 } from "./discover.ts";
 import { FailureExit } from "../failure.ts";
+import {
+  bundlingManifests,
+  candidateFiles,
+  formedGroups,
+  formedPrograms,
+  packageOf,
+} from "./synthesize.ts";
 import { joinedTestFiles, joinedTests } from "./test-joins.ts";
 import { testGlobals } from "./test-globals.ts";
-import { findWorkspace, type Workspace } from "./workspace.ts";
-import { writtenConfiguration } from "./workspace-programs.ts";
-import { workspaceRun, type WorkspaceRun } from "./workspace-run.ts";
+import { findWorkspace, withFormed, type ParsedLayout, type Workspace } from "./workspace.ts";
+import { workspacePrograms, writtenConfiguration, writtenFileOf } from "./workspace-programs.ts";
+import { workspaceResolver } from "./workspace-resolution.ts";
+import { layoutOf, workspaceRun, type WorkspaceRun } from "./workspace-run.ts";
 
 export type CompilerOptions = Parsed["options"];
 
@@ -59,8 +77,7 @@ interface PackageSet {
  * The workspace one consumer sits in, or the fault of a declaration that cannot be read,
  * which ends the run only where an import's membership depends on it.
  */
-export type ConsumerWorkspace =
-  { readonly workspace: Workspace | undefined } | { readonly fault: string };
+type ConsumerWorkspace = { readonly workspace: Workspace | undefined } | { readonly fault: string };
 
 /** What a run opens and how it builds each program, decided before the snapshot. */
 export interface RunPlan {
@@ -74,7 +91,30 @@ export interface RunPlan {
   readonly consumerWorkspaces: ReadonlyMap<string, ConsumerWorkspace>;
   /** The target root, absolute. */
   readonly root: string;
+  /**
+   * The output and declaration directories of every configuration file of the run, absolute,
+   * whose paths name build output: no formed program's candidate lies below one, and no relative
+   * specifier of a configuration that does not check its JavaScript naming one is noted.
+   */
+  readonly outputs: readonly string[];
+  /** The inputs the run could not read, in the order it met them. */
+  readonly unread: readonly UnreadInput[];
 }
+
+/** One input the run could not read, which the error stream names. */
+export type UnreadInput =
+  /**
+   * A `package.json` that does not parse, or cannot be read with the read's error as `reason`,
+   * whose group's manifest facts go unanswered.
+   */
+  | {
+      readonly kind: "manifest";
+      readonly configFile: string;
+      readonly manifest: string;
+      readonly reason: string | undefined;
+    }
+  /** An ignore file that cannot be read, which then ignores nothing. */
+  | { readonly kind: "ignore-file"; readonly path: string; readonly reason: string };
 
 /**
  * The `paths` one configuration's resolved options map under the compilers before version
@@ -96,9 +136,15 @@ export function baseUrlPaths(options: CompilerOptions): Record<string, string[]>
   );
 }
 
-/** One configuration, read through the `paths` its `baseUrl` gives. */
 function planned(configuration: Configuration): ProgramPlan {
   const { options } = configuration.parsed;
+  if (configuration.written !== undefined) {
+    return {
+      ...configuration,
+      options,
+      build: { kind: "configuration", value: configuration.written },
+    };
+  }
   const paths = baseUrlPaths(options);
   return {
     ...configuration,
@@ -141,38 +187,51 @@ function nestedPackageDirs(
   return found.sort(bytewise);
 }
 
-/** The manifests conventions are applied from: the target's, then each member's and nested package's. */
+/**
+ * The manifests conventions are applied from below `root`: its own, then each member's and
+ * each nested package's, each once.
+ */
 function conventionManifests(
   host: Host,
   root: string,
-  packages: PackageSet,
+  members: readonly string[],
+  nested: readonly string[],
 ): readonly ConventionManifest[] {
   const found = new Map<string, ConventionManifest>();
   if (holdsManifest(host, root)) {
     found.set(root, { dir: root, path: MANIFEST });
   }
-  for (const [dirs, nested] of [
-    [packages.members, false],
-    [packages.nested, true],
+  for (const [dirs, isNested] of [
+    [members, false],
+    [nested, true],
   ] as const) {
     for (const dir of dirs) {
       const below = relativePath(root, dir);
       if (below !== undefined && !found.has(dir)) {
-        found.set(dir, { dir, path: `${below}/${MANIFEST}`, nested });
+        found.set(dir, { dir, path: `${below}/${MANIFEST}`, nested: isNested });
       }
     }
   }
   return [...found.values()];
 }
 
-/** The workspace one consumer sits in, read from its own root, the target's reused. */
+/**
+ * The workspace one consumer sits in, read from its own root with `parse` reading its members'
+ * configurations, the target's reused, and any other given the programs of `formed` as
+ * {@link withFormed} does.
+ */
 function consumerWorkspace(
   host: Host,
   consumer: LoadedConsumer,
   target: Workspace | undefined,
+  parse: (configFile: string) => ParsedLayout | undefined,
+  formed: ReadonlyMap<string, readonly ParsedLayout[]>,
 ): ConsumerWorkspace {
   try {
-    return { workspace: findWorkspace(host, consumer.path, () => undefined, target) };
+    const found = findWorkspace(host, consumer.path, parse, target);
+    return {
+      workspace: found === undefined || found === target ? found : withFormed(host, found, formed),
+    };
   } catch (error: unknown) {
     if (!(error instanceof FailureExit)) {
       throw error;
@@ -182,47 +241,226 @@ function consumerWorkspace(
 }
 
 /**
- * The plan of one run: the configurations discovery names, each built through the steps in
- * order (the `baseUrl` paths, the workspace members read from source, the test runner's
- * globals, the joined test files of a derived matrix), the package set and the convention
- * rows applied per package. A nested package is one at or above a file a target
- * configuration lists or a test file that joins it.
+ * How the snapshot builds each program formed for a consumer that sits in a workspace, its
+ * member imports read from source as the target's are. A consumer's configuration read from a
+ * file resolves a member through what is installed, as the compiler does.
+ */
+function consumerPrograms(
+  engine: Engine,
+  host: Host,
+  plans: readonly ProgramPlan[],
+  places: ReadonlyMap<string, ConsumerWorkspace>,
+): ReadonlyMap<string, Exclude<Build, { readonly kind: "project" }>> {
+  const byRoot = new Map<string, { workspace: Workspace; plans: ProgramPlan[] }>();
+  for (const plan of plans) {
+    const place = plan.consumer === undefined ? undefined : places.get(plan.consumer.path);
+    if (plan.written === undefined || place === undefined || !("workspace" in place)) {
+      continue;
+    }
+    const { workspace } = place;
+    if (workspace !== undefined) {
+      const held = byRoot.get(workspace.root) ?? { workspace, plans: [] };
+      held.plans.push(plan);
+      byRoot.set(workspace.root, held);
+    }
+  }
+  return new Map(
+    [...byRoot.values()].flatMap(({ workspace, plans: held }) => [
+      ...workspacePrograms(engine, host, held, workspaceResolver(host, workspace)).programs,
+    ]),
+  );
+}
+
+function outputsOf({ parsed }: Configuration): readonly string[] {
+  return [parsed.options.outDir, parsed.options.declarationDir].filter((dir) => dir !== undefined);
+}
+
+/**
+ * The plan of one run: the configurations discovery names and the programs formed for the
+ * JavaScript files none lists, each built through the steps in order (the `baseUrl` paths,
+ * the workspace members read from source, the test runner's globals, the joined test files),
+ * the package set and the convention rows. A formed program's files wait for the joins and
+ * the rows, and its module system is fixed before any workspace round reads it. A nested
+ * package is one at or above a file a target configuration lists, joins or is formed over.
  */
 export function planRun(engine: Engine, host: Host, scope: Scope, config: PartialConfig): RunPlan {
   const discovery = discoverProjects(engine, host, scope, config.analysis.configurations);
   const root = resolvePath(host.workingDirectory(), scope.target.path);
   const parse = (fileName: string, text: string) => engine.parseSourceFile(fileName, text);
-  let plans: readonly ProgramPlan[] = discovery.configurations.map(planned);
-  const targets = plans.filter(isTargetConfiguration);
-  const manifest = readManifest(host, scope.target.path);
-  const workspace = workspaceRun(engine, host, root, targets, manifest);
-  const consumerWorkspaces = new Map(
-    discovery.consumers.map((consumer) => [
-      consumer.path,
-      consumerWorkspace(host, consumer, workspace?.workspace),
-    ]),
-  );
-  plans = plans.map((plan) => {
-    const build = workspace?.programs.get(plan.configFile);
-    return build === undefined ? plan : { ...plan, build };
+  const disabled = config.ts.disabled_conventions;
+  const outputs = discovery.configurations.flatMap(outputsOf);
+  const unread: UnreadInput[] = [];
+  const ignoredBelow = (dir: string): ((path: string) => boolean) =>
+    gitIgnored(host, dir, (path, reason) => {
+      if (!unread.some((one) => one.kind === "ignore-file" && one.path === path)) {
+        unread.push({ kind: "ignore-file", path, reason });
+      }
+    });
+  // Before any target step, so a consumer's failure is the one named, as discoverProjects orders them.
+  const consumerFormed = discovery.unconfigured.flatMap((consumer) => {
+    const consumerRoot = resolvePath(host.workingDirectory(), consumer.path);
+    const files = candidateFiles(host, consumerRoot, {
+      covered: new Set(),
+      outputs,
+      ignored: ignoredBelow(consumerRoot),
+    });
+    const rows = readConventions(
+      host,
+      parse,
+      conventionManifests(
+        host,
+        consumerRoot,
+        [],
+        [...new Set(files.map((file) => packageOf(host, consumerRoot, file)))].filter(
+          (dir) => dir !== consumerRoot,
+        ),
+      ),
+      disabled,
+    );
+    const programs = formedPrograms(engine, host, formedGroups(host, consumerRoot, files, rows), {
+      root: consumerRoot,
+      origin: "consumer",
+      bundling: bundlingManifests(rows),
+      idOf: (path) => path ?? consumerRoot,
+    });
+    if (programs.length === 0) {
+      throw consumerWithoutSources(consumer.path);
+    }
+    return programs.map((one) => ({ ...one, configuration: { ...one.configuration, consumer } }));
   });
-  plans = testGlobals(host, parse, plans);
+  const readTargets = discovery.configurations.filter(isTargetConfiguration);
+  const manifest = readManifest(host, scope.target.path);
+  const found = findWorkspace(host, root, (configFile) => layoutOf(engine, configFile));
   const joins =
     discovery.mode === "derived"
-      ? joinedTestFiles(host, root, targets, config.ts.test_files.map(globExpression))
+      ? joinedTestFiles(host, root, readTargets, config.ts.test_files.map(globExpression))
       : new Map<string, readonly string[]>();
-  plans = joinedTests(plans, joins);
-  const members = workspace?.memberDirs ?? [];
+  const targetIgnored = ignoredBelow(root);
+  const covered = new Set([
+    ...readTargets.flatMap(({ parsed }) => parsed.fileNames),
+    ...[...joins.values()].flat(),
+  ]);
+  const trees = discovery.targets.flatMap((target) => {
+    if (target.kind === "configuration") {
+      return [];
+    }
+    const dir = target.kind === "derived" ? root : dirnamePath(target.manifest);
+    const files = candidateFiles(host, dir, { covered, outputs, ignored: targetIgnored });
+    return [
+      {
+        target,
+        dir,
+        files:
+          target.kind === "derived"
+            ? files
+            : files.filter((file) => packageOf(host, dir, file) === dir),
+      },
+    ];
+  });
+  const members = found?.members.map((member) => member.dir) ?? [];
   const nested = nestedPackageDirs(
     host,
     normalizePath(root),
-    targets.flatMap((plan) => [
-      plan.configFile,
-      ...plan.parsed.fileNames,
-      ...(joins.get(plan.configFile) ?? []),
-    ]),
+    [
+      ...readTargets.flatMap((plan) => [
+        plan.configFile,
+        ...plan.parsed.fileNames,
+        ...(joins.get(plan.configFile) ?? []),
+      ]),
+      ...trees.flatMap(({ files }) => files),
+    ],
     new Set(members),
   );
+  const conventions = readConventions(
+    host,
+    parse,
+    conventionManifests(host, root, members, nested),
+    disabled,
+  );
+  const bundling = bundlingManifests(conventions);
+  const formedFor = new Map(
+    trees.map(({ target, dir, files }) => {
+      const groups = formedGroups(host, dir, files, conventions);
+      const programs = formedPrograms(
+        engine,
+        host,
+        target.kind === "declared"
+          ? [groups[0] ?? { dir, manifest: readManifestAt(host, dir), files: [] }]
+          : groups,
+        {
+          root,
+          origin: target.kind,
+          bundling,
+          idOf: (path) =>
+            target.kind === "declared"
+              ? target.id
+              : path === undefined
+                ? "."
+                : (relativePath(root, path) ?? path),
+        },
+      );
+      return [target, programs] as const;
+    }),
+  );
+  const targetFormed = [...formedFor.values()].flat();
+  if (readTargets.length + targetFormed.length === 0 && discovery.notBuilt.length === 0) {
+    throw targetWithoutSources(scope.target.path);
+  }
+  for (const { configuration, group } of [...targetFormed, ...consumerFormed]) {
+    if (group.manifest.kind === "malformed" || group.manifest.kind === "unread") {
+      unread.push({
+        kind: "manifest",
+        configFile: configuration.configFile,
+        manifest: joinPath(group.dir, MANIFEST),
+        reason: group.manifest.kind === "unread" ? group.manifest.reason : undefined,
+      });
+    }
+  }
+  let plans: readonly ProgramPlan[] = [
+    ...discovery.targets.flatMap((target) =>
+      target.kind === "configuration"
+        ? [target.configuration]
+        : (formedFor.get(target) ?? []).map(({ configuration }) => configuration),
+    ),
+    ...discovery.configurations.filter((one) => !isTargetConfiguration(one)),
+    ...consumerFormed.map(({ configuration }) => configuration),
+  ].map(planned);
+  const formedLayouts = new Map<string, ParsedLayout[]>();
+  for (const { configuration, group } of [...targetFormed, ...consumerFormed]) {
+    formedLayouts.set(group.dir, [
+      ...(formedLayouts.get(group.dir) ?? []),
+      { fileNames: configuration.parsed.fileNames },
+    ]);
+  }
+  const workspace = workspaceRun(
+    engine,
+    host,
+    root,
+    plans.filter(isTargetConfiguration),
+    manifest,
+    found === undefined ? undefined : withFormed(host, found, formedLayouts),
+  );
+  const consumerWorkspaces = new Map(
+    discovery.consumers.map((consumer) => [
+      consumer.path,
+      consumerWorkspace(
+        host,
+        consumer,
+        workspace?.workspace,
+        discovery.unconfigured.includes(consumer)
+          ? (configFile) => layoutOf(engine, configFile)
+          : () => undefined,
+        formedLayouts,
+      ),
+    ]),
+  );
+  const consumerBuilds = consumerPrograms(engine, host, plans, consumerWorkspaces);
+  plans = plans.map((plan) => {
+    const build = workspace?.programs.get(plan.configFile) ?? consumerBuilds.get(plan.configFile);
+    return build === undefined ? plan : { ...plan, build };
+  });
+  plans = testGlobals(host, parse, plans);
+  plans = joinedTests(plans, joins);
   const packages: PackageSet = {
     manifest: workspace?.manifest ?? manifest,
     members,
@@ -232,13 +470,17 @@ export function planRun(engine: Engine, host: Host, scope: Scope, config: Partia
       (workspace?.entries ?? []).filter((entry) => entry.published).map((entry) => entry.dir),
     ),
   };
-  const conventions = readConventions(
-    host,
-    parse,
-    conventionManifests(host, root, packages),
-    config.ts.disabled_conventions,
-  );
-  return { discovery, plans, packages, conventions, workspace, consumerWorkspaces, root };
+  return {
+    discovery,
+    plans,
+    packages,
+    conventions,
+    workspace,
+    consumerWorkspaces,
+    root,
+    outputs,
+    unread,
+  };
 }
 
 /** How the snapshot builds each planned configuration other than by opening its project. */
@@ -247,11 +489,15 @@ export function programBuilds(
   plans: readonly ProgramPlan[],
 ): ReadonlyMap<string, ProgramBuild> {
   const builds = new Map<string, ProgramBuild>();
-  for (const { configFile, build } of plans) {
+  const formed = new Set(
+    plans.filter((plan) => plan.written !== undefined).map((plan) => plan.configFile),
+  );
+  for (const plan of plans) {
+    const { configFile, build } = plan;
     if (build.kind === "program") {
       builds.set(configFile, build);
     } else if (build.kind === "configuration") {
-      builds.set(configFile, writtenConfiguration(host, configFile, build.value));
+      builds.set(configFile, writtenConfiguration(writtenFileOf(host, plan, formed), build.value));
     }
   }
   return builds;

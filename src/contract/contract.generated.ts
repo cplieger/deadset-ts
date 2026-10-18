@@ -37,7 +37,7 @@ export const LANGUAGE_ROWS = {
   },
   ts: {
     analyzer: "deadset-ts",
-    markers: ["tsconfig*.json"],
+    markers: ["tsconfig*.json", "jsconfig*.json"],
     skippedDirectories: ["node_modules", ".git"],
   },
 } as const satisfies Readonly<

@@ -140,6 +140,8 @@ export interface ConventionRow {
   readonly manifestEntries?: readonly ManifestEntryKey[];
   /** The settings that make the tool's output import a runtime helper package. */
   readonly helpers?: readonly HelperReading[];
+  /** Whether the tool bundles the package's modules, so it resolves them as a bundler does. */
+  readonly bundles?: true;
 }
 
 const SCRIPT = "{js,jsx,ts,tsx}";
@@ -283,6 +285,7 @@ export const CONVENTION_ROWS: readonly ConventionRow[] = [
   },
   {
     name: "astro",
+    bundles: true,
     package: "astro",
     range: ">=5.0.0 <8.0.0",
     entries: [
@@ -358,6 +361,7 @@ export const CONVENTION_ROWS: readonly ConventionRow[] = [
   },
   {
     name: "next",
+    bundles: true,
     package: "next",
     range: ">=13.4.0 <17.0.0",
     generated: [".next"],
@@ -375,6 +379,7 @@ export const CONVENTION_ROWS: readonly ConventionRow[] = [
   },
   {
     name: "nuxt",
+    bundles: true,
     package: "nuxt",
     range: ">=3.0.0 <5.0.0",
     generated: [".nuxt"],
@@ -454,6 +459,7 @@ export const CONVENTION_ROWS: readonly ConventionRow[] = [
   }),
   {
     name: "parcel",
+    bundles: true,
     package: "parcel",
     range: ">=2.0.0 <3.0.0",
     entries: [],
@@ -553,6 +559,7 @@ export const CONVENTION_ROWS: readonly ConventionRow[] = [
   },
   {
     name: "rolldown",
+    bundles: true,
     package: "rolldown",
     range: ">=1.0.0 <2.0.0",
     entries: [],
@@ -598,6 +605,7 @@ export const CONVENTION_ROWS: readonly ConventionRow[] = [
   },
   {
     name: "storybook",
+    bundles: true,
     package: "storybook",
     range: ">=7.0.0 <11.0.0",
     entries: [
@@ -631,6 +639,7 @@ export const CONVENTION_ROWS: readonly ConventionRow[] = [
   },
   {
     name: "sveltekit",
+    bundles: true,
     package: "@sveltejs/kit",
     range: ">=2.0.0 <3.0.0",
     entries: [...SVELTEKIT_ENTRIES, "<params>/*.{js,ts}"],
@@ -696,6 +705,7 @@ export const CONVENTION_ROWS: readonly ConventionRow[] = [
   },
   {
     name: "sveltekit",
+    bundles: true,
     package: "@sveltejs/kit",
     range: ">=3.0.0 <4.0.0",
     entries: [...SVELTEKIT_ENTRIES, "<params>.{js,ts}"],
@@ -788,6 +798,7 @@ export const CONVENTION_ROWS: readonly ConventionRow[] = [
   },
   {
     name: "vite",
+    bundles: true,
     package: "vite",
     range: ">=8.0.0 <9.0.0",
     entries: [],
@@ -803,6 +814,7 @@ export const CONVENTION_ROWS: readonly ConventionRow[] = [
   },
   {
     name: "vitepress",
+    bundles: true,
     package: "vitepress",
     range: ">=1.0.0 <2.0.0-0 || >=2.0.0-alpha.0 <3.0.0",
     entries: [

@@ -1,0 +1,1522 @@
+[
+  {
+    "input": "env -a app node srv/index.js",
+    "files": ["srv/index.js"]
+  },
+  {
+    "input": "env -a app node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "env -S",
+    "files": []
+  },
+  {
+    "input": "npx -c",
+    "files": []
+  },
+  {
+    "input": "env --",
+    "files": []
+  },
+  {
+    "input": "npx -c 'node --test test/*.test.js'",
+    "files": []
+  },
+  {
+    "input": "env -S 'node --require dotenv/config test/*.js'",
+    "files": []
+  },
+  {
+    "input": "npx -c 'node --test srv/*.test.js'",
+    "files": []
+  },
+  {
+    "input": "npx --registry https://registry.example node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "env --unse HOME node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "env --frobnicate x && node srv/index.js",
+    "files": ["srv/index.js"]
+  },
+  {
+    "input": "env A=1 -i node",
+    "files": []
+  },
+  {
+    "input": "npx -c 'a && node b'",
+    "files": []
+  },
+  {
+    "input": "NODE_OPTIONS=\"--trace-warnings --trace-exit\" npx foo",
+    "files": []
+  },
+  {
+    "input": "env -C \"my dir\"",
+    "files": []
+  },
+  {
+    "input": "env -a \"my app\"",
+    "files": []
+  },
+  {
+    "input": "cross-env NODE_OPTIONS=\"--max-old-space-size=4096 --openssl-legacy-provider\" node build.js",
+    "files": ["build.js"]
+  },
+  {
+    "input": "npx --node-options=\"--require dotenv/config\" node main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "npx --user-agent \"ci bot\" node --require dotenv/config main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "env -C \"my dir\" node --require dotenv/config main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "npx --user-agent \\\"ci bot\\\" node --require dotenv/config main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "npx -c \"node -e \\\"x\\\" a.js\"",
+    "files": ["a.js"]
+  },
+  {
+    "input": "'echo start; node main.js' && node b.js",
+    "files": ["main.js", "b.js"]
+  },
+  {
+    "input": "npx --version node --require x main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "npx --version --no-version node --require <dep> main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "npx --version --no-version node a.mjs",
+    "files": ["a.mjs"]
+  },
+  {
+    "input": "npx -c 'node a.mjs' --usage --no-usage",
+    "files": ["a.mjs"]
+  },
+  {
+    "input": "npx --no-version --version node a.mjs",
+    "files": ["a.mjs"]
+  },
+  {
+    "input": "npx --version --no-versions node a.mjs",
+    "files": ["a.mjs"]
+  },
+  {
+    "input": "npx --no-version true node a.js",
+    "files": ["a.js"]
+  },
+  {
+    "input": "npx --no-version false node …",
+    "files": []
+  },
+  {
+    "input": "npx -c '…' extra",
+    "files": []
+  },
+  {
+    "input": "npx --user-agent \"\" node main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "--user-agent=\"a\"b node …",
+    "files": []
+  },
+  {
+    "input": "npx --version=\"false\" …",
+    "files": []
+  },
+  {
+    "input": "… && node b.mjs",
+    "files": ["b.mjs"]
+  },
+  {
+    "input": "npm exec",
+    "files": []
+  },
+  {
+    "input": "npm exec --version false -- node -r a m.js",
+    "files": ["m.js"]
+  },
+  {
+    "input": "npm exec --yes true node m.js",
+    "files": ["m.js"]
+  },
+  {
+    "input": "npx --version false node m.js",
+    "files": ["m.js"]
+  },
+  {
+    "input": "npm exec -p node a.js",
+    "files": ["a.js"]
+  },
+  {
+    "input": "npm exec -p x -- node -r ./p.cjs a.js",
+    "files": ["./p.cjs", "a.js"]
+  },
+  {
+    "input": "env FOO-BAR=1 node -r ./p.cjs a.js",
+    "files": ["./p.cjs", "a.js"]
+  },
+  {
+    "input": "env NODE-ENV=production node -e 'console.log(process.env[\"NODE-ENV\"])'",
+    "files": []
+  },
+  {
+    "input": "env FOO-BAR=1 node -r a m.js",
+    "files": ["m.js"]
+  },
+  {
+    "input": "cross-env a.b=1 node -r a m.js",
+    "files": ["m.js"]
+  },
+  {
+    "input": "node ./setup.ts",
+    "files": ["./setup.ts"]
+  },
+  {
+    "input": "V=\"$(node ./p.cjs)\" node -e 'console.log(process.env.V)'",
+    "files": ["./p.cjs"]
+  },
+  {
+    "input": "echo '$(node x.js)'",
+    "files": ["x.js"]
+  },
+  {
+    "input": "npm exe -- node -r ./p.cjs a.js",
+    "files": ["./p.cjs", "a.js"]
+  },
+  {
+    "input": "npm exe",
+    "files": []
+  },
+  {
+    "input": "env --frobnicate x",
+    "files": []
+  },
+  {
+    "input": "NODE_OPTIONS=\"-r dep\" env -i node m.js",
+    "files": ["m.js"]
+  },
+  {
+    "input": "env --frobnicate node --require=./setup.ts main.ts",
+    "files": ["./setup.ts", "main.ts"]
+  },
+  {
+    "input": "npx --version false node a.js",
+    "files": ["a.js"]
+  },
+  {
+    "input": "env --help -x node",
+    "files": []
+  },
+  {
+    "input": "vite --mode 'a && node x.js'",
+    "files": ["x.js"]
+  },
+  {
+    "input": "npx -p <pkg>",
+    "files": []
+  },
+  {
+    "input": "npm exec --package=foo true",
+    "files": []
+  },
+  {
+    "input": "npm exec --package foo true",
+    "files": []
+  },
+  {
+    "input": "$( (echo a) && node b.js)",
+    "files": ["b.js"]
+  },
+  {
+    "input": "npm -w a exe",
+    "files": []
+  },
+  {
+    "input": "mocha --grep \"a && b\" --require @s/reg/hook t.js",
+    "files": ["t.js"]
+  },
+  {
+    "input": "npx -c \"node \\$(node ./setup.ts) main.ts\"",
+    "files": ["./setup.ts", "main.ts"]
+  },
+  {
+    "input": "node $(node ./setup.ts) main.ts",
+    "files": ["./setup.ts", "main.ts"]
+  },
+  {
+    "input": "npx -c \"node m.js \\",
+    "files": ["m.js"]
+  },
+  {
+    "input": "npx -c 'node $(node ./setup.ts) main.ts'",
+    "files": ["./setup.ts", "main.ts"]
+  },
+  {
+    "input": "echo \"\\$(x)\" && node m.js",
+    "files": ["m.js"]
+  },
+  {
+    "input": "echo \\\"\\\\$(x)\\\" && node m.js",
+    "files": ["m.js"]
+  },
+  {
+    "input": "echo \"\\$(x)\"",
+    "files": []
+  },
+  {
+    "input": "node main.ts",
+    "files": ["main.ts"]
+  },
+  {
+    "input": "node b.js) c.js",
+    "files": ["b.js", "c.js"]
+  },
+  {
+    "input": "env -S 'node $(x) main.js'",
+    "files": ["main.js"]
+  },
+  {
+    "input": "$( )",
+    "files": []
+  },
+  {
+    "input": "\"$(x && node b.js)\"",
+    "files": ["b.js"]
+  },
+  {
+    "input": "it's $(...)",
+    "files": []
+  },
+  {
+    "input": "tee \"$(date).log\"",
+    "files": []
+  },
+  {
+    "input": "node a.js \"\\$(x)\"",
+    "files": ["a.js"]
+  },
+  {
+    "input": "node m.js $( (echo a) && node b.js) c.js",
+    "files": ["m.js", "b.js", "c.js"]
+  },
+  {
+    "input": "NODE_ENV=production node index.js",
+    "files": ["index.js"]
+  },
+  {
+    "input": "cd srv && node index.js",
+    "files": ["index.js"]
+  },
+  {
+    "input": "env -- node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx --yes node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "NODE_ENV=production node ...",
+    "files": []
+  },
+  {
+    "input": "env --help",
+    "files": []
+  },
+  {
+    "input": "npx --help",
+    "files": []
+  },
+  {
+    "input": "env -a custom node index.js",
+    "files": ["index.js"]
+  },
+  {
+    "input": "npx --allow-scripts left-pad node index.js",
+    "files": ["index.js"]
+  },
+  {
+    "input": "npx -c 'node index.js'",
+    "files": ["index.js"]
+  },
+  {
+    "input": "env -S 'node index.js'",
+    "files": ["index.js"]
+  },
+  {
+    "input": "env -- node",
+    "files": []
+  },
+  {
+    "input": "npx --yes node",
+    "files": []
+  },
+  {
+    "input": "env -- node --loader ts-node/esm index.js",
+    "files": ["index.js"]
+  },
+  {
+    "input": "env -a",
+    "files": []
+  },
+  {
+    "input": "npx --allow-scripts",
+    "files": []
+  },
+  {
+    "input": "npx --registry URL node",
+    "files": []
+  },
+  {
+    "input": "npx --registry https://registry.example node main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "npx -c 'eslint && say \"hooray\"'",
+    "files": []
+  },
+  {
+    "input": "npx -c 'node --require dotenv/config main.js && echo done'",
+    "files": ["main.js"]
+  },
+  {
+    "input": "env -u",
+    "files": []
+  },
+  {
+    "input": "npx --version node --require never-loaded main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "npx --version=\"false\" node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx --version=\"false\" -c 'printf RAN'",
+    "files": []
+  },
+  {
+    "input": "npx --no-version=\"true\" -c 'printf RAN'",
+    "files": []
+  },
+  {
+    "input": "npx --usage='false' node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx --versions=\"false\" node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx --no-version=\"true\" node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx -c 'node index.mjs' extra",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npm exec -p probe arg1",
+    "files": []
+  },
+  {
+    "input": "npm exec -p",
+    "files": []
+  },
+  {
+    "input": "npm x -p",
+    "files": []
+  },
+  {
+    "input": "npx -p probe arg1",
+    "files": []
+  },
+  {
+    "input": "npm exec --package probe arg1",
+    "files": []
+  },
+  {
+    "input": "mocha --grep \"a && b\" --require @scope/register/hook test.js",
+    "files": ["test.js"]
+  },
+  {
+    "input": "env --frobnicate node main.ts",
+    "files": ["main.ts"]
+  },
+  {
+    "input": "env --frobnicate node --require=./setup.ts --require never-loaded main.ts",
+    "files": ["./setup.ts", "main.ts"]
+  },
+  {
+    "input": "npm exec --package probe true",
+    "files": []
+  },
+  {
+    "input": "npm exec --package probe false",
+    "files": []
+  },
+  {
+    "input": "V=\"$(node './setup(1).ts')\" node main.ts",
+    "files": ["./setup(1).ts", "main.ts"]
+  },
+  {
+    "input": "echo $(printf x # ) && node hidden.js",
+    "files": ["hidden.js"]
+  },
+  {
+    "input": "NODE_ENV=production node …",
+    "files": []
+  },
+  {
+    "input": "env -i -u HOME",
+    "files": []
+  },
+  {
+    "input": "env --chdir srv --",
+    "files": []
+  },
+  {
+    "input": "npx --yes",
+    "files": []
+  },
+  {
+    "input": "npx -p node@22",
+    "files": []
+  },
+  {
+    "input": "npx --package=… --",
+    "files": []
+  },
+  {
+    "input": "env -- node --loader ts-node/esm",
+    "files": []
+  },
+  {
+    "input": "env -u DEBUG node --require dotenv/config",
+    "files": []
+  },
+  {
+    "input": "env -a app node --import tsx",
+    "files": []
+  },
+  {
+    "input": "npx -c 'node --require source-map-support/register …'",
+    "files": []
+  },
+  {
+    "input": "env --frobnicate node --require never-loaded",
+    "files": []
+  },
+  {
+    "input": "cross-env --verbose node",
+    "files": []
+  },
+  {
+    "input": "npx -c '…'",
+    "files": []
+  },
+  {
+    "input": "npx -c node",
+    "files": []
+  },
+  {
+    "input": "cross-env --verbose",
+    "files": []
+  },
+  {
+    "input": "env -a app node",
+    "files": []
+  },
+  {
+    "input": "npx --allow-scripts left-pad node",
+    "files": []
+  },
+  {
+    "input": "env -S 'node --enable-source-maps'",
+    "files": []
+  },
+  {
+    "input": "npx -c 'node srv/index.js'",
+    "files": ["srv/index.js"]
+  },
+  {
+    "input": "env --frobnicate node",
+    "files": []
+  },
+  {
+    "input": "env --frobnicate",
+    "files": []
+  },
+  {
+    "input": "env -- node --loader",
+    "files": []
+  },
+  {
+    "input": "env -u DEBUG node --require",
+    "files": []
+  },
+  {
+    "input": "env -a app node --import",
+    "files": []
+  },
+  {
+    "input": "npx -c 'node --require …'",
+    "files": []
+  },
+  {
+    "input": "env --frobnicate node --require",
+    "files": []
+  },
+  {
+    "input": "env -S 'node --require tsx test/*.js'",
+    "files": []
+  },
+  {
+    "input": "npx -c 'node --test src/*.test.mjs'",
+    "files": []
+  },
+  {
+    "input": "env -S 'node --test srv/*.test.js'",
+    "files": []
+  },
+  {
+    "input": "env -S '… test/*.ts'",
+    "files": []
+  },
+  {
+    "input": "node --require ./r.js a.js",
+    "files": ["./r.js", "a.js"]
+  },
+  {
+    "input": "npx -c 'echo start; node main.js' && node b.js",
+    "files": ["main.js", "b.js"]
+  },
+  {
+    "input": "env -S 'node a.mjs && echo b' c",
+    "files": ["a.mjs"]
+  },
+  {
+    "input": "npx -c 'node index.mjs && echo b",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx -c 'node srv/index.js && echo started'",
+    "files": ["srv/index.js"]
+  },
+  {
+    "input": "env -u && node",
+    "files": []
+  },
+  {
+    "input": "env --i",
+    "files": []
+  },
+  {
+    "input": "npx --no",
+    "files": []
+  },
+  {
+    "input": "npx --yes=false",
+    "files": []
+  },
+  {
+    "input": "npx -w --yes",
+    "files": []
+  },
+  {
+    "input": "npx --frobnicate",
+    "files": []
+  },
+  {
+    "input": "npx --pre",
+    "files": []
+  },
+  {
+    "input": "npx -c='…' extra",
+    "files": []
+  },
+  {
+    "input": "npx --version false",
+    "files": []
+  },
+  {
+    "input": "npx -v=false",
+    "files": []
+  },
+  {
+    "input": "npx --no-version node …",
+    "files": []
+  },
+  {
+    "input": "npx --version && node …",
+    "files": []
+  },
+  {
+    "input": "npx --version",
+    "files": []
+  },
+  {
+    "input": "npx -h",
+    "files": []
+  },
+  {
+    "input": "npx --usage",
+    "files": []
+  },
+  {
+    "input": "npx -c '…' --versions",
+    "files": []
+  },
+  {
+    "input": "npx -c '…' --usage",
+    "files": []
+  },
+  {
+    "input": "env --version",
+    "files": []
+  },
+  {
+    "input": "npx --no-version",
+    "files": []
+  },
+  {
+    "input": "npx --versions &&",
+    "files": []
+  },
+  {
+    "input": "npx --version node",
+    "files": []
+  },
+  {
+    "input": "npx --version node --require newrelic main.ts",
+    "files": ["main.ts"]
+  },
+  {
+    "input": "npm version",
+    "files": []
+  },
+  {
+    "input": "npx --version node a.mjs && node b.mjs",
+    "files": ["a.mjs", "b.mjs"]
+  },
+  {
+    "input": "npx -c 'node a.mjs' --usage && node b.mjs",
+    "files": ["a.mjs", "b.mjs"]
+  },
+  {
+    "input": "npx -c 'node index.mjs' --frobnicate",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "cross-env NODE_OPTIONS=\"… …\"",
+    "files": []
+  },
+  {
+    "input": "A=\"x y\" B=1",
+    "files": []
+  },
+  {
+    "input": "A=\"x y … && node b.js",
+    "files": ["b.js"]
+  },
+  {
+    "input": "npx --vers",
+    "files": []
+  },
+  {
+    "input": "npx --version=yes",
+    "files": []
+  },
+  {
+    "input": "A=\"x y\"",
+    "files": []
+  },
+  {
+    "input": "env -i --he",
+    "files": []
+  },
+  {
+    "input": "env --help node a.mjs; node b.mjs",
+    "files": ["a.mjs", "b.mjs"]
+  },
+  {
+    "input": "env --help=x",
+    "files": []
+  },
+  {
+    "input": "npx -c='node index.mjs' extra",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npm exec|x",
+    "files": []
+  },
+  {
+    "input": "env -S'node --require tsx' x",
+    "files": []
+  },
+  {
+    "input": "npx -c \"node build.js\"",
+    "files": ["build.js"]
+  },
+  {
+    "input": "npx -c \"node ./build.js\"",
+    "files": ["./build.js"]
+  },
+  {
+    "input": "env --frobnicate node index.js",
+    "files": ["index.js"]
+  },
+  {
+    "input": "npx --version=\"false\"",
+    "files": []
+  },
+  {
+    "input": "npx --version --no-version node",
+    "files": []
+  },
+  {
+    "input": "NODE_OPTIONS=\"-r x\"",
+    "files": []
+  },
+  {
+    "input": "./bin/node index.mjs",
+    "files": ["index.mjs", "./bin/node"]
+  },
+  {
+    "input": "NODE_ENV=production node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "tsc && env -u HOME node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "vite build --mode node",
+    "files": []
+  },
+  {
+    "input": "env node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "env - PATH=/bin node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "env -i -u HOME NODE_ENV=production node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "env --chdir srv -- A=1 node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "env --argv0 app node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "env --env0-from vars node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "env -iu HOME node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "env -aapp node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "env -iuHOME node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "env --argv0=app --unset=HOME node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "env --ignore-signal=PIPE node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "env -S 'node --require tsx' index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "env -S'node --require tsx' index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "env --split-string=\"-i A=1 node\" index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "env -vS node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "cross-env NODE_ENV=production node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "cross-env A=1 npx -y node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx -p node@22 node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx --package=node@22 -- node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx -p=node@22 node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx -w app --workspaces node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx --allow-scripts left-pad node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx --allow-scripts=left-pad node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx --script-shell bash node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx -c 'node --import tsx index.mjs'",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx --yes --call='cross-env A=1 node index.mjs'",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "env A=1 -i node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "env --frobnicate app node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "env -x node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "env -ix node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "env --ignore-env --argv=app node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "env --i node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "env --null=x node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "env -u && node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx --registry=https://registry.example --fetch-timeout 1000 node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx --reg https://registry.example node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx --regi https://registry.example node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx --no node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx --no-yes --no-install node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx --yes=false node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx -d --loglevel warn node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx -yw app node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx -wy app node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx -w --yes node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx --prefer-off --json node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx --yes=node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx --frobnicate node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx --pre node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx --versions node --require x main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "npx --usage node --require x main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "npx --help node --require x main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "npx -v node --require x main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "npx -h node --require x main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "npx -H node --require x main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "npx -? node --require x main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "npx --version=true node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx --no-no-version node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx --no-version=false node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx --usa node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx -yv node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx --version false node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx -v=false node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx -c 'node index.mjs' --version",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx -c 'node index.mjs' --yes -h",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx --version=false node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx --no-version node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx --versions=false node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx --no-versions node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx --usage=false node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx --no-usage node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx --no-version=true node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx -c 'node index.mjs' --no-version --yes extra",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx --vers node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx --version=yes node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "env --help node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "env --version node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "env -i --he node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "env --help=x node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx --user-agent 'a && b' node main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "A=\"x y\" B=1 node main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "NODE_ENV=\"production\" node main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "npx --user-agent \"ci bot node main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "A=\"x y node main.js && node b.js",
+    "files": ["main.js", "b.js"]
+  },
+  {
+    "input": "npx -pnode@22 node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "cross-env --verbose node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "env -S 'node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx -c 'node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx --user-agent=\"a\"b node main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "npx --version --no-version node --require dotenv main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "env -a \"my app\" node index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "npx --version && node b.mjs",
+    "files": ["b.mjs"]
+  },
+  {
+    "input": "env -S 'node --enable-source-maps' index.mjs",
+    "files": ["index.mjs"]
+  },
+  {
+    "input": "env -u DEBUG node --require dotenv/config main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "env -a x node --import tsx main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "env --frobnicate node --require never-loaded main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "npx -c 'node --require source-map-support/register main.js'",
+    "files": ["main.js"]
+  },
+  {
+    "input": "npm exec --version false -- node ...",
+    "files": []
+  },
+  {
+    "input": "npm exec --yes true node a.js",
+    "files": ["a.js"]
+  },
+  {
+    "input": "mocha --require \"./a b.js\" t.js",
+    "files": ["./a b.js", "t.js"]
+  },
+  {
+    "input": "env -i",
+    "files": []
+  },
+  {
+    "input": "env -u NODE_OPTIONS",
+    "files": []
+  },
+  {
+    "input": "env --frobnicate node src/main.ts",
+    "files": ["src/main.ts"]
+  },
+  {
+    "input": "env FOO-BAR=1",
+    "files": []
+  },
+  {
+    "input": "cross-env a.b=1",
+    "files": []
+  },
+  {
+    "input": "$( ; )",
+    "files": []
+  },
+  {
+    "input": "npx --yes true node m.js",
+    "files": ["m.js"]
+  },
+  {
+    "input": "node --test $(find …)",
+    "files": []
+  },
+  {
+    "input": "node --require ./a.js -r b --import c --loader d --experimental-loader e main.js",
+    "files": ["./a.js", "main.js"]
+  },
+  {
+    "input": "node --require=./a.js --import=tsx main.js",
+    "files": ["./a.js", "main.js"]
+  },
+  {
+    "input": "node -C dev --conditions=x --enable-source-maps --test --inspect=9229 main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "node --watch-path src -r a main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "node -e 'x' --require a",
+    "files": []
+  },
+  {
+    "input": "node -- main.js --require a",
+    "files": ["main.js"]
+  },
+  {
+    "input": "node main.js --require a",
+    "files": ["main.js"]
+  },
+  {
+    "input": "node -v",
+    "files": []
+  },
+  {
+    "input": "node --help",
+    "files": []
+  },
+  {
+    "input": "node -h -r x main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "env -u DEBUG -i node --require dotenv/config main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "env -- A=1 node main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "env -S 'node -r x' main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "env --help node -r x main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "env --version node main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "cross-env A=1 B=\"x y\" node -r x main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "A=1 cross-env B=2 env C=3 node main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "NODE_OPTIONS=\"--require x --import=./y.js\" node m.js",
+    "files": ["./y.js", "m.js"]
+  },
+  {
+    "input": "cross-env NODE_OPTIONS=\"-r x\" vite build",
+    "files": []
+  },
+  {
+    "input": "A=1",
+    "files": []
+  },
+  {
+    "input": "npx -y tsx --require a m.ts",
+    "files": ["m.ts"]
+  },
+  {
+    "input": "npx --yes -p typescript tsc",
+    "files": []
+  },
+  {
+    "input": "npx --package node@22 node m.js",
+    "files": ["m.js"]
+  },
+  {
+    "input": "npx --package=node@22 -- node -r a m.js",
+    "files": ["m.js"]
+  },
+  {
+    "input": "npx @scope/tool@1 --x",
+    "files": []
+  },
+  {
+    "input": "npx -c 'node -r a m.js' -y",
+    "files": ["m.js"]
+  },
+  {
+    "input": "npx --version node -r x main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "npx --help node",
+    "files": []
+  },
+  {
+    "input": "npx -v node",
+    "files": []
+  },
+  {
+    "input": "npx -h node",
+    "files": []
+  },
+  {
+    "input": "npm exec -- node -r a m.js",
+    "files": ["m.js"]
+  },
+  {
+    "input": "npm x -y -- tsx m.ts",
+    "files": ["m.ts"]
+  },
+  {
+    "input": "npm exec --version",
+    "files": []
+  },
+  {
+    "input": "npm --silent run build",
+    "files": []
+  },
+  {
+    "input": "mocha --require a 'test/**/*.js'",
+    "files": []
+  },
+  {
+    "input": "ts-node -r tsconfig-paths/register src/main.ts",
+    "files": ["src/main.ts"]
+  },
+  {
+    "input": "echo 'a;b' && node c.js",
+    "files": ["c.js"]
+  },
+  {
+    "input": "env -S \"echo it's\" && node x.js",
+    "files": ["x.js"]
+  },
+  {
+    "input": "node --frobnicate main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "node -r=a main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "node --no-warnings=x main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "node \"--require\" a main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "env --x node --require a --require b m.js",
+    "files": ["m.js"]
+  },
+  {
+    "input": "NODE_OPTIONS=\"-r x\" env --frob node m.js",
+    "files": ["m.js"]
+  },
+  {
+    "input": "npm -w a exec -- node m.js",
+    "files": ["m.js"]
+  },
+  {
+    "input": "npm exec node -r a m.js",
+    "files": ["m.js"]
+  },
+  {
+    "input": "npx -c 'node -r a m.js' extra",
+    "files": ["m.js"]
+  },
+  {
+    "input": "npx -c 'node m.js' --",
+    "files": ["m.js"]
+  },
+  {
+    "input": "npx -y A=1 node m.js",
+    "files": ["m.js"]
+  },
+  {
+    "input": "then node -r a m.js",
+    "files": ["m.js"]
+  },
+  {
+    "input": "$NODE -r a m.js",
+    "files": ["m.js"]
+  },
+  {
+    "input": "npm exec -v false -- node -r a m.js",
+    "files": ["m.js"]
+  },
+  {
+    "input": "npm x -y 'false' node m.js",
+    "files": ["m.js"]
+  },
+  {
+    "input": "npm exe -- node -r dep main.js",
+    "files": ["main.js"]
+  },
+  {
+    "input": "npm -w a exe -- node m.js",
+    "files": ["m.js"]
+  },
+  {
+    "input": "V=`node ./setup.ts` node main.ts",
+    "files": ["./setup.ts", "main.ts"]
+  },
+  {
+    "input": "V=\"$(node ./setup.ts)\" node main.ts",
+    "files": ["./setup.ts", "main.ts"]
+  },
+  {
+    "input": "V=\"$(node -r dep)\" node m.js",
+    "files": ["m.js"]
+  },
+  {
+    "input": "V=$(node a.js; node b.js) node m.js",
+    "files": ["a.js", "b.js", "m.js"]
+  },
+  {
+    "input": "node m.js `node b.js` && node c.js",
+    "files": ["m.js", "b.js", "c.js"]
+  },
+  {
+    "input": "npx -c 'node $(x) a.js'",
+    "files": ["a.js"]
+  },
+  {
+    "input": "echo '$(node x.js)' && node m.js",
+    "files": ["x.js", "m.js"]
+  },
+  {
+    "input": "mocha --require $X t.js",
+    "files": ["t.js"]
+  },
+  {
+    "input": "node a.js 'b c' '*.js'",
+    "files": ["a.js"]
+  },
+  {
+    "input": "env -S \"node -r ./pre.js a.js\" b.js",
+    "files": ["./pre.js", "a.js", "b.js"]
+  },
+  {
+    "input": "npx -c 'node build.js && tsc -p .'",
+    "files": ["build.js"]
+  },
+  {
+    "input": "npx -c 'env -S \"node a.js\"'",
+    "files": ["a.js"]
+  },
+  {
+    "input": "node --require=./setup.ts main.ts",
+    "files": ["./setup.ts", "main.ts"]
+  },
+  {
+    "input": "env --frobnicate -S \"node a.js\"",
+    "files": ["a.js"]
+  }
+]

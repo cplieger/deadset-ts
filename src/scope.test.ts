@@ -207,7 +207,7 @@ describe("a target with no scope document", () => {
 
     expect(() => scopeForDir(HOST, absent)).toThrow(FailureExit);
     expect(() => scopeForDir(HOST, absent)).toThrow(
-      `setup failure: no-program: the target ${absent} does not exist, so it holds no compiler configuration, no file named tsconfig*.json: name the directory that holds one`,
+      `setup failure: no-program: the target ${absent} does not exist, so it holds no compiler configuration, no file named tsconfig*.json, jsconfig*.json: name the directory that holds one`,
     );
   });
 });

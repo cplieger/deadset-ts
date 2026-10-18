@@ -240,8 +240,29 @@ describe("a workspace whose members declare dependencies", () => {
       sweepFixture(target)
         .findings.map((finding) => finding.symbol.ref)
         .filter((ref) => ref.startsWith("ts://@example/tool/")),
-      "packages/tool/scripts/run.mjs imports member-tool, and no configuration holds it",
+      "packages/tool/scripts/run.ts imports member-tool, and no configuration holds it",
     ).toEqual([]);
+  });
+
+  it("judges a member whose JavaScript files no configuration lists, through the program formed for them", () => {
+    const formed = mkdtempSync(join(tmpdir(), "deadset-ts-dependencies-workspace-js-"));
+    cpSync(target, formed, { recursive: true });
+    renameSync(
+      join(formed, "packages", "tool", "scripts", "run.ts"),
+      join(formed, "packages", "tool", "scripts", "run.mjs"),
+    );
+    try {
+      expect(
+        sweepFixture(formed)
+          .findings.filter((finding) => finding.symbol.ref.startsWith("ts://@example/tool/"))
+          .map((finding) => `${finding.symbol.name}: ${finding.message}`),
+        "packages/tool/scripts/run.mjs imports member-tool, and nothing imports or roots run.mjs",
+      ).toEqual([
+        "member-tool: only code that is itself dead uses the declared development dependency",
+      ]);
+    } finally {
+      rmSync(formed, { recursive: true, force: true });
+    }
   });
 
   it("judges a member a built configuration holds source of, though a configuration below it was dropped", () => {
