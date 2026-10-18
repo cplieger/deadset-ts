@@ -11,7 +11,11 @@ import { planRun, programBuilds, type RunPlan } from "./plan.ts";
 interface OpenedRun {
   readonly plan: RunPlan;
   readonly classified: Classified;
-  /** Every file a program of the run holds, absolute, so a file another configuration compiles is no outside file. */
+  /**
+   * Every file a configuration read from a file holds, absolute, so a file another
+   * configuration compiles is no outside file. A program the run forms resolves no emitted
+   * output back to its source, so its files are read as outside files too.
+   */
   readonly runFiles: ReadonlySet<string>;
 }
 
@@ -41,14 +45,22 @@ export function loadRun<Result>(
     { programs: programBuilds(host, plan.plans) },
     (session, unanswered) => {
       const classified = classify(
+        engine,
         host,
         plan,
         new Map(session.views.map((view) => [view.configFile, view])),
       );
+      const formed = new Set(
+        plan.plans.filter((one) => one.written !== undefined).map((one) => one.configFile),
+      );
       const runFiles = new Set(
-        session.views.flatMap((view) =>
-          view.ownSourceFiles().map((file) => resolvePath(host.workingDirectory(), file.fileName)),
-        ),
+        session.views
+          .filter((view) => !formed.has(view.configFile))
+          .flatMap((view) =>
+            view
+              .ownSourceFiles()
+              .map((file) => resolvePath(host.workingDirectory(), file.fileName)),
+          ),
       );
       return {
         plan,

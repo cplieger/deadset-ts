@@ -107,7 +107,7 @@ describe("the failure lines of a run that cannot be analyzed", () => {
 describe("every run that ends with the failure code", () => {
   it.each<[string, Readonly<Record<string, string>>, readonly string[], string]>([
     [
-      "a target holding sources and a manifest but no compiler configuration",
+      "a target holding TypeScript sources and a manifest but no compiler configuration",
       {
         "package.json": '{ "name": "@example/none" }\n',
         "src/a.ts": "export const a = 1;\n",
@@ -171,6 +171,58 @@ describe("every run that ends with the failure code", () => {
       { "file.ts": "export const a = 1;\n" },
       ["print-projects", "--target=file.ts"],
       "no-program",
+    ],
+    [
+      "a target holding no program beside a declared consumer that does not exist",
+      {
+        "target/README.md": "no sources\n",
+        "scope.json": '{ "target": { "path": "target" }, "consumers": [{ "path": "consumer" }] }\n',
+      },
+      ["print-projects", "--scope=scope.json"],
+      "missing-consumer",
+    ],
+    [
+      "a target holding no program beside a declared consumer holding nothing to load",
+      {
+        "target/README.md": "no sources\n",
+        "consumer/README.md": "no sources\n",
+        "scope.json": '{ "target": { "path": "target" }, "consumers": [{ "path": "consumer" }] }\n',
+      },
+      ["print-projects", "--scope=scope.json"],
+      "missing-consumer",
+    ],
+    [
+      "a declared configuration that does not exist beside a declared consumer that does not exist",
+      {
+        "target/deadset.json": declared([["gone", "gone/tsconfig.json"]]),
+        "scope.json": '{ "target": { "path": "target" }, "consumers": [{ "path": "consumer" }] }\n',
+      },
+      ["print-projects", "--scope=scope.json"],
+      "missing-consumer",
+    ],
+    [
+      "a package.json workspaces that is no array of strings beside a declared consumer that does not exist",
+      {
+        "target/package.json": '{ "name": "@example/root", "workspaces": "packages/*" }\n',
+        "target/tsconfig.json": TSCONFIG,
+        "target/main.ts": "export const main = 1;\n",
+        "scope.json": '{ "target": { "path": "target" }, "consumers": [{ "path": "consumer" }] }\n',
+      },
+      ["print-projects", "--scope=scope.json"],
+      "missing-consumer",
+    ],
+    [
+      "a pnpm-workspace.yaml packages that is no sequence beside a declared consumer holding nothing to load",
+      {
+        "target/pnpm-workspace.yaml": "packages: packages/*\n",
+        "target/package.json": '{ "name": "@example/root" }\n',
+        "target/tsconfig.json": TSCONFIG,
+        "target/main.ts": "export const main = 1;\n",
+        "consumer/README.md": "no sources\n",
+        "scope.json": '{ "target": { "path": "target" }, "consumers": [{ "path": "consumer" }] }\n',
+      },
+      ["print-projects", "--scope=scope.json"],
+      "missing-consumer",
     ],
     [
       "a declared consumer that is no directory",
@@ -252,7 +304,7 @@ describe("every run that ends with the failure code", () => {
       const got = invoke(root, ["print-projects", "--target=."]);
 
       expect(got.lines).toEqual([
-        `setup failure: no-program: ${root} holds no compiler configuration, no file named tsconfig*.json: run from the directory that holds one, or name the languages to analyze`,
+        `setup failure: no-program: ${root} holds no compiler configuration, no file named tsconfig*.json, jsconfig*.json, and no JavaScript file: run from the directory that holds one, or name the languages to analyze`,
       ]);
     },
     LOAD_TIMEOUT,
@@ -269,8 +321,68 @@ describe("every run that ends with the failure code", () => {
       const got = invoke(root, ["print-projects", `--target=${target}`]);
 
       expect(got.lines).toEqual([
-        `setup failure: no-program: the target ${join(root, target)} ${says}, so it holds no compiler configuration, no file named tsconfig*.json: name the directory that holds one`,
+        `setup failure: no-program: the target ${join(root, target)} ${says}, so it holds no compiler configuration, no file named tsconfig*.json, jsconfig*.json: name the directory that holds one`,
       ]);
+    },
+    LOAD_TIMEOUT,
+  );
+});
+
+describe("a target holding no compiler configuration", () => {
+  it(
+    "is analyzed where it holds JavaScript sources, through the program formed for its package",
+    () => {
+      const root = tree({
+        "package.json": '{ "name": "@example/js", "type": "module", "main": "index.js" }\n',
+        "index.js": 'import { greet } from "./greet.js";\n\ngreet();\n',
+        "greet.js": "export function greet() {}\n",
+        "deadset.json": '{ "target": { "kind": "application" } }\n',
+      });
+
+      const got = invoke(root, ["analyze", "--target=.", `--report=${join(root, "report.json")}`]);
+
+      expect(classesOf(got.lines), got.lines.join("\n")).toEqual([]);
+      expect(got.code, got.lines.join("\n")).toBe(0);
+    },
+    LOAD_TIMEOUT,
+  );
+});
+
+describe("a package.json the run cannot read", () => {
+  it(
+    "bounds its JavaScript files' program, names the read's error on the error stream, and lets the run go on",
+    () => {
+      const root = tree({
+        "package.json": '{ "name": "@example/js", "type": "module" }\n',
+        "index.js": 'console.log("started");\n',
+        "tools/package.json": '{ "name": "@example/tools" }\n',
+        "tools/cli.js": 'console.log("tools");\n',
+        "deadset.json": '{ "target": { "kind": "application" } }\n',
+      });
+      const refused = join(root, "tools", "package.json");
+      const real: Host = { ...nodeHost(), workingDirectory: () => root };
+      const host: Host = {
+        ...real,
+        readFile: (path, limit) => {
+          if (path === refused) {
+            throw new Error("EACCES: permission denied");
+          }
+          return real.readFile(path, limit);
+        },
+      };
+      const err = new MemoryWriter();
+
+      const code = run(
+        ["analyze", "--target=.", `--report=${join(root, "report.json")}`, "--exit-code=off"],
+        new MemoryWriter(),
+        err,
+        host,
+      );
+
+      expect(code, err.text).toBe(0);
+      expect(err.text.split("\n")).toContain(
+        "deadset-ts: tools/package.json cannot be read, so the manifest facts of the program formed for its package are unanswered: give the run read access to it: EACCES: permission denied",
+      );
     },
     LOAD_TIMEOUT,
   );

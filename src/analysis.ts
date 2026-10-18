@@ -76,12 +76,21 @@ import type { TypeErrorSkip, UnansweredCount } from "./report.ts";
 import { skippedRoots, skippedUnits, type SkippedUnit } from "./type-errors.ts";
 import { reflectiveLookup } from "./reflective-lookup.ts";
 import { references, testFileRulesOf, type Reference, type TestFileRule } from "./references.ts";
-import { roots, unmatchedEverywhere, type Root, type RootKind, type Roots } from "./roots.ts";
+import {
+  roots,
+  unmatchedEverywhere,
+  type Root,
+  type RootKind,
+  type Roots,
+  type HeldScripts,
+} from "./roots.ts";
 import type { Scope } from "./scope.ts";
 import { decodedMembers, serializationContract, type Decoded } from "./serialization-contract.ts";
 import { outsideTestReferences, testFilesAt, type OutsideTest } from "./outside-tests.ts";
 import { mergedGlobalInterfaces } from "./augmentations.ts";
 import { unseenLoadsOf, type UnseenLoad } from "./unseen-loads.ts";
+import type { UnresolvedSpecifier } from "./load/specifiers.ts";
+import type { UnreadInput } from "./load/plan.ts";
 import { GLOBALS_RUNNER, namesTestGlobals } from "./load/test-globals.ts";
 import { supportReferences, testSupportFiles, type TestEvidence } from "./test-support.ts";
 import type { Engine, ProjectView } from "./session.ts";
@@ -439,6 +448,7 @@ interface SweptProject<Extra> {
   readonly componentWarnings: readonly ComponentWarning[];
   /** The manifest entries the project reads back to no file of its own. */
   readonly unmappedEntries: readonly ManifestEntry[];
+  readonly heldScripts: readonly HeldScripts[];
   readonly extra: Extra;
 }
 
@@ -476,6 +486,10 @@ interface ReadRun<Extra> {
   readonly componentsUnread: readonly ComponentsUnread[];
   /** Per analyzed configuration, each library it names that the compiler cannot find. */
   readonly librariesUnfound: readonly LibraryUnfound[];
+  /** The relative specifiers of the run's unchecked JavaScript files that resolve to no file. */
+  readonly unresolvedSpecifiers: readonly UnresolvedSpecifier[];
+  /** The inputs the run could not read. */
+  readonly unread: readonly UnreadInput[];
   /** The convention rows the run applied. */
   readonly conventionsApplied: readonly AppliedConvention[];
   /** The dependencies the applied rows' short names use. */
@@ -714,6 +728,7 @@ function readRun<Extra>(
       filledOutside: one.decoded.filled,
       typeErrorSkips: projectRead.typeErrorSkips,
       unmappedEntries: projectRead.rooted.unmappedEntries,
+      heldScripts: projectRead.rooted.heldScripts,
       skipped: projectRead.skipped,
       componentFiles: one.componentFiles,
       componentWarnings: one.componentWarnings,
@@ -747,6 +762,8 @@ function readRun<Extra>(
     unanswered: read.unanswered,
     componentsUnread: read.plan.workspace?.componentsUnread ?? [],
     librariesUnfound: read.classified.librariesUnfound,
+    unresolvedSpecifiers: read.classified.unresolvedSpecifiers,
+    unread: read.plan.unread,
     conventionsApplied: read.plan.conventions.applied,
     conventionUses: read.plan.conventions.uses,
     memberDirs: read.plan.packages.members,
@@ -1185,8 +1202,13 @@ function readAnalysis(
       unanswered: read.unanswered,
       componentsUnread: read.componentsUnread,
       librariesUnfound: read.librariesUnfound,
+      unresolvedSpecifiers: read.unresolvedSpecifiers,
+      unread: read.unread,
       conventionsApplied: read.conventionsApplied,
       unmappedEntries: unmappedEverywhere(read.projects),
+      heldScripts: read.projects.flatMap((one) =>
+        one.heldScripts.map((held) => ({ ...held, configFile: one.configFile })),
+      ),
       unseenLoads: read.projects.flatMap((one) => one.extra.unseenLoads),
     },
     configured: read.projects.map((one) => one.configured),
@@ -1282,10 +1304,16 @@ interface RunFacts {
   readonly componentsUnread: readonly ComponentsUnread[];
   /** Per analyzed configuration, each library it names that the compiler cannot find. */
   readonly librariesUnfound: readonly LibraryUnfound[];
+  /** The relative specifiers of the run's unchecked JavaScript files that resolve to no file. */
+  readonly unresolvedSpecifiers: readonly UnresolvedSpecifier[];
+  /** The inputs the run could not read. */
+  readonly unread: readonly UnreadInput[];
   /** The convention rows the run applied. */
   readonly conventionsApplied: readonly AppliedConvention[];
   /** The manifest entries no project of the run reads back to a file, each once. */
   readonly unmappedEntries: readonly ManifestEntry[];
+  /** Per project, by its compiler configuration file, each package whose command strings name files it holds. */
+  readonly heldScripts: readonly (HeldScripts & { readonly configFile: string })[];
   /** The loads of production files whose target the run cannot resolve, per configuration. */
   readonly unseenLoads: readonly UnseenLoad[];
 }
@@ -1328,14 +1356,20 @@ export function runAnalysis(
 
 /**
  * One count per configuration of the run in which the checker left a question unanswered:
- * the questions asked in its project, and the declarations of its own the run holds for them.
+ * the questions asked in its project, a formed program's manifest that does not parse or cannot
+ * be read and a package whose command strings name files the project holds each counted as one, and the
+ * declarations of its own the run holds for them.
  */
 export function unansweredCounts(analysis: RunAnalysis): readonly UnansweredCount[] {
   const held = new Set(analysis.swept.heldByUnanswered);
   return analysis.run.projects.flatMap((project) => {
-    const questions = analysis.run.unanswered.filter(
-      (one) => one.configFile === project.configFile,
-    ).length;
+    const questions =
+      analysis.run.unanswered.filter((one) => one.configFile === project.configFile).length +
+      analysis.run.unread.filter(
+        (one) => one.kind === "manifest" && one.configFile === project.configFile,
+      ).length +
+      analysis.run.heldScripts.filter((one) => one.configFile === project.configFile).length;
+
     if (questions === 0) {
       return [];
     }

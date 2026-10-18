@@ -11,7 +11,7 @@ import { relativePath } from "../paths.ts";
 import type { Engine } from "../session.ts";
 import type { LocatedDiagnostic } from "./diagnostics.ts";
 import type { Build } from "./plan.ts";
-import { findWorkspace, referenceOnlyIn, type ParsedLayout, type Workspace } from "./workspace.ts";
+import { referenceOnlyIn, type ParsedLayout, type Workspace } from "./workspace.ts";
 import { memberEntries, targetManifestIn } from "./workspace-manifests.ts";
 import {
   workspacePrograms,
@@ -52,11 +52,10 @@ export interface WorkspaceRun {
   readonly manifest: Manifest;
   /** The entry points the other members' manifests name. */
   readonly entries: readonly ManifestEntry[];
-  /** The directory of every member, the target's included, in the workspace's order. */
-  readonly memberDirs: readonly string[];
 }
 
-function layoutOf(engine: Engine, configFile: string): ParsedLayout | undefined {
+/** What one member's configuration file says of its layout, or `undefined` where it does not parse. */
+export function layoutOf(engine: Engine, configFile: string): ParsedLayout | undefined {
   try {
     const parsed = engine.parseConfigFile(configFile);
     return {
@@ -100,11 +99,12 @@ export function workspaceRun(
   targetRoot: string,
   configurations: readonly PlannedConfiguration[],
   manifest: Manifest,
+  workspace: Workspace | undefined,
 ): WorkspaceRun | undefined {
-  const workspace = findWorkspace(host, targetRoot, (configFile) => layoutOf(engine, configFile));
   if (workspace === undefined) {
     return undefined;
   }
+
   const resolver = workspaceResolver(host, workspace);
   const read = workspacePrograms(engine, host, configurations, resolver);
   const readings = new Map(read.readings.map((reading) => [reading.configFile, reading]));
@@ -135,7 +135,6 @@ export function workspaceRun(
         : !fromExternalLibrary,
     manifest: targetManifestIn(resolver, targetRoot, manifest),
     entries: memberEntries(host, resolver, targetRoot),
-    memberDirs: workspace.members.map((member) => member.dir),
   };
 }
 

@@ -17,8 +17,10 @@ import type {
 import { isStringLiteralLikeNode } from "@typescript/native/ast";
 import type { StringLiteralLikeNode } from "@typescript/native/ast";
 import type { Host } from "../host.ts";
+import { JAVASCRIPT_FILE } from "../javascript-file.ts";
+import { isRecord } from "../json-document.ts";
 import { dirnamePath, resolvePath } from "../paths.ts";
-import type { Engine, ProgramBuild } from "../session.ts";
+import { batched, type Engine, type ProgramBuild } from "../session.ts";
 import type { WorkspaceResolver } from "./workspace-resolution.ts";
 import { bytewise } from "../text/compare.ts";
 import { PRODUCT } from "../product.ts";
@@ -61,10 +63,9 @@ export interface PlannedConfiguration {
   readonly configFile: string;
   readonly parsed: Parsed;
   readonly options: CompilerOptions;
+  /** The configuration of a program the run forms, which only the snapshot holds, at `configFile`. */
+  readonly written?: Readonly<Record<string, unknown>> | undefined;
 }
-
-/** The most questions one round trip carries. */
-const BATCH = 2048;
 
 /**
  * The options a configuration's program is built with: the plan's, less the ones that lay
@@ -72,7 +73,10 @@ const BATCH = 2048;
  * source is outside the importer's root directory by construction, which the compiler
  * refuses under such a layout.
  */
-function analysisOptions(options: CompilerOptions): CreateSnapshotProgramParams["compilerOptions"] {
+function analysisOptions(
+  options: CompilerOptions,
+  readsJavaScript: boolean,
+): CreateSnapshotProgramParams["compilerOptions"] {
   const {
     composite,
     rootDir: _rootDir,
@@ -81,7 +85,23 @@ function analysisOptions(options: CompilerOptions): CreateSnapshotProgramParams[
     tsBuildInfoFile: _tsBuildInfoFile,
     ...kept
   } = options;
-  return composite === true ? { ...kept, declaration: true } : kept;
+  const read = readsJavaScript ? { ...kept, allowJs: true } : kept;
+  return composite === true ? { ...read, declaration: true } : read;
+}
+
+/**
+ * Whether one reading answers a member import with a JavaScript file, which its program reads
+ * as source only where it allows JavaScript, a program formed for a JavaScript member being the
+ * member's source.
+ */
+function readsJavaScript(reading: Reading): boolean {
+  return (
+    reading.options.allowJs !== true &&
+    reading.entries.some((entry) => {
+      const file = entry.result.resolvedFileName;
+      return typeof file === "string" && JAVASCRIPT_FILE.test(file);
+    })
+  );
 }
 
 /** The conditions an `exports` lookup under one configuration and one resolution mode reads. */
@@ -125,28 +145,49 @@ function unstatable(reading: Reading): string | undefined {
   return undefined;
 }
 
-/** The path beside `configFile` its written configuration takes, which no file has. */
-export function writtenPath(host: Host, configFile: string): string {
+/** The path beside `configFile` its written configuration takes, which no file and none of `taken` has. */
+export function writtenPath(
+  host: Host,
+  configFile: string,
+  taken: ReadonlySet<string> = new Set(),
+): string {
   const stem = configFile.replace(/\.json$/u, "");
   for (let counter = 0; ; counter += 1) {
     const path = `${stem}.${PRODUCT}${counter === 0 ? "" : `-${String(counter)}`}.json`;
-    if (host.kindOf(path) === "absent") {
+    if (host.kindOf(path) === "absent" && !taken.has(path)) {
       return path;
     }
   }
 }
 
 /**
- * The configuration that reads as one configuration's program: it extends it, lays out
- * no output for the reason {@link analysisOptions} gives, maps each answered specifier
- * to its file, and carries the references the program does. The compiler's default
- * `exclude` names the output directories this drops, so where the file list moves it is
- * restated; a list that still differs, or answers `paths` cannot state, are a reason.
+ * The path the snapshot holds one configuration's written form at: a formed configuration's
+ * own path, else a free one beside it that no configuration of `formed` holds, because a formed
+ * program in a directory with a `jsconfig.json` takes the name that file's written form would.
+ */
+export function writtenFileOf(
+  host: Host,
+  configuration: Pick<PlannedConfiguration, "configFile" | "written">,
+  formed: ReadonlySet<string>,
+): string {
+  return configuration.written === undefined
+    ? writtenPath(host, configuration.configFile, formed)
+    : configuration.configFile;
+}
+
+/**
+ * The configuration that reads as one configuration's program: it extends it, lays out no output
+ * ({@link analysisOptions}), maps each answered specifier to its file and keeps its references.
+ * Where the file list moves, the default `exclude` the dropped output directories are named in is
+ * restated, and one that {@link readsJavaScript} lists its files outright, as `allowJs` widens its
+ * `include` to JavaScript; a list that still differs, or answers `paths` cannot state, are a
+ * reason. A formed configuration, which no file holds to extend, is its own value with `paths`.
  */
 function configurationOf(
   engine: Engine,
   host: Host,
   reading: Reading,
+  formed: ReadonlySet<string>,
 ): Written | { readonly kind: "unread"; readonly reason: string } {
   const reason = unstatable(reading);
   if (reason !== undefined) {
@@ -166,6 +207,17 @@ function configurationOf(
       paths[entry.moduleName] = [file];
     }
   }
+  if (reading.written !== undefined) {
+    const held = reading.written["compilerOptions"];
+    return {
+      kind: "configuration",
+      value: {
+        ...reading.written,
+        compilerOptions: { ...(isRecord(held) ? held : {}), paths },
+      },
+    };
+  }
+  const javascript = readsJavaScript(reading);
   const json = (exclude: readonly string[] | undefined): Record<string, unknown> => ({
     extends: reading.configFile,
     compilerOptions: {
@@ -174,14 +226,16 @@ function configurationOf(
       declarationDir: null,
       tsBuildInfoFile: null,
       ...(options.composite === true ? { composite: false, declaration: true } : {}),
+      ...(javascript ? { allowJs: true } : {}),
       paths,
     },
     ...(references.length > 0
       ? { references: references.map((reference) => ({ path: reference.path })) }
       : {}),
+    ...(javascript ? { files: [...reading.parsed.fileNames], include: [] } : {}),
     ...(exclude === undefined ? {} : { exclude }),
   });
-  const file = writtenPath(host, reading.configFile);
+  const file = writtenFileOf(host, reading, formed);
   const expected = [...reading.parsed.fileNames].sort(bytewise).join("\u0000");
   const listed = (value: Record<string, unknown>): string | undefined => {
     try {
@@ -211,7 +265,7 @@ function programOf(
   engine: Engine,
   reading: Reading,
 ): { readonly params: CreateSnapshotProgramParams; readonly resolver: ModuleResolver } {
-  const compilerOptions = analysisOptions(reading.options);
+  const compilerOptions = analysisOptions(reading.options, readsJavaScript(reading));
   const references = reading.parsed.projectReferences ?? [];
   const resolver = engine.createModuleResolver(compilerOptions, reading.entries);
   return {
@@ -226,23 +280,6 @@ function programOf(
       },
     },
   };
-}
-
-function chunks<T>(items: readonly T[]): readonly (readonly T[])[] {
-  const found: T[][] = [];
-  for (let at = 0; at < items.length; at += BATCH) {
-    found.push(items.slice(at, at + BATCH));
-  }
-  return found;
-}
-
-/** Asks one question of every item, in round trips of at most {@link BATCH}. */
-function batched<T, A>(
-  engine: Engine,
-  items: readonly T[],
-  question: (item: T) => Parameters<Engine["batch"]>[0][number],
-): A[] {
-  return chunks(items).flatMap((run) => engine.batch(run.map(question)) as A[]);
 }
 
 /** One round over one program: answers the member imports no earlier round asked about. */
@@ -341,17 +378,12 @@ function configurationText(value: Readonly<Record<string, unknown>>): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
-/** One configuration value as the snapshot holds it, beside the configuration it stands for. */
+/** One configuration value as the snapshot holds it, at `file`, which no file on disk holds. */
 export function writtenConfiguration(
-  host: Host,
-  configFile: string,
+  file: string,
   value: Readonly<Record<string, unknown>>,
 ): Extract<ProgramBuild, { readonly kind: "configuration" }> {
-  return {
-    kind: "configuration",
-    file: writtenPath(host, configFile),
-    text: configurationText(value),
-  };
+  return { kind: "configuration", file, text: configurationText(value) };
 }
 
 /**
@@ -419,15 +451,18 @@ export function workspacePrograms(
     bound: new Map<string, Set<string>>(),
     unresolved: [],
   }));
+  const formed = new Set(
+    configurations.filter((one) => one.written !== undefined).map((one) => one.configFile),
+  );
   readRounds(engine, readings, resolver, (reading) => ({
     kind: "program",
     ...programOf(engine, reading),
   }));
   if (engine.readsComponents) {
     readRounds(engine, readings, resolver, (reading) => {
-      const one = configurationOf(engine, host, reading);
+      const one = configurationOf(engine, host, reading, formed);
       return one.kind === "configuration"
-        ? writtenConfiguration(host, reading.configFile, one.value)
+        ? writtenConfiguration(writtenFileOf(host, reading, formed), one.value)
         : undefined;
     });
   }
@@ -437,7 +472,7 @@ export function workspacePrograms(
     if (reading.entries.length === 0) {
       continue;
     }
-    const one = engine.readsComponents ? configurationOf(engine, host, reading) : undefined;
+    const one = engine.readsComponents ? configurationOf(engine, host, reading, formed) : undefined;
     if (one !== undefined && one.kind !== "unread") {
       programs.set(reading.configFile, one);
       continue;

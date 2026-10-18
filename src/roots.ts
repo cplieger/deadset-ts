@@ -1,11 +1,8 @@
 /**
- * The root set of one project: every declaration the analysis keeps live without a
- * reference, and why.
- *
- * Every root seeds REACHABILITY, and no root counts as a reference. A root of a kind
- * that names a caller is live under reference counting as well, which the sweep
- * decides; the published API only supposes a consumer, so a published export is live
- * under reachability and still a candidate under reference counting.
+ * The root set of one project: every declaration kept live without a reference, and why.
+ * Every root seeds reachability and none counts as a reference; a root of a kind that
+ * names a caller is live under reference counting too, which the sweep decides, so a
+ * published export, which only supposes a consumer, stays a reference-counting candidate.
  */
 
 import {
@@ -56,6 +53,8 @@ import { typeQueryAliases } from "./type-query-alias.ts";
 import { bytewise } from "./text/compare.ts";
 import { holdsManifest } from "./fs/manifest.ts";
 import { globExpression } from "./text/glob.ts";
+import { spelledFiles } from "./text/named-files.ts";
+import { commandDirectories, workflowCommands } from "./workflow-steps.ts";
 
 /** Why one declaration is a root. */
 export type RootKind =
@@ -104,14 +103,9 @@ export interface Root {
 /** One project's roots, and every configured string that named nothing in it. */
 export interface Roots {
   /**
-   * Every root of this project, ordered by the site of the declaration it names,
-   * then by kind, then by the string that named it. A declaration that is a root for
-   * more than one reason appears once per reason, so an explanation can name every
-   * reason it is live.
-   *
-   * The member says which relation the set feeds: every declaration here is live
-   * under reachability. A root of a kind that names a caller is also live under
-   * reference counting, which the sweep decides.
+   * Every root of this project, live under reachability, ordered by the site of the
+   * declaration it names, then by kind, then by the string that named it. A declaration
+   * rooted for several reasons appears once per reason, so an explanation names each.
    */
   readonly liveUnderReachability: readonly Root[];
   /**
@@ -123,11 +117,22 @@ export interface Roots {
   /**
    * Every declaration of the project, where the checker left the module or export table
    * of an entry or a published file unanswered, since which of them that file exports is
-   * unknown; otherwise each one an unanswered published type name may name.
+   * unknown; otherwise each one an unanswered published type name may name. Beside them, each
+   * file of {@link heldScripts} and every declaration its export table names.
    */
   readonly unanswered: readonly string[];
   /** Every manifest entry naming a file to import or run that reads back to no file of this project. */
   readonly unmappedEntries: readonly ManifestEntry[];
+  /** Every package whose command strings name, as `spelledFiles` reads them, an own file no root enters with all it exports. */
+  readonly heldScripts: readonly HeldScripts[];
+}
+
+/** One package's command strings, and the own files they name that no root enters with all they export. */
+export interface HeldScripts {
+  /** The package's directory, absolute. */
+  readonly dir: string;
+  /** Each file, by its path below the target root. */
+  readonly files: readonly string[];
 }
 
 /** What decides the roots beside the declarations themselves. */
@@ -158,7 +163,7 @@ export interface RootOptions {
    * inside the target whose entries are published API whatever the target's kind.
    */
   readonly publishedMembers?: ReadonlySet<string> | undefined;
-  /** Every file a program of the run holds, so a file another configuration compiles is no outside file. */
+  /** The files the configurations read from a file hold, so a file another configuration compiles is no outside file. */
   readonly runFiles?: ReadonlySet<string> | undefined;
 }
 
@@ -341,15 +346,60 @@ function childrenOf(held: Inventory): ReadonlyMap<string, readonly InventorySymb
 }
 
 /**
- * The roots one project holds, and every configured string that named nothing in it.
- *
- * A file a manifest member, an entry-file pattern or a tool's configuration names
- * is a root with everything its module exports: each name of the module's export
- * table, and where a name is a re-export, every link of the chain to the declaration
- * it carries, so a re-exported declaration is a root of the file that publishes it.
- * In a library, what a published file exports is rooted by the published API alone.
- * A file a runtime executes without reading its exports, a test file or a worker, is
- * a root by itself.
+ * Per package, the own files its command strings name as plain text, but those a root enters
+ * with all they export: a command can use no more of such a file than the root keeps live. A
+ * manifest's are its entries' whole command strings, and the target root's package has the
+ * workflow steps, git hooks and makefile recipes beside its own, with the directories its
+ * workflow steps and lefthook commands run in, where a `.` names that directory's index file.
+ */
+function scriptHolds(
+  entries: readonly ManifestEntry[],
+  files: SourceFiles,
+  entered: readonly {
+    readonly file: SourceFile;
+    readonly exports: boolean;
+    readonly names?: readonly string[];
+  }[],
+  host: Host,
+  targetRoot: string,
+): readonly HeldScripts[] {
+  const rooted = new Set(
+    entered.filter((one) => one.exports && one.names === undefined).map((one) => one.file.fileName),
+  );
+  const spelled = [...files.byName.values()]
+    .filter((file) => !rooted.has(file.fileName))
+    .map((file) => ({ file, paths: [file.fileName, ...files.writtenAs(file)] }));
+  const cwd = host.workingDirectory();
+  const commands = new Map<string, string[]>([
+    [
+      resolvePath(cwd, targetRoot),
+      [...workflowCommands(host, targetRoot), ...commandDirectories(host, targetRoot)],
+    ],
+  ]);
+  for (const entry of entries) {
+    if (entry.command !== undefined) {
+      const dir = resolvePath(cwd, entry.dir);
+      commands.set(dir, [...(commands.get(dir) ?? []), entry.command]);
+    }
+  }
+  const held: HeldScripts[] = [];
+  for (const [dir, texts] of commands) {
+    const named = spelledFiles(texts.join("\n"), dir, spelled);
+    if (named.length > 0) {
+      const paths = named.map((file) => relativePath(targetRoot, file.fileName) ?? file.fileName);
+      held.push({ dir, files: paths });
+    }
+  }
+  return held;
+}
+
+/**
+ * The roots one project holds, and every configured string that named nothing in it. A
+ * file a manifest member, an entry-file pattern or a tool's configuration names is a root
+ * with each name of its export table and every link of a re-export chain to the
+ * declaration it carries; in a library, the published API alone roots what a published
+ * file exports. A file a runtime executes without reading its exports, a test file or a
+ * worker, is a root by itself.
  */
 export function roots<Brand>(
   project: ProjectView<Brand>,
@@ -414,7 +464,7 @@ export function roots<Brand>(
     })),
   ];
   const scripted = entries.flatMap(({ entry }) =>
-    entry.role === "script" ? files.named(entry.path) : [],
+    entry.role === "script" && entry.command === undefined ? files.named(entry.path) : [],
   );
   const readBackTo = [
     ...scripted,
@@ -467,6 +517,9 @@ export function roots<Brand>(
   const unmapped: ManifestEntry[] = [];
   const mapped = patterned.map(({ file }) => file);
   for (const { entry } of entries) {
+    if (entry.command !== undefined) {
+      continue;
+    }
     const named = entryFiles(entry);
     if (named.length === 0 && entry.role !== "script") {
       unmapped.push(entry);
@@ -491,6 +544,16 @@ export function roots<Brand>(
   for (const point of points) {
     enter(point.file, point.rule, point.source, point.exports, point.names);
   }
+  const heldScripts = scriptHolds(
+    entries.map(({ entry }) => entry),
+    files,
+    entered,
+    options.host,
+    targetRoot,
+  );
+  const heldFiles = [...new Set(heldScripts.flatMap((one) => one.files))].flatMap(
+    (path) => files.byPath.get(path) ?? [],
+  );
   for (const file of files.byPath.values()) {
     for (const alias of typeQueryAliases(file)) {
       const source = alias.type.getText().replace(/\s+/gu, " ");
@@ -510,6 +573,7 @@ export function roots<Brand>(
   } = exportTables(project, held, [
     ...entered.filter((entry) => entry.exports).map((entry) => entry.file),
     ...published,
+    ...heldFiles,
   ]);
   for (const entry of entered) {
     const id = fileIds.get(entry.file.fileName);
@@ -554,8 +618,17 @@ export function roots<Brand>(
   return {
     liveUnderReachability: ordered,
     unmatched,
-    unanswered: answered ? api.guessed : held.symbols.map((symbol) => symbol.id),
+    unanswered: [
+      ...(answered ? api.guessed : held.symbols.map((symbol) => symbol.id)),
+      // A command runs a held file and may read any export of it, so the file, which reaches its
+      // top level, and its exports are held; a declaration neither reaches is still dead.
+      ...heldFiles.flatMap((file) => {
+        const id = fileIds.get(file.fileName);
+        return [...(id === undefined ? [] : [id]), ...(exportsOf.get(file.fileName) ?? [])];
+      }),
+    ],
     unmappedEntries,
+    heldScripts,
   };
 }
 
@@ -665,14 +738,12 @@ function releaseTagged(
 const EXPORTING_CONTAINERS: ReadonlySet<string> = new Set(["file", "namespace"]);
 
 /**
- * Every declaration a consumer of the library can name: what the published files export,
- * and below each the members a consumer writes, a namespace's exported ones and any other
- * declaration's public and protected ones. A declaration a published one's type names is
- * published too, and so is an exported declaration a release tag marks, and every
- * declaration a `declare global` block of a published file, or of a file holding a published
- * declaration, holds: the consumer's compiler loads that file's typings and their global
- * scope with it. A type name the checker leaves unanswered publishes every declaration
- * spelled as it is, as `guessed`. A published file is not itself published.
+ * Every declaration a consumer of the library can name, a published file itself excluded:
+ * what the published files export, with a namespace's exported members and any other
+ * declaration's public and protected ones; a declaration a published one's type names; an
+ * exported declaration a release tag marks; each declaration a `declare global` block holds
+ * in a published file or one holding a published declaration; and, as `guessed`, each
+ * declaration spelled as a type name the checker leaves unanswered.
  */
 function publishedAPI<Brand>(
   project: ProjectView<Brand>,
@@ -1078,13 +1149,10 @@ function configured(
 }
 
 /**
- * Every configured string that named no declaration in ANY project of the run, in
- * configuration order and each once.
- *
- * A finding about a configured root is about the configuration and not about a
- * declaration, so there is one per run: a string that names a declaration of one
- * project has named something, and the projects it named nothing in are not a
- * finding. A run with no project names nothing with any of them.
+ * Every configured string that named no declaration in any project of the run, in
+ * configuration order and each once. The finding is about the configuration, so a string
+ * naming a declaration of one project has named something, and a run with no project
+ * names nothing with any of them.
  */
 export function unmatchedEverywhere(
   patterns: readonly string[],

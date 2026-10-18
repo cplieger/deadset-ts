@@ -10,6 +10,8 @@ type DiagnosticClass =
   | "unfound-library"
   /** An import of a module the compiler cannot find, a setup failure where the project expects it. */
   | "module-not-found"
+  /** A side-effect import of a module the compiler cannot find, a type error in a TypeScript file. */
+  | "side-effect-module-not-found"
   /** A type error: the unit holding it is skipped. */
   | "type-error"
   /** No error of the program's: the compiler checks the whole program all the same. */
@@ -41,6 +43,7 @@ const DIAGNOSTIC_TABLE: readonly DiagnosticRow[] = [
   },
   { placed: false, codes: { from: 2000, below: 3000 }, class: "load" },
   { placed: true, codes: new Set([2307, 2792]), class: "module-not-found" },
+  { placed: true, codes: new Set([2882]), class: "side-effect-module-not-found" },
   { placed: true, codes: new Set([5055, 5056, 6059, 6307]), class: "ignored" },
 ];
 

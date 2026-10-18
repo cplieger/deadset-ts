@@ -122,6 +122,23 @@ describe("the scripts of a manifest", () => {
     ).toEqual([
       'scripts["gen"] /pkg/node script false',
       'scripts["gen"] /pkg/bin/gen.ts script false',
+      'scripts["gen"] /pkg script false',
+    ]);
+  });
+
+  it("name each token of a script, and carry the script's whole value on one entry at the manifest's directory", () => {
+    const named = (command: string): string[] =>
+      readManifest(hostWith(JSON.stringify({ scripts: { start: command } })), "/pkg").entries.map(
+        (entry) => `${entry.path} ${entry.command ?? "token"}`,
+      );
+
+    expect(named("env --frobnicate node --require=./setup.ts main.ts")).toEqual([
+      "/pkg/env token",
+      "/pkg/--frobnicate token",
+      "/pkg/node token",
+      "/pkg/--require=./setup.ts token",
+      "/pkg/main.ts token",
+      "/pkg env --frobnicate node --require=./setup.ts main.ts",
     ]);
   });
 });

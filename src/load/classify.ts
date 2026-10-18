@@ -2,7 +2,7 @@ import type { SourceFile } from "@typescript/native/ast";
 import { conventionFailuresFor } from "../conventions.ts";
 import type { Host } from "../host.ts";
 import { relativePath, resolvePath } from "../paths.ts";
-import { diagnosticsOf, ownedAs, type ProjectView } from "../session.ts";
+import { diagnosticsOf, ownedAs, type Engine, type ProjectView } from "../session.ts";
 import { skipAt, type Skip } from "../type-errors.ts";
 import {
   classOf,
@@ -14,7 +14,9 @@ import {
 import { targetRelative, type LoadedConsumer, type NotBuilt, type Origin } from "./discover.ts";
 import { missingModule, pathsOf, type ModuleContext } from "./expected-module.ts";
 import { FailureExit, failureLine, type Failure } from "../failure.ts";
-import type { ConsumerWorkspace, ProgramPlan, RunPlan } from "./plan.ts";
+import type { ProgramPlan, RunPlan } from "./plan.ts";
+import { JAVASCRIPT_FILE } from "../javascript-file.ts";
+import { readSpecifiers, type UnresolvedSpecifier } from "./specifiers.ts";
 import { ownErrors } from "./workspace-run.ts";
 
 /** What keeps one configuration from being analyzed. */
@@ -49,6 +51,8 @@ interface Analyzed<Brand> {
   readonly skips: readonly Skip[];
   /** Whether it holds one file only for the references that file makes. */
   readonly referenceOnly: (file: string) => boolean;
+  /** The relative specifiers of its unchecked JavaScript files that resolve to no file. */
+  readonly unresolved: readonly UnresolvedSpecifier[];
 }
 
 /** One consumer project the run reads the references of. */
@@ -64,14 +68,19 @@ export interface Classified {
   /** The derived configurations dropped, discovery's first, then in configuration order. */
   readonly notBuilt: readonly NotBuilt[];
   readonly librariesUnfound: readonly LibraryUnfound[];
+  /** The unresolved specifiers of every analyzed project, each once, in configuration order. */
+  readonly unresolvedSpecifiers: readonly UnresolvedSpecifier[];
 }
 
 /**
  * The errors of one project's own files: an import of a module the project expects and
  * nothing provides is a setup failure, every other error a type error skipping its unit.
+ * Where `plan`'s options do not check JavaScript, an unfound module of a JavaScript file is
+ * none of them, a file `// @ts-check` checks included: {@link readSpecifiers} reads it.
  */
 function readErrors<Brand>(
   project: ProjectView<Brand>,
+  plan: ProgramPlan,
   errors: readonly LocatedDiagnostic[],
   context: ModuleContext,
 ): { readonly missing: readonly Failure[]; readonly skips: readonly Skip[] } {
@@ -83,9 +92,16 @@ function readErrors<Brand>(
   for (const { diagnostic, at } of errors) {
     const file = diagnostic.fileName === undefined ? undefined : files.get(diagnostic.fileName);
     const kind = classOf(diagnostic, true);
-    if (file === undefined || kind === "ignored") {
+    if (
+      file === undefined ||
+      kind === "ignored" ||
+      ((kind === "module-not-found" || kind === "side-effect-module-not-found") &&
+        !checksJavaScript(plan) &&
+        JAVASCRIPT_FILE.test(file.fileName))
+    ) {
       continue;
     }
+
     const line = at?.line ?? 1;
     const path = relativePath(context.targetRoot, file.fileName) ?? file.fileName;
     const expected =
@@ -105,6 +121,10 @@ function readErrors<Brand>(
   return { missing, skips };
 }
 
+function checksJavaScript(plan: ProgramPlan): boolean {
+  return plan.options.checkJs === true;
+}
+
 function nonEmpty<T>(items: readonly T[]): readonly [T, ...T[]] | undefined {
   const [first, ...rest] = items;
   return first === undefined ? undefined : [first, ...rest];
@@ -112,6 +132,7 @@ function nonEmpty<T>(items: readonly T[]): readonly [T, ...T[]] | undefined {
 
 /** One target project read for what keeps it from being analyzed, or the skips it is analyzed with. */
 function classifyTarget<Brand>(
+  engine: Engine,
   host: Host,
   run: RunPlan,
   plan: ProgramPlan,
@@ -130,23 +151,33 @@ function classifyTarget<Brand>(
     workspace === undefined
       ? () => false
       : workspace.referenceOnly(plan.configFile, view.rootFiles);
-  const project =
-    workspace === undefined
-      ? view
-      : ownedAs(view, (file, external) => workspace.ownFile(file, external));
+  // A file outside the target root that a program reaches is no file of the target's, so no
+  // position below the root names it.
+  const project = ownedAs(
+    view,
+    (file, external) =>
+      relativePath(root, file) !== undefined &&
+      (workspace === undefined ? !external : workspace.ownFile(file, external)),
+  );
   const raw = projectErrors(diagnosticsOf(project));
   const load = nonEmpty(raw.load);
   if (load !== undefined) {
     return { kind: "load", errors: load };
   }
-  const reading = readErrors(project, ownErrors(raw.check, referenceOnly), {
+  const reading = readErrors(project, plan, ownErrors(raw.check, referenceOnly), {
     host,
     targetRoot: root,
     paths: pathsOf(plan.configFile, plan.parsed.options),
     member: (manifest) => workspace?.workspace.memberOf(manifest) !== undefined,
   });
+  const specifiers = readSpecifiers(engine, host, project, {
+    checked: checksJavaScript(plan),
+    root,
+    outputs: run.outputs,
+  });
   const failures =
     nonEmpty(reading.missing) ??
+    nonEmpty(specifiers.uninstalled === undefined ? [] : [specifiers.uninstalled]) ??
     nonEmpty(
       conventionFailuresFor(
         run.conventions,
@@ -184,29 +215,33 @@ function classifyTarget<Brand>(
             unit: file,
           })),
         ];
-  return { plan, project, skips, referenceOnly };
+  return { plan, project, skips, referenceOnly, unresolved: specifiers.unresolved };
 }
 
 /**
- * One consumer project read for what keeps its references from being read. A workspace
+ * One consumer project read for what keeps its references from being read: a missing module, or
+ * JavaScript whose imported dependencies are none of them installed, as a target's are. A workspace
  * declaration that cannot be read fails it where an import asks whether a package is a member.
  */
 function classifyConsumer<Brand>(
+  engine: Engine,
   host: Host,
-  place: ConsumerWorkspace | undefined,
+  run: RunPlan,
   plan: ProgramPlan,
   consumer: LoadedConsumer,
   project: ProjectView<Brand>,
 ): Failed | Consumed<Brand> {
+  const place = run.consumerWorkspaces.get(consumer.path);
+  const consumerRoot = resolvePath(host.workingDirectory(), consumer.path);
   const raw = projectErrors(diagnosticsOf(project));
   const load = nonEmpty(raw.load);
   if (load !== undefined) {
     return { kind: "load", errors: load };
   }
   let faulted: string | undefined;
-  const reading = readErrors(project, raw.check, {
+  const reading = readErrors(project, plan, raw.check, {
     host,
-    targetRoot: resolvePath(host.workingDirectory(), consumer.path),
+    targetRoot: consumerRoot,
     paths: pathsOf(plan.configFile, plan.parsed.options),
     member: (manifest) => {
       if (place !== undefined && "fault" in place) {
@@ -216,9 +251,14 @@ function classifyConsumer<Brand>(
       return place?.workspace?.memberOf(manifest) !== undefined;
     },
   });
+  const { uninstalled } = readSpecifiers(engine, host, project, {
+    checked: checksJavaScript(plan),
+    root: consumerRoot,
+    outputs: run.outputs,
+  });
   const details =
     faulted === undefined
-      ? reading.missing.map(
+      ? [...reading.missing, ...(uninstalled === undefined ? [] : [uninstalled])].map(
           (one) =>
             `the consumer ${consumer.path} does not build, its dependencies not installed: ${one.detail}`,
         )
@@ -275,6 +315,7 @@ function droppedBy(failed: Failed, root: string): string {
  * configuration was dropped, their setup failures or the first reason.
  */
 export function classify(
+  engine: Engine,
   host: Host,
   run: RunPlan,
   views: ReadonlyMap<string, ProjectView<unknown>>,
@@ -297,14 +338,8 @@ export function classify(
               plan,
               outcome:
                 plan.consumer === undefined
-                  ? classifyTarget(host, run, plan, view, librariesUnfound)
-                  : classifyConsumer(
-                      host,
-                      run.consumerWorkspaces.get(plan.consumer.path),
-                      plan,
-                      plan.consumer,
-                      view,
-                    ),
+                  ? classifyTarget(engine, host, run, plan, view, librariesUnfound)
+                  : classifyConsumer(engine, host, run, plan, plan.consumer, view),
             },
           ];
     }),
@@ -348,5 +383,15 @@ export function classify(
       ],
     );
   }
-  return { analyzed, consumed, notBuilt, librariesUnfound };
+  const unresolvedSpecifiers = [
+    ...new Map(
+      analyzed
+        .flatMap((one) => one.unresolved)
+        .map((one) => {
+          const { path, line, column } = one.position;
+          return [JSON.stringify([path, line, column, one.specifier]), one] as const;
+        }),
+    ).values(),
+  ];
+  return { analyzed, consumed, notBuilt, librariesUnfound, unresolvedSpecifiers };
 }

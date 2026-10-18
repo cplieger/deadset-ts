@@ -81,6 +81,22 @@ export interface Engine {
   close(): void;
 }
 
+/** The most questions one round trip carries. */
+const BATCH = 2048;
+
+/** Asks one question of every item, in round trips of at most {@link BATCH}, answers in order. */
+export function batched<T, A>(
+  engine: Engine,
+  items: readonly T[],
+  question: (item: T) => APIRequestGenerator<A>,
+): A[] {
+  const answers: A[] = [];
+  for (let at = 0; at < items.length; at += BATCH) {
+    answers.push(...engine.batch(items.slice(at, at + BATCH).map(question)));
+  }
+  return answers;
+}
+
 /** How a run opens its compiler client. */
 export interface EngineOptions {
   /** Collect per-request timing, which the calibration record reads. */

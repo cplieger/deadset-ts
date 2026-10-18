@@ -192,7 +192,7 @@ export async function generated(read: Reader): Promise<string> {
     "  readonly holdsLive: boolean;",
     "  readonly rule: string;",
     "  readonly precondition?: string;",
-    '  readonly details: Readonly<Record<string, "required" | "optional" | readonly Language[]>>;',
+    '  readonly details?: Readonly<Record<string, "required" | "optional" | readonly Language[]>>;',
     "  readonly defaultEnabled: boolean;",
     "  readonly defaultSeverity: Severity;",
     "  readonly maxClass: Confidence;",

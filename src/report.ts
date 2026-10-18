@@ -77,8 +77,8 @@ export type ReportNote =
       readonly message: string;
     }
   | {
-      readonly kind: "computed-load";
-      /** The directory of the file that writes the load, below the target root. */
+      readonly kind: "computed-load" | "unread-command" | "unresolved-specifier";
+      /** The directory of the file that writes the load or the specifier, or of the manifest, below the target root. */
       readonly path: string;
       readonly message: string;
     };

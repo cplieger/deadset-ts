@@ -7,13 +7,13 @@ export const CORPUS_VERSION = "6.0.0";
 export const CODE_PREFIX = "DS";
 export const FAMILY_KEY_LENGTH = 4;
 
-export type Language = "go" | "ts";
+export type Language = "go" | "ts" | "proto";
 export type Severity = "allow" | "warn" | "deny";
 export type Confidence = "certain" | "probable" | "possible";
 export type Fixability = "deletable" | "narrowable" | "manual" | "none";
 export type Subject = "declaration" | "binding" | "part" | "file" | "dependency" | "record";
 export type Format = "text" | "json" | "github" | "sarif" | "template";
-export const LANGUAGES = ["go", "ts"] as const satisfies readonly Language[];
+export const LANGUAGES = ["go", "ts", "proto"] as const satisfies readonly Language[];
 export const SEVERITIES = ["allow", "warn", "deny"] as const satisfies readonly Severity[];
 export const CONFIDENCES = [
   "certain",
@@ -37,8 +37,13 @@ export const LANGUAGE_ROWS = {
   },
   ts: {
     analyzer: "deadset-ts",
-    markers: ["tsconfig*.json"],
+    markers: ["tsconfig*.json", "jsconfig*.json"],
     skippedDirectories: ["node_modules", ".git"],
+  },
+  proto: {
+    analyzer: "deadset-proto",
+    markers: ["buf.yaml", "buf.work.yaml"],
+    skippedDirectories: ["node_modules", "vendor", ".*"],
   },
 } as const satisfies Readonly<
   Partial<
@@ -67,7 +72,7 @@ export interface KindRow {
   readonly holdsLive: boolean;
   readonly rule: string;
   readonly precondition?: string;
-  readonly details: Readonly<Record<string, "required" | "optional" | readonly Language[]>>;
+  readonly details?: Readonly<Record<string, "required" | "optional" | readonly Language[]>>;
   readonly defaultEnabled: boolean;
   readonly defaultSeverity: Severity;
   readonly maxClass: Confidence;
@@ -312,6 +317,7 @@ export const KIND_ROWS = [
     overlap: {
       go: ["revive unused-parameter", "gopls unusedparams", "unparam"],
       ts: ["tsc --noUnusedParameters", "@typescript-eslint/no-unused-vars"],
+      proto: ["not applicable"],
     },
     fixed: false,
   },
@@ -329,7 +335,7 @@ export const KIND_ROWS = [
     defaultSeverity: "warn",
     maxClass: "certain",
     fixability: "deletable",
-    overlap: { go: ["revive unused-receiver"], ts: ["not applicable"] },
+    overlap: { go: ["revive unused-receiver"], ts: ["not applicable"], proto: ["not applicable"] },
     fixed: false,
   },
   {
@@ -346,7 +352,7 @@ export const KIND_ROWS = [
     defaultSeverity: "warn",
     maxClass: "certain",
     fixability: "manual",
-    overlap: { go: ["unparam"], ts: ["none known"] },
+    overlap: { go: ["unparam"], ts: ["none known"], proto: ["not applicable"] },
     fixed: false,
   },
   {
@@ -366,6 +372,7 @@ export const KIND_ROWS = [
     overlap: {
       go: ["ineffassign", "wastedassign", "staticcheck SA4006"],
       ts: ["eslint no-useless-assignment", "@typescript-eslint/no-unused-vars"],
+      proto: ["not applicable"],
     },
     fixed: false,
   },
@@ -384,6 +391,7 @@ export const KIND_ROWS = [
     overlap: {
       go: ["go vet unreachable"],
       ts: ["tsc allowUnreachableCode", "eslint no-unreachable"],
+      proto: ["not applicable"],
     },
     fixed: false,
   },
@@ -399,7 +407,7 @@ export const KIND_ROWS = [
     defaultSeverity: "deny",
     maxClass: "certain",
     fixability: "deletable",
-    overlap: { go: ["staticcheck SA4020"], ts: ["none known"] },
+    overlap: { go: ["staticcheck SA4020"], ts: ["none known"], proto: ["not applicable"] },
     fixed: false,
   },
   {
@@ -513,9 +521,74 @@ export const KIND_ROWS = [
     fixed: false,
   },
   {
+    code: "DS1801",
+    name: "unused-schema-type",
+    languages: ["proto"],
+    subject: "declaration",
+    holdsLive: false,
+    rule: "A schema message or enum that no binding in any analyzed language references, that no live schema declaration uses, and none of whose members is live.",
+    defaultEnabled: true,
+    defaultSeverity: "deny",
+    maxClass: "certain",
+    fixability: "deletable",
+    fixed: false,
+  },
+  {
+    code: "DS1802",
+    name: "unread-schema-field",
+    languages: ["proto"],
+    subject: "declaration",
+    holdsLive: false,
+    rule: "A schema field that no binding of it reads in any analyzed language: a field, a oneof member, a map field, a group field or an extension. A write is no read, because a field only written carries information no reader receives. Generated transport's encoding of it is no read, and a hand-code serializer's encoding is.",
+    defaultEnabled: true,
+    defaultSeverity: "deny",
+    maxClass: "certain",
+    fixability: "manual",
+    fixed: false,
+  },
+  {
+    code: "DS1803",
+    name: "unused-schema-enum-value",
+    languages: ["proto"],
+    subject: "declaration",
+    holdsLive: false,
+    rule: "A schema enum value that no binding names, of an enum whose name conversion no hand code reaches. A value that shares its number with another is never reported.",
+    defaultEnabled: true,
+    defaultSeverity: "deny",
+    maxClass: "certain",
+    fixability: "manual",
+    fixed: false,
+  },
+  {
+    code: "DS1804",
+    name: "unused-schema-service",
+    languages: ["proto"],
+    subject: "declaration",
+    holdsLive: false,
+    rule: "A schema service none of whose operations any client binding calls and none of whose service bindings hand code uses other than through a registration form. Its operations fall with it.",
+    defaultEnabled: true,
+    defaultSeverity: "deny",
+    maxClass: "certain",
+    fixability: "manual",
+    fixed: false,
+  },
+  {
+    code: "DS1805",
+    name: "uncalled-schema-operation",
+    languages: ["proto"],
+    subject: "declaration",
+    holdsLive: false,
+    rule: "A schema operation that no client binding in any analyzed language calls. Each hand-written method implementing it that nothing else keeps falls in this finding's component, under the code its own references select.",
+    defaultEnabled: true,
+    defaultSeverity: "warn",
+    maxClass: "certain",
+    fixability: "manual",
+    fixed: false,
+  },
+  {
     code: "DS9001",
     name: "suppression-without-reason",
-    languages: ["go", "ts"],
+    languages: ["go", "ts", "proto"],
     subject: "record",
     holdsLive: false,
     rule: "A suppression that carries no reason, in any of the three documents: an inline directive, an ignore-file entry or a baseline row. For the ignore file and the baseline, an entry or a row whose reason field is absent, empty or whitespace only is refused and reported rather than matched.",
@@ -529,7 +602,7 @@ export const KIND_ROWS = [
   {
     code: "DS9002",
     name: "unscoped-ignore-entry",
-    languages: ["go", "ts"],
+    languages: ["go", "ts", "proto"],
     subject: "record",
     holdsLive: false,
     rule: "An ignore-file entry or a baseline row that names a symbol and no file path. The entry is reported rather than matched, so a bare name cannot mask a match anywhere else in the project. The inline directive is scoped by its position and cannot be unscoped.",
@@ -543,7 +616,7 @@ export const KIND_ROWS = [
   {
     code: "DS9003",
     name: "stale-suppression",
-    languages: ["go", "ts"],
+    languages: ["go", "ts", "proto"],
     subject: "record",
     holdsLive: false,
     rule: "A suppression record that is stale, as grammar/suppression.md defines it, at either mechanism and in the baseline alike. The run exits with the findings code when at least one is reported. The kind is fixed on at deny: no flag, no severity setting and no per-mechanism exception reduces it below a finding, and a configuration naming this code under a severity key is an unimplemented key.",
@@ -557,7 +630,7 @@ export const KIND_ROWS = [
   {
     code: "DS9004",
     name: "unmatched-root",
-    languages: ["go", "ts"],
+    languages: ["go", "ts", "proto"],
     subject: "record",
     holdsLive: false,
     rule: "A configured root that matches no symbol, or a configured root pattern that matches no symbol. A root set nobody checks silently changes every result, so a stale one is a finding. The kind is fixed on at deny: no flag, no severity setting and no exception reduces it below a finding, and a configuration naming this code under a severity key is an unimplemented key.",
@@ -628,6 +701,11 @@ export const CODE = {
   fileNeverImported: "DS1602",
   unusedDependency: "DS1701",
   unusedModuleDirective: "DS1702",
+  unusedSchemaType: "DS1801",
+  unreadSchemaField: "DS1802",
+  unusedSchemaEnumValue: "DS1803",
+  unusedSchemaService: "DS1804",
+  uncalledSchemaOperation: "DS1805",
   suppressionWithoutReason: "DS9001",
   unscopedIgnoreEntry: "DS9002",
   staleSuppression: "DS9003",
@@ -650,7 +728,7 @@ export const FAMILIES = [
   { key: "DS15", name: "too-visible", title: "Too visible", status: "live" },
   { key: "DS16", name: "files", title: "Files", status: "live" },
   { key: "DS17", name: "dependencies", title: "Dependencies and module files", status: "live" },
-  { key: "DS18", name: "schemas", title: "Schemas", status: "reserved" },
+  { key: "DS18", name: "schemas", title: "Schemas", status: "live" },
   { key: "DS90", name: "configuration", title: "deadset configuration", status: "live" },
 ] as const;
 
@@ -670,6 +748,9 @@ export const SYMBOL_SUBJECTS = {
   "type-member": "declaration",
   "interface-method": "declaration",
   "enum-member": "declaration",
+  message: "declaration",
+  service: "declaration",
+  rpc: "declaration",
   "satisfaction-assertion": "declaration",
   "type-parameter": "declaration",
   parameter: "part",
@@ -862,6 +943,24 @@ export const EXEMPTION_CLASSES = [
     confidence: "certain",
     retainsKinds: { ts: ["method", "class-member", "interface-method", "type-member"] },
     typescriptVisibility: { private: true, privateName: false },
+  },
+  {
+    class: "schema-option",
+    languages: ["proto"],
+    confidence: "certain",
+    retainsKinds: { proto: ["field", "message", "enum", "enum-member"] },
+  },
+  {
+    class: "schema-vendored",
+    languages: ["proto"],
+    confidence: "certain",
+    retainsKinds: { proto: ["message", "enum", "field", "enum-member", "service", "rpc"] },
+  },
+  {
+    class: "schema-default-value",
+    languages: ["proto"],
+    confidence: "certain",
+    retainsKinds: { proto: ["enum-member"] },
   },
 ] as const;
 
@@ -1133,6 +1232,55 @@ export const EVIDENCE = [
       "DS1602",
     ],
   },
+  {
+    evidence: "schema-operation-default",
+    rule: "schemas.10",
+    class: "possible",
+    languages: ["proto"],
+    codes: ["DS1804", "DS1805"],
+  },
+  {
+    evidence: "http-exposure",
+    rule: "schemas.11",
+    class: "possible",
+    languages: ["proto"],
+    codes: ["DS1801", "DS1802", "DS1803", "DS1804", "DS1805"],
+  },
+  {
+    evidence: "descriptor-exposure",
+    rule: "schemas.12",
+    class: "possible",
+    languages: ["proto"],
+    codes: ["DS1801", "DS1802", "DS1803", "DS1804", "DS1805"],
+  },
+  {
+    evidence: "persistence",
+    rule: "schemas.13",
+    class: "possible",
+    languages: ["proto"],
+    codes: ["DS1802", "DS1803"],
+  },
+  {
+    evidence: "explicit-json-name",
+    rule: "schemas.14",
+    class: "possible",
+    languages: ["proto"],
+    codes: ["DS1802", "DS1803"],
+  },
+  {
+    evidence: "generation-config-unknown",
+    rule: "schemas.15",
+    class: "possible",
+    languages: ["proto"],
+    codes: ["DS1801", "DS1802", "DS1803", "DS1804", "DS1805"],
+  },
+  {
+    evidence: "library-language",
+    rule: "schemas.16",
+    class: "possible",
+    languages: ["proto"],
+    codes: ["DS1801", "DS1802", "DS1803", "DS1804", "DS1805"],
+  },
 ] as const;
 
 /** Each group of failure classes, and the text opening the line that names one of its failures. */
@@ -1147,6 +1295,8 @@ export const FAILURE_CLASSES = {
   "convention-not-literal": "setup",
   "no-program": "setup",
   "unreadable-document": "setup",
+  "missing-import-path": "setup",
+  "binding-undecodable": "setup",
   "unwritten-output": "run",
   "unreportable-path": "run",
   "memory-exhausted": "run",

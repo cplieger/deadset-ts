@@ -145,7 +145,17 @@ describe("a key only another product reads", () => {
   const unread = SETTINGS.filter((row) => !row.read).map((row) => row.key);
 
   it("is one the table names", () => {
-    expect(unread).toEqual(["analysis.languages", "providers", "providers.analyzers", "go"]);
+    expect(unread).toEqual([
+      "analysis.languages",
+      "providers",
+      "providers.analyzers",
+      "go",
+      "proto",
+      "proto.closed",
+      "proto.plugins",
+      "proto.import_paths",
+      "proto.vendored_paths",
+    ]);
   });
 
   it.each(unread)("is accepted unread, whatever %s holds", (key) => {
@@ -189,8 +199,8 @@ describe("a severity key", () => {
     ["DS90", "the Contract fixes the severity of DS9003, DS9004 and DS9006, which this key names"],
     ["DS1", "the name does not match ^DS[0-9]{2}([0-9]{2})?$"],
     ["DS1999", "no issue kind carries the code DS1999"],
-    ["DS1801", "no issue kind carries the code DS1801"],
-    ["DS18", "no issue kind carries a code of the family DS18"],
+    ["DS1901", "no issue kind carries the code DS1901"],
+    ["DS19", "no issue kind carries a code of the family DS19"],
   ])("refuses %s as unimplemented, saying why", (code, why) => {
     const got = refuse(library({ severity: { [code]: "warn" } }));
 

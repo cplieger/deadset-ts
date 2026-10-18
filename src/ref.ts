@@ -52,6 +52,7 @@ export const REF_EXPRESSIONS: readonly string[] = [
   `^${SCOPE}#${TS_HEAD}:import$`,
   `^${SCOPE}#${TS_HEAD}(?:\\.${TS_MEMBER})+$`,
   `^${SCOPE}#${TS_HEAD}(?:\\.${TS_MEMBER})+:static$`,
+  `^${SCOPE}#${TS_HEAD}(?:\\.${TS_MEMBER})+\\.${TS_QUOTED}:case$`,
   `^${SCOPE}#${TS_HEAD}(?:\\.${TS_MEMBER})*(?::static)?<${TS_IDENT}>$`,
   `^${SCOPE}#(?:${TS_HEAD}(?:\\.${TS_MEMBER})*(?::static)?)?\\(${TS_IDENT}\\)$`,
   `^${MANIFEST_SCOPE}#${TS_PACKAGE}:(?:dependency|dev-dependency|peer-dependency)$`,

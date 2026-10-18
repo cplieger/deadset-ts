@@ -301,6 +301,364 @@ describe("a configuration that meets a setup failure", () => {
   );
 });
 
+/**
+ * Two configurations reading one manifest whose scripts name a preloaded module as a token, one
+ * after `=`, one inside a command substitution, a test file and the entry the tokens root with
+ * all it exports, each file holding a declaration nothing uses.
+ */
+const WITH_SCRIPT_FILES = {
+  "deadset.json": '{ "target": { "kind": "application" } }\n',
+  "package.json": `${JSON.stringify({
+    name: "@example/scripted",
+    private: true,
+    type: "module",
+    scripts: {
+      start: "node --require ./src/token.ts --require=./src/setup.ts src/main.ts",
+      gen: "V=$(node tools/gen.ts) node src/main.ts",
+      test: "mocha --require=./src/__tests__/hooks.ts",
+    },
+  })}\n`,
+  "tsconfig.json": TSCONFIG.replace('"**/*.ts"', '"src/**/*.ts"'),
+  "tools/tsconfig.json": TSCONFIG.replace('"**/*.ts"', '"*.ts"'),
+  "src/main.ts":
+    "export function start(): number {\n  return 1;\n}\nfunction deadInsideMain(): number {\n  return 5;\n}\n",
+  "src/token.ts": "export function token(): number {\n  return 2;\n}\n",
+  "src/setup.ts": "export function setUp(): number {\n  return 3;\n}\n",
+  "src/__tests__/hooks.ts": "export const mochaHooks = { beforeAll(): void {} };\n",
+  "tools/gen.ts": "export function gen(): number {\n  return 4;\n}\n",
+};
+
+describe("the files a manifest's scripts name", () => {
+  it(
+    "keep what they export unless a root enters them with all they export, and raise one note for the package and one question per configuration holding one",
+    () => {
+      const got = analyze(project(WITH_SCRIPT_FILES), ["--exit-code=off"], tmpdir());
+      const report = reportOf(got);
+      const pathOf = (one: Record<string, unknown>): unknown =>
+        (one["position"] as Record<string, unknown>)["path"];
+
+      expect(got.code, got.err).toBe(0);
+      expect(validate(report)).toEqual([]);
+      expect(
+        findingsOf(got).filter((one) =>
+          ["src/setup.ts", "tools/gen.ts", "src/__tests__/hooks.ts"].includes(
+            pathOf(one) as string,
+          ),
+        ),
+      ).toEqual([]);
+      expect(
+        findingsOf(got)
+          .filter((one) => pathOf(one) === "src/main.ts")
+          .map((one) => [one["code"], one["confidence"]]),
+      ).toEqual([["DS1002", "certain"]]);
+      expect(
+        (report["notes"] as Record<string, unknown>[]).filter(
+          (one) => one["kind"] === "unread-command",
+        ),
+      ).toEqual([
+        {
+          kind: "unread-command",
+          path: ".",
+          message:
+            "commands the analysis does not read name src/__tests__/hooks.ts, src/setup.ts, tools/gen.ts, so no finding is reported about those files themselves or the names they export",
+        },
+      ]);
+      expect(report["unanswered_questions"]).toEqual([
+        { configuration: "tools/tsconfig.json", questions: 1, declarations: 2 },
+        { configuration: "tsconfig.json", questions: 1, declarations: 4 },
+      ]);
+    },
+    LOAD_TIMEOUT,
+  );
+});
+
+/**
+ * A package whose script names a file by a spelling no token reads, `-r./…`: the file exports
+ * one declaration nothing imports, keeps a local live from it, and holds a local nothing
+ * references, in TypeScript and in a package-only CommonJS file.
+ */
+const WITH_HELD_EXPORTS = {
+  typescript: {
+    "deadset.json": '{ "target": { "kind": "application" } }\n',
+    "package.json": `${JSON.stringify({
+      name: "@example/held",
+      private: true,
+      type: "module",
+      scripts: { start: "node -r./src/setup.ts src/main.ts" },
+    })}\n`,
+    "tsconfig.json": TSCONFIG.replace('"**/*.ts"', '"src/**/*.ts"'),
+    "src/main.ts": "export function start(): number {\n  return 1;\n}\n",
+    "src/setup.ts":
+      "const base = 2;\n\nexport function setUp(): number {\n  return base;\n}\n\nfunction deadInsideNamedFile(): number {\n  return 3;\n}\n",
+  },
+  commonjs: {
+    "deadset.json": '{ "target": { "kind": "application" } }\n',
+    "package.json": `${JSON.stringify({
+      name: "@example/held-cjs",
+      private: true,
+      scripts: { start: "node -r./setup.cjs main.cjs" },
+    })}\n`,
+    "main.cjs": 'console.log("main");\n',
+    "setup.cjs":
+      "const base = 2;\n\nfunction deadInsideNamedFile() {\n  return 3;\n}\n\nmodule.exports.setUp = function setUp() {\n  return base;\n};\n",
+  },
+} as const;
+
+describe("a file a command names", () => {
+  it.each([
+    ["typescript", "src/setup.ts"],
+    ["commonjs", "setup.cjs"],
+  ] as const)(
+    "keeps what it exports, in %s, and reports a local nothing references",
+    (language, path) => {
+      const got = analyze(project(WITH_HELD_EXPORTS[language]), ["--exit-code=off"], tmpdir());
+      const report = reportOf(got);
+
+      expect(got.code, got.err).toBe(0);
+      expect(validate(report)).toEqual([]);
+      expect(
+        findingsOf(got)
+          .filter((one) => (one["position"] as Record<string, unknown>)["path"] === path)
+          .map((one) => [
+            one["code"],
+            one["confidence"],
+            (one["symbol"] as Record<string, unknown>)["name"],
+          ]),
+      ).toEqual([["DS1002", "certain", "deadInsideNamedFile"]]);
+      expect(
+        (report["notes"] as Record<string, unknown>[]).filter(
+          (one) => one["kind"] === "unread-command",
+        ),
+      ).toEqual([
+        {
+          kind: "unread-command",
+          path: ".",
+          message: `commands the analysis does not read name ${path}, so no finding is reported about that file itself or the names it exports`,
+        },
+      ]);
+    },
+    LOAD_TIMEOUT,
+  );
+});
+
+/** A package whose own entry is the one root, and whose `tools` files only commands outside its scripts name. */
+const COMMANDED = {
+  "deadset.json":
+    '{ "target": { "kind": "application" }, "ts": { "entry_files": ["src/main.ts"] } }\n',
+  "package.json": '{ "name": "@example/commanded", "private": true, "type": "module" }\n',
+  "src/main.ts": "export {};\n",
+};
+
+/** The tools file `name` exporting one declaration nothing imports. */
+function toolFile(name: string): Readonly<Record<string, string>> {
+  return { [`tools/${name}.ts`]: `export function ${name}Tool(): number {\n  return 1;\n}\n` };
+}
+
+describe("the command strings beside a package's scripts", () => {
+  it.each([
+    [
+      "a workflow step",
+      {
+        ".github/workflows/ci.yml":
+          'on: push\njobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n      - run: node "$PWD/tools/check.ts"\n',
+      },
+    ],
+    ["a git hook", { ".husky/pre-commit": 'node "$PWD/tools/check.ts"\n' }],
+  ])(
+    "hold the exports of a file %s names",
+    (_source, written) => {
+      const got = analyze(
+        project({ ...COMMANDED, ...toolFile("check"), ...written }),
+        ["--exit-code=off"],
+        tmpdir(),
+      );
+      const report = reportOf(got);
+
+      expect(got.code, got.err).toBe(0);
+      expect(validate(report)).toEqual([]);
+      expect(
+        findingsOf(got).filter(
+          (one) => (one["position"] as Record<string, unknown>)["path"] === "tools/check.ts",
+        ),
+      ).toEqual([]);
+      expect(
+        (report["notes"] as Record<string, unknown>[]).filter(
+          (one) => one["kind"] === "unread-command",
+        ),
+      ).toEqual([
+        {
+          kind: "unread-command",
+          path: ".",
+          message:
+            "commands the analysis does not read name tools/check.ts, so no finding is reported about that file itself or the names it exports",
+        },
+      ]);
+      expect(report["unanswered_questions"]).toEqual([
+        { configuration: "tsconfig.json", questions: 1, declarations: 2 },
+      ]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "raise one note for the package across its scripts, nodemon's exec, workflow steps, git hooks and makefile recipes",
+    () => {
+      const got = analyze(
+        project({
+          ...COMMANDED,
+          "package.json": `${JSON.stringify({
+            name: "@example/commanded",
+            private: true,
+            type: "module",
+            scripts: { lint: 'node "$PWD/tools/lint.ts"' },
+            nodemonConfig: { exec: 'node "$PWD/tools/watch.ts"' },
+          })}\n`,
+          ...toolFile("lint"),
+          ...toolFile("watch"),
+          ...toolFile("step"),
+          ...toolFile("hook"),
+          ...toolFile("recipe"),
+          ".github/workflows/ci.yml":
+            'on: push\njobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n      - run: node "$PWD/tools/step.ts"\n',
+          ".husky/pre-commit": 'node "$PWD/tools/hook.ts"\n',
+          Makefile: 'check:\n\tnode "$(CURDIR)/tools/recipe.ts"\n',
+        }),
+        ["--exit-code=off"],
+        tmpdir(),
+      );
+      const report = reportOf(got);
+
+      expect(got.code, got.err).toBe(0);
+      expect(
+        findingsOf(got).filter((one) =>
+          String((one["position"] as Record<string, unknown>)["path"]).startsWith("tools/"),
+        ),
+      ).toEqual([]);
+      expect(
+        (report["notes"] as Record<string, unknown>[]).filter(
+          (one) => one["kind"] === "unread-command",
+        ),
+      ).toEqual([
+        {
+          kind: "unread-command",
+          path: ".",
+          message:
+            "commands the analysis does not read name tools/hook.ts, tools/lint.ts, tools/recipe.ts, tools/step.ts, tools/watch.ts, so no finding is reported about those files themselves or the names they export",
+        },
+      ]);
+      expect(report["unanswered_questions"]).toEqual([
+        { configuration: "tsconfig.json", questions: 1, declarations: 10 },
+      ]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it.each([
+    [
+      "a workflow step's working-directory",
+      {
+        ".github/workflows/ci.yml":
+          "on: push\njobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n      - run: node .\n        working-directory: tools/publish\n",
+      },
+    ],
+    [
+      "a workflow's default working-directory",
+      {
+        ".github/workflows/ci.yml":
+          "on: push\ndefaults:\n  run:\n    working-directory: tools/publish\njobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n      - run: node .\n",
+      },
+    ],
+    [
+      "a lefthook command's root",
+      {
+        "lefthook.yml":
+          'pre-commit:\n  commands:\n    check:\n      root: "tools/publish/"\n      run: node .\n',
+      },
+    ],
+  ])(
+    "hold the exports of the index file a command run in %s names by `.`",
+    (_source, written) => {
+      const got = analyze(
+        project({
+          ...COMMANDED,
+          "tools/publish/index.ts": "export function publishTool(): number {\n  return 1;\n}\n",
+          ...written,
+        }),
+        ["--exit-code=off"],
+        tmpdir(),
+      );
+      const report = reportOf(got);
+
+      expect(got.code, got.err).toBe(0);
+      expect(validate(report)).toEqual([]);
+      expect(
+        findingsOf(got).filter(
+          (one) =>
+            (one["position"] as Record<string, unknown>)["path"] === "tools/publish/index.ts",
+        ),
+      ).toEqual([]);
+      expect(
+        (report["notes"] as Record<string, unknown>[]).filter(
+          (one) => one["kind"] === "unread-command",
+        ),
+      ).toEqual([
+        {
+          kind: "unread-command",
+          path: ".",
+          message:
+            "commands the analysis does not read name tools/publish/index.ts, so no finding is reported about that file itself or the names it exports",
+        },
+      ]);
+    },
+    LOAD_TIMEOUT,
+  );
+});
+
+/** A package with no command string at all, and a file whose whole name is an extension. */
+const WITHOUT_COMMANDS = {
+  "deadset.json":
+    '{ "target": { "kind": "application" }, "ts": { "entry_files": ["src/main.ts"] } }\n',
+  "package.json": '{ "name": "@example/silent", "private": true, "type": "module" }\n',
+  "tsconfig.json": `${JSON.stringify({
+    ...(JSON.parse(TSCONFIG) as Record<string, unknown>),
+    include: undefined,
+    files: ["src/main.ts", "src/.ts"],
+  })}\n`,
+  "src/main.ts": "export {};\n",
+  "src/.ts": "export function dotNamed(): number {\n  return 1;\n}\n",
+};
+
+describe("a package with no command strings", () => {
+  it(
+    "holds none of its files, so a file whose whole name is an extension and its export are reported",
+    () => {
+      const got = analyze(project(WITHOUT_COMMANDS), ["--exit-code=off"], tmpdir());
+      const report = reportOf(got);
+
+      expect(got.code, got.err).toBe(0);
+      expect(validate(report)).toEqual([]);
+      expect(
+        findingsOf(got)
+          .filter((one) => (one["position"] as Record<string, unknown>)["path"] === "src/.ts")
+          .map((one) => [
+            one["code"],
+            one["confidence"],
+            (one["symbol"] as Record<string, unknown>)["name"],
+          ]),
+      ).toEqual([
+        ["DS1602", "certain", "src/.ts"],
+        ["DS1001", "certain", "dotNamed"],
+      ]);
+      expect(
+        (report["notes"] as Record<string, unknown>[]).filter(
+          (one) => one["kind"] === "unread-command",
+        ),
+      ).toEqual([]);
+    },
+    LOAD_TIMEOUT,
+  );
+});
+
 describe("a configuration that names no input", () => {
   it(
     "is dropped and named in the report where discovery derived it, and the rest is analyzed",

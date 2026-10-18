@@ -2,7 +2,7 @@
   "corpus_version": "6.0.0",
   "product": { "name": "deadset-ts", "version": "0.1.0", "language": "ts" },
   "result": "pass",
-  "totals": { "fixtures": 284, "pass": 281, "gap": 0, "fail": 0, "pending": 3 },
+  "totals": { "fixtures": 321, "pass": 298, "gap": 0, "fail": 0, "pending": 23 },
   "fixtures": [
     {
       "fixture": "abstract-member-through-this",
@@ -362,6 +362,25 @@
           },
           "suppression": { "suppressed": true, "stale": false }
         }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "checked-javascript-unresolved-import",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "unusedLib",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "used", "result": "pass", "actual": { "report": "none" } }
       ],
       "unexpected": []
     },
@@ -952,6 +971,44 @@
         },
         { "symbol": "ArrayIterator", "result": "pass", "actual": { "report": "none" } },
         { "symbol": "BagIterator", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "consumer-package-only",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "helper", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "unusedHelper",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "consumer-package-only-workspace-members",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "Box.close",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "method",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "Box.open", "result": "pass", "actual": { "report": "none" } }
       ],
       "unexpected": []
     },
@@ -1948,6 +2005,12 @@
       "unexpected": []
     },
     {
+      "fixture": "dependencies-not-installed",
+      "result": "pass",
+      "expectations": [],
+      "unexpected": []
+    },
+    {
       "fixture": "dependency-commands-and-peers",
       "result": "pass",
       "expectations": [
@@ -2083,6 +2146,69 @@
         }
       ],
       "unexpected": []
+    },
+    {
+      "fixture": "dependency-preloaded-after-a-launcher",
+      "result": "pending",
+      "expectations": [
+        {
+          "symbol": "Dotenv",
+          "result": "fail",
+          "actual": { "report": "DS1701", "confidence": "certain" },
+          "message": "want no finding at target/package.json:18, got DS1701"
+        },
+        {
+          "symbol": "GlobalAgent",
+          "result": "fail",
+          "actual": { "report": "DS1701", "confidence": "certain" },
+          "message": "want no finding at target/package.json:19, got DS1701"
+        },
+        {
+          "symbol": "ModuleAlias",
+          "result": "fail",
+          "actual": { "report": "DS1701", "confidence": "certain" },
+          "message": "want no finding at target/package.json:20, got DS1701"
+        },
+        {
+          "symbol": "Newrelic",
+          "result": "pass",
+          "actual": {
+            "report": "DS1701",
+            "symbol_kind": "dependency",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "details": { "dependency_class": "dev-dependency" }
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "SourceMapSupport",
+          "result": "fail",
+          "actual": { "report": "DS1701", "confidence": "certain" },
+          "message": "want no finding at target/package.json:22, got DS1701"
+        },
+        {
+          "symbol": "TsNode",
+          "result": "fail",
+          "actual": { "report": "DS1701", "confidence": "certain" },
+          "message": "want no finding at target/package.json:23, got DS1701"
+        },
+        {
+          "symbol": "TsconfigPaths",
+          "result": "fail",
+          "actual": { "report": "DS1701", "confidence": "certain" },
+          "message": "want no finding at target/package.json:24, got DS1701"
+        },
+        { "symbol": "Tsx", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": [
+        { "file": "target/package.json", "line": 18, "report": "DS1701" },
+        { "file": "target/package.json", "line": 19, "report": "DS1701" },
+        { "file": "target/package.json", "line": 20, "report": "DS1701" },
+        { "file": "target/package.json", "line": 22, "report": "DS1701" },
+        { "file": "target/package.json", "line": 23, "report": "DS1701" },
+        { "file": "target/package.json", "line": 24, "report": "DS1701" }
+      ]
     },
     {
       "fixture": "dependency-preloaded-by-a-runtime-flag",
@@ -3002,6 +3128,25 @@
       "unexpected": []
     },
     {
+      "fixture": "fixture-with-broken-import",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "unusedLib",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "used", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "function-literal-called-by-name",
       "result": "pass",
       "expectations": [
@@ -3645,6 +3790,25 @@
       "unexpected": []
     },
     {
+      "fixture": "jsconfig-discovery",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "unusedUtil",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "used", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "key-comparison",
       "result": "pass",
       "expectations": [
@@ -4085,6 +4249,67 @@
       "unexpected": []
     },
     {
+      "fixture": "module-a-script-names-in-its-text",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "CiCheck", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "CiFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Configured", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "EntryLocal",
+          "result": "pass",
+          "actual": {
+            "report": "DS1002",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "GenFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Generate", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "HookCheck", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "HookFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "NodeWord", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "NodeWordFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "SetUp", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "SetUpFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "SetUpLocal",
+          "result": "pass",
+          "actual": {
+            "report": "DS1002",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "Stray",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "StrayFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "module-declaration-aliases-apart",
       "result": "pass",
       "expectations": [
@@ -4190,6 +4415,54 @@
         }
       ],
       "unexpected": []
+    },
+    {
+      "fixture": "module-preloaded-behind-an-unread-launcher",
+      "result": "pending",
+      "expectations": [
+        { "symbol": "Configured", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "NeverLoaded",
+          "result": "fail",
+          "actual": { "report": "DS1701", "confidence": "certain" },
+          "message": "want no finding at target/package.json:11, got DS1701"
+        },
+        { "symbol": "SetUp", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Stray",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "StrayFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        {
+          "symbol": "StrayPackage",
+          "result": "pass",
+          "actual": {
+            "report": "DS1701",
+            "symbol_kind": "dependency",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "details": { "dependency_class": "dev-dependency" }
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": [{ "file": "target/package.json", "line": 11, "report": "DS1701" }]
     },
     {
       "fixture": "module-url-augmented-global",
@@ -4623,6 +4896,25 @@
       "unexpected": []
     },
     {
+      "fixture": "optional-require-in-try",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "unusedLib",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "used", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "outside-value-target-type",
       "result": "pass",
       "expectations": [
@@ -4805,6 +5097,303 @@
           },
           "suppression": { "suppressed": true, "stale": false }
         }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "package-only-build-output-excluded",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "dead",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "deadLong",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "used", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "package-only-bundler-runtime",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "helper", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "unusedHelper",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "package-only-commonjs",
+      "result": "pending",
+      "expectations": [
+        {
+          "symbol": "CFile",
+          "result": "fail",
+          "actual": { "report": "DS1602", "confidence": "certain" },
+          "message": "want no finding at target/c.js:1, got DS1602"
+        },
+        {
+          "symbol": "liveC",
+          "result": "fail",
+          "actual": { "report": "DS1002", "confidence": "probable" },
+          "message": "want no finding at target/c.js:2, got DS1002"
+        }
+      ],
+      "unexpected": [
+        { "file": "target/c.js", "line": 1, "report": "DS1602" },
+        { "file": "target/c.js", "line": 2, "report": "DS1002" },
+        { "file": "target/c.js", "line": 3, "report": "DS1002" }
+      ]
+    },
+    {
+      "fixture": "package-only-convention-output-excluded",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "dead",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "used", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "package-only-declaration-beside-javascript",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "LegacyFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        {
+          "symbol": "MainFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        {
+          "symbol": "legacyDead",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "main",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "variable",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "package-only-discovery",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "OrphanFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        { "symbol": "helper", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "orphan",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "variable",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "unusedExport",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "unusedTool",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "used", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "package-only-imported-minified-file",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "min", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "unusedMin",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["generated-file"] }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "package-only-node-resolution",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "BrowserFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        {
+          "symbol": "browserImpl",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "nodeImpl", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "unusedNode",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "package-only-node-runtime",
+      "result": "pending",
+      "expectations": [
+        {
+          "symbol": "UtilFile",
+          "result": "fail",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "message": "confidence want \"possible\" got \"certain\"; reachability_class want \"possible\" got \"certain\""
+        },
+        {
+          "symbol": "helper",
+          "result": "fail",
+          "actual": { "report": "DS1001", "confidence": "certain" },
+          "message": "want no finding at target/util.js:2, got DS1001"
+        }
+      ],
+      "unexpected": [{ "file": "target/util.js", "line": 2, "report": "DS1001" }]
+    },
+    {
+      "fixture": "package-only-unread-node-command",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "UtilFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "helper", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "package-only-workspace-members",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "unused",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "used", "result": "pass", "actual": { "report": "none" } }
       ],
       "unexpected": []
     },
@@ -5196,6 +5785,111 @@
         }
       ],
       "unexpected": []
+    },
+    {
+      "fixture": "proto-facts-leave-report-unchanged-ts",
+      "result": "pending",
+      "expectations": [],
+      "unexpected": [],
+      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+    },
+    {
+      "fixture": "proto-facts-unevaluated-before-serializers",
+      "result": "pending",
+      "expectations": [],
+      "unexpected": [],
+      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+    },
+    {
+      "fixture": "proto-field-read-in-one-language",
+      "result": "pending",
+      "expectations": [],
+      "unexpected": [],
+      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+    },
+    {
+      "fixture": "proto-field-written-only",
+      "result": "pending",
+      "expectations": [],
+      "unexpected": [],
+      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+    },
+    {
+      "fixture": "proto-hand-serializer-reads",
+      "result": "pending",
+      "expectations": [],
+      "unexpected": [],
+      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+    },
+    {
+      "fixture": "proto-oneof-protobuf-es",
+      "result": "pending",
+      "expectations": [],
+      "unexpected": [],
+      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+    },
+    {
+      "fixture": "proto-protobuf-es-v2-tags",
+      "result": "pending",
+      "expectations": [],
+      "unexpected": [],
+      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+    },
+    {
+      "fixture": "proto-protojson-unmarshal-caps",
+      "result": "pending",
+      "expectations": [],
+      "unexpected": [],
+      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+    },
+    {
+      "fixture": "proto-rpc-called-from-ts",
+      "result": "pending",
+      "expectations": [],
+      "unexpected": [],
+      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+    },
+    {
+      "fixture": "proto-transport-reads-nothing",
+      "result": "pending",
+      "expectations": [],
+      "unexpected": [],
+      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+    },
+    {
+      "fixture": "proto-ts-create-literal-writes",
+      "result": "pending",
+      "expectations": [],
+      "unexpected": [],
+      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+    },
+    {
+      "fixture": "proto-ts-equals-reads",
+      "result": "pending",
+      "expectations": [],
+      "unexpected": [],
+      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+    },
+    {
+      "fixture": "proto-ts-proto-default-rpc-only",
+      "result": "pending",
+      "expectations": [],
+      "unexpected": [],
+      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+    },
+    {
+      "fixture": "proto-ts-proto-message-fns",
+      "result": "pending",
+      "expectations": [],
+      "unexpected": [],
+      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+    },
+    {
+      "fixture": "proto-ts-serialization-contract",
+      "result": "pending",
+      "expectations": [],
+      "unexpected": [],
+      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
     },
     {
       "fixture": "published-accessor-pair-types",
@@ -7958,6 +8652,13 @@
         }
       ],
       "unexpected": []
+    },
+    {
+      "fixture": "ts-generated-fact-evidence",
+      "result": "pending",
+      "expectations": [],
+      "unexpected": [],
+      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
     },
     {
       "fixture": "type-argument-reaches-its-constraint",

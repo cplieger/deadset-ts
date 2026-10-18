@@ -54,6 +54,7 @@ import type { DependencySection, Module } from "./ref.ts";
 import { UNANSWERED } from "./query.ts";
 import type { Handle, ProjectView } from "./session.ts";
 import { sourceFilesOf, type SourceFiles } from "./source-files.ts";
+import { manifestCommands } from "./manifest.ts";
 import { workflowCommands, workflowTokens } from "./workflow-steps.ts";
 import { bytewise } from "./text/compare.ts";
 import { isRecord } from "./json-document.ts";
@@ -893,28 +894,6 @@ const LAUNCHERS: ReadonlySet<string> = new Set(["cross-env", "env", "npx"]);
 const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/u;
 
 /**
- * The command strings one manifest runs: each of its `scripts`, and the `exec` command of
- * nodemon's configuration, in the manifest's `nodemonConfig` or the `nodemon.json` beside
- * it, which nodemon runs the watched script with:
- * https://github.com/remy/nodemon#config-files
- */
-function manifestCommands(
-  host: Host,
-  dir: string,
-  manifest: Record<string, unknown>,
-): readonly string[] {
-  const scripts = manifest["scripts"];
-  const nodemon = [
-    manifest["nodemonConfig"],
-    readDocument(host, joinPath(dir, "nodemon.json"))?.value,
-  ];
-  return [
-    ...(isRecord(scripts) ? Object.values(scripts) : []),
-    ...nodemon.map((config) => (isRecord(config) ? config["exec"] : undefined)),
-  ].filter((command): command is string => typeof command === "string");
-}
-
-/**
  * The packages `scripts` preload by a runtime flag's bare module specifier, a flag
  * counting only in a command whose program passes it to the runtime, and for Node only
  * before the script it runs, whose own arguments come after it.
@@ -1069,7 +1048,9 @@ export function dependenciesOf(
       continue;
     }
     const tokens = scriptTokensOf(read.value);
-    const preloads = preloadsOf(manifestCommands(host, dir, read.value));
+    const preloads = preloadsOf(
+      manifestCommands(host, dir, read.value).map(({ command }) => command),
+    );
     for (const dependency of declaredIn(read.text, read.value, path, scopeOf(path))) {
       const found = installedOf(host, dir, dependency.name);
       if (found === undefined && uninstalledHere.has(dir)) {

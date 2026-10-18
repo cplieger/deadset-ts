@@ -29,6 +29,13 @@ function configOf(target: string): ReturnType<typeof resolve> {
 /** The configuration of a written application, which applies no configuration rule of its own. */
 const APPLICATION = '{ "target": { "kind": "application" } }';
 
+/**
+ * The same application declaring its root `tsconfig.json` as its one project, so no program
+ * is formed for its JavaScript files.
+ */
+const DECLARED =
+  '{ "target": { "kind": "application" }, "analysis": { "configurations": [{ "id": "app", "project": "tsconfig.json" }] } }';
+
 /** Every file root of one target a configuration rule makes, as `path kind source`. */
 function fileRoots(target: string, repository?: string): string[] {
   const host = nodeHost();
@@ -210,7 +217,7 @@ describe("a configuration file no program holds", () => {
     });
     try {
       const { config } = resolve({
-        repository: { text: '{ "target": { "kind": "application" } }', label: "deadset.json" },
+        repository: { text: DECLARED, label: "deadset.json" },
       });
       const emit = EMITTERS.get("dependencies-and-module-machinery");
       const unused =
@@ -239,7 +246,7 @@ describe("a configuration file no program holds", () => {
     });
     try {
       const { config } = resolve({
-        repository: { text: '{ "target": { "kind": "application" } }', label: "deadset.json" },
+        repository: { text: DECLARED, label: "deadset.json" },
       });
       const emit = EMITTERS.get("dependencies-and-module-machinery");
       const unused =
@@ -271,7 +278,7 @@ describe("a configuration file no program holds", () => {
       "bare/module-bare.ts": "export const bare = 1;\n",
     });
 
-    expect(fileRoots(root, APPLICATION)).toEqual([
+    expect(fileRoots(root, DECLARED)).toEqual([
       "sub/json-named.ts configuration-string ./json-named.ts",
       "sub/module-named.ts configuration-string ./module-named.ts",
     ]);
@@ -292,7 +299,7 @@ describe("a configuration file no program holds", () => {
       "app/src/above-module.ts": "export const above = 1;\n",
     });
 
-    expect(fileRoots(join(root, "app"), APPLICATION)).toEqual([
+    expect(fileRoots(join(root, "app"), DECLARED)).toEqual([
       "src/beside.ts configuration-string ./src/beside.ts",
     ]);
   });
@@ -309,7 +316,7 @@ describe("a configuration file no program holds", () => {
         'import config from "./tool.config.mjs";\nexport default ["@example/cycled", config];\n',
     });
 
-    expect(unusedOf(root, APPLICATION)).toEqual(["@example/held"]);
+    expect(unusedOf(root, DECLARED)).toEqual(["@example/held"]);
   });
 
   it("follows a JavaScript extension of a relative specifier to its TypeScript counterpart", () => {
@@ -328,9 +335,36 @@ describe("a configuration file no program holds", () => {
       "src/by-ts.ts": "export const one = 1;\n",
     });
 
-    expect(fileRoots(root, APPLICATION)).toEqual([
+    expect(fileRoots(root, DECLARED)).toEqual([
       "src/by-mts.ts configuration-string ../src/by-mts.ts",
       "src/by-rules.ts configuration-string ../src/by-rules.ts",
+    ]);
+  });
+});
+
+describe("a configuration module a program formed for JavaScript files holds", () => {
+  it("is a root, and roots each file its strings and the strings of the modules it imports name", () => {
+    const root = written({
+      "package.json": '{ "name": "@example/app", "type": "module" }\n',
+      "tsconfig.json":
+        '{ "compilerOptions": { "strict": true, "module": "NodeNext", "moduleResolution": "nodenext", "noEmit": true }, "include": ["src/**/*.ts"] }\n',
+      "src/main.ts": "export const main = 1;\n",
+      "tool.config.mjs":
+        'export { rules } from "./lint/rules.js";\nexport { style } from "./lint/style.mjs";\n',
+      "lint/rules.ts": 'export const rules = { entry: "../src/by-rules.ts" };\n',
+      "lint/style.mts": 'export const style = "../src/by-mts.ts";\n',
+      "lint/style.ts": 'export const style = "../src/by-ts.ts";\n',
+      "src/by-rules.ts": "export const one = 1;\n",
+      "src/by-mts.ts": "export const one = 1;\n",
+      "src/by-ts.ts": "export const one = 1;\n",
+    });
+
+    expect(fileRoots(root, APPLICATION)).toEqual([
+      "lint/rules.ts configuration-string ./lint/rules.js",
+      "lint/style.mts configuration-string ./lint/style.mjs",
+      "src/by-mts.ts configuration-string ../src/by-mts.ts",
+      "src/by-rules.ts configuration-string ../src/by-rules.ts",
+      "tool.config.mjs configuration-file <stem>.config.<ext>",
     ]);
   });
 });

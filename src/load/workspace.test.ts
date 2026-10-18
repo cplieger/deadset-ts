@@ -303,6 +303,25 @@ describe("findWorkspace", () => {
     );
   });
 
+  it("reads a member's jsconfig files as configurations, less a jsconfig.json beside a tsconfig.json", () => {
+    const root = writeTree({
+      ".git/": "",
+      "package.json": JSON.stringify({ name: "root", workspaces: ["a", "b"] }),
+      "a/package.json": named("a"),
+      "a/tsconfig.json": "{}",
+      "a/jsconfig.json": "{}",
+      "b/package.json": named("b"),
+      "b/jsconfig.json": "{}",
+    });
+    const members = findWorkspace(nodeHost(), root, (configFile) => ({
+      fileNames: [configFile],
+    }))?.members.map((member) =>
+      member.configurations.map((one) => [...one.fileNames].join().slice(root.length + 1)),
+    );
+
+    expect(members).toEqual([[], ["a/tsconfig.json"], ["b/jsconfig.json"]]);
+  });
+
   it("refuses a workspaces array holding anything but strings, naming the manifest", () => {
     const root = writeTree({
       ".git/": "",

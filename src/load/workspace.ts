@@ -5,7 +5,7 @@
  * compiler configurations in its directory.
  */
 
-import { isConfigFile } from "./discover.ts";
+import { configFilesIn } from "./discover.ts";
 import { failureExit } from "../failure.ts";
 import type { EmitLayout } from "./emit-map.ts";
 import { commonDirectory } from "./emit-map.ts";
@@ -13,7 +13,7 @@ import type { Host } from "../host.ts";
 import { ancestors, dirnamePath, joinPath, relativePath } from "../paths.ts";
 import { bytewise } from "../text/compare.ts";
 import { isRecord } from "../json-document.ts";
-import { directoriesIn, filesIn, repositoryOf } from "../fs/tree.ts";
+import { directoriesIn, repositoryOf } from "../fs/tree.ts";
 import {
   holdsManifest,
   inInstalledPackages,
@@ -49,7 +49,10 @@ export interface WorkspaceMember {
   /** Whether the manifest forbids publishing it, so nothing outside the workspace imports it. */
   readonly private: boolean;
   readonly manifest: Readonly<Record<string, unknown>>;
-  /** Every `tsconfig*.json` directly in its directory that parses, by file name. */
+  /**
+   * The programs the run forms in its directory, then every configuration file directly in
+   * it a derived matrix opens that parses, by file name.
+   */
   readonly configurations: readonly MemberConfiguration[];
 }
 
@@ -245,7 +248,7 @@ function configurationsOf(
   dir: string,
   parse: (configFile: string) => ParsedLayout | undefined,
 ): readonly MemberConfiguration[] {
-  return filesIn(host, dir, isConfigFile).flatMap((name) => {
+  return configFilesIn(host, dir).flatMap((name) => {
     const configFile = joinPath(dir, name);
     const parsed = parse(configFile);
     return parsed === undefined
@@ -337,6 +340,10 @@ export function findWorkspace(
   members.sort((a, b) =>
     a.dir === declared.root ? -1 : b.dir === declared.root ? 1 : bytewise(a.dir, b.dir),
   );
+  return assembled(host, declared.root, members);
+}
+
+function assembled(host: Host, root: string, members: readonly WorkspaceMember[]): Workspace {
   const named = new Map<string, WorkspaceMember[]>();
   for (const member of members) {
     named.set(member.name, [...(named.get(member.name) ?? []), member]);
@@ -353,7 +360,7 @@ export function findWorkspace(
     return found;
   };
   return {
-    root: declared.root,
+    root,
     members,
     named,
     memberOf: (path) => {
@@ -361,6 +368,34 @@ export function findWorkspace(
       return scope === undefined ? undefined : byDir.get(scope);
     },
   };
+}
+
+/**
+ * The workspace with the programs the run forms put first among each member's configurations,
+ * by the member's directory: a formed program has no file on disk to list, so its file list
+ * is what makes a member's JavaScript its source.
+ */
+export function withFormed(
+  host: Host,
+  workspace: Workspace,
+  formed: ReadonlyMap<string, readonly ParsedLayout[]>,
+): Workspace {
+  return assembled(
+    host,
+    workspace.root,
+    workspace.members.map((member) => {
+      const own = formed.get(member.dir) ?? [];
+      return own.length === 0
+        ? member
+        : {
+            ...member,
+            configurations: [
+              ...own.map((layout) => ({ fileNames: new Set(layout.fileNames) })),
+              ...member.configurations,
+            ],
+          };
+    }),
+  );
 }
 
 /**
