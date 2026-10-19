@@ -22,7 +22,7 @@
     "create-vite": "9.2.1",
     "expo-router": "58.0.22",
     "next": "16.4.2",
-    "nuxt": "4.6.1",
+    "nuxt": "4.6.2",
     "storybook": "10.6.2",
     "sv": "1.1.1",
     "sv-sveltekit-2": "npm:sv@0.17.1",
