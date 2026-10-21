@@ -23,7 +23,7 @@
     "expo-router": "57.0.25",
     "next": "16.4.0",
     "nuxt": "4.6.0",
-    "storybook": "10.6.1",
+    "storybook": "10.6.2",
     "sv": "1.1.1",
     "sv-sveltekit-2": "npm:sv@0.17.1",
     "sveltekit-2": "npm:@sveltejs/kit@2.70.3"
