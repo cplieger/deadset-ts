@@ -5,7 +5,7 @@
   "description": "The pinned generators of the official starter projects the convention rows are checked against, and the pinned version of each row's enabling package. Nothing installs this manifest: the starter test runs each generator at the version here and sets the enabling package to the version here.",
   "devDependencies": {
     "@builder.io/qwik-city": "1.20.3",
-    "@react-router/dev": "8.5.0",
+    "@react-router/dev": "8.5.1",
     "@remix-run/dev": "2.17.5",
     "@solidjs/start": "2.1.0",
     "@sveltejs/kit": "3.1.0",
@@ -15,7 +15,7 @@
     "create-next-app": "16.4.3",
     "create-nuxt": "4.0.1",
     "create-qwik": "1.20.3",
-    "create-react-router": "8.5.0",
+    "create-react-router": "8.5.1",
     "create-remix": "2.16.8",
     "create-solid": "0.12.0",
     "create-storybook": "10.6.5",
