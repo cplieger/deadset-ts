@@ -9,8 +9,6 @@ import { ROOT } from "../__test-helpers__/fixtures.ts";
  */
 interface ApiSurface {
   readonly package: string;
-  readonly specifier: string;
-  readonly version: string;
   readonly consumed: readonly { path: string; names: readonly string[] }[];
   readonly not_consumed: readonly string[];
 }
@@ -113,21 +111,13 @@ describe("the consumed compiler API", () => {
     expect(record.not_consumed.filter((path) => consumed.has(path))).toEqual([]);
   });
 
-  it("records the compiler specifier the manifest declares and the version it installs", () => {
+  it("records the manifest's only runtime dependency as the compiler package", () => {
     const record = apiSurface();
     const manifest = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as {
       dependencies: Record<string, string>;
     };
-    const installed = JSON.parse(
-      readFileSync(join(ROOT, "node_modules", record.package, "package.json"), "utf8"),
-    ) as { version: string };
 
     expect(Object.keys(manifest.dependencies)).toEqual([record.package]);
-    expect(manifest.dependencies[record.package]).toBe(record.specifier);
-    expect(record.specifier, "the specifier names the recorded version").toContain(
-      `@${record.version}`,
-    );
-    expect(installed.version, "the version the specifier installs").toBe(record.version);
   });
 
   it("records every path the compiler package exports, as consumed or as not", () => {

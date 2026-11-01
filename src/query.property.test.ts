@@ -332,7 +332,7 @@ describe("a question the checker does not answer", () => {
         },
       ),
       // Every run analyzes the library, so the analysis, not the draw, sets the time.
-      { numRuns: 100, interruptAfterTimeLimit: 90_000 },
+      { numRuns: 100, plugins: [fc.interruptAfterTimeLimit(90_000, { failOnInterrupt: true })] },
     );
   }, 120_000);
 });
