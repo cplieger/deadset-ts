@@ -20,6 +20,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "gen": "node scripts/gen-contract.ts",
+    "vendor": "node scripts/vendor-unbash.ts",
     "prepack": "npm run build",
     "typecheck": "tsc -p tsconfig.json",
     "typecheck:tests": "tsc -p tsconfig.test.json",
@@ -72,6 +73,7 @@
   "files": [
     "LICENSE",
     "NOTICE",
+    "THIRD_PARTY_NOTICES.md",
     "dist/",
     "src/",
     "!src/**/*.test.ts",

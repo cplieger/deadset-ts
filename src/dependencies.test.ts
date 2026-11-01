@@ -167,6 +167,32 @@ describe("dependenciesOf", () => {
     ]);
   });
 
+  it("uses a dependency the whole text of a workflow file, a git hook or nodemon's configuration names where no command reads it", () => {
+    const host: Host = {
+      ...hostWith({
+        "/repo/package.json": JSON.stringify({
+          nodemonConfig: { exec: "node", events: { start: "watcher --once" } },
+          devDependencies: { "setup-tool": "1", watcher: "1", "hook-noted": "1", idle: "1" },
+        }),
+        "/repo/.github/workflows/ci.yaml":
+          'jobs:\n  a:\n    env:\n      TOOL: setup-tool\n    steps:\n      - run: npx "$TOOL"\n',
+        "/repo/.husky/pre-commit": "#!/bin/sh\n# hook-noted\nnpm test\n",
+      }),
+      readDirectory: (path) =>
+        path === "/repo/.github/workflows"
+          ? [{ name: "ci.yaml", directory: false }]
+          : path === "/repo/.husky"
+            ? [{ name: "pre-commit", directory: false }]
+            : [],
+    };
+
+    expect(used(dependenciesOf(host, "/repo", [], []))).toEqual([
+      "package.json hook-noted",
+      "package.json setup-tool",
+      "package.json watcher",
+    ]);
+  });
+
   it("uses each declared peer of a needed or run dependency, optional or not, through the peers of that peer, and no peer only unneeded dependencies name", () => {
     const host = hostWith({
       "/repo/package.json": JSON.stringify({

@@ -259,7 +259,7 @@ describe("findWorkspace", () => {
     const root = writeTree({
       ".git/": "",
       "package.json": named("root"),
-      "pnpm-workspace.yaml": "packages: &all\n  - a\n",
+      "pnpm-workspace.yaml": "packages: !!seq\n  - a\n",
     });
 
     expect(() => findWorkspace(nodeHost(), root, NO_LAYOUT)).toThrow(FailureExit);

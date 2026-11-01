@@ -40,11 +40,11 @@ import type { Host } from "./host.ts";
 import { ancestors, dirnamePath, relativePath, resolvePath } from "./paths.ts";
 import type { SourceFiles } from "./source-files.ts";
 import { bytewise } from "./text/compare.ts";
-import { isRecord } from "./json-document.ts";
 import { unwrapped } from "./unwrap.ts";
 import { holdsManifest, inInstalledPackages, manifestAt } from "./fs/manifest.ts";
 import { globExpression } from "./text/glob.ts";
-import { scriptTokens } from "./text/shell.ts";
+import { pathsNamed, readCommands } from "./commands/read.ts";
+import { manifestCommands } from "./manifest.ts";
 
 /** One bundler API: the module, the functions it exports that build, and the option naming entries. */
 interface BundlerAPI {
@@ -473,19 +473,12 @@ function scriptEntries(file: SourceFile, dir: string, files: SourceFiles): reado
   return found;
 }
 
-/** The modules one manifest's scripts run, by absolute path, each below the target root. */
+/** The modules one manifest's command strings run or name, by absolute path, each below the target root. */
 function scriptModules(host: Host, root: string, dir: string): readonly string[] {
-  const scripts = manifestAt(host, dir)?.["scripts"];
-  if (!isRecord(scripts)) {
-    return [];
-  }
+  const manifest = manifestAt(host, dir);
   const found = new Set<string>();
-  for (const command of Object.values(scripts)) {
-    if (typeof command !== "string") {
-      continue;
-    }
-    for (const token of scriptTokens(command)) {
-      const path = resolvePath(dir, token);
+  for (const { command } of manifest === undefined ? [] : manifestCommands(host, dir, manifest)) {
+    for (const { path } of pathsNamed(readCommands(command, dir))) {
       if (
         MODULE_EXTENSION.test(path) &&
         relativePath(root, path) !== undefined &&

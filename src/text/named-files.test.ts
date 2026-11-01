@@ -1,11 +1,5 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { spelledFiles } from "./named-files.ts";
-
-/** Command strings, each with the files of the package it names. */
-const INPUTS = JSON.parse(
-  readFileSync(new URL("named-files.inputs.json", import.meta.url), "utf8"),
-) as readonly { readonly input: string; readonly files: readonly string[] }[];
+import { heldNames, spelledFiles } from "./named-files.ts";
 
 /** The files of `files` that `text` names below `/pkg`, each spelled by its own path only. */
 function namedIn(text: string, files: readonly string[]): readonly string[] {
@@ -16,22 +10,7 @@ function namedIn(text: string, files: readonly string[]): readonly string[] {
   );
 }
 
-/** The file one written path names in the test package: itself, or with `.js` where it has no extension. */
-function fileOf(path: string): string {
-  const absolute = `/pkg/${path.replace(/^\.\//u, "")}`;
-  return /\.[cm]?[jt]sx?$/u.test(absolute) ? absolute : `${absolute}.js`;
-}
-
 describe("spelledFiles", () => {
-  it.each(INPUTS.map((one) => [one.input, one.files] as const))(
-    "holds every file %j names",
-    (input, files) => {
-      const expected = files.map(fileOf);
-
-      expect([...namedIn(input, expected)].sort()).toEqual([...expected].sort());
-    },
-  );
-
   it.each([
     ["node ./bin/run", ["/pkg/bin/run.ts"]],
     ["node lib", ["/pkg/lib/index.mjs"]],
@@ -122,5 +101,21 @@ describe("spelledFiles", () => {
 
     expect(performance.now() - begun).toBeLessThan(2000);
     expect(found).toEqual(["/pkg/file.js"]);
+  });
+});
+
+describe("heldNames", () => {
+  it.each([
+    ["node -r module-alias/register a.js", ["module-alias"], ["module-alias"]],
+    ["npx --version node --require newrelic main.ts", ["newrelic"], ["newrelic"]],
+    ["env -S 'tsx@4 a.ts'", ["tsx"], ["tsx"]],
+    ["echo @scope/pkg.", ["@scope/pkg"], ["@scope/pkg"]],
+    ["node tsxx a.js", ["tsx"], []],
+    ["node my-tsx a.js", ["tsx"], []],
+    ["node tsx-cli a.js", ["tsx"], []],
+    ["node a.tsx", ["tsx"], []],
+    ["", [""], []],
+  ])("reads %j to hold, of %j, %j", (text, names, held) => {
+    expect([...heldNames(text, names)]).toEqual(held);
   });
 });

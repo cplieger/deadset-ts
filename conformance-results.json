@@ -2,7 +2,7 @@
   "corpus_version": "6.0.0",
   "product": { "name": "deadset-ts", "version": "0.1.0", "language": "ts" },
   "result": "pass",
-  "totals": { "fixtures": 321, "pass": 298, "gap": 0, "fail": 0, "pending": 23 },
+  "totals": { "fixtures": 328, "pass": 307, "gap": 0, "fail": 0, "pending": 21 },
   "fixtures": [
     {
       "fixture": "abstract-member-through-this",
@@ -2149,66 +2149,18 @@
     },
     {
       "fixture": "dependency-preloaded-after-a-launcher",
-      "result": "pending",
+      "result": "pass",
       "expectations": [
-        {
-          "symbol": "Dotenv",
-          "result": "fail",
-          "actual": { "report": "DS1701", "confidence": "certain" },
-          "message": "want no finding at target/package.json:18, got DS1701"
-        },
-        {
-          "symbol": "GlobalAgent",
-          "result": "fail",
-          "actual": { "report": "DS1701", "confidence": "certain" },
-          "message": "want no finding at target/package.json:19, got DS1701"
-        },
-        {
-          "symbol": "ModuleAlias",
-          "result": "fail",
-          "actual": { "report": "DS1701", "confidence": "certain" },
-          "message": "want no finding at target/package.json:20, got DS1701"
-        },
-        {
-          "symbol": "Newrelic",
-          "result": "pass",
-          "actual": {
-            "report": "DS1701",
-            "symbol_kind": "dependency",
-            "confidence": "certain",
-            "reachability_class": "certain",
-            "details": { "dependency_class": "dev-dependency" }
-          },
-          "suppression": { "suppressed": true, "stale": false }
-        },
-        {
-          "symbol": "SourceMapSupport",
-          "result": "fail",
-          "actual": { "report": "DS1701", "confidence": "certain" },
-          "message": "want no finding at target/package.json:22, got DS1701"
-        },
-        {
-          "symbol": "TsNode",
-          "result": "fail",
-          "actual": { "report": "DS1701", "confidence": "certain" },
-          "message": "want no finding at target/package.json:23, got DS1701"
-        },
-        {
-          "symbol": "TsconfigPaths",
-          "result": "fail",
-          "actual": { "report": "DS1701", "confidence": "certain" },
-          "message": "want no finding at target/package.json:24, got DS1701"
-        },
+        { "symbol": "Dotenv", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "GlobalAgent", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "ModuleAlias", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Newrelic", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "SourceMapSupport", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "TsNode", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "TsconfigPaths", "result": "pass", "actual": { "report": "none" } },
         { "symbol": "Tsx", "result": "pass", "actual": { "report": "none" } }
       ],
-      "unexpected": [
-        { "file": "target/package.json", "line": 18, "report": "DS1701" },
-        { "file": "target/package.json", "line": 19, "report": "DS1701" },
-        { "file": "target/package.json", "line": 20, "report": "DS1701" },
-        { "file": "target/package.json", "line": 22, "report": "DS1701" },
-        { "file": "target/package.json", "line": 23, "report": "DS1701" },
-        { "file": "target/package.json", "line": 24, "report": "DS1701" }
-      ]
+      "unexpected": []
     },
     {
       "fixture": "dependency-preloaded-by-a-runtime-flag",
@@ -2358,7 +2310,7 @@
       "expectations": [
         { "symbol": "HookTool", "result": "pass", "actual": { "report": "none" } },
         {
-          "symbol": "NeverRun",
+          "symbol": "IdleTool",
           "result": "pass",
           "actual": {
             "report": "DS1701",
@@ -2369,6 +2321,7 @@
           },
           "suppression": { "suppressed": true, "stale": false }
         },
+        { "symbol": "NeverRun", "result": "pass", "actual": { "report": "none" } },
         { "symbol": "StagedLint", "result": "pass", "actual": { "report": "none" } }
       ],
       "unexpected": []
@@ -3901,28 +3854,8 @@
       "expectations": [
         { "symbol": "AppFile", "result": "pass", "actual": { "report": "none" } },
         { "symbol": "GenFile", "result": "pass", "actual": { "report": "none" } },
-        {
-          "symbol": "UnusedFile",
-          "result": "pass",
-          "actual": {
-            "report": "DS1602",
-            "symbol_kind": "file",
-            "confidence": "certain",
-            "reachability_class": "certain"
-          }
-        },
-        {
-          "symbol": "unused",
-          "result": "pass",
-          "actual": {
-            "report": "DS1001",
-            "symbol_kind": "variable",
-            "confidence": "certain",
-            "reachability_class": "certain",
-            "liveness_relation": "reference-counting"
-          },
-          "suppression": { "suppressed": true, "stale": false }
-        }
+        { "symbol": "UnusedFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "unused", "result": "pass", "actual": { "report": "none" } }
       ],
       "unexpected": []
     },
@@ -4418,15 +4351,10 @@
     },
     {
       "fixture": "module-preloaded-behind-an-unread-launcher",
-      "result": "pending",
+      "result": "pass",
       "expectations": [
         { "symbol": "Configured", "result": "pass", "actual": { "report": "none" } },
-        {
-          "symbol": "NeverLoaded",
-          "result": "fail",
-          "actual": { "report": "DS1701", "confidence": "certain" },
-          "message": "want no finding at target/package.json:11, got DS1701"
-        },
+        { "symbol": "NeverLoaded", "result": "pass", "actual": { "report": "none" } },
         { "symbol": "SetUp", "result": "pass", "actual": { "report": "none" } },
         {
           "symbol": "Stray",
@@ -4462,7 +4390,7 @@
           "suppression": { "suppressed": true, "stale": false }
         }
       ],
-      "unexpected": [{ "file": "target/package.json", "line": 11, "report": "DS1701" }]
+      "unexpected": []
     },
     {
       "fixture": "module-url-augmented-global",
@@ -6681,6 +6609,118 @@
             "confidence": "certain",
             "reachability_class": "certain",
             "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "script-cd-moves-only-its-own-list",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "ClientFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Render", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Serve", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "ServerFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Stray",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "StrayFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "script-launcher-preloads-root-javascript-files",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "Hooks", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "HooksFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Main", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "MainFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Register", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "RegisterFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "SetUp", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "SetUpFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Stray",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "StrayFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        { "symbol": "TestEnv", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "TestEnvFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Trace", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "TraceFile", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "script-node-command-selects-node-resolution",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "BrowserFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        {
+          "symbol": "browserImpl",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "nodeImpl", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "unusedNode",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
           },
           "suppression": { "suppressed": true, "stale": false }
         }
@@ -9283,24 +9323,35 @@
       "unexpected": []
     },
     {
-      "fixture": "workflow-run-steps",
+      "fixture": "workflow-command-written-with-yaml-escapes",
       "result": "pass",
       "expectations": [
-        { "symbol": "Check", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Continued", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "ContinuedFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Encoded", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "EncodedFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "First", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "FirstFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Folded", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "FoldedFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Literal", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "LiteralFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "MainFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "NextLine", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "NextLineFile", "result": "pass", "actual": { "report": "none" } },
         {
-          "symbol": "Lint",
+          "symbol": "Stray",
           "result": "pass",
           "actual": {
-            "report": "DS1602",
-            "symbol_kind": "file",
+            "report": "DS1001",
+            "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain"
-          }
+          },
+          "suppression": { "suppressed": true, "stale": false }
         },
-        { "symbol": "Release", "result": "pass", "actual": { "report": "none" } },
-        { "symbol": "Report", "result": "pass", "actual": { "report": "none" } },
         {
-          "symbol": "Upload",
+          "symbol": "StrayFile",
           "result": "pass",
           "actual": {
             "report": "DS1602",
@@ -9309,6 +9360,102 @@
             "reachability_class": "certain"
           }
         }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "workflow-directory-is-where-its-commands-run",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "Build", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "BuildFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Idle", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "IdleFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "MainFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Publish", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "PublishFile", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "workflow-directory-written-with-an-expression",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "BuildA", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "BuildAFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "BuildB", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "BuildBFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "MainFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Stray",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "StrayFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "workflow-file-read-as-yaml-and-held-whole",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "Flow", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "FlowFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Gate", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "GateFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "MainFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Report", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "ReportFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Seed", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "SeedFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Stray",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "StrayFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "workflow-run-steps",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "Check", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Lint", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Release", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Report", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Upload", "result": "pass", "actual": { "report": "none" } }
       ],
       "unexpected": []
     },

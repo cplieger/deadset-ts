@@ -360,12 +360,12 @@ describe("the files a manifest's scripts name", () => {
           kind: "unread-command",
           path: ".",
           message:
-            "commands the analysis does not read name src/__tests__/hooks.ts, src/setup.ts, tools/gen.ts, so no finding is reported about those files themselves or the names they export",
+            "commands the analysis does not read name src/__tests__/hooks.ts, tools/gen.ts, so no finding is reported about those files themselves or the names they export",
         },
       ]);
       expect(report["unanswered_questions"]).toEqual([
         { configuration: "tools/tsconfig.json", questions: 1, declarations: 2 },
-        { configuration: "tsconfig.json", questions: 1, declarations: 4 },
+        { configuration: "tsconfig.json", questions: 1, declarations: 2 },
       ]);
     },
     LOAD_TIMEOUT,
@@ -500,6 +500,76 @@ describe("the command strings beside a package's scripts", () => {
     LOAD_TIMEOUT,
   );
 
+  it.each([
+    [
+      "a workflow file, in a job's env",
+      {
+        ".github/workflows/ci.yml":
+          'on: push\njobs:\n  verify:\n    runs-on: ubuntu-latest\n    env:\n      SCRIPT: tools/check.ts\n    steps:\n      - run: node "$SCRIPT"\n',
+      },
+    ],
+    [
+      "a pre-commit configuration, in a hook's args",
+      {
+        ".pre-commit-config.yaml":
+          "repos:\n  - repo: local\n    hooks:\n      - id: verify\n        name: verify\n        entry: node\n        language: system\n        args: [tools/check.ts]\n",
+      },
+    ],
+    [
+      "a lefthook file, in a command's env",
+      {
+        "lefthook.yml":
+          'pre-commit:\n  commands:\n    verify:\n      env:\n        SCRIPT: tools/check.ts\n      run: node "$SCRIPT"\n',
+      },
+    ],
+    [
+      "a makefile, in a variable",
+      { Makefile: "SCRIPT = tools/check.ts\nverify:\n\tnode $(SCRIPT)\n" },
+    ],
+    [
+      "a husky hook, in a comment",
+      { ".husky/pre-commit": "#!/bin/sh\n# node tools/check.ts\nnpm test\n" },
+    ],
+    [
+      "a git hook in .githooks, in a comment",
+      { ".githooks/pre-push": "# run tools/check.ts first\nexit 0\n" },
+    ],
+    [
+      "nodemon's configuration, in an event command",
+      { "nodemon.json": '{ "exec": "node", "events": { "start": "node tools/check.ts" } }\n' },
+    ],
+  ])(
+    "hold the exports of a file %s names where no command reads it",
+    (_source, written) => {
+      const got = analyze(
+        project({ ...COMMANDED, ...toolFile("check"), ...written }),
+        ["--exit-code=off"],
+        tmpdir(),
+      );
+      const report = reportOf(got);
+
+      expect(got.code, got.err).toBe(0);
+      expect(
+        findingsOf(got).filter(
+          (one) => (one["position"] as Record<string, unknown>)["path"] === "tools/check.ts",
+        ),
+      ).toEqual([]);
+      expect(
+        (report["notes"] as Record<string, unknown>[]).filter(
+          (one) => one["kind"] === "unread-command",
+        ),
+      ).toEqual([
+        {
+          kind: "unread-command",
+          path: ".",
+          message:
+            "commands the analysis does not read name tools/check.ts, so no finding is reported about that file itself or the names it exports",
+        },
+      ]);
+    },
+    LOAD_TIMEOUT,
+  );
+
   it(
     "raise one note for the package across its scripts, nodemon's exec, workflow steps, git hooks and makefile recipes",
     () => {
@@ -569,6 +639,27 @@ describe("the command strings beside a package's scripts", () => {
       },
     ],
     [
+      "a flow-mapping step's working-directory",
+      {
+        ".github/workflows/ci.yml":
+          "on: push\njobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n      - { run: node ., working-directory: tools/publish }\n",
+      },
+    ],
+    [
+      "a working-directory an alias names, of a run command an alias names",
+      {
+        ".github/workflows/ci.yml":
+          "on: push\nenv:\n  DIR: &dir tools/publish\n  RUN: &run node .\njobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n      - run: *run\n        working-directory: *dir\n",
+      },
+    ],
+    [
+      "a working-directory written after a comment-only key line",
+      {
+        ".github/workflows/ci.yml":
+          "on: push\njobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n      - working-directory: # the tool\n          tools/publish\n        run: # run it\n          node .\n",
+      },
+    ],
+    [
       "a lefthook command's root",
       {
         "lefthook.yml":
@@ -576,7 +667,7 @@ describe("the command strings beside a package's scripts", () => {
       },
     ],
   ])(
-    "hold the exports of the index file a command run in %s names by `.`",
+    "root the index file a command run in %s names by `.`, with no note",
     (_source, written) => {
       const got = analyze(
         project({
@@ -601,14 +692,7 @@ describe("the command strings beside a package's scripts", () => {
         (report["notes"] as Record<string, unknown>[]).filter(
           (one) => one["kind"] === "unread-command",
         ),
-      ).toEqual([
-        {
-          kind: "unread-command",
-          path: ".",
-          message:
-            "commands the analysis does not read name tools/publish/index.ts, so no finding is reported about that file itself or the names it exports",
-        },
-      ]);
+      ).toEqual([]);
     },
     LOAD_TIMEOUT,
   );

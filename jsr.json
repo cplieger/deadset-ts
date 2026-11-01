@@ -6,7 +6,16 @@
     ".": "./src/index.ts"
   },
   "publish": {
-    "include": ["LICENSE", "NOTICE", "README.md", "bin/**", "src/**", "jsr.json", "package.json"],
+    "include": [
+      "LICENSE",
+      "NOTICE",
+      "THIRD_PARTY_NOTICES.md",
+      "README.md",
+      "bin/**",
+      "src/**",
+      "jsr.json",
+      "package.json"
+    ],
     "exclude": ["src/**/*.test.ts"]
   }
 }

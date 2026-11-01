@@ -54,7 +54,8 @@ import { bytewise } from "./text/compare.ts";
 import { holdsManifest } from "./fs/manifest.ts";
 import { globExpression } from "./text/glob.ts";
 import { spelledFiles } from "./text/named-files.ts";
-import { commandDirectories, workflowCommands } from "./workflow-steps.ts";
+import { commandFileTexts, workflowCommands } from "./workflow-steps.ts";
+import { readCommands } from "./commands/read.ts";
 
 /** Why one declaration is a root. */
 export type RootKind =
@@ -66,7 +67,7 @@ export type RootKind =
   | "manifest-entry"
   /** A file the manifest names as a command, and what it exports outside the published API. */
   | "manifest-binary"
-  /** A file a token of a manifest's script names, and what it exports. */
+  /** A file a manifest's script names or runs, as `commands/read.ts` reads it, and what it exports. */
   | "script"
   /**
    * A global a declaration file declares as an alias of a module's export, and the
@@ -123,7 +124,7 @@ export interface Roots {
   readonly unanswered: readonly string[];
   /** Every manifest entry naming a file to import or run that reads back to no file of this project. */
   readonly unmappedEntries: readonly ManifestEntry[];
-  /** Every package whose command strings name, as `spelledFiles` reads them, an own file no root enters with all it exports. */
+  /** Every package whose command strings, in what no command reader understands, name an own file no root enters with all it exports. */
   readonly heldScripts: readonly HeldScripts[];
 }
 
@@ -346,11 +347,11 @@ function childrenOf(held: Inventory): ReadonlyMap<string, readonly InventorySymb
 }
 
 /**
- * Per package, the own files its command strings name as plain text, but those a root enters
- * with all they export: a command can use no more of such a file than the root keeps live. A
- * manifest's are its entries' whole command strings, and the target root's package has the
- * workflow steps, git hooks and makefile recipes beside its own, with the directories its
- * workflow steps and lefthook commands run in, where a `.` names that directory's index file.
+ * Per package, the own files its held texts name, as `spelledFiles` reads them, but those a
+ * root enters with all they export: a command can use no more of such a file than the root
+ * keeps live. A manifest's are its entries' held texts, and the target root's package has the
+ * workflow steps, git hooks and makefile recipes beside its own, with the whole text of each
+ * file `commandFileTexts` reads.
  */
 function scriptHolds(
   entries: readonly ManifestEntry[],
@@ -373,13 +374,19 @@ function scriptHolds(
   const commands = new Map<string, string[]>([
     [
       resolvePath(cwd, targetRoot),
-      [...workflowCommands(host, targetRoot), ...commandDirectories(host, targetRoot)],
+      [
+        ...workflowCommands(host, targetRoot).flatMap(({ text, dir, writtenDirectory }) => [
+          readCommands(text, dir).held,
+          ...(writtenDirectory === undefined ? [] : [writtenDirectory]),
+        ]),
+        ...commandFileTexts(host, targetRoot),
+      ],
     ],
   ]);
   for (const entry of entries) {
-    if (entry.command !== undefined) {
+    if (entry.held !== undefined) {
       const dir = resolvePath(cwd, entry.dir);
-      commands.set(dir, [...(commands.get(dir) ?? []), entry.command]);
+      commands.set(dir, [...(commands.get(dir) ?? []), entry.held]);
     }
   }
   const held: HeldScripts[] = [];
@@ -464,7 +471,7 @@ export function roots<Brand>(
     })),
   ];
   const scripted = entries.flatMap(({ entry }) =>
-    entry.role === "script" && entry.command === undefined ? files.named(entry.path) : [],
+    entry.role === "script" && entry.held === undefined ? files.named(entry.path) : [],
   );
   const readBackTo = [
     ...scripted,
@@ -517,7 +524,7 @@ export function roots<Brand>(
   const unmapped: ManifestEntry[] = [];
   const mapped = patterned.map(({ file }) => file);
   for (const { entry } of entries) {
-    if (entry.command !== undefined) {
+    if (entry.held !== undefined) {
       continue;
     }
     const named = entryFiles(entry);

@@ -42,7 +42,7 @@ function filesAt(paths: readonly string[]): SourceFiles {
   return {
     byPath,
     byName: new Map([...byPath.values()].map((file) => [file.fileName, file])),
-    named: () => [],
+    named: (path) => [...byPath.values()].filter((file) => file.fileName === path),
     outputDirs: [],
     writtenAs: () => [],
     namedAsOutput: () => [],

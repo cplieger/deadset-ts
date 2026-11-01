@@ -89,7 +89,19 @@ describe("a YAML configuration file", () => {
     ]);
   });
 
-  it("outside the subset the reader takes holds no string", () => {
-    expect(uses({ "/repo/.eslintrc.yml": `${LEGACY}\nsettings: &shared\n  a: 1` })).toEqual([]);
+  it.each([
+    ["a tag", "settings: !!map\n  a: 1"],
+    [
+      "aliases that grow it past the reader's budget",
+      [
+        "a0: &a0 [lol, lol, lol, lol, lol, lol, lol, lol, lol, lol]",
+        ...Array.from(
+          { length: 8 },
+          (_, at) => `a${at + 1}: &a${at + 1} [${`*a${at}, `.repeat(9)}*a${at}]`,
+        ),
+      ].join("\n"),
+    ],
+  ])("outside the subset the reader takes, with %s, holds no string", (_form, written) => {
+    expect(uses({ "/repo/.eslintrc.yml": `${LEGACY}\n${written}` })).toEqual([]);
   });
 });
