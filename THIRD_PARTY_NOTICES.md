@@ -4,7 +4,7 @@ deadset-ts includes source code from the following project.
 
 ## unbash
 
-- Source: https://github.com/webpro-nl/unbash, release 6.0.0, commit `968c14992a43dc06ce29c9f51858abd4a87851ea`
+- Source: <https://github.com/webpro-nl/unbash>, release 6.0.0, commit `968c14992a43dc06ce29c9f51858abd4a87851ea`
 - Location: `src/vendor/unbash/` (see `VENDORED.md` there)
 - License: ISC
 
