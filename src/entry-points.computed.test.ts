@@ -303,13 +303,19 @@ describe("a file a makefile's recipe names", () => {
   );
 
   it(
-    "ends a command at a single &, as it ends one at ;",
+    "ends a command at a single &, as it ends one at ;, and a cd before the & moves no later command",
     () => {
       expect(
         computedRoots({
           "src/app.ts": "export {};\n",
-          Makefile: ["jobs:", "\tcd src/jobs & node nightly.ts", ""].join("\n"),
+          Makefile: [
+            "jobs:",
+            "\tcd src/jobs; node nightly.ts & echo started",
+            "\tcd src & node jobs/late.ts",
+            "",
+          ].join("\n"),
           "src/jobs/nightly.ts": "export const nightly = 1;\n",
+          "src/jobs/late.ts": "export const late = 1;\n",
         }),
       ).toEqual([
         "src/jobs/nightly.ts#\tworkflow-step\tnightly.ts",

@@ -419,19 +419,23 @@ describe("the programs a run forms for JavaScript files", () => {
   );
 
   it.each([
-    "cd srv && node index.js",
-    "NODE_ENV=production node srv/index.js",
-    "env -- node srv/index.js",
-    "npx -c 'node srv/index.js'",
+    ["cd srv && node index.js", NODE],
+    ["NODE_ENV=production node srv/index.js", NODE],
+    ["env -- node srv/index.js", NODE],
+    ["npx -c 'node srv/index.js'", NODE],
+    ["env --frobnicate node srv/index.js", BUNDLER],
+    ["node --enable-source-maps srv/index.js", BUNDLER],
+    ["tsx srv/index.js", BUNDLER],
+    ["node", BUNDLER],
   ])(
-    "reads no runtime from the script %j, so a package whose manifest names no Node member resolves as the row default, a bundler",
-    (start) => {
+    "reads the script %j of a package whose manifest names no Node member as resolving as %o",
+    (start, runtime) => {
       const root = tree({
         "package.json": `${JSON.stringify({ name: "@example/app", scripts: { start } })}\n`,
         "srv/index.js": "export const a = 1;\n",
       });
 
-      expect(load(root).result).toMatchObject([BUNDLER]);
+      expect(load(root).result).toMatchObject([runtime]);
     },
     LOAD_TIMEOUT,
   );
@@ -439,7 +443,7 @@ describe("the programs a run forms for JavaScript files", () => {
   it.each<[string, Record<string, unknown>, typeof NODE | typeof BUNDLER, number]>([
     ["type module", { type: "module" }, NODE, ModuleKind.ESNext],
     ["type commonjs", { type: "commonjs" }, NODE, ModuleKind.CommonJS],
-    ["no type", {}, BUNDLER, ModuleKind.CommonJS],
+    ["no type", {}, NODE, ModuleKind.CommonJS],
   ])(
     "reads each file's module format from its extension and, for a .js file, the manifest's %s",
     (_, members, runtime, js) => {

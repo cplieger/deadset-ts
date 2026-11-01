@@ -137,3 +137,47 @@ describe("a file a library's build script bundles", () => {
     }
   });
 });
+
+describe("a build script nodemon's command runs", () => {
+  it("names its bundler's entries as a package script does", () => {
+    const root = writeProject({
+      "package.json": JSON.stringify({
+        name: "@example/watched",
+        type: "module",
+        nodemonConfig: { exec: "node build.js" },
+      }),
+      "deadset.json": JSON.stringify({ target: { kind: "application" } }),
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: { strict: true, noEmit: true, module: "esnext", target: "es2022" },
+        include: ["src"],
+      }),
+      "build.js":
+        'import { build } from "esbuild";\n\nbuild({ entryPoints: ["src/browser.ts"] });\n',
+      "src/browser.ts": "console.log('browser');\n",
+      "src/stray.ts": "console.log('stray');\n",
+    });
+    const out = mkdtempSync(join(tmpdir(), "deadset-ts-build-scripts-"));
+    try {
+      const report = join(out, "report.json");
+      run(
+        ["analyze", "--target=.", "--min-confidence=possible", `--report=${report}`],
+        new MemoryWriter(),
+        new MemoryWriter(),
+        { ...nodeHost(), workingDirectory: () => root },
+      );
+      const { findings } = JSON.parse(readFileSync(report, "utf8")) as {
+        findings: { code: string; symbol: { name: string } }[];
+      };
+
+      expect(
+        findings
+          .filter((one) => one.code === "DS1602")
+          .map((one) => one.symbol.name)
+          .sort(),
+      ).toEqual(["src/stray.ts"]);
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});

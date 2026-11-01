@@ -1,7 +1,7 @@
 /**
- * The files a command's text names, read as plain text: the text is searched for each file's
- * names, which every spelling of its path contains, so no part of it is split, unquoted or
- * skipped first.
+ * Layer 3 of the command reader: the files and the package names a command's text names, read
+ * as plain text. The text is searched for each name, which every spelling of what it names
+ * contains, so no part of it is split, unquoted or skipped first.
  */
 
 import { dirnamePath, normalizePath, relativePath } from "../paths.ts";
@@ -65,4 +65,27 @@ export function spelledFiles<File>(
     }
   }
   return [...found];
+}
+
+/** A character a package's or a command's name may hold, so one beside a name makes it part of a longer one. */
+const NAME_CHARACTER = /[\w.@-]/u;
+
+/**
+ * Each of `names`, a package's or a command's name, that `text` holds with no name character
+ * before it and no character after it but one a path or a version may go on with, `/`, `.` or
+ * `@` among them: `module-alias/register` holds `module-alias`, and `tsxx` holds no `tsx`.
+ */
+export function heldNames(text: string, names: readonly string[]): ReadonlySet<string> {
+  const found = new Set<string>();
+  for (const name of names) {
+    for (let at = text.indexOf(name); at >= 0 && name !== ""; at = text.indexOf(name, at + 1)) {
+      const before = text.charAt(at - 1);
+      const after = text.charAt(at + name.length);
+      if (!NAME_CHARACTER.test(before) && !/[\w-]/u.test(after)) {
+        found.add(name);
+        break;
+      }
+    }
+  }
+  return found;
 }

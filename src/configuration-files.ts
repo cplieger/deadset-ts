@@ -31,7 +31,8 @@ import {
   manifestAt,
   readJSON,
 } from "./fs/manifest.ts";
-import { shellWords } from "./text/shell.ts";
+import { readCommands } from "./commands/read.ts";
+import { manifestCommands } from "./manifest.ts";
 
 /** A configuration module's name, each form with the spelling a root reports it by. */
 const MODULE_FORMS: readonly { readonly name: RegExp; readonly form: string }[] = [
@@ -115,45 +116,28 @@ export interface OutsideModule {
   readonly manifestDirs: readonly string[];
 }
 
-/** The flags a tool's command line names its configuration file with. */
-const CONFIG_FLAGS: ReadonlySet<string> = new Set(["--config", "-c"]);
-
 /** The extensions of a module a configuration flag may name. */
 const MODULE_EXTENSIONS = [".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"] as const;
 
 /**
- * The files the scripts of the manifest in one directory name after a configuration flag,
- * `--config <file>`, `-c <file>` or `--config=<file>`, each a JSON file or a module below
- * the target root and in no `node_modules`.
+ * The files the command strings of the manifest in one directory name after a configuration
+ * flag, as `commands/read.ts` reads them against the directory each command runs in, each a
+ * JSON file or a module below the target root and in no `node_modules`.
  */
 function scriptConfigurations(host: Host, root: string, dir: string): readonly string[] {
-  const scripts = manifestAt(host, dir)?.["scripts"];
-  if (!isRecord(scripts)) {
-    return [];
-  }
+  const manifest = manifestAt(host, dir);
   const found: string[] = [];
-  for (const command of Object.values(scripts)) {
-    if (typeof command !== "string") {
-      continue;
-    }
-    const words = shellWords(command);
-    words.forEach((word, at) => {
-      const named =
-        word !== undefined && CONFIG_FLAGS.has(word)
-          ? words[at + 1]
-          : word === undefined
-            ? undefined
-            : /^--config=(.+)$/su.exec(word)?.[1];
-      const path = named === undefined ? undefined : resolvePath(dir, named);
+  for (const { command } of manifest === undefined ? [] : manifestCommands(host, dir, manifest)) {
+    for (const { dir: runs, written } of readCommands(command, dir).configurations) {
+      const path = resolvePath(runs, written);
       if (
-        path !== undefined &&
         [".json", ...MODULE_EXTENSIONS].some((extension) => path.endsWith(extension)) &&
         isProjectPath(root, path) &&
         host.kindOf(path) === "file"
       ) {
         found.push(path);
       }
-    });
+    }
   }
   return found;
 }

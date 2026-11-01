@@ -6,3 +6,6 @@ dist/
 # is byte-identical to that release, which is what makes a diff against a clone
 # of the tag the verification, so nothing here is reformatted.
 fixtures/
+
+# Third-party source, kept byte for byte as scripts/vendor-unbash.ts writes it.
+src/vendor/

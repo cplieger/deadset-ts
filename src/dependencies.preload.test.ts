@@ -36,7 +36,7 @@ function hostWith(files: Readonly<Record<string, string>>): Host {
 }
 
 describe("a module a script preloads by a runtime flag", () => {
-  it("runs the declared dependency its bare specifier names, in each flag's form, only where the command's program passes the flag to the runtime", () => {
+  it("runs the declared dependency a read command preloads by its bare specifier, in each flag's form, and each one a string's text names", () => {
     const manifest = {
       scripts: {
         esm: "node --loader ts-node/esm src/a.ts",
@@ -83,10 +83,15 @@ describe("a module a script preloads by a runtime flag", () => {
       "@scope/assigned",
       "@scope/hook",
       "@scope/loader",
+      // Layer 3 reads all of every string, so each name its text holds is used.
       "@scope/register",
+      "after-script",
+      "assets",
       "dotenv",
+      "echoed",
       "ts-node",
       "tsx",
+      "unflagged",
     ]);
   });
 
@@ -125,6 +130,6 @@ describe("a module a script preloads by a runtime flag", () => {
         "/repo/Makefile": "check:\n\tnode --require @scope/recipe src/check.js\n",
       }),
       "a workflow step and a recipe line",
-    ).toEqual(["@scope/recipe", "dotenv"]);
+    ).toEqual(["@scope/recipe", "dotenv", "unflagged"]);
   });
 });

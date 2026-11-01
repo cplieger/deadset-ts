@@ -9,7 +9,7 @@
   "typescriptChecker": {
     "prioritizePerformanceOverAccuracy": true
   },
-  "mutate": ["src/**/*.ts", "!src/**/*.test.ts", "!src/conformance-record.ts"],
+  "mutate": ["src/**/*.ts", "!src/**/*.test.ts", "!src/conformance-record.ts", "!src/vendor/**"],
   "mutator": {
     "excludedMutations": ["StringLiteral"]
   },

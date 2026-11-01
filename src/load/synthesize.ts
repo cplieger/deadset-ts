@@ -5,6 +5,7 @@
  * is written for.
  */
 
+import { readCommands } from "../commands/read.ts";
 import { CONVENTION_ROWS } from "../convention-rows.ts";
 import type { Conventions } from "../conventions.ts";
 import { holdsManifest, MANIFEST, readManifestAt, type ManifestRead } from "../fs/manifest.ts";
@@ -12,6 +13,7 @@ import { filesBelow } from "../fs/tree.ts";
 import type { Host } from "../host.ts";
 import { JAVASCRIPT_FILE, minified, minifiedByName } from "../javascript-file.ts";
 import { isRecord } from "../json-document.ts";
+import { manifestCommands } from "../manifest.ts";
 import { ancestors, dirnamePath, joinPath, relativePath } from "../paths.ts";
 import type { Engine } from "../session.ts";
 import { bytewise } from "../text/compare.ts";
@@ -133,12 +135,22 @@ const RUNTIME_OPTIONS = {
 /** The manifest members that say a package is written for Node. */
 const NODE_MEMBERS = ["main", "exports", "bin", "type"] as const;
 
-/** Whether one manifest says its package runs under Node, `engines.node` included; its scripts are not read. */
-function writtenForNode(manifest: Readonly<Record<string, unknown>>): boolean {
+/**
+ * Whether one manifest says its package runs under Node: a Node member, `engines.node`
+ * included, or a command string of it that runs a file with `node`, as `commands/read.ts` reads it.
+ */
+function writtenForNode(
+  host: Host,
+  dir: string,
+  manifest: Readonly<Record<string, unknown>>,
+): boolean {
   const { engines } = manifest;
   return (
     NODE_MEMBERS.some((member) => manifest[member] !== undefined) ||
-    (isRecord(engines) && engines["node"] !== undefined)
+    (isRecord(engines) && engines["node"] !== undefined) ||
+    manifestCommands(host, dir, manifest).some(({ command }) =>
+      readCommands(command, dir).runs.some((run) => run.runtime === "node"),
+    )
   );
 }
 
@@ -172,7 +184,8 @@ interface Forming {
 /**
  * Each group's program, given the module system of the runtime its package is written for: a
  * bundler's where a row of a tool that bundles applies through the group's manifest or the
- * root's, else Node's where its manifest says the package runs under Node, under which a file's
+ * root's, else Node's where its manifest says the package runs under Node or a command string of
+ * it runs a file with `node`, under which a file's
  * extension and its package's `type` decide its module format, else a bundler's, which reads a
  * file with no module syntax as a classic script, as a browser loads it.
  */
@@ -189,7 +202,7 @@ export function formedPrograms(
       !bundling.has(MANIFEST) &&
       (below === undefined || !bundling.has(below)) &&
       group.manifest.kind === "read" &&
-      writtenForNode(group.manifest.manifest)
+      writtenForNode(host, group.dir, group.manifest.manifest)
         ? "node"
         : "bundler";
     const configFile = writtenPath(host, joinPath(group.dir, GROUP_CONFIGURATION));

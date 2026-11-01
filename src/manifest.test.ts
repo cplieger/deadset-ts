@@ -8,13 +8,20 @@ import type { Host } from "./host.ts";
 import { readManifest } from "./manifest.ts";
 import { run } from "./run.ts";
 
-/** A host holding one manifest at `/pkg`, or none. */
-function hostWith(manifest: string | undefined): Host {
+/** A host holding one manifest at `/pkg`, or none, and the files `beside` it by name. */
+function hostWith(
+  manifest: string | undefined,
+  beside: Readonly<Record<string, string>> = {},
+): Host {
   return {
     workingDirectory: () => "/",
     readFile: (path) => {
       if (path === "/pkg/package.json" && manifest !== undefined) {
         return manifest;
+      }
+      const name = path.slice("/pkg/".length);
+      if (path.startsWith("/pkg/") && Object.hasOwn(beside, name)) {
+        return beside[name] ?? "";
       }
       throw new Error(`${path}: absent`);
     },
@@ -116,20 +123,29 @@ describe("readManifest", () => {
 });
 
 describe("the scripts of a manifest", () => {
-  it("name each distinct token of each script, read against the manifest's directory", () => {
-    expect(
-      entries({ scripts: { gen: "node ./bin/gen.ts && node ./bin/gen.ts", skipped: 3 } }),
-    ).toEqual([
+  it("name each distinct path of each script once, read against the manifest's directory, with each path a run's entry may be at", () => {
+    const named = entries({
+      scripts: { gen: "node ./bin/gen.ts && node ./bin/gen.ts", skipped: 3 },
+    });
+
+    expect(named.slice(0, 2)).toEqual([
       'scripts["gen"] /pkg/node script false',
       'scripts["gen"] /pkg/bin/gen.ts script false',
-      'scripts["gen"] /pkg script false',
     ]);
+    expect(named).toEqual(
+      expect.arrayContaining([
+        'scripts["gen"] /pkg/bin/gen.ts.js script false',
+        'scripts["gen"] /pkg/bin/gen.ts/index.ts script false',
+      ]),
+    );
+    expect(named.at(-1)).toBe('scripts["gen"] /pkg script false');
+    expect(new Set(named).size).toBe(named.length);
   });
 
   it("name each token of a script, and carry the script's whole value on one entry at the manifest's directory", () => {
     const named = (command: string): string[] =>
       readManifest(hostWith(JSON.stringify({ scripts: { start: command } })), "/pkg").entries.map(
-        (entry) => `${entry.path} ${entry.command ?? "token"}`,
+        (entry) => `${entry.path} ${entry.held ?? "token"}`,
       );
 
     expect(named("env --frobnicate node --require=./setup.ts main.ts")).toEqual([
@@ -141,6 +157,32 @@ describe("the scripts of a manifest", () => {
       "/pkg env --frobnicate node --require=./setup.ts main.ts",
     ]);
   });
+});
+
+describe("nodemon's command of a manifest", () => {
+  it.each([
+    [{ nodemonConfig: { exec: "node -r ./setup.js ./server.js" } }, {}, 'nodemonConfig["exec"]'],
+    [
+      {},
+      { "nodemon.json": '{ "exec": "node -r ./setup.js ./server.js" }' },
+      'nodemon.json["exec"]',
+    ],
+  ])(
+    "names the files the command %j or the files %j beside it run, at %j, as a script does",
+    (manifest, beside, member) => {
+      const named = readManifest(hostWith(JSON.stringify(manifest), beside), "/pkg").entries.map(
+        (entry) => `${entry.member} ${entry.path} ${entry.held ?? "path"}`,
+      );
+
+      expect(named).toEqual(
+        expect.arrayContaining([
+          `${member} /pkg/server.js path`,
+          `${member} /pkg/setup.js path`,
+          `${member} /pkg node -r ./setup.js ./server.js`,
+        ]),
+      );
+    },
+  );
 });
 
 describe("a package whose browser member alone names an entry", () => {

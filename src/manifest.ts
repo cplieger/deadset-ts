@@ -9,9 +9,7 @@ import type { Host } from "./host.ts";
 import { isAbsolutePath, joinPath, relativePath, resolvePath } from "./paths.ts";
 import { isRecord } from "./json-document.ts";
 import { MANIFEST, manifestAt, readJSON } from "./fs/manifest.ts";
-import { scriptTokens } from "./text/shell.ts";
-
-/** The manifest's own name. */
+import { pathsNamed, readCommands } from "./commands/read.ts";
 
 /** The three members that name an entry point beside `exports` and `bin`. */
 const LEGACY_MEMBERS = ["main", "module", "types"] as const;
@@ -22,17 +20,17 @@ type EntryRole =
   | "import"
   /** A shell running the package's command, which is a caller that exists. */
   | "run"
-  /** A token of one of the package's scripts, or the whole of a command string the package runs. */
+  /** A path one of the package's scripts names or runs, or a text layer 3 holds for the package. */
   | "script";
 
-/** One entry point the manifest names, or the whole of one command string the package runs. */
+/** One entry point the manifest names, or one text layer 3 holds for the package. */
 export interface ManifestEntry {
   /**
    * The member that named it as a maintainer edits it, `main`, `bin["deadset-ts"]` or
    * `exports["."]["import"]`: what a root reports as the string that named it.
    */
   readonly member: string;
-  /** The target the member carries, resolved against the manifest's directory, or that directory for a whole command string. */
+  /** The target the member carries, resolved against the manifest's directory, or that directory for a held text. */
   readonly path: string;
   readonly role: EntryRole;
   /**
@@ -43,11 +41,12 @@ export interface ManifestEntry {
   /** The directory of the manifest that names it, which `path` was resolved against. */
   readonly dir: string;
   /**
-   * On the entry of a whole command string, which names no entry point and whose path is the
-   * manifest's directory, that string: rooting enters no file for it and holds each file
-   * `spelledFiles` reads it to name.
+   * On an entry that names no entry point, whose path is the manifest's directory, the text
+   * layer 3 holds: a whole command string the package runs, or the whole text of nodemon's
+   * configuration one is read from. Rooting enters no file for it and holds each file
+   * `spelledFiles` reads the text to name.
    */
-  readonly command?: string;
+  readonly held?: string;
 }
 
 /**
@@ -65,6 +64,29 @@ function isTarget(value: string, requireDot: boolean): boolean {
 /** One member's spelling below another: `exports` then `exports["."]`. */
 function below(member: string, key: string): string {
   return `${member}[${JSON.stringify(key)}]`;
+}
+
+/**
+ * The whole text of nodemon's configuration, the manifest's `nodemonConfig` member and the
+ * `nodemon.json` beside it, by the member each is. Layer 3 holds it whole, because nodemon runs
+ * commands from keys besides `exec`, `events` among them: https://github.com/remy/nodemon#config-files
+ */
+export function nodemonTexts(
+  host: Host,
+  dir: string,
+  manifest: Record<string, unknown>,
+): readonly { readonly member: string; readonly text: string }[] {
+  const member = manifest["nodemonConfig"];
+  let file: string | undefined;
+  try {
+    file = host.readFile(joinPath(dir, "nodemon.json"));
+  } catch {
+    file = undefined;
+  }
+  return [
+    ...(member === undefined ? [] : [{ member: "nodemonConfig", text: JSON.stringify(member) }]),
+    ...(file === undefined ? [] : [{ member: "nodemon.json", text: file }]),
+  ];
 }
 
 /**
@@ -127,9 +149,10 @@ function exportTargets(value: unknown, member: string, found: Omit<ManifestEntry
 export interface Manifest {
   /**
    * Every entry the manifest names, by absolute path, in the order read: the entry points `main`,
-   * `module`, `types`, `browser` and each file it maps, each `bin` command, every `exports` target
-   * and per script each token, which names a file only where one is at its path; and per command
-   * string {@link manifestCommands} reads one entry of its whole text, which is no entry point.
+   * `module`, `types`, `browser` and each file it maps, each `bin` command, every `exports` target,
+   * and per command string {@link manifestCommands} reads each path `pathsNamed` reads, which
+   * names a file only where one is at it, then one entry of its whole text, and one entry of
+   * each of {@link nodemonTexts}, which are no entry point.
    */
   readonly entries: readonly ManifestEntry[];
   /**
@@ -191,20 +214,15 @@ export function readManifest(host: Host, targetRoot: string): Manifest {
 
   exportTargets(manifest["exports"], "exports", found);
 
-  const scripts = manifest["scripts"];
-  if (isRecord(scripts)) {
-    for (const [name, command] of Object.entries(scripts)) {
-      if (typeof command !== "string") {
-        continue;
-      }
-      const member = below("scripts", name);
-      for (const path of new Set(scriptTokens(command))) {
-        found.push({ member, path, role: "script", published: false });
-      }
-    }
-  }
   for (const { member, command } of manifestCommands(host, targetRoot, manifest)) {
-    found.push({ member, path: ".", role: "script", published: false, command });
+    // Read against ".", so each path stays relative until the entries are resolved below.
+    for (const path of new Set(pathsNamed(readCommands(command, ".")).map((one) => one.path))) {
+      found.push({ member, path, role: "script", published: false });
+    }
+    found.push({ member, path: ".", role: "script", published: false, held: command });
+  }
+  for (const { member, text } of nodemonTexts(host, targetRoot, manifest)) {
+    found.push({ member, path: ".", role: "script", published: false, held: text });
   }
 
   return {
