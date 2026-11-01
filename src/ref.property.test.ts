@@ -77,7 +77,7 @@ describe("the stable symbol reference", () => {
           expect(record.symbol).toBe(member?.ref);
         },
       ),
-      { numRuns: 40, interruptAfterTimeLimit: 100_000 },
+      { numRuns: 40, plugins: [fc.interruptAfterTimeLimit(100_000, { failOnInterrupt: true })] },
     );
   }, 120_000);
 });
