@@ -6,7 +6,7 @@
 
 import type { SourceFile } from "@typescript/native/ast";
 import type { Host } from "./host.ts";
-import { packageScope } from "./inventory.ts";
+import { packageScope } from "./load/package-scope.ts";
 import { dirnamePath, joinPath, relativePath, resolvePath } from "./paths.ts";
 import { renderRef } from "./ref.ts";
 import type { ProjectView } from "./session.ts";

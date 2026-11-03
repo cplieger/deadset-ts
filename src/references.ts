@@ -32,6 +32,7 @@ import {
   isSpreadAssignment,
   isSpreadElement,
   isStringLiteral,
+  isStringLiteralLikeNode,
   isVoidExpression,
   SyntaxKind,
   type Node,
@@ -45,13 +46,7 @@ import { contextualUses, type FlowAt, type LiteralAt } from "./contextual-uses.t
 import { destructuring, propertyReadsOf, type PropertyRead } from "./destructuring.ts";
 import { specifierCandidates } from "./configuration-files.ts";
 import { namespaceUses } from "./namespace-objects.ts";
-import {
-  declarationsByName,
-  isParameterProperty,
-  nodeKey,
-  type Inventory,
-  type InventorySymbol,
-} from "./inventory.ts";
+import { isParameterProperty, nodeKey, type Inventory, type InventorySymbol } from "./inventory.ts";
 import { ambientGlobalInterfaces, augmentationReferences } from "./augmentations.ts";
 import { elementAccessReferences } from "./element-access.ts";
 import { indexedAccessReferences } from "./indexed-access.ts";
@@ -65,6 +60,8 @@ import { DEFAULT_BATCH_CAP, propertyTables, UNANSWERED, type Answer } from "./qu
 import type { ProjectView } from "./session.ts";
 import { typeParameterReads } from "./type-parameter-reads.ts";
 import { typeQueryAliases } from "./type-query-alias.ts";
+import { hasOwnBody } from "./own-body.ts";
+import { computedLoadsOf, isLoadCall, type LoadCall } from "./unseen-loads.ts";
 import {
   computedKeyNames,
   iterationReferences,
@@ -77,20 +74,12 @@ import { bytewise } from "./text/compare.ts";
 import { globExpression } from "./text/glob.ts";
 
 /**
- * Every use one project's own files make of the project's own declarations.
- *
- * The pass is one local walk per file and one batched resolution per file, never a
- * query per symbol: a per-symbol reference query is the shape whose answers depend on
- * the order the symbols are asked about, so no answer here depends on that order. The
- * tree is on this side of the client boundary and the resolution is not, which is why a
- * file's name nodes are gathered whole and handed over together.
- *
- * What the pass records and what it does not: a reference carries its use, its
- * position, the declaration that encloses it and the classification of the file that
- * made it, and every place that imports one of the project's own modules is an
- * evaluation of that module's file. It carries no mode. Which of the references a run
- * counts is the reading the sweep makes of this set, so the mode is one value the run
- * decides once and this pass never sees it.
+ * Every use one project's own files make of the project's own declarations: one local walk
+ * and one batched resolution per file, never a reference query per symbol, whose answers
+ * would depend on the order the symbols are asked in. A reference carries its use, its
+ * position, the declaration enclosing it and whether a test file made it; every import of
+ * one of the project's modules is an evaluation of that module's file. It carries no mode:
+ * which references a run counts is the sweep's reading of this set.
  */
 
 /**
@@ -468,9 +457,14 @@ interface Evaluation {
  */
 interface ModuleURL {
   readonly specifier: string;
-  /** The `URL` the constructor names, which must name no declaration of the target. */
+  /** The `URL` the constructor names; {@link hasOwnBody} owns which one loads nothing. */
   readonly constructor: Node | undefined;
   readonly at: Node;
+}
+
+/** One module URL, and the declaration whose code builds it. */
+interface ModuleURLAt extends ModuleURL {
+  readonly from: string;
 }
 
 /** One use of a module namespace object that may read every export of the module. */
@@ -509,7 +503,8 @@ interface FileSites {
   readonly links: readonly Link[];
   readonly evaluations: readonly Evaluation[];
   readonly wholes: readonly WholeRead[];
-  readonly urls: readonly ModuleURL[];
+  readonly urls: readonly ModuleURLAt[];
+  readonly loadCalls: readonly LoadCall[];
   readonly decorated: readonly Decorated[];
   readonly parameterWrites: readonly ParameterWrite[];
   readonly keyed: readonly KeyedAccess[];
@@ -557,6 +552,17 @@ function moduleURLOf(node: Node): ModuleURL | undefined {
     }
   }
   return undefined;
+}
+
+/** The file of the target a relative specifier written in `file` names, by its source or output name. */
+function fileNamed(
+  file: SourceFile,
+  specifier: string,
+  fileIdByName: ReadonlyMap<string, string>,
+): string | undefined {
+  return specifierCandidates(dirnamePath(file.fileName), specifier)
+    .map((path) => fileIdByName.get(path))
+    .find((id) => id !== undefined);
 }
 
 /** Whether one node is a string literal or a template literal with no substitution. */
@@ -698,7 +704,8 @@ function sitesOf(
   const links: Link[] = [];
   const evaluations: Evaluation[] = [];
   const wholes: WholeRead[] = [];
-  const urls: ModuleURL[] = [];
+  const urls: ModuleURLAt[] = [];
+  const loadCalls: LoadCall[] = [];
   const decorated: Decorated[] = [];
   const parameterWrites: ParameterWrite[] = [];
   const namespaces = namespaceUses(file);
@@ -781,7 +788,10 @@ function sitesOf(
     }
     const url = moduleURLOf(node);
     if (url !== undefined) {
-      urls.push(url);
+      urls.push({ ...url, from: enclosing });
+    }
+    if (isLoadCall(node)) {
+      loadCalls.push({ call: node, from: enclosing });
     }
     const held = declarations.get(nodeKey(file, node));
     const outer = enclosing;
@@ -815,6 +825,7 @@ function sitesOf(
     evaluations,
     wholes,
     urls,
+    loadCalls,
     decorated,
     parameterWrites,
     keyed,
@@ -1005,20 +1016,12 @@ function aloneIn(
 }
 
 /**
- * Every reference one project's own files make to the project's own declarations, in
- * position order, and the files the test-file rules classified.
- *
- * `held` is the inventory of the same project, whose declaration map is what a resolved
- * symbol is looked up in; `targetRoot` is the absolute path every position is rendered
- * against, which is the root the inventory was read against. A pass over a consumer
- * walks the consumer's files instead and renders against its root, as
- * {@link ReferenceOptions.consumer} states.
- *
- * The order is by the referencing position, then by the declaration named, the
- * declaration referencing it and the use. That is a total order because one name
- * references one declaration once from one declaration, while a chain of aliases reaches
- * several declarations at one position and a bare star re-export's specifier both reads
- * and evaluates the module it names.
+ * Every reference one project's own files make to its own declarations, and the files the
+ * test-file rules classified. `held` is the same project's inventory, where a resolved symbol
+ * is looked up; positions render against `targetRoot`, or a consumer's root as
+ * {@link ReferenceOptions.consumer} states. The order is by position, then the declaration
+ * named, the referencing declaration and the use: an alias chain or a bare star re-export
+ * names several at one position, and one name references one declaration once.
  */
 export function references<Brand>(
   project: ProjectView<Brand>,
@@ -1132,7 +1135,7 @@ export function references<Brand>(
    * live. A name a namespace import binds may be a use of any file.
    */
   const named = (node: Node): readonly string[] => {
-    const byName = declarationsByName(held);
+    const byName = held.byName;
     const text = node.getText();
     const imported = importedNames(node.getSourceFile()).get(text) ?? [];
     return [
@@ -1161,7 +1164,7 @@ export function references<Brand>(
       aliased.set(
         id,
         symbol === UNANSWERED
-          ? (declarationsByName(held).get(alias.name) ?? []).map((one) => ({
+          ? (held.byName.get(alias.name) ?? []).map((one) => ({
               id: one,
               stepped: true,
               guessed: true,
@@ -1212,6 +1215,9 @@ export function references<Brand>(
   const fileIdByName = new Map<string, string>(
     walked.filter((one) => fileIds.has(one.fileId)).map((one) => [one.file.fileName, one.fileId]),
   );
+  const loadable = walked
+    .filter((one) => fileIds.has(one.fileId))
+    .map(({ file, fileId }) => ({ file, fileId }));
   const contextual = contextualUses(
     project,
     held,
@@ -1311,11 +1317,13 @@ export function references<Brand>(
     evaluations,
     wholes,
     urls,
+    loadCalls,
     decorated,
     parameterWrites,
     keyed,
   } of walked) {
     const test = testFile.get(file) === true;
+    const loads = computedLoadsOf(file, loadCalls, loadable);
     // A component file's markup may use any binding its blocks declare at the top level.
     const markup = isComponentFile(file);
     const bindings = markup ? importBindings(file) : [];
@@ -1359,6 +1367,10 @@ export function references<Brand>(
         ...wholes.map((whole) => whole.specifier),
         ...urls.flatMap((url) => url.constructor ?? []),
         ...bindings.map((binding) => binding.node),
+        ...loads.flatMap((load) => [
+          ...(load.require === undefined ? [] : [load.require]),
+          ...(load.asset ? [] : load.files.map((loaded) => loaded.file)),
+        ]),
       ]),
     ];
     const answered = new Map<Node, Answer<TSSymbol>>();
@@ -1400,6 +1412,22 @@ export function references<Brand>(
       }
     }
 
+    // A script declares no module, so the checker names nothing for a specifier of one;
+    // the compiler's module resolution still names its file.
+    const unnamed = evaluations.flatMap(({ node }) =>
+      answered.get(node) === undefined &&
+      isStringLiteralLikeNode(node) &&
+      queriedFile(file, node, fileIdByName) === undefined
+        ? [node]
+        : [],
+    );
+    const resolved = project.resolvedFileNames(unnamed);
+    const scripts = new Map<Node, string | undefined>(
+      unnamed.map((node, at) => {
+        const name = resolved[at];
+        return [node, name === undefined ? undefined : fileIdByName.get(name)];
+      }),
+    );
     for (const evaluation of evaluations) {
       const queried = queriedFile(file, evaluation.node, fileIdByName);
       if (queried !== undefined) {
@@ -1413,6 +1441,17 @@ export function references<Brand>(
         });
       }
       const module = answered.get(evaluation.node);
+      const script = scripts.get(evaluation.node);
+      if (script !== undefined) {
+        found.push({
+          from: evaluation.from,
+          to: script,
+          position: renderPosition(file, root, evaluation.node.getStart()),
+          use: "evaluation",
+          resolution: "syntax",
+          test,
+        });
+      }
       if (module === undefined) {
         continue;
       }
@@ -1435,27 +1474,51 @@ export function references<Brand>(
 
     for (const url of urls) {
       const constructor = url.constructor === undefined ? undefined : answered.get(url.constructor);
-      // An augmentation of the global `URL` merges into it, which keeps the
-      // library's declaration; a `URL` the target declares has no other.
-      if (
-        typeof constructor === "object" &&
-        constructor.declarations.length > 0 &&
-        constructor.declarations.every((handle) => ownPaths.has(handle.path))
-      ) {
+      if (typeof constructor === "object" && hasOwnBody(project, constructor)) {
         continue;
       }
-      const loaded = specifierCandidates(dirnamePath(file.fileName), url.specifier)
-        .map((path) => fileIdByName.get(path))
-        .find((id) => id !== undefined);
+      const loaded = fileNamed(file, url.specifier, fileIdByName);
       if (loaded !== undefined) {
         found.push({
-          from: fileId,
+          from: url.from,
           to: loaded,
           position: renderPosition(file, root, url.at.getStart()),
           use: "evaluation",
           resolution: "syntax",
           test,
         });
+      }
+    }
+
+    // A computed load imports each file it loads where the call is written, reading what
+    // the file exports unless it reads the file as text or a URL; hasOwnBody owns which
+    // `require` loads nothing.
+    for (const load of loads) {
+      const callee = load.require === undefined ? undefined : answered.get(load.require);
+      if (typeof callee === "object" && hasOwnBody(project, callee)) {
+        continue;
+      }
+      const position = renderPosition(file, root, load.call.getStart());
+      for (const loaded of load.files) {
+        found.push({
+          from: load.eager ? fileId : load.from,
+          to: loaded.fileId,
+          position,
+          use: "evaluation",
+          resolution: "syntax",
+          test,
+        });
+        const module = load.asset ? undefined : answered.get(loaded.file);
+        for (const target of module === undefined ? [] : exportsRead(module)) {
+          found.push({
+            from: load.from,
+            to: target.id,
+            position,
+            use: "read",
+            resolution: target.guessed ? "by-name" : "batch",
+            test,
+          });
+        }
       }
     }
 
@@ -1529,7 +1592,7 @@ export function references<Brand>(
       const position = renderPosition(file, root, read.key.getStart());
       const targets =
         symbol === UNANSWERED
-          ? (declarationsByName(held).get(read.name) ?? []).map((id) => ({
+          ? (held.byName.get(read.name) ?? []).map((id) => ({
               id,
               stepped: false,
               guessed: true,

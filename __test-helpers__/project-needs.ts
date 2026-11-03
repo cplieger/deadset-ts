@@ -3,7 +3,7 @@ import { nodeHost } from "../bin/node-host.ts";
 import { targetConfigFiles, writeProject } from "./projects.ts";
 import { projectNeeds } from "../src/dependencies.ts";
 import { discoverProjects } from "../src/load/discover.ts";
-import { inventory } from "../src/inventory.ts";
+import { inventory } from "../src/inventory/enumerate.ts";
 import { relativePath } from "../src/paths.ts";
 import { scopeForDir } from "../src/scope.ts";
 import { openEngine, runSession, type Engine } from "../src/session.ts";

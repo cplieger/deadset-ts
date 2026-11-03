@@ -41,7 +41,8 @@ import {
 } from "./configuration-files.ts";
 import type { FindingPosition } from "./finding.ts";
 import type { Host } from "./host.ts";
-import { nodeKey, packageScope, type Inventory } from "./inventory.ts";
+import { nodeKey, type Inventory } from "./inventory.ts";
+import { packageScope } from "./load/package-scope.ts";
 import {
   ancestors,
   dirnamePath,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Host } from "./host.ts";
-import { packageScope } from "./inventory.ts";
+import type { Host } from "../host.ts";
+import { packageScope } from "./package-scope.ts";
 
 const ROOT = "/target";
 

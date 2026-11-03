@@ -51,7 +51,8 @@ import { implementations, mergeImplementations } from "./implementations.ts";
 import { injectionContainer } from "./injection-container.ts";
 import { interfaceSatisfaction, settledSatisfaction } from "./interface-satisfaction.ts";
 import { intraFunctionFacts, projectParts, type ProjectParts } from "./intra-function-parts.ts";
-import { inventory, type Inventory, type InventorySymbol } from "./inventory.ts";
+import { type Inventory, type InventorySymbol } from "./inventory.ts";
+import { inventory } from "./inventory/enumerate.ts";
 import { readManifest, type ManifestEntry } from "./manifest.ts";
 import {
   liveFilesAt,

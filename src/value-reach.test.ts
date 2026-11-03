@@ -5,7 +5,7 @@ import { nodeHost } from "../bin/node-host.ts";
 import { targetConfigFiles, writeProject } from "../__test-helpers__/projects.ts";
 import { typesAt } from "./class-members.ts";
 import { discoverProjects } from "./load/discover.ts";
-import { inventory } from "./inventory.ts";
+import { inventory } from "./inventory/enumerate.ts";
 import { scopeForDir } from "./scope.ts";
 import { openEngine, runSession } from "./session.ts";
 import { valueReach } from "./value-reach.ts";

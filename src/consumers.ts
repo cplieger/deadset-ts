@@ -1,6 +1,6 @@
 import type { PartialConfig } from "./config.ts";
 import type { Host } from "./host.ts";
-import { inventory } from "./inventory.ts";
+import { inventory } from "./inventory/enumerate.ts";
 import { relativePath } from "./paths.ts";
 import { references, type ConsumerSide, type Reference } from "./references.ts";
 import { narrowedTo, type ProjectView } from "./session.ts";

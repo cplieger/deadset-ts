@@ -14,7 +14,8 @@ import {
   spelledEntry,
 } from "./configured-declarations.ts";
 import { discoverProjects } from "./load/discover.ts";
-import { inventory, type Inventory } from "./inventory.ts";
+import { type Inventory } from "./inventory.ts";
+import { inventory } from "./inventory/enumerate.ts";
 import { Unanswerable } from "./query.ts";
 import { scopeForDir } from "./scope.ts";
 import { openEngine, runSession, type Engine, type ProjectView } from "./session.ts";

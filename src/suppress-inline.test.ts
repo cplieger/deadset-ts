@@ -4,7 +4,8 @@ import { nodeHost } from "../bin/node-host.ts";
 import { readFixture } from "../__test-helpers__/fixtures.ts";
 import { targetConfigFiles, writeProject } from "../__test-helpers__/projects.ts";
 import { discoverProjects } from "./load/discover.ts";
-import { inventory } from "./inventory.ts";
+import { inventory } from "./inventory/enumerate.ts";
+import { tokenStart } from "./position.ts";
 import { scopeForDir } from "./scope.ts";
 import { openEngine, runSession } from "./session.ts";
 import {
@@ -12,7 +13,6 @@ import {
   DIRECTIVE_EXPRESSIONS,
   inlineDirectives,
   inlineSuppressions,
-  tokenStart,
   type InlineDirective,
 } from "./suppress-inline.ts";
 

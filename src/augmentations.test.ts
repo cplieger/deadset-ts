@@ -356,6 +356,8 @@ const HELD: Inventory = {
   modules: new Map([[LIB.id, "lib"]]),
   ambient: new Set(),
   dependents: new Map(),
+  placement: new Map(),
+  openTables: new Set(),
 };
 
 /** A write from the file to one declaration, made by a test file at a line of its own. */

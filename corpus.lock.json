@@ -5,8 +5,8 @@
   "contract_version": "8.0.0",
   "reason": "The release whose closed configuration key list, exit-code table, issue-kind vocabulary, exemption classes, analysis rules, scope and describe documents, stable-symbol-reference grammar with its token and pattern corpora, template and SARIF pages, published configuration, SARIF, baseline and template vectors, refused documents and conformance corpus this analyzer is written against.",
   "digests": {
-    "fixtures/contract": "714755f019804009143ea1da37d0f1b64df8c2767704f5e275276036d1e90c7c",
-    "fixtures/corpus": "dc7cb8ea9a2de9e4c1aa89f0e4fae55a3038ffbc8b2e63075077caa9fb724695",
+    "fixtures/contract": "b80151892f99f70289a752a883d735935147b80591b2570078d700de33de0794",
+    "fixtures/corpus": "7bb6d41dc17688cc757f7bac8b7681a54a351a181097d3999f5b28efc5805e91",
     "fixtures/corpus-document": "75f0b1339f2d191adf985b61cd1e0497afc6668e5dfca0f16dbf2ca73be006dc",
     "fixtures/examples/describe": "1605774965cfd26f5ef95ea302c6c863faf4ef033be7e07b50217d162b2e6328",
     "fixtures/examples/edges": "49e02bd0769932bff8beac4b1b710c8ae85123d33e889af9016cdc44bf6f309e",

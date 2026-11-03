@@ -14,7 +14,7 @@ import {
   isNamespaceImport,
 } from "@typescript/native/ast";
 import { SymbolFlags, type Symbol as TSSymbol } from "@typescript/native/sync";
-import { declarationsByName, isParameterProperty, nodeKey, type Inventory } from "./inventory.ts";
+import { isParameterProperty, nodeKey, type Inventory } from "./inventory.ts";
 import { UNANSWERED, type Answer } from "./query.ts";
 import type { ProjectView } from "./session.ts";
 
@@ -132,7 +132,7 @@ export function aliasChains<Brand>(project: ProjectView<Brand>, held: Inventory)
         names.add(node.expression.text);
       }
     }
-    const byName = declarationsByName(held);
+    const byName = held.byName;
     const ids = [...names].flatMap((name) => byName.get(name) ?? []);
     return [...new Set([...ids, ...(module ? files : [])])].map((id) => ({
       id,

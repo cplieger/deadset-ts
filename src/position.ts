@@ -48,6 +48,48 @@ export function writtenLength(file: SourceFile): number {
   return isComponentFile(file) ? file.originalText.length : file.text.length;
 }
 
+/** Whether one character ends a line, under the language's line terminators. */
+function endsLine(char: string | undefined): boolean {
+  return char === "\n" || char === "\r" || char === "\u2028" || char === "\u2029";
+}
+
+/** The offset where the line holding `from` ends. */
+export function lineEnd(text: string, from: number): number {
+  let at = from;
+  while (at < text.length && !endsLine(text[at])) {
+    at += 1;
+  }
+  return at;
+}
+
+/**
+ * The offset of the first token at or after `from`: whitespace, comments and a leading
+ * hashbang are trivia.
+ */
+export function tokenStart(text: string, from: number): number {
+  let at = from;
+  if (at === 0 && text.startsWith("#!")) {
+    at = lineEnd(text, 0);
+  }
+  for (;;) {
+    if (/\s/u.test(text[at] ?? "")) {
+      at += 1;
+    } else if (text.startsWith("//", at)) {
+      at = lineEnd(text, at);
+    } else if (text.startsWith("/*", at)) {
+      const close = text.indexOf("*/", at + 2);
+      at = close < 0 ? text.length : close + 2;
+    } else {
+      return at;
+    }
+  }
+}
+
+/** The line, counted from one, of the first token at or after one offset of one file. */
+export function startLine(file: SourceFile, offset: number): number {
+  return file.getLineAndCharacterOfPosition(tokenStart(file.text, offset)).line + 1;
+}
+
 /**
  * The position of one offset of one file, rendered against the target root.
  *

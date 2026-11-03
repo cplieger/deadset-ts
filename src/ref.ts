@@ -1,13 +1,9 @@
 /**
- * The stable symbol reference: the identifier that names one declaration across
- * runs, across reports, in an ignore entry, in a configured root and in a
- * cross-language edge. It is built from names and containers only, so an edit above
- * a declaration leaves it unchanged, and it is compared as bytes, so there is one
- * canonical spelling per declaration and this module is where that spelling is
- * written.
- *
- * The position key of {@link ./position.ts} is the other identifier and has the
- * other job: it locates a finding inside one run, and the two never mix.
+ * The stable symbol reference: the identifier that names one declaration across runs,
+ * reports, ignore entries, configured roots and cross-language edges. It is built from
+ * names and containers only, so an edit above a declaration leaves it unchanged, and it
+ * is compared as bytes, so this module writes the one canonical spelling. The position
+ * key of {@link ./position.ts} locates a finding inside one run; the two never mix.
  */
 
 /** The language prefix, which namespaces every reference this analyzer emits. */
@@ -34,16 +30,10 @@ const SCOPE = `${PREFIX}${TS_PACKAGE}/${TS_FILE}`;
 const MANIFEST_SCOPE = `${PREFIX}${TS_PACKAGE}/${TS_DIRS}package\\.json`;
 
 /**
- * One expression per form the grammar defines, each anchored and each the whole of
- * a reference. Several forms share one expression because they differ in what the
- * symbol is rather than in how the reference is spelled, so the list is the set of
- * spellings and not the set of subjects. A reference is valid when it matches one.
- *
- * They are written here rather than read from the Contract at run time: the Contract
- * is data a reader outside this program consults, and a product that read it while
- * running would need it installed beside itself. A test compares this list against
- * the release this analyzer is written against, so a grammar that grows a form
- * arrives here as a failing test.
+ * One anchored expression per spelling the grammar defines; a reference is valid when it
+ * matches one. They are written here rather than read from the Contract at run time, so
+ * the product needs no Contract installed beside it; a test compares this list against
+ * the release this analyzer implements, so a grammar that grows a form fails it.
  */
 export const REF_EXPRESSIONS: readonly string[] = [
   `^${SCOPE}#$`,
@@ -170,7 +160,8 @@ export function aliasFragment(name: string, block?: string): string {
   return `${head}${nameComponent(name)}:alias`;
 }
 
-function spell(component: Component): string {
+/** The canonical spelling of one component: a name, or a computed key. */
+export function spell(component: Component): string {
   return component.computed ? computedComponent(component.text) : nameComponent(component.text);
 }
 

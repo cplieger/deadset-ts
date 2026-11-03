@@ -5,18 +5,21 @@
  */
 
 import { CODE } from "./contract/contract.generated.ts";
-import {
-  isConstructorDeclaration,
-  SyntaxKind,
-  type Node,
-  type SourceFile,
-} from "@typescript/native/ast";
+import { SyntaxKind, type Node, type SourceFile } from "@typescript/native/ast";
 import { importBindings } from "./import-bindings.ts";
-import { isParameterProperty, nodeKey, type Inventory } from "./inventory.ts";
-import { byPosition, positionKey, renderPosition, type Position } from "./position.ts";
+import { nodeKey, type Inventory } from "./inventory.ts";
+import { relativePath } from "./paths.ts";
+import {
+  byPosition,
+  lineEnd,
+  positionKey,
+  renderPosition,
+  startLine,
+  tokenStart,
+  type Position,
+} from "./position.ts";
 import { importRef } from "./ref.ts";
 import type { ProjectView } from "./session.ts";
-import { signatureOf } from "./signatures.ts";
 import {
   isPartKind,
   SuppressionError,
@@ -88,43 +91,6 @@ const LITERALS: ReadonlySet<SyntaxKind> = new Set([
   SyntaxKind.JsxText,
 ]);
 
-/** Whether one character ends a line, under the language's line terminators. */
-function endsLine(char: string | undefined): boolean {
-  return char === "\n" || char === "\r" || char === "\u2028" || char === "\u2029";
-}
-
-/** The offset where the line holding `from` ends. */
-function lineEnd(text: string, from: number): number {
-  let at = from;
-  while (at < text.length && !endsLine(text[at])) {
-    at += 1;
-  }
-  return at;
-}
-
-/**
- * The offset of the first token at or after `from`: whitespace, comments and a leading
- * hashbang are trivia.
- */
-export function tokenStart(text: string, from: number): number {
-  let at = from;
-  if (at === 0 && text.startsWith("#!")) {
-    at = lineEnd(text, 0);
-  }
-  for (;;) {
-    if (/\s/u.test(text[at] ?? "")) {
-      at += 1;
-    } else if (text.startsWith("//", at)) {
-      at = lineEnd(text, at);
-    } else if (text.startsWith("/*", at)) {
-      const close = text.indexOf("*/", at + 2);
-      at = close < 0 ? text.length : close + 2;
-    } else {
-      return at;
-    }
-  }
-}
-
 /**
  * Every `//` line comment of one file, in file order. The text between tokens is read as
  * the language reads it: a block comment holds no line comment, and the literal tokens the
@@ -191,63 +157,59 @@ function bindingKey(one: Binding): string {
   return `${one.declared?.id ?? ""}\u0000${one.part.id}`;
 }
 
+/** One declaration the inventory places, the declaration that holds its parts, and its lines. */
+interface Placed {
+  readonly one: Declared;
+  readonly holder: Declared;
+  readonly startLines: readonly number[];
+  readonly partLines: readonly number[];
+}
+
+/** The placed declarations of a project by the path of the file each is in. */
+function placedByPath(
+  held: Inventory,
+  symbols: ReadonlyMap<string, Declared>,
+): ReadonlyMap<string, readonly Placed[]> {
+  const byPath = new Map<string, Placed[]>();
+  for (const [id, placed] of held.placement) {
+    const one = symbols.get(id);
+    const holder = symbols.get(placed.holder);
+    if (one === undefined || holder === undefined) {
+      continue;
+    }
+    const at = byPath.get(one.position.path) ?? [];
+    at.push({ one, holder, startLines: placed.startLines, partLines: placed.partLines });
+    byPath.set(one.position.path, at);
+  }
+  return byPath;
+}
+
 /**
- * The declarations of one file by the line each begins on, the line of its first token: a
- * decorator, a modifier or the keyword. A variable's first token is its statement's
- * keyword, and a variable written on a later line of the statement also begins there. A
- * function also begins, for a directive, on the line of each of its parameters, and a
- * class, for a part kind, on the lines of its constructor and its constructor's parameters.
+ * The declarations of one file by the line a directive binds each on, as the inventory
+ * places them, and each import binding of the file on its statement's lines.
  */
 function declarationLines(
   file: SourceFile,
+  placed: readonly Placed[],
   held: Inventory,
-  symbols: ReadonlyMap<string, Declared>,
   targetRoot: string,
 ): ReadonlyMap<number, readonly Binding[]> {
   const below = new Map<number, Binding[]>();
-  const add = (offset: number, one: Binding): void => {
-    const line = file.getLineAndCharacterOfPosition(tokenStart(file.text, offset)).line + 1;
+  const add = (line: number, one: Binding): void => {
     const at = below.get(line) ?? [];
     if (!at.some((known) => bindingKey(known) === bindingKey(one))) {
       at.push(one);
     }
     below.set(line, at);
   };
-  const declaredAt = (node: Node): Declared | undefined => {
-    const id = held.declarations.get(nodeKey(file, node));
-    return id === undefined ? undefined : symbols.get(id);
-  };
-  const visit = (node: Node): void => {
-    const one = declaredAt(node);
-    const owner = isConstructorDeclaration(node) ? declaredAt(node.parent) : undefined;
-    if (owner !== undefined && isConstructorDeclaration(node)) {
-      for (const at of [node, ...node.parameters.filter((one) => !isParameterProperty(one))]) {
-        add(at.pos, { declared: undefined, part: owner });
-      }
+  for (const { one, holder, startLines, partLines } of placed) {
+    for (const line of startLines) {
+      add(line, { declared: one, part: holder });
     }
-    const holder =
-      one !== undefined && isParameterProperty(node) ? declaredAt(node.parent.parent) : one;
-    if (one !== undefined && holder !== undefined) {
-      add(node.pos, { declared: one, part: holder });
+    for (const line of partLines) {
+      add(line, { declared: undefined, part: one });
     }
-    if (one !== undefined) {
-      // A parameter on a later line of a wrapped signature takes its directive on the
-      // line above it, inside the parameter list, and the directive binds the function.
-      for (const parameter of signatureOf(node)?.parameters ?? []) {
-        add(parameter.pos, { declared: one, part: one });
-      }
-      const list = node.parent;
-      if (
-        node.kind === SyntaxKind.VariableDeclaration &&
-        list.kind === SyntaxKind.VariableDeclarationList &&
-        list.parent.kind === SyntaxKind.VariableStatement
-      ) {
-        add(list.parent.pos, { declared: one, part: one });
-      }
-    }
-    node.forEachChild(visit);
-  };
-  file.forEachChild(visit);
+  }
   // An import binding is a subject of its own, bound on its line as a declaration is.
   const fileId = held.declarations.get(nodeKey(file, file));
   const moduleRef = held.symbols.find((symbol) => symbol.id === fileId)?.ref ?? "";
@@ -259,7 +221,7 @@ function declarationLines(
       statement = statement.parent;
     }
     for (const at of [statement.pos, name.getStart()]) {
-      add(at, { declared: one, part: one });
+      add(startLine(file, at), { declared: one, part: one });
     }
   }
   return below;
@@ -296,13 +258,15 @@ export function inlineDirectives<Brand>(
       .filter((symbol) => symbol.kind !== "file")
       .map((symbol) => [symbol.id, { id: symbol.id, ref: symbol.ref, position: symbol.position }]),
   );
+  const placed = placedByPath(held, symbols);
   const found: InlineDirective[] = [];
   for (const file of project.ownSourceFiles()) {
     const comments = lineComments(file).filter((comment) => CANDIDATE.test(comment.text));
     if (comments.length === 0) {
       continue;
     }
-    const below = declarationLines(file, held, symbols, targetRoot);
+    const path = relativePath(targetRoot, file.fileName) ?? "";
+    const below = declarationLines(file, placed.get(path) ?? [], held, targetRoot);
     for (const comment of comments) {
       const site = renderPosition(file, targetRoot, comment.offset);
       const target = trails(file, comment.offset) ? site.line : site.line + 1;

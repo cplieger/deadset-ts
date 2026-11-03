@@ -1,14 +1,7 @@
 /**
- * The files a tool or the platform enters without any import naming them: the
- * configuration files a tool loads by their file name and the files their strings
- * name, the test files the runner executes, and a worker a call addresses by a string
- * literal.
- *
- * Each rule is read from the program and nothing else: a file name the tool
- * itself looks for, a literal written in a configuration file, or a literal
- * argument of a call the checker resolves to the platform's own declaration. A
- * value that is not a literal is not evaluated and not guessed, so a file it would
- * have named is entered by nothing here.
+ * The files a tool or the platform enters without any import naming them, each by a name
+ * the tool looks for or a literal it reads. A value that is not a literal is not evaluated
+ * or guessed, so a file it would have named is entered by nothing here.
  */
 
 import {
@@ -23,7 +16,6 @@ import {
   isPropertyAccessExpression,
   isPropertyAssignment,
   isStringLiteral,
-  SyntaxKind,
   type Node,
   type SourceFile,
 } from "@typescript/native/ast";
@@ -39,11 +31,11 @@ import { buildScriptEntries } from "./build-scripts.ts";
 import type { Host } from "./host.ts";
 import { htmlEntries } from "./html-entries.ts";
 import { documentEntries } from "./mdx-entries.ts";
+import { hasOwnBody } from "./own-body.ts";
 import { dirnamePath, relativePath, resolvePath } from "./paths.ts";
 import { UNANSWERED } from "./query.ts";
 import type { ProjectView } from "./session.ts";
 import type { SourceFiles } from "./source-files.ts";
-import { computedLoadDirectory, leadingLiteral } from "./unseen-loads.ts";
 import { workflowEntries } from "./workflow-steps.ts";
 import { unwrapped } from "./unwrap.ts";
 import { globExpression } from "./text/glob.ts";
@@ -66,12 +58,6 @@ export type EntryRule =
   | "html-entry"
   /** A file a `run:` step of a workflow in the target root's `.github/workflows` names. */
   | "workflow-step"
-  /**
-   * A file a load whose path is computed may name: below the directory the literal
-   * start of an `import()` or `require()` argument names, or matched by the literal
-   * glob of `import.meta.glob`.
-   */
-  | "computed-import"
   /** A file an import line of a Markdown or MDX document below the target root names. */
   | "document-import";
 
@@ -216,7 +202,7 @@ function memberOf(object: Node, name: string): Node | undefined {
  * The strings one member holds, when it is written as a literal or an array of
  * literals. `undefined` is a value the text does not state.
  */
-function literalsOf(value: Node): readonly string[] | undefined {
+export function literalsOf(value: Node): readonly string[] | undefined {
   const at = unwrapped(value);
   const single = literalOf(at);
   if (single !== undefined) {
@@ -242,11 +228,6 @@ function literalsOf(value: Node): readonly string[] | undefined {
  */
 function isRelative(text: string): boolean {
   return text !== "" && !text.startsWith("/") && !URL_SCHEME.test(text);
-}
-
-/** Whether a module specifier is relative, which a bare name is not: it names a package. */
-function isModuleRelative(text: string): boolean {
-  return text.startsWith("./") || text.startsWith("../");
 }
 
 /** A URL reference with its query and its fragment removed, which name no part of the file. */
@@ -396,6 +377,8 @@ function browserTestsOf(file: SourceFile, files: SourceFiles): readonly EntryPoi
 interface WorkerSite {
   readonly literal: string;
   readonly platformNames: readonly Node[];
+  /** The `URL` the address is built with; {@link hasOwnBody} owns which one names no file. */
+  readonly url: Node | undefined;
 }
 
 /**
@@ -405,14 +388,14 @@ interface WorkerSite {
  */
 function workerAddress(
   argument: Node | undefined,
-): { readonly literal: string; readonly names: readonly Node[] } | undefined {
+): { readonly literal: string; readonly url: Node | undefined } | undefined {
   if (argument === undefined) {
     return undefined;
   }
   const at = unwrapped(argument);
   const literal = literalOf(at);
   if (literal !== undefined) {
-    return { literal, names: [] };
+    return { literal, url: undefined };
   }
   if (!isNewExpression(at) || !isIdentifier(at.expression) || at.expression.text !== "URL") {
     return undefined;
@@ -431,7 +414,7 @@ function workerAddress(
   ) {
     return undefined;
   }
-  return { literal: text, names: [at.expression] };
+  return { literal: text, url: at.expression };
 }
 
 /**
@@ -451,7 +434,8 @@ function workerSitesOf(file: SourceFile): readonly WorkerSite[] {
       if (address !== undefined) {
         found.push({
           literal: address.literal,
-          platformNames: [node.expression, ...address.names],
+          platformNames: [node.expression],
+          url: address.url,
         });
       }
     }
@@ -471,7 +455,8 @@ function workerSitesOf(file: SourceFile): readonly WorkerSite[] {
         if (address !== undefined) {
           found.push({
             literal: address.literal,
-            platformNames: [callee.expression.expression, ...address.names],
+            platformNames: [callee.expression.expression],
+            url: address.url,
           });
         }
       }
@@ -483,10 +468,10 @@ function workerSitesOf(file: SourceFile): readonly WorkerSite[] {
 }
 
 /**
- * The workers one file addresses. A call's names must resolve to a symbol the platform
- * declares, which a file of the target may augment and no import brings in; a name only
- * the target declares is the target's own constructor or object, which addresses no
- * worker this rule knows. One batch per file that writes such a call.
+ * The workers one file addresses. A call's `Worker`, `SharedWorker` or `navigator` must
+ * resolve to a symbol the platform declares, which a file of the target may augment and no
+ * import brings in; a name only the target declares is the target's own constructor or
+ * object, which addresses no worker this rule knows. One batch per file that writes such a call.
  */
 function workersOf<Brand>(
   project: ProjectView<Brand>,
@@ -498,7 +483,8 @@ function workersOf<Brand>(
     return [];
   }
   const names = sites.flatMap((site) => site.platformNames);
-  const symbols = project.symbolsAt(names.map((name) => project.handle(name)));
+  const urls = sites.flatMap((site) => site.url ?? []);
+  const symbols = project.symbolsAt([...names, ...urls].map((name) => project.handle(name)));
   const platform = new Set<Node>();
   // A name the checker could not resolve is read as the platform's, so a worker it
   // stands on is rooted rather than reported.
@@ -516,87 +502,25 @@ function workersOf<Brand>(
       platform.add(name);
     }
   });
+  urls.forEach((url, index) => {
+    const symbol = symbols[names.length + index];
+    if (typeof symbol !== "object" || !hasOwnBody(project, symbol)) {
+      platform.add(url);
+    }
+  });
   const dir = dirnamePath(file.fileName);
   const found: EntryPoint[] = [];
   for (const site of sites) {
-    if (!site.platformNames.every((name) => platform.has(name))) {
+    if (
+      !site.platformNames.every((name) => platform.has(name)) ||
+      (site.url !== undefined && !platform.has(site.url))
+    ) {
       continue;
     }
     for (const named of filesNamed(files, dir, site.literal)) {
       found.push({ file: named, rule: "worker", source: site.literal, exports: false });
     }
   }
-  return found;
-}
-
-/** Whether one call is `import.meta.glob(...)`. */
-function isMetaGlob(node: Node): boolean {
-  if (!isCallExpression(node) || !isPropertyAccessExpression(node.expression)) {
-    return false;
-  }
-  const { expression, name } = node.expression;
-  return (
-    isIdentifier(name) &&
-    name.text === "glob" &&
-    isMetaProperty(expression) &&
-    expression.keywordToken === SyntaxKind.ImportKeyword
-  );
-}
-
-/**
- * The files one file loads by a computed path, each with what exports: every own file
- * below the directory a relative literal start of an `import()` or `require()` argument
- * names, other than the calling file's own directory or one holding it, which would name
- * every sibling, and
- * every own file a relative literal glob of `import.meta.glob` matches, both read against
- * the calling file's directory, as a bundler's context module reads them.
- */
-function computedImportsOf(file: SourceFile, files: SourceFiles): readonly EntryPoint[] {
-  const dir = dirnamePath(file.fileName);
-  const found: EntryPoint[] = [];
-  const below = (prefix: string): void => {
-    const target = computedLoadDirectory(dir, prefix);
-    if (target === undefined) {
-      return;
-    }
-    for (const candidate of files.byName.values()) {
-      if (candidate !== file && relativePath(target, candidate.fileName) !== undefined) {
-        found.push({ file: candidate, rule: "computed-import", source: prefix, exports: true });
-      }
-    }
-  };
-  const globbed = (pattern: string): void => {
-    if (!isModuleRelative(pattern)) {
-      return;
-    }
-    const expression = globExpression(resolvePath(dir, pattern));
-    for (const candidate of files.byName.values()) {
-      if (candidate !== file && expression.test(candidate.fileName)) {
-        found.push({ file: candidate, rule: "computed-import", source: pattern, exports: true });
-      }
-    }
-  };
-  const visit = (node: Node): void => {
-    if (isCallExpression(node)) {
-      const [first] = node.arguments;
-      const callee = node.expression;
-      const loads =
-        callee.kind === SyntaxKind.ImportKeyword ||
-        (isIdentifier(callee) && callee.text === "require");
-      if (loads && first !== undefined) {
-        const prefix = leadingLiteral(first);
-        if (prefix !== undefined) {
-          below(prefix);
-        }
-      } else if (isMetaGlob(node) && first !== undefined) {
-        for (const pattern of literalsOf(first) ?? []) {
-          globbed(pattern);
-        }
-      }
-    }
-    node.forEachChild(visit);
-  };
-  file.forEachChild(visit);
   return found;
 }
 
@@ -637,7 +561,6 @@ export function entryPoints<Brand>(
       }
     }
     found.push(...workersOf(project, file, files));
-    found.push(...computedImportsOf(file, files));
   }
   for (const { file, source } of htmlEntries(host, targetRoot, files, parse)) {
     found.push({ file, rule: "html-entry", source, exports: true });

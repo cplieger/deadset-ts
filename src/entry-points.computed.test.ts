@@ -44,50 +44,25 @@ function computedRoots(files: Readonly<Record<string, string>>): string[] {
 
 describe("a file a load with a computed path names", () => {
   it(
-    "is every file below the directory the literal start of an import or a require names, with its exports, unless that directory holds the caller",
-    () => {
-      expect(
-        computedRoots({
-          "src/env.d.ts": "declare function require(path: string): unknown;\n",
-          "src/app.ts": [
-            "declare const name: string;",
-            "export const a = await import(`./migrations/${name}`);",
-            'export const b = require("./fixtures/" + name);',
-            "export const c = await import(`./${name}`);",
-            "export const d = await import(`lib/${name}`);",
-            "export const e = await import(`../${name}`);",
-            "",
-          ].join("\n"),
-          "src/migrations/0001.ts": "export default function up(): void {}\n",
-          "src/fixtures/deep/one.ts": "export const one = 1;\n",
-          "src/sibling.ts": "export const sibling = 1;\n",
-          "src/lib/x.ts": "export const x = 1;\n",
-        }).filter((line) => !line.startsWith("src/env.d.ts")),
-      ).toEqual([
-        "src/fixtures/deep/one.ts#\tcomputed-import\t./fixtures/",
-        "src/fixtures/deep/one.ts#one\tcomputed-import\t./fixtures/",
-        "src/migrations/0001.ts#\tcomputed-import\t./migrations/",
-        "src/migrations/0001.ts#default\tcomputed-import\t./migrations/",
-      ]);
-    },
-    LOAD_TIMEOUT,
-  );
-
-  it(
-    "is every file the literal glob of import.meta.glob matches, read against the calling file",
+    "is no root, whether an import, a require or import.meta.glob names it",
     () => {
       expect(
         computedRoots({
           "src/env.d.ts":
-            "interface ImportMeta {\n  glob(pattern: string | string[]): Record<string, unknown>;\n}\n",
-          "src/app.ts": 'export const pages = import.meta.glob(["./pages/*.page.ts"]);\n',
+            "interface ImportMeta {\n  glob(pattern: string | string[]): Record<string, unknown>;\n}\n" +
+            "declare function require(path: string): unknown;\n",
+          "src/app.ts": [
+            "declare const name: string;",
+            "export const a = await import(`./migrations/${name}`);",
+            'export const b = require("./commands/" + name);',
+            'export const pages = import.meta.glob(["./pages/*.page.ts"]);',
+            "",
+          ].join("\n"),
+          "src/migrations/0001.ts": "export default function up(): void {}\n",
           "src/pages/home.page.ts": "export const home = 1;\n",
-          "src/pages/helper.ts": "export const helper = 1;\n",
-        }).filter((line) => line.startsWith("src/pages/")),
-      ).toEqual([
-        "src/pages/home.page.ts#\tcomputed-import\t./pages/*.page.ts",
-        "src/pages/home.page.ts#home\tcomputed-import\t./pages/*.page.ts",
-      ]);
+          "src/commands/run.ts": "export const run = 1;\n",
+        }).filter((line) => !line.startsWith("src/env.d.ts")),
+      ).toEqual([]);
     },
     LOAD_TIMEOUT,
   );
@@ -257,26 +232,6 @@ describe("a file a makefile's recipe names", () => {
         "src/tool.ts#tool\tworkflow-step\tsrc/tool.ts",
         "src/web/main.tsx#\tworkflow-step\tmain.tsx",
         "src/web/main.tsx#main\tworkflow-step\tmain.tsx",
-      ]);
-    },
-    LOAD_TIMEOUT,
-  );
-
-  it(
-    "is every file below the directory a computed path names through a non-null assertion",
-    () => {
-      expect(
-        computedRoots({
-          "src/app.ts": [
-            "declare const name: string;",
-            "export const a = await import(`./migrations/${name}`!);",
-            "",
-          ].join("\n"),
-          "src/migrations/one.ts": "export const up = 1;\n",
-        }),
-      ).toEqual([
-        "src/migrations/one.ts#\tcomputed-import\t./migrations/",
-        "src/migrations/one.ts#up\tcomputed-import\t./migrations/",
       ]);
     },
     LOAD_TIMEOUT,

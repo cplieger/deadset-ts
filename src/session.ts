@@ -13,7 +13,7 @@ import type {
   Symbol as TSSymbol,
   TimingInfo,
 } from "@typescript/native/sync";
-import type { Node, SourceFile } from "@typescript/native/ast";
+import type { Node, SourceFile, StringLiteralLikeNode } from "@typescript/native/ast";
 import { componentLayer, mapperManifest } from "./component-layer.ts";
 import type { Host, TemporaryDirectory } from "./host.ts";
 import { joinPath } from "./paths.ts";
@@ -242,6 +242,11 @@ export interface ProjectView<Brand> {
    * file it is in.
    */
   ownPaths(): ReadonlySet<string>;
+  /**
+   * The file the compiler's module resolution names for each module specifier of this
+   * project's files, in order, or `undefined` where it names none.
+   */
+  resolvedFileNames(specifiers: readonly StringLiteralLikeNode[]): (string | undefined)[];
   /** A handle to one node of this project's program. */
   handle(node: Node): Handle<Brand>;
   /**
@@ -347,6 +352,17 @@ function viewOf<Brand>(
       ownKeys ??= new Set(ownSourceFiles().map((file) => file.path));
       return ownKeys;
     },
+    resolvedFileNames: (specifiers) =>
+      batched(engine, specifiers, (node) =>
+        project.program.getResolvedModuleFromModuleSpecifier.gen(
+          node,
+          node.getSourceFile().fileName,
+        ),
+      ).map((resolved) =>
+        resolved === undefined || resolved.resolvedFileName === ""
+          ? undefined
+          : resolved.resolvedFileName,
+      ),
     handle: (node) => ({ node }),
     symbolsAt: (handles, cap) =>
       queries.symbolsAt(
