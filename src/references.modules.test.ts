@@ -76,6 +76,48 @@ function asking(
 }
 
 describe("a module's evaluation", () => {
+  it("is the file the compiler resolves a specifier to where that file is a script, which declares no module", () => {
+    const script = "const stamp = String(Date.now());\nconsole.log(stamp);\n";
+    expect(
+      referencesOf(
+        {
+          "package.json": JSON.stringify({
+            name: "@example/modules",
+            type: "module",
+            imports: { "#imported": "./imported.ts" },
+          }),
+          "tsconfig.json": JSON.stringify({
+            compilerOptions: {
+              module: "esnext",
+              moduleResolution: "bundler",
+              target: "es2023",
+              paths: { "@/*": ["./*"] },
+            },
+          }),
+          "polyfill.ts": script,
+          "aliased.ts": script,
+          "imported.ts": script,
+          "missing.ts": "export const missing = 1;\n",
+          "main.ts": [
+            'import "./polyfill.js";',
+            'import "./absent.js";',
+            'await import("./polyfill.ts");',
+            'import "@/aliased";',
+            'import "#imported";',
+            'import "@/absent";',
+            "",
+          ].join("\n"),
+        },
+        evaluation,
+      ),
+    ).toEqual([
+      "main.ts:1:8 polyfill.ts",
+      "main.ts:3:14 polyfill.ts",
+      "main.ts:4:8 aliased.ts",
+      "main.ts:5:8 imported.ts",
+    ]);
+  });
+
   it("is what a value import, a re-export and a literal dynamic import write, and no type-only import", () => {
     expect(
       referencesOf(
@@ -241,6 +283,291 @@ describe("a namespace handed on whole", () => {
   });
 });
 
+const GLOB =
+  "interface ImportMeta {\n  glob(pattern: string | string[], options?: object): Record<string, unknown>;\n}\n";
+
+/**
+ * The references a computed load makes, at the position of an evaluation it writes on a
+ * line that calls `import()`, `require()` or `import.meta.glob()`, as
+ * `<position> <from> <to> <use>`, each a file's path or a declaration's name, with `test`
+ * where a test file makes one.
+ */
+function computedLoadsOf(files: Readonly<Record<string, string>>): string[] {
+  const loading = new Set(
+    Object.entries(files).flatMap(([path, text]) =>
+      text
+        .split("\n")
+        .flatMap((line, at) =>
+          /\b(?:import|require|import\.meta\.glob)\(/u.test(line)
+            ? [`${path}:${String(at + 1)}`]
+            : [],
+        ),
+    ),
+  );
+  const result = analyzeProject(files, { references: { testFiles: ["**/*.test.ts"] } });
+  const symbols = result.inventories[0]?.symbols ?? [];
+  const labels = new Map(
+    symbols.map((symbol) => [
+      symbol.id,
+      symbol.kind === "file" ? symbol.position.path : symbol.name,
+    ]),
+  );
+  const made = (result.references[0]?.references ?? []).filter((reference) =>
+    loading.has(`${reference.position.path}:${String(reference.position.line)}`),
+  );
+  const loads = new Set(
+    made
+      .filter((reference) => reference.use === "evaluation")
+      .map((reference) => positionKey(reference.position)),
+  );
+  return made
+    .filter((reference) => loads.has(positionKey(reference.position)))
+    .map(
+      (reference) =>
+        `${positionKey(reference.position)} ${labels.get(reference.from) ?? ""} ${labels.get(reference.to) ?? ""} ${reference.use}${reference.test ? " test" : ""}`,
+    );
+}
+
+describe("a load by a computed path", () => {
+  it("imports every file below the directory a literal start names, reading its exports, unless that directory holds the caller", () => {
+    expect(
+      computedLoadsOf({
+        "package.json": ESM,
+        "env.d.ts": "declare function require(path: string): unknown;\n",
+        "app.ts": [
+          "declare const name: string;",
+          "export const a = await import(`./migrations/${name}`);",
+          'export const b = require("./fixtures/" + name);',
+          "export const c = await import(`./${name}`);",
+          "export const d = await import(`lib/${name}`);",
+          "export const e = await import(`./migrations/${name}`!);",
+          "",
+        ].join("\n"),
+        "migrations/0001.ts": "export default function up(): void {}\n",
+        "fixtures/deep/one.ts": "export const one = 1;\n",
+        "lib/x.ts": "export const x = 1;\n",
+        "sibling.ts": "export const sibling = 1;\n",
+        "sub/loader.ts": [
+          "declare const name: string;",
+          "export const up = await import(`../plugins/${name}`);",
+          "export const all = await import(`../${name}`);",
+          "",
+        ].join("\n"),
+        "sub/neighbour.ts": "export const neighbour = 1;\n",
+        "plugins/p.ts": "export const p = 1;\n",
+      }),
+      "a require the target declares only in a declaration file is no function of its own",
+    ).toEqual([
+      "app.ts:2:24 a migrations/0001.ts evaluation",
+      "app.ts:2:24 a up read",
+      "app.ts:3:18 b require read",
+      "app.ts:3:18 b fixtures/deep/one.ts evaluation",
+      "app.ts:3:18 b one read",
+      "app.ts:6:24 e migrations/0001.ts evaluation",
+      "app.ts:6:24 e up read",
+      "sub/loader.ts:2:25 up plugins/p.ts evaluation",
+      "sub/loader.ts:2:25 up p read",
+    ]);
+  });
+
+  // Each row: how the calling file binds `require`, and whether Node loads by the call.
+  const NODE_TYPES = [
+    "declare namespace NodeJS {",
+    "  interface Require {",
+    "    (id: string): unknown;",
+    "  }",
+    "}",
+    'declare module "node:module" {',
+    "  export function createRequire(path: string): NodeJS.Require;",
+    "}",
+    'declare module "loader" {',
+    "  export function require(id: string): unknown;",
+    "}",
+    "",
+  ].join("\n");
+  const LOAD = 'export const b = require("./fixtures/" + name);\n';
+  it.each<[string, Readonly<Record<string, string>>, boolean]>([
+    ["an undeclared require loads", { "app.ts": LOAD }, true],
+    [
+      "a require a declaration file declares as a function loads",
+      { "env.d.ts": "declare function require(path: string): unknown;\n", "app.ts": LOAD },
+      true,
+    ],
+    [
+      "a require a declaration file declares as a constant loads",
+      { "env.d.ts": "declare const require: (path: string) => unknown;\n", "app.ts": LOAD },
+      true,
+    ],
+    [
+      "a require the calling file declares under declare loads",
+      { "app.ts": `declare var require: (path: string) => unknown;\n${LOAD}` },
+      true,
+    ],
+    [
+      "a require createRequire returns loads",
+      {
+        "node.d.ts": NODE_TYPES,
+        "app.ts": `import { createRequire } from "node:module";\nconst require = createRequire(import.meta.url);\n${LOAD}`,
+      },
+      true,
+    ],
+    [
+      "a require an AMD callback receives as its parameter loads",
+      {
+        "app.ts": [
+          "declare function define(deps: string[], body: (require: (id: string) => unknown) => void): void;",
+          'define(["require"], (require) => {',
+          '  console.log(require("./fixtures/" + name));',
+          "});",
+          "",
+        ].join("\n"),
+      },
+      true,
+    ],
+    [
+      "a require imported from a module only a declaration file declares loads",
+      { "node.d.ts": NODE_TYPES, "app.ts": `import { require } from "loader";\n${LOAD}` },
+      true,
+    ],
+    [
+      "a function require the target writes loads nothing",
+      {
+        "app.ts": `function require(path: string): unknown {\n  return path;\n}\n${LOAD}`,
+      },
+      false,
+    ],
+    [
+      "a require constant the target initialises with an arrow function loads nothing",
+      { "app.ts": `const require = (path: string): unknown => path;\n${LOAD}` },
+      false,
+    ],
+    [
+      "a require function the target writes and imports loads nothing",
+      {
+        "loader.ts": "export function require(path: string): unknown {\n  return path;\n}\n",
+        "app.ts": `import { require } from "./loader.js";\n${LOAD}`,
+      },
+      false,
+    ],
+  ])("%s", (_, files, loads) => {
+    const { references, label } = analyzed(
+      {
+        "package.json": ESM,
+        "fixtures/one.ts": "export const one = 1;\n",
+        ...files,
+        "names.d.ts": "declare const name: string;\n",
+      },
+      {},
+    );
+
+    expect(
+      references.some(
+        (reference) => evaluation(reference) && label(reference.to) === "fixtures/one.ts",
+      ),
+    ).toBe(loads);
+  });
+
+  it("imports every file an import.meta.glob matches, reading its exports unless its query reads the file as text or a URL", () => {
+    expect(
+      computedLoadsOf({
+        "package.json": ESM,
+        "env.d.ts": GLOB,
+        "app.ts": [
+          'export const code = import.meta.glob(["./code/*.ts"]);',
+          'export const raw = import.meta.glob("./raw/*.ts", { query: "?raw", import: "default" });',
+          'export const bare = import.meta.glob("./bare/*.ts", { query: "url" });',
+          'export const url = import.meta.glob("./url/*.ts", { as: "url" });',
+          'export const inline = import.meta.glob("./inline/*.ts", { query: "?inline&x" });',
+          'export const valued = import.meta.glob("./valued/*.ts", { query: "?raw=1" });',
+          'export const object = import.meta.glob("./object/*.ts", { query: { raw: true } });',
+          "export const template = import.meta.glob(`./template/*.ts`, { query: `?raw` });",
+          "",
+        ].join("\n"),
+        ...Object.fromEntries(
+          ["code", "raw", "bare", "url", "inline", "valued", "object", "template"].map((dir) => [
+            `${dir}/one.ts`,
+            `export const ${dir}One = 1;\n`,
+          ]),
+        ),
+      }),
+    ).toEqual([
+      "app.ts:1:21 code code/one.ts evaluation",
+      "app.ts:1:21 code codeOne read",
+      "app.ts:2:20 raw raw/one.ts evaluation",
+      "app.ts:3:21 bare bare/one.ts evaluation",
+      "app.ts:4:20 url url/one.ts evaluation",
+      "app.ts:5:23 inline inline/one.ts evaluation",
+      "app.ts:6:23 valued valued/one.ts evaluation",
+      "app.ts:6:23 valued valuedOne read",
+      "app.ts:7:23 object object/one.ts evaluation",
+      "app.ts:7:23 object objectOne read",
+      "app.ts:8:25 template template/one.ts evaluation",
+    ]);
+  });
+
+  it("is made by the declaration holding the call, but an eager glob evaluates its files from the file", () => {
+    expect(
+      computedLoadsOf({
+        "package.json": ESM,
+        "env.d.ts": GLOB,
+        "app.ts": [
+          "export function load(name: string): Promise<unknown> {",
+          "  return import(`./plugins/${name}`);",
+          "}",
+          "export function lazy(): Record<string, unknown> {",
+          '  return import.meta.glob("./lazy/*.ts");',
+          "}",
+          "export function eager(): Record<string, unknown> {",
+          '  return import.meta.glob("./eager/*.ts", { eager: true });',
+          "}",
+          "",
+        ].join("\n"),
+        ...Object.fromEntries(
+          ["plugins", "lazy", "eager"].map((dir) => [
+            `${dir}/one.ts`,
+            `export const ${dir}One = 1;\n`,
+          ]),
+        ),
+      }),
+    ).toEqual([
+      "app.ts:2:10 load plugins/one.ts evaluation",
+      "app.ts:2:10 load pluginsOne read",
+      "app.ts:5:10 lazy lazy/one.ts evaluation",
+      "app.ts:5:10 lazy lazyOne read",
+      "app.ts:8:10 app.ts eager/one.ts evaluation",
+      "app.ts:8:10 eager eagerOne read",
+    ]);
+  });
+
+  it("is a test reference where a test file writes it", () => {
+    expect(
+      computedLoadsOf({
+        "package.json": ESM,
+        "env.d.ts": GLOB,
+        "main.ts": 'import { run } from "./lib.ts";\nrun();\n',
+        "lib.ts": "export function run(): void {}\n",
+        "plugins/one.ts": "export const plugin = 1;\n",
+        "loads.test.ts": [
+          'const code = import.meta.glob("./lib.ts", { eager: true });',
+          'const text = import.meta.glob(["./*.ts"], { query: "?raw", import: "default", eager: true });',
+          "declare const name: string;",
+          "const loaded = await import(`./plugins/${name}`);",
+          "console.log(code, text, loaded);",
+          "",
+        ].join("\n"),
+      }),
+    ).toEqual([
+      "loads.test.ts:1:14 loads.test.ts lib.ts evaluation test",
+      "loads.test.ts:1:14 code run read test",
+      "loads.test.ts:2:14 loads.test.ts env.d.ts evaluation test",
+      "loads.test.ts:2:14 loads.test.ts lib.ts evaluation test",
+      "loads.test.ts:2:14 loads.test.ts main.ts evaluation test",
+      "loads.test.ts:4:22 loaded plugins/one.ts evaluation test",
+      "loads.test.ts:4:22 loaded plugin read test",
+    ]);
+  });
+});
+
 describe("a module URL", () => {
   it("loads the file it names relative to import.meta.url, or through import.meta.resolve", () => {
     expect(
@@ -271,6 +598,88 @@ describe("a module URL", () => {
         evaluation,
       ),
     ).toEqual(["main.ts:1:23 worker.ts"]);
+  });
+
+  it("is made by the declaration holding the expression", () => {
+    const { references, label } = analyzed(
+      {
+        "package.json": ESM,
+        ...modules("worker"),
+        "main.ts": [
+          "export function start(): URL {",
+          '  return new URL("./worker.ts", import.meta.url);',
+          "}",
+          "",
+        ].join("\n"),
+      },
+      {},
+    );
+
+    expect(
+      references
+        .filter(evaluation)
+        .map((reference) => `${label(reference.from)} ${label(reference.to)}`),
+    ).toEqual(["start worker.ts"]);
+  });
+
+  it("loads the file where the target declares URL only ambiently, as the platform's", () => {
+    expect(
+      referencesOf(
+        {
+          "package.json": ESM,
+          "tsconfig.json": JSON.stringify({
+            compilerOptions: { module: "esnext", target: "es2023", lib: ["es2023"], types: [] },
+          }),
+          ...modules("worker"),
+          "globals.d.ts":
+            "declare var URL: { new (url: string, base?: string): { readonly href: string } };\n",
+          "main.ts": 'export const worker = new URL("./worker.ts", import.meta.url);\n',
+        },
+        evaluation,
+      ),
+    ).toEqual(["main.ts:1:23 worker.ts"]);
+  });
+
+  // Each row: how the file binds `URL`, and whether a runtime starts the file it names.
+  const URL_MODULES = [
+    'declare module "url" {',
+    "  export class URL {",
+    "    constructor(input: string, base?: string);",
+    "    readonly href: string;",
+    "  }",
+    "}",
+    'declare module "node:url" {',
+    '  export * from "url";',
+    "}",
+    "",
+  ].join("\n");
+  const URL_CLASS =
+    "class URL {\n  constructor(\n    readonly path: string,\n    readonly base: string,\n  ) {}\n}\n";
+  const WORKER = 'export const worker = new URL("./worker.ts", import.meta.url);\n';
+  it.each<[string, Readonly<Record<string, string>>, boolean]>([
+    ["the global URL loads", { "main.ts": WORKER }, true],
+    [
+      "the URL node:url exports loads",
+      { "url.d.ts": URL_MODULES, "main.ts": `import { URL } from "node:url";\n${WORKER}` },
+      true,
+    ],
+    ["a URL class the target writes loads nothing", { "main.ts": `${URL_CLASS}${WORKER}` }, false],
+    [
+      "a URL class the target writes and imports loads nothing",
+      { "url.ts": `export ${URL_CLASS}`, "main.ts": `import { URL } from "./url.js";\n${WORKER}` },
+      false,
+    ],
+    [
+      "a URL constant the target initialises with a class expression loads nothing",
+      { "main.ts": `const URL = ${URL_CLASS.replace("class URL", "class")};\n${WORKER}` },
+      false,
+    ],
+  ])("%s", (_, files, loads) => {
+    expect(
+      referencesOf({ "package.json": ESM, ...modules("worker"), ...files }, evaluation).some(
+        (line) => line.endsWith(" worker.ts"),
+      ),
+    ).toBe(loads);
   });
 
   it("loads nothing where the constructor, the base, the method or the path is another", () => {

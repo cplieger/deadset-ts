@@ -2,7 +2,7 @@ import type { BuildConfiguration, ProjectConfiguration } from "../config.ts";
 import { LANGUAGE_ROWS } from "../contract/contract.generated.ts";
 import { filesBelow, filesIn } from "../fs/tree.ts";
 import type { Host } from "../host.ts";
-import { packageScope } from "../inventory.ts";
+import { packageScope } from "./package-scope.ts";
 import { dirnamePath, joinPath, relativePath, resolvePath } from "../paths.ts";
 import { LANGUAGE, message } from "../product.ts";
 import type { Module, Scope } from "../scope.ts";

@@ -65,7 +65,6 @@ const NAMES_A_CALLER: Readonly<Record<RootKind, boolean>> = {
   worker: true,
   "html-entry": true,
   "workflow-step": true,
-  "computed-import": true,
   "document-import": true,
 };
 

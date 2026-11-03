@@ -1,76 +1,38 @@
 import {
-  isArrayBindingPattern,
-  isBindingElement,
   isClassDeclaration,
   isComputedPropertyName,
   isConstructorDeclaration,
-  isEnumDeclaration,
   isEnumMember,
-  isExportAssignment,
-  isExportDeclaration,
   isFunctionDeclaration,
   isGetAccessorDeclaration,
   isIdentifier,
   isInterfaceDeclaration,
-  isIntersectionTypeNode,
   isMethodDeclaration,
   isMethodSignatureDeclaration,
-  isModuleBlock,
-  isModuleDeclaration,
-  isNamespaceExport,
-  isObjectBindingPattern,
   isParameterDeclaration,
-  isParenthesizedTypeNode,
   isPrivateIdentifier,
   isPropertyDeclaration,
   isPropertySignatureDeclaration,
   isSetAccessorDeclaration,
-  isStringLiteral,
   isTypeAliasDeclaration,
-  isTypeLiteralNode,
-  isUnionTypeNode,
-  isVariableStatement,
   ModifierFlags,
-  type BindingElement,
-  type ClassDeclaration,
-  type Identifier,
+  SyntaxKind,
   type Node,
   type SourceFile,
 } from "@typescript/native/ast";
-import type { Symbol as TSSymbol } from "@typescript/native/sync";
-import type { Host } from "./host.ts";
-import { dirnamePath, joinPath, relativePath } from "./paths.ts";
-import {
-  byPosition,
-  positionKey,
-  renderPosition,
-  writtenLength,
-  type Position,
-} from "./position.ts";
-import { computedComponent, nameComponent, renderRef, type Component, type Module } from "./ref.ts";
-import { isAnswered, UNANSWERED } from "./query.ts";
-import type { Handle, ProjectView } from "./session.ts";
-import { manifestAt } from "./fs/manifest.ts";
+import { byPosition, positionKey, renderPosition, startLine, type Position } from "./position.ts";
+import { renderRef, spell, type Component, type Module } from "./ref.ts";
+import { signatureOf } from "./signatures.ts";
 
 /**
- * The symbol inventory of one project: every declaration the target's own files
- * hold, at its own position, with the container it belongs to and the reference
- * that survives an edit above it.
- *
- * Two mechanisms produce it and neither is redundant. A container's symbol table is
- * the binder's own answer, so it holds a member of a declaration that merges with
- * another and it holds a member whatever its visibility, a private name included;
- * a container's syntactic member list holds a member whose key is computed, which
- * the binder resolves later and does not put in the table. The set is the union,
- * keyed by the member's own reference component, so a member both sources name
- * appears once.
+ * The symbol inventory of one project: every declaration the target's own files hold, at
+ * its own position, with the container it belongs to and the reference that survives an
+ * edit above it. A container's members are the union of its symbol table, which holds a
+ * member of a merged declaration and a private name, and its syntactic member list, which
+ * holds a computed key the binder resolves later; a member both sources name appears once.
  */
 
-/**
- * What one declaration is, from the vocabulary the Contract's finding schema
- * closes. A Go rendering of the same vocabulary names other members of it; these
- * are the ones a TypeScript declaration takes.
- */
+/** What one declaration is, from the vocabulary the Contract's finding schema closes. */
 export type SymbolKind =
   | "file"
   | "function"
@@ -89,15 +51,8 @@ export type SymbolKind =
   | "type-parameter";
 
 /**
- * How a member may be named from outside the container that declares it.
- *
- * The last two are two facts rather than one. A `private` modifier is a
- * compile-time constraint only, so the member is still reachable at run time by its
- * name through a string index, a decorator, a container or a serializer; a private
- * name is not reachable by any of them, because the name does not exist outside the
- * class body. An exemption class that finds its evidence in a name therefore
- * applies to the first and never to the second, and the Contract's exemption
- * vocabulary records that per class.
+ * How a member may be named from outside its container. A `private` member is still
+ * reachable at run time by its name; a private name does not exist outside the class body.
  */
 export type Visibility = "public" | "protected" | "private" | "private-name";
 
@@ -120,16 +75,31 @@ export interface InventorySymbol {
   /** The container's id: the file for a module-level declaration, empty for a file. */
   readonly parent: string;
   /**
-   * Whether the export table of the module or namespace that holds the declaration
-   * names it. It is a fact about that one table, so it is false for every member of
-   * a class, an interface, a type or an enum and for every type parameter, whose
-   * reach outside its container is {@link InventorySymbol.visibility} and the state
-   * of the container the parent names.
+   * Whether the export table of the module or namespace that holds the declaration names
+   * it: false for every member of a class, an interface, a type or an enum and for every
+   * type parameter, whose reach is its visibility and its container's.
    */
   readonly exported: boolean;
   readonly visibility: Visibility;
   /** Whether the declaration is a static member of a class. */
   readonly static: boolean;
+}
+
+/** Where a directive written above a declaration binds it. */
+interface Placement {
+  /**
+   * The lines a directive written above binds the declaration on: the line of the first
+   * token of each node that declares it, of a variable's statement and of each parameter
+   * of the function it declares. Ascending.
+   */
+  readonly startLines: readonly number[];
+  /** The id of the declaration a directive for a part kind binds on those lines. */
+  readonly holder: string;
+  /**
+   * The lines a directive binds only the declaration's parts on: a class's constructors
+   * and their parameters that declare no member. Ascending.
+   */
+  readonly partLines: readonly number[];
 }
 
 /** What one project's inventory cost at the client boundary. */
@@ -139,9 +109,8 @@ export interface InventoryCost {
   /** Export-table reads: one per module and one per namespace. */
   readonly exportTables: number;
   /**
-   * Member-table reads: one per interface and enum, and two per class, because a
-   * class keeps its instance members and its static members in two tables. Never
-   * one per member.
+   * Member-table reads: one per interface and enum, and two per class, because a class
+   * keeps its instance members and its static members in two tables.
    */
   readonly memberTables: number;
 }
@@ -151,20 +120,16 @@ export interface Inventory {
   readonly symbols: readonly InventorySymbol[];
   /**
    * Each declaring node's {@link nodeKey} mapped to the identifier of the declaration
-   * enumerated there. A reading that starts from a node of the same program, rather
-   * than from a position, resolves the declaration through this map instead of
-   * rendering the position a second time, so the rule that decides a declaration's
-   * identifier has one owner.
-   *
-   * A getter and a setter of one name are one declaration and two nodes, so both nodes
-   * name it.
+   * enumerated there, so a reading that starts from a node resolves the declaration
+   * without rendering its position again. A getter and a setter of one name are one
+   * declaration and two nodes, so both nodes name it.
    */
   readonly declarations: ReadonlyMap<string, string>;
   readonly cost: InventoryCost;
   /**
-   * The declarations whose module, namespace or container table the checker did not
-   * answer, in position order: whether each is exported, and which members a table
-   * would have added, are unknown.
+   * The declarations whose export or member table is unknown, in position order: the
+   * checker did not answer a table of theirs or of a container holding them, or they are
+   * entries of a CommonJS export table, whose readers no reference source models.
    */
   readonly unanswered: readonly string[];
   /**
@@ -176,20 +141,57 @@ export interface Inventory {
   readonly modules: ReadonlyMap<string, string>;
   /**
    * The ids of the ambient declarations: those of a declaration file, and those a `declare`
-   * modifier carries or a declaration carrying one holds. They describe code the target
-   * does not implement.
+   * modifier carries or a declaration carrying one holds.
    */
   readonly ambient: ReadonlySet<string>;
   /**
    * Each enum member's dependents, by id: the later members of its declaration with no
    * initializer, up to the first one with an initializer, whose values its deletion moves.
-   * A member with none has no entry.
    */
   readonly dependents: ReadonlyMap<string, readonly string[]>;
+  /** Each declaration but a file, by id, to where a directive binds it. */
+  readonly placement: ReadonlyMap<string, Placement>;
+  /**
+   * The ids of the CommonJS files that write their exports in a form their table does not
+   * model, so an import of one may read anything it exports.
+   */
+  // deadset:ignore DS1301 -- only tests read open tables
+  readonly openTables: ReadonlySet<string>;
+}
+
+/**
+ * One node's identity inside one program, which is how two readings of that program name
+ * one declaration: the binder's table and the tree meet here, and so does the reference
+ * pass, which starts from a resolved symbol's declaration.
+ */
+export function nodeKey(file: SourceFile, node: Node): string {
+  return `${file.fileName}:${String(node.pos)}:${String(node.end)}:${String(node.kind)}`;
+}
+
+/**
+ * Whether one node is a parameter property: a constructor parameter carrying an
+ * accessibility, `readonly` or `override` modifier, which also declares an instance member
+ * of the class, with the parameter's node as the member's declaration.
+ */
+export function isParameterProperty(node: Node): boolean {
+  return (
+    isParameterDeclaration(node) &&
+    isConstructorDeclaration(node.parent) &&
+    (modifiersOf(node) & ModifierFlags.ParameterPropertyModifier) !== 0
+  );
+}
+
+/**
+ * The fragment component one declaration's name spells in a reference, as the inventory
+ * spells it, or undefined for a name the grammar does not represent.
+ */
+export function declaredComponent(node: Node): string | undefined {
+  const component = componentOf(nameNodeOf(node));
+  return component === undefined ? undefined : spell(component);
 }
 
 /** A declaration under construction, before its reference is rendered. */
-interface Building {
+export interface Building {
   readonly file: SourceFile;
   readonly node: Node;
   readonly module: Module;
@@ -198,10 +200,7 @@ interface Building {
   readonly kind: SymbolKind;
   /** The chain of the container, without this declaration's own component. */
   readonly parentChain: readonly Component[];
-  /**
-   * This declaration's own component. A default export's is its export name, which
-   * is where the component and the declared name part company.
-   */
+  /** This declaration's own component: a default export's is its export name. */
   readonly component: Component;
   /** The declared name, where it is not what the component spells. */
   readonly localName: string | undefined;
@@ -211,21 +210,25 @@ interface Building {
   exported: boolean;
   /** The type parameter this declaration is, where it is one. */
   readonly typeParameter: string | undefined;
+  /** The declaration that holds this one's parts: a parameter property's class, else itself. */
+  readonly holder: Building | undefined;
+  readonly startLines: Set<number>;
+  readonly partLines: Set<number>;
 }
 
 /** A container whose members are read from a symbol table, from the tree, or both. */
-interface Container {
+export interface Container {
   readonly owner: Building;
   /** The declaration that writes the container, which owns the members written inside it. */
   readonly declaration: Node;
-  /** The container's name node, which is what a batch resolves to its symbol. */
+  /** The container's name node, which a batch resolves to its symbol; none reads no table. */
   readonly nameNode: Node | undefined;
   readonly members: readonly Node[];
+  /**
+   * `class-member` for a class, whose static members are a second table, and `enum-member`
+   * for an enum, which keeps its members in its export table.
+   */
   readonly memberKind: SymbolKind;
-  /** Whether the container is a class, whose static members are a second table. */
-  readonly isClass: boolean;
-  /** Whether the container keeps its members in the export table, as an enum does. */
-  readonly membersAreExports: boolean;
 }
 
 /** A module or namespace whose export table says which of its declarations it exports. */
@@ -234,63 +237,326 @@ interface ExportScope {
   readonly nameNode: Node;
 }
 
-/** One manifest that names a package, and the directory below the root that holds it. */
+/** The name a declaration is declared under: its component, and its declared name beside it. */
 interface Named {
-  readonly name: string;
-  readonly at: string;
+  readonly component: Component;
+  readonly localName: string | undefined;
+}
+
+/** One mechanism that finds the declarations a file writes, run per file in list order. */
+export interface DeclarationSource {
+  declare(file: SourceFile, owner: Building, into: Builder): void;
 }
 
 /**
- * Resolves each file's package scope: the name of the nearest manifest at or above
- * its directory up to the target root, and the file's path below that manifest.
- * Where no manifest up to the root carries a name, the package is a single dot and
- * the path is read from the root, which cannot collide, because a package name never
- * starts with a dot.
- *
- * One directory is read at most once, because a package holds many files and a
- * manifest read is a filesystem call.
+ * Collects one project's declarations, from every {@link DeclarationSource} and from the
+ * binder's tables, and renders them. A member is kept once per container, by its
+ * component and its side of a class, whichever mechanism names it first.
  */
-export function packageScope(host: Host, root: string): (path: string) => Module {
-  const named = new Map<string, Named | undefined>();
+export class Builder {
+  readonly #targetRoot: string;
+  readonly #records: Building[] = [];
+  readonly #byNode = new Map<string, Building>();
+  readonly #exportScopes: ExportScope[] = [];
+  readonly #containers: Container[] = [];
+  readonly #modules: (readonly [Building, string])[] = [];
+  readonly #unansweredOwners = new Set<Building>();
+  readonly #openTables = new Set<Building>();
 
-  const manifestName = (dir: string): string | undefined => {
-    const name = manifestAt(host, joinPath(root, dir))?.["name"];
-    return typeof name === "string" && name !== "" ? name : undefined;
-  };
+  constructor(targetRoot: string) {
+    this.#targetRoot = targetRoot;
+  }
 
-  const nearest = (dir: string): Named | undefined => {
-    if (named.has(dir)) {
-      return named.get(dir);
+  get exportScopes(): readonly ExportScope[] {
+    return this.#exportScopes;
+  }
+
+  get containers(): readonly Container[] {
+    return this.#containers;
+  }
+
+  /** One file's own record, which is also the export scope of its module. */
+  file(file: SourceFile, module: Module, path: string): Building {
+    const record = this.#keep(file, file, 0, {
+      module,
+      kind: "file",
+      parentChain: [],
+      // A file's reference names its module, so no component of it is ever spelled; the
+      // path is what a text line renders for it.
+      component: { text: path, computed: false },
+      localName: path,
+      parent: undefined,
+    });
+    this.#exportScopes.push({ owner: record, nameNode: file });
+    return record;
+  }
+
+  /** One declaration written under `owner`, placed at its name, and its type parameters. */
+  declare(
+    node: Node,
+    owner: Building,
+    kind: SymbolKind,
+    name: Node | undefined,
+    named: Named,
+  ): Building {
+    const record = this.#keep(owner.file, node, name?.getStart() ?? unnamedStart(node), {
+      module: owner.module,
+      kind,
+      parentChain: owner.kind === "file" ? [] : chainOf(owner),
+      ...named,
+      parent: owner,
+      visibility: visibilityOf(node, name),
+      static: (modifiersOf(node) & ModifierFlags.Static) !== 0,
+    });
+    this.#declareTypeParameters(node, record);
+    return record;
+  }
+
+  /** A container of members; a class's constructors are where its parts are bound. */
+  container(container: Container): void {
+    this.#containers.push(container);
+    if (container.memberKind !== "class-member") {
+      return;
     }
-    const name = manifestName(dir);
-    const found =
-      name !== undefined ? { name, at: dir } : dir === "" ? undefined : nearest(parentOf(dir));
-    named.set(dir, found);
-    return found;
-  };
-
-  return (path) => {
-    const found = nearest(parentOf(path));
-    if (found === undefined) {
-      return { package: ".", path };
+    for (const member of container.members.filter(isConstructorDeclaration)) {
+      for (const at of [member, ...member.parameters.filter((one) => !isParameterProperty(one))]) {
+        container.owner.partLines.add(startLine(container.owner.file, at.pos));
+      }
     }
-    return { package: found.name, path: found.at === "" ? path : path.slice(found.at.length + 1) };
-  };
+  }
+
+  /** A namespace whose export table says which of its declarations it exports. */
+  exportScope(owner: Building, nameNode: Node): void {
+    this.#exportScopes.push({ owner, nameNode });
+  }
+
+  /** A `declare module` declaration named by a string literal. */
+  module(record: Building, name: string): void {
+    this.#modules.push([record, name]);
+  }
+
+  /** The declaration enumerated at one node, where one is. */
+  recordAt(node: Node): Building | undefined {
+    return this.#byNode.get(nodeKey(node.getSourceFile(), node));
+  }
+
+  /** Records that a table of `owner` is unknown, which leaves everything under it unknown. */
+  unanswered(owner: Building): void {
+    this.#unansweredOwners.add(owner);
+  }
+
+  /** Records that one file writes its exports in a form its table does not model. */
+  openTable(file: Building): void {
+    this.#openTables.add(file);
+  }
+
+  /**
+   * One member of a container. A getter and a setter of one name are one symbol and one
+   * reference, so the second declaration widens the first record rather than making a
+   * second, and both nodes name that record.
+   */
+  member(container: Container, node: Node, seen: Map<string, Building>, areStatic: boolean): void {
+    const kind = memberKindOf(container, node);
+    if (kind === undefined) {
+      return;
+    }
+    const name = nameNodeOf(node);
+    const component = componentOf(name);
+    if (component === undefined) {
+      return;
+    }
+    const file = node.getSourceFile();
+    const key = memberKey(component, areStatic);
+    const held = seen.get(key);
+    const endLine = this.#endOf(file, node);
+    if (held !== undefined) {
+      held.endLine = Math.max(held.endLine, endLine);
+      this.#byNode.set(nodeKey(file, node), held);
+      placeAt(held, node);
+      return;
+    }
+    const record = this.#keep(file, node, (name ?? node).getStart(), {
+      module: container.owner.module,
+      kind,
+      parentChain: chainOf(container.owner),
+      component,
+      parent: container.owner,
+      visibility: visibilityOf(node, name),
+      static: areStatic,
+      holder: isParameterProperty(node) ? container.owner : undefined,
+    });
+    seen.set(key, record);
+    this.#declareTypeParameters(node, record);
+  }
+
+  /** The inventory of everything collected. */
+  build(cost: InventoryCost): Inventory {
+    const byId = new Map(this.#records.map((record) => [positionKey(record.position), record]));
+    const symbols = this.#records.map(render).sort((a, b) => byPosition(a.position, b.position));
+    return {
+      symbols,
+      declarations: new Map(
+        [...this.#byNode].map(([key, record]) => [key, positionKey(record.position)] as const),
+      ),
+      cost,
+      unanswered: symbols
+        .filter((symbol) => underUnanswered(byId.get(symbol.id), this.#unansweredOwners))
+        .map((symbol) => symbol.id),
+      byName: namesOf(this.#records),
+      modules: new Map(this.#modules.map(([record, name]) => [positionKey(record.position), name])),
+      ambient: new Set(
+        this.#records
+          .filter((record) => isAmbient(record.file, record.node))
+          .map((record) => positionKey(record.position)),
+      ),
+      dependents: dependentsOf(this.#containers, (node) => this.recordAt(node)),
+      placement: placementOf(this.#records),
+      openTables: new Set([...this.#openTables].map((file) => positionKey(file.position))),
+    };
+  }
+
+  #keep(
+    file: SourceFile,
+    node: Node,
+    at: number,
+    fields: Pick<Building, "module" | "kind" | "parentChain" | "component" | "parent"> &
+      Partial<Pick<Building, "localName" | "visibility" | "static" | "typeParameter" | "holder">>,
+  ): Building {
+    const kept: Building = {
+      file,
+      node,
+      position: renderPosition(file, this.#targetRoot, at),
+      endLine: this.#endOf(file, node),
+      localName: undefined,
+      visibility: "public",
+      static: false,
+      exported: false,
+      typeParameter: undefined,
+      holder: undefined,
+      ...fields,
+      startLines: new Set(),
+      partLines: new Set(),
+    };
+    this.#records.push(kept);
+    this.#byNode.set(nodeKey(kept.file, kept.node), kept);
+    if (kept.kind !== "file") {
+      placeAt(kept, kept.node);
+    }
+    return kept;
+  }
+
+  #declareTypeParameters(node: Node, owner: Building): void {
+    for (const parameter of typeParametersOf(node)) {
+      const name = nameNodeOf(parameter);
+      if (name === undefined) {
+        continue;
+      }
+      this.#keep(owner.file, parameter, name.getStart(), {
+        module: owner.module,
+        kind: "type-parameter",
+        parentChain: owner.parentChain,
+        component: owner.component,
+        parent: owner,
+        static: owner.static,
+        typeParameter: name.getText(),
+      });
+    }
+  }
+
+  #endOf(file: SourceFile, node: Node): number {
+    return renderPosition(file, this.#targetRoot, Math.max(node.end - 1, 0)).line;
+  }
 }
 
-/** The directory one path below the root sits in, and the root itself as the empty path. */
-function parentOf(path: string): string {
-  const dir = dirnamePath(path);
-  return dir === "." ? "" : dir;
+/** The lines one declaring node binds its declaration on. */
+function placeAt(record: Building, node: Node): void {
+  const file = record.file;
+  record.startLines.add(startLine(file, node.pos));
+  for (const parameter of signatureOf(node)?.parameters ?? []) {
+    record.startLines.add(startLine(file, parameter.pos));
+  }
+  const list = node.parent as Node | undefined;
+  if (
+    node.kind === SyntaxKind.VariableDeclaration &&
+    list?.kind === SyntaxKind.VariableDeclarationList &&
+    list.parent.kind === SyntaxKind.VariableStatement
+  ) {
+    record.startLines.add(startLine(file, list.parent.pos));
+  }
 }
 
 /** The modifier flags one node carries, and zero for a node that carries none. */
-function modifiersOf(node: Node): number {
+export function modifiersOf(node: Node): number {
   return (node as { readonly modifierFlags?: number }).modifierFlags ?? 0;
 }
 
+/** The name node of one declaration, for the kinds that carry one. */
+export function nameNodeOf(node: Node): Node | undefined {
+  return (node as { readonly name?: Node }).name;
+}
+
+/**
+ * The reference component one declaration name node spells, and undefined for a name the
+ * grammar does not represent: a binding pattern, and a computed key whose source text
+ * carries a closing bracket.
+ */
+export function componentOf(name: Node | undefined): Component | undefined {
+  if (name === undefined) {
+    return undefined;
+  }
+  if (isComputedPropertyName(name)) {
+    const text = name.expression.getText();
+    return text.includes("]") ? undefined : { text, computed: true };
+  }
+  if (isIdentifier(name) || isPrivateIdentifier(name)) {
+    return { text: name.getText(), computed: false };
+  }
+  const text = name.getText();
+  if (text.startsWith('"') || text.startsWith("'") || text.startsWith("`")) {
+    // A string key's own text carries its quotes; the reference carries the value.
+    return { text: text.slice(1, -1), computed: false };
+  }
+  return /^[0-9]/u.test(text) ? { text, computed: false } : undefined;
+}
+
+/**
+ * The component one declaration's reference carries, and its declared name where the two
+ * differ. A declaration its module exports as the default is named `default`, its export
+ * name, which a module has at most one of and an anonymous declaration has too.
+ */
+export function exportedAs(
+  node: Node,
+  name: Node | undefined,
+): { readonly component: Component | undefined; readonly localName: string | undefined } {
+  const declared = componentOf(name);
+  if ((modifiersOf(node) & ModifierFlags.Default) === 0) {
+    return { component: declared, localName: undefined };
+  }
+  return { component: { text: "default", computed: false }, localName: declared?.text };
+}
+
+/** One member's identity inside its container: its component, and its side of a class. */
+export function memberKey(component: Component, isStatic: boolean): string {
+  return `${component.computed ? "[" : ""}${component.text}${isStatic ? ":static" : ""}`;
+}
+
+/** The visibility one member declaration's modifiers and name give it. */
+function visibilityOf(node: Node, name: Node | undefined): Visibility {
+  if (name !== undefined && isPrivateIdentifier(name)) {
+    return "private-name";
+  }
+  const flags = modifiersOf(node);
+  if ((flags & ModifierFlags.Private) !== 0) {
+    return "private";
+  }
+  if ((flags & ModifierFlags.Protected) !== 0) {
+    return "protected";
+  }
+  return "public";
+}
+
 /** Whether a declaration is ambient: in a declaration file, or under a `declare` modifier. */
-function isAmbient(file: SourceFile, node: Node): boolean {
+export function isAmbient(file: SourceFile, node: Node): boolean {
   if (file.isDeclarationFile) {
     return true;
   }
@@ -317,218 +583,6 @@ function typeParametersOf(node: Node): readonly Node[] {
   return [];
 }
 
-/**
- * The reference component one declaration name node spells, and undefined for a
- * name the grammar does not represent: a binding pattern, and a computed key whose
- * source text carries a closing bracket.
- */
-function componentOf(name: Node | undefined): Component | undefined {
-  if (name === undefined) {
-    return undefined;
-  }
-  if (isComputedPropertyName(name)) {
-    const text = name.expression.getText();
-    return text.includes("]") ? undefined : { text, computed: true };
-  }
-  if (isIdentifier(name) || isPrivateIdentifier(name)) {
-    return { text: name.getText(), computed: false };
-  }
-  if (isStringOrNumericName(name)) {
-    // A string or numeric key's own text carries its quotes and its numeric
-    // spelling; the reference carries the value, which the component then quotes.
-    return { text: literalTextOf(name), computed: false };
-  }
-  return undefined;
-}
-
-function isStringOrNumericName(name: Node): boolean {
-  const text = name.getText();
-  return (
-    text.startsWith('"') || text.startsWith("'") || text.startsWith("`") || /^[0-9]/u.test(text)
-  );
-}
-
-/** One member's identity inside its container: its component, and its side of a class. */
-function memberKey(component: Component, isStatic: boolean): string {
-  return `${component.computed ? "[" : ""}${component.text}${isStatic ? ":static" : ""}`;
-}
-
-/** The type one node is, through however many parentheses are written around it. */
-function unparenthesizedType(type: Node): Node {
-  let held = type;
-  while (isParenthesizedTypeNode(held)) {
-    held = held.type;
-  }
-  return held;
-}
-
-/**
- * The direct constituents of one type. Parentheses are syntax and are not a
- * constituent, so a parenthesized type contributes the constituents it holds: the
- * constituents of `(A | B) & C` are `A`, `B` and `C`. A union or an intersection
- * written without them stays one constituent.
- */
-function constituentsOf(type: Node): readonly Node[] {
-  const held = unparenthesizedType(type);
-  if (!isUnionTypeNode(held) && !isIntersectionTypeNode(held)) {
-    return [held];
-  }
-  return held.types.flatMap((member) =>
-    isParenthesizedTypeNode(member) ? constituentsOf(member) : [member],
-  );
-}
-
-/**
- * The members one type alias declares: the members of the object type it writes, and
- * of every object type that is a direct constituent of a union or an intersection it
- * writes. A constituent naming another type declares nothing here, because that
- * declaration carries its own members.
- *
- * A name two constituents both declare is left out of all of them. The alias stands
- * for such a member, because the two declarations are one member of the type and
- * neither of them is the one a reference to it would name.
- */
-function aliasMembers(type: Node): readonly Node[] {
-  const literals = constituentsOf(type).filter(isTypeLiteralNode);
-  if (literals.length < 2) {
-    return literals[0]?.members ?? [];
-  }
-
-  const declaring = new Map<string, number>();
-  for (const literal of literals) {
-    for (const key of new Set(literal.members.map(keyOf))) {
-      if (key !== undefined) {
-        declaring.set(key, (declaring.get(key) ?? 0) + 1);
-      }
-    }
-  }
-  return literals.flatMap((literal) =>
-    literal.members.filter((member) => {
-      const key = keyOf(member);
-      return key !== undefined && declaring.get(key) === 1;
-    }),
-  );
-}
-
-/** One type member's identity, and undefined for a member the grammar cannot name. */
-function keyOf(member: Node): string | undefined {
-  const component = componentOf(nameNodeOf(member));
-  return component === undefined ? undefined : memberKey(component, false);
-}
-
-/** The value one string or numeric key denotes, which is what the reference names. */
-function literalTextOf(name: Node): string {
-  const text = name.getText();
-  if (text.startsWith('"') || text.startsWith("'") || text.startsWith("`")) {
-    return text.slice(1, -1);
-  }
-  return text;
-}
-
-/**
- * The component one declaration's reference carries, and its declared name where the
- * two differ.
- *
- * A declaration its module exports as the default is named `default`, because that is
- * its export name and a module has at most one, so the spelling is unambiguous and it
- * holds for an anonymous declaration too. Its declared name is a fact about the source
- * rather than about the export, so it travels beside the component as the display name.
- */
-function exportedAs(
-  node: Node,
-  name: Node | undefined,
-): { readonly component: Component | undefined; readonly localName: string | undefined } {
-  const declared = componentOf(name);
-  if ((modifiersOf(node) & ModifierFlags.Default) === 0) {
-    return { component: declared, localName: undefined };
-  }
-  return { component: { text: "default", computed: false }, localName: declared?.text };
-}
-
-/** The visibility one member declaration's modifiers and name give it. */
-function visibilityOf(node: Node, name: Node | undefined): Visibility {
-  if (name !== undefined && isPrivateIdentifier(name)) {
-    return "private-name";
-  }
-  const flags = modifiersOf(node);
-  if ((flags & ModifierFlags.Private) !== 0) {
-    return "private";
-  }
-  if ((flags & ModifierFlags.Protected) !== 0) {
-    return "protected";
-  }
-  return "public";
-}
-
-/**
- * The binding elements of a destructuring declaration that each declare a name of their
- * own, at any depth, but one with a default, whose removal skips the default's
- * evaluation, and one beside a rest element of its object pattern, whose removal
- * changes what the rest holds.
- */
-function patternElements(
-  name: Node,
-): readonly { readonly element: BindingElement; readonly name: Identifier }[] {
-  if (!isObjectBindingPattern(name) && !isArrayBindingPattern(name)) {
-    return [];
-  }
-  const rest =
-    isObjectBindingPattern(name) &&
-    name.elements.some((element) => element.dotDotDotToken !== undefined);
-  return name.elements.flatMap((element) => {
-    if (
-      !isBindingElement(element) ||
-      element.initializer !== undefined ||
-      (rest && element.dotDotDotToken === undefined)
-    ) {
-      return [];
-    }
-    const bound = element.name;
-    if (bound === undefined) {
-      return [];
-    }
-    return isIdentifier(bound) ? [{ element, name: bound }] : patternElements(bound);
-  });
-}
-
-/** The name node of one declaration, for the kinds that carry one. */
-function nameNodeOf(node: Node): Node | undefined {
-  return (node as { readonly name?: Node }).name;
-}
-
-/**
- * The fragment component one declaration's name spells in a reference, as the inventory
- * spells it, or undefined for a name the grammar does not represent.
- */
-export function declaredComponent(node: Node): string | undefined {
-  const component = componentOf(nameNodeOf(node));
-  if (component === undefined) {
-    return undefined;
-  }
-  return component.computed ? computedComponent(component.text) : nameComponent(component.text);
-}
-
-/**
- * One node's identity inside one program, which is how two readings of that program
- * name one declaration.
- *
- * The two mechanisms behind the member set resolve a member separately and meet here;
- * so does the reference pass, which starts from a resolved symbol's declaration and
- * needs the declaration this enumeration made for it.
- */
-export function nodeKey(file: SourceFile, node: Node): string {
-  return `${file.fileName}:${String(node.pos)}:${String(node.end)}:${String(node.kind)}`;
-}
-
-/** Whether `node` is written inside `declaration`, compared by file and range. */
-function writtenInside(declaration: Node, node: Node): boolean {
-  return (
-    node.getSourceFile().fileName === declaration.getSourceFile().fileName &&
-    declaration.pos <= node.pos &&
-    node.end <= declaration.end
-  );
-}
-
 /** `export default`, up to the keyword that stands where an unnamed default export's name would. */
 const DEFAULT_EXPORT = /^export\s+(?=default\b)/u;
 
@@ -542,537 +596,47 @@ function unnamedStart(node: Node): number {
   return prefix === null ? start : start + prefix[0].length;
 }
 
+/** The kind one member of a container takes, and undefined for a node that is no member. */
+function memberKindOf(container: Container, node: Node): SymbolKind | undefined {
+  if (container.memberKind === "class-member") {
+    if (
+      isPropertyDeclaration(node) ||
+      isGetAccessorDeclaration(node) ||
+      isSetAccessorDeclaration(node) ||
+      isParameterProperty(node)
+    ) {
+      return "class-member";
+    }
+    return isMethodDeclaration(node) ? "method" : undefined;
+  }
+  if (container.memberKind === "enum-member") {
+    return isEnumMember(node) ? "enum-member" : undefined;
+  }
+  if (isMethodSignatureDeclaration(node)) {
+    return container.memberKind === "interface-method" ? "interface-method" : "type-member";
+  }
+  if (
+    isPropertySignatureDeclaration(node) ||
+    isGetAccessorDeclaration(node) ||
+    isSetAccessorDeclaration(node)
+  ) {
+    return "type-member";
+  }
+  return undefined;
+}
+
 /**
- * Whether one node is a parameter property: a constructor parameter carrying an
- * accessibility, `readonly` or `override` modifier, which also declares an instance
- * member of the class, with the parameter's node as the member's declaration.
+ * Each enum member's dependents: the later members of its declaration with no initializer,
+ * up to the first one with an initializer.
  */
-export function isParameterProperty(node: Node): boolean {
-  return (
-    isParameterDeclaration(node) &&
-    isConstructorDeclaration(node.parent) &&
-    (modifiersOf(node) & ModifierFlags.ParameterPropertyModifier) !== 0
-  );
-}
-
-/** The parameter properties every constructor of one class declares. */
-function parameterPropertiesOf(node: ClassDeclaration): readonly Node[] {
-  return node.members.flatMap((member) =>
-    isConstructorDeclaration(member) ? member.parameters.filter(isParameterProperty) : [],
-  );
-}
-
-/** The kind a class element takes: a method, or a property or accessor. */
-function classMemberKind(node: Node): SymbolKind {
-  return isMethodDeclaration(node) ? "method" : "class-member";
-}
-
-/** The kind a type element takes: a method of an interface, or any other member. */
-function typeMemberKind(node: Node, inInterface: boolean): SymbolKind {
-  return inInterface && isMethodSignatureDeclaration(node) ? "interface-method" : "type-member";
-}
-
-/**
- * Every declaration one project's own files hold.
- *
- * `targetRoot` is the absolute path every position is rendered against; a file the
- * program holds that is not below it ends the enumeration rather than being passed
- * over. `host` is the filesystem the manifests that name each file's package are
- * read through, and nothing else is read from it.
- *
- * The order is by rendered position, so two enumerations of one project return the
- * same list whatever order the program reported its files in.
- */
-export function inventory<Brand>(
-  project: ProjectView<Brand>,
-  host: Host,
-  targetRoot: string,
-): Inventory {
-  const files = project.ownSourceFiles();
-  const ownFiles = new Set(files.map((file) => file.fileName));
-  const moduleOf = packageScope(host, targetRoot);
-
-  const building: Building[] = [];
-  const byNode = new Map<string, Building>();
-  const exportScopes: ExportScope[] = [];
-  const containers: Container[] = [];
-  const modules: (readonly [Building, string])[] = [];
-
-  const keep = (record: Building): Building => {
-    building.push(record);
-    byNode.set(nodeKey(record.file, record.node), record);
-    return record;
-  };
-
-  for (const file of files) {
-    const path = relativePath(targetRoot, file.fileName);
-    if (path === undefined) {
-      // renderPosition states the refusal, with the root it was rendered against.
-      renderPosition(file, targetRoot, 0);
-      continue;
-    }
-    const module = moduleOf(path);
-    const fileRecord = keep({
-      file,
-      node: file,
-      module,
-      position: renderPosition(file, targetRoot, 0),
-      endLine: renderPosition(file, targetRoot, Math.max(file.end - 1, 0)).line,
-      kind: "file",
-      parentChain: [],
-      // A file's reference names its module, so no component of it is ever spelled;
-      // the path is what a text line renders for it.
-      component: { text: path, computed: false },
-      localName: path,
-      parent: undefined,
-      visibility: "public",
-      static: false,
-      exported: false,
-      typeParameter: undefined,
-    });
-    exportScopes.push({ owner: fileRecord, nameNode: file });
-    // A statement a component file's module appends is not written in the file.
-    const written = writtenLength(file);
-    walkStatements(
-      file.statements.filter((statement) => statement.end <= written),
-      fileRecord,
-    );
-  }
-
-  /** One declaration of a module, a namespace or a container body. */
-  function walkStatements(statements: readonly Node[], owner: Building): void {
-    for (const statement of statements) {
-      walkStatement(statement, owner);
-    }
-  }
-
-  function declare(
-    node: Node,
-    owner: Building,
-    kind: SymbolKind,
-    name: Node | undefined,
-    named: { readonly component: Component; readonly localName: string | undefined },
-  ): Building {
-    const record = keep({
-      file: owner.file,
-      node,
-      module: owner.module,
-      position: renderPosition(owner.file, targetRoot, name?.getStart() ?? unnamedStart(node)),
-      endLine: renderPosition(owner.file, targetRoot, Math.max(node.end - 1, 0)).line,
-      kind,
-      parentChain: owner.kind === "file" ? [] : chainOf(owner),
-      component: named.component,
-      localName: named.localName,
-      parent: owner,
-      visibility: visibilityOf(node, name),
-      static: (modifiersOf(node) & ModifierFlags.Static) !== 0,
-      exported: false,
-      typeParameter: undefined,
-    });
-    declareTypeParameters(node, record);
-    return record;
-  }
-
-  function declareTypeParameters(node: Node, owner: Building): void {
-    for (const parameter of typeParametersOf(node)) {
-      const name = nameNodeOf(parameter);
-      if (name === undefined) {
-        continue;
-      }
-      keep({
-        file: owner.file,
-        node: parameter,
-        module: owner.module,
-        position: renderPosition(owner.file, targetRoot, name.getStart()),
-        endLine: renderPosition(owner.file, targetRoot, Math.max(parameter.end - 1, 0)).line,
-        kind: "type-parameter",
-        parentChain: owner.parentChain,
-        component: owner.component,
-        localName: undefined,
-        parent: owner,
-        visibility: "public",
-        static: owner.static,
-        exported: false,
-        typeParameter: name.getText(),
-      });
-    }
-  }
-
-  function walkStatement(node: Node, owner: Building): void {
-    if (isFunctionDeclaration(node)) {
-      const named = exportedAs(node, node.name);
-      if (named.component !== undefined) {
-        declare(node, owner, "function", node.name, { ...named, component: named.component });
-      }
-      return;
-    }
-    if (isClassDeclaration(node)) {
-      const named = exportedAs(node, node.name);
-      if (named.component === undefined) {
-        return;
-      }
-      const record = declare(node, owner, "class", node.name, {
-        ...named,
-        component: named.component,
-      });
-      containers.push({
-        owner: record,
-        declaration: node,
-        nameNode: node.name,
-        members: [...node.members, ...parameterPropertiesOf(node)],
-        memberKind: "class-member",
-        isClass: true,
-        membersAreExports: false,
-      });
-      return;
-    }
-    if (isInterfaceDeclaration(node)) {
-      const named = exportedAs(node, node.name);
-      if (named.component === undefined) {
-        return;
-      }
-      const record = declare(node, owner, "interface", node.name, {
-        ...named,
-        component: named.component,
-      });
-      containers.push({
-        owner: record,
-        declaration: node,
-        nameNode: node.name,
-        members: node.members,
-        memberKind: "interface-method",
-        isClass: false,
-        membersAreExports: false,
-      });
-      return;
-    }
-    if (isTypeAliasDeclaration(node)) {
-      const named = exportedAs(node, node.name);
-      if (named.component === undefined) {
-        return;
-      }
-      const record = declare(node, owner, "type", node.name, {
-        ...named,
-        component: named.component,
-      });
-      // A type alias keeps no member table of its own: the members belong to the
-      // object types its declaration writes, so the declaration is what carries them.
-      const members = aliasMembers(node.type);
-      if (members.length > 0) {
-        containers.push({
-          owner: record,
-          declaration: node,
-          nameNode: undefined,
-          members,
-          memberKind: "type-member",
-          isClass: false,
-          membersAreExports: false,
-        });
-      }
-      return;
-    }
-    if (isEnumDeclaration(node)) {
-      const named = exportedAs(node, node.name);
-      if (named.component === undefined) {
-        return;
-      }
-      const record = declare(node, owner, "enum", node.name, {
-        ...named,
-        component: named.component,
-      });
-      containers.push({
-        owner: record,
-        declaration: node,
-        nameNode: node.name,
-        members: node.members,
-        memberKind: "enum-member",
-        isClass: false,
-        membersAreExports: true,
-      });
-      return;
-    }
-    if (isModuleDeclaration(node)) {
-      const component = componentOf(node.name);
-      if (component === undefined) {
-        return;
-      }
-      const record = declare(node, owner, "namespace", node.name, {
-        component,
-        localName: undefined,
-      });
-      exportScopes.push({ owner: record, nameNode: node.name });
-      if (isStringLiteral(node.name)) {
-        modules.push([record, node.name.text]);
-      }
-      const body = node.body;
-      if (body === undefined) {
-        return;
-      }
-      if (isModuleBlock(body)) {
-        walkStatements(body.statements, record);
-        return;
-      }
-      walkStatement(body, record);
-      return;
-    }
-    if (isVariableStatement(node)) {
-      for (const declaration of node.declarationList.declarations) {
-        const component = componentOf(declaration.name);
-        if (component !== undefined) {
-          declare(declaration, owner, "variable", declaration.name, {
-            component,
-            localName: undefined,
-          });
-          continue;
-        }
-        for (const { element, name } of patternElements(declaration.name)) {
-          declare(element, owner, "variable", name, {
-            component: { text: name.text, computed: false },
-            localName: undefined,
-          });
-        }
-      }
-      return;
-    }
-    if (isExportDeclaration(node)) {
-      walkExportDeclaration(node, owner);
-      return;
-    }
-    if (isExportAssignment(node) && !node.isExportEquals) {
-      declare(node, owner, "export-alias", undefined, {
-        component: { text: "default", computed: false },
-        localName: undefined,
-      });
-    }
-  }
-
-  function walkExportDeclaration(node: { readonly exportClause?: Node }, owner: Building): void {
-    const clause = node.exportClause;
-    // A bare star re-export declares nothing: the names it carries are the named module's.
-    if (clause === undefined) {
-      return;
-    }
-    if (isNamespaceExport(clause)) {
-      const component = componentOf(clause.name);
-      if (component !== undefined) {
-        declare(clause, owner, "export-alias", clause.name, { component, localName: undefined });
-      }
-      return;
-    }
-    for (const element of (clause as { readonly elements?: readonly Node[] }).elements ?? []) {
-      const name = nameNodeOf(element);
-      const component = componentOf(name);
-      if (component !== undefined) {
-        declare(element, owner, "export-alias", name, { component, localName: undefined });
-      }
-    }
-  }
-
-  // One batch for every module and every container the walk found, because a
-  // checker accessor with an array overload costs one round trip for the batch and
-  // one per node without it.
-  const batched: Node[] = [
-    ...exportScopes.map((scope) => scope.nameNode),
-    ...containers.map((container) => container.nameNode).filter((node) => node !== undefined),
-  ];
-  const handles: Handle<Brand>[] = batched.map((node) => project.handle(node));
-  const resolved = project.symbolsAt(handles);
-  const symbolOf = new Map<Node, TSSymbol>();
-  // A scope or a container whose symbol or table went unanswered keeps what its syntax
-  // declares, and everything under it is recorded unanswered.
-  const unansweredOwners = new Set<Building>();
-  batched.forEach((node, index) => {
-    const symbol = resolved[index];
-    if (typeof symbol === "object") {
-      symbolOf.set(node, symbol);
-    }
-  });
-  resolved.slice(0, exportScopes.length).forEach((symbol, index) => {
-    const scope = exportScopes[index];
-    if (symbol === UNANSWERED && scope !== undefined) {
-      unansweredOwners.add(scope.owner);
-    }
-  });
-  containers
-    .filter((container) => container.nameNode !== undefined)
-    .forEach((container, index) => {
-      if (resolved[exportScopes.length + index] === UNANSWERED) {
-        unansweredOwners.add(container.owner);
-      }
-    });
-
-  let exportTables = 0;
-  for (const scope of exportScopes) {
-    const symbol = symbolOf.get(scope.nameNode);
-    if (symbol === undefined) {
-      continue;
-    }
-    exportTables += 1;
-    const table = project.queries.exportsOf(symbol);
-    if (!isAnswered(table)) {
-      unansweredOwners.add(scope.owner);
-    }
-    for (const [, exported] of isAnswered(table) ? table : []) {
-      for (const declaration of exported.declarations) {
-        const held = project.declarationAt(declaration);
-        if (held === undefined) {
-          continue;
-        }
-        const record = byNode.get(nodeKey(held.node.getSourceFile(), held.node));
-        if (record === undefined) {
-          continue;
-        }
-        record.exported = true;
-      }
-    }
-  }
-
-  let memberTables = 0;
-  for (const container of containers) {
-    const symbol = container.nameNode === undefined ? undefined : symbolOf.get(container.nameNode);
-    const seen = new Map<string, Building>();
-    if (symbol !== undefined) {
-      if (!container.membersAreExports) {
-        memberTables += 1;
-        const table = project.queries.membersOf(symbol);
-        if (isAnswered(table)) {
-          readTable(container, table, seen, false);
-        } else {
-          unansweredOwners.add(container.owner);
-        }
-      }
-      if (container.membersAreExports || container.isClass) {
-        memberTables += 1;
-        const table = project.queries.exportsOf(symbol);
-        if (isAnswered(table)) {
-          readTable(container, table, seen, container.isClass);
-        } else {
-          unansweredOwners.add(container.owner);
-        }
-      }
-    }
-    completeFromTree(container, seen);
-  }
-
-  /**
-   * One container's members as its symbol table holds them, each positioned at the
-   * declaration the table names. A member with no declaration is the language's own
-   * (a class's `prototype`), and a member declared outside the target's own files
-   * belongs to another program; neither is a declaration of the target.
-   */
-  function readTable(
-    container: Container,
-    table: ReadonlyMap<string, TSSymbol>,
-    seen: Map<string, Building>,
-    areStatic: boolean,
-  ): void {
-    for (const [, member] of table) {
-      const declarations = member.declarations
-        .map((handle) => project.declarationAt(handle))
-        .filter((held): held is Handle<Brand> => held !== undefined);
-      if (declarations.length === 0) {
-        continue;
-      }
-      const own = declarations.filter((held) => ownFiles.has(held.node.getSourceFile().fileName));
-      if (own.length === 0) {
-        continue;
-      }
-      // A merged symbol's table holds the members every one of its declarations writes,
-      // and each member is kept once, by the declaration that writes it.
-      for (const held of own.filter((one) => writtenInside(container.declaration, one.node))) {
-        keepMember(container, held.node, seen, areStatic);
-      }
-    }
-  }
-
-  /**
-   * One container's members as its own declaration writes them, for the members its
-   * symbol table does not hold: a member whose key is computed is bound to the
-   * container's type later than the table is built.
-   */
-  function completeFromTree(container: Container, seen: Map<string, Building>): void {
-    for (const member of container.members) {
-      keepMember(container, member, seen, (modifiersOf(member) & ModifierFlags.Static) !== 0);
-    }
-  }
-
-  function keepMember(
-    container: Container,
-    node: Node,
-    seen: Map<string, Building>,
-    areStatic: boolean,
-  ): void {
-    const kind = memberKindOf(container, node);
-    if (kind === undefined) {
-      return;
-    }
-    const name = nameNodeOf(node);
-    const component = componentOf(name);
-    if (component === undefined) {
-      return;
-    }
-    const file = node.getSourceFile();
-    const key = memberKey(component, areStatic);
-    const held = seen.get(key);
-    const endLine = renderPosition(file, targetRoot, Math.max(node.end - 1, 0)).line;
-    if (held !== undefined) {
-      // A getter and a setter of one name are one symbol and one reference, so the
-      // second declaration widens the first record rather than making a second. Both
-      // nodes name that record, so a reading that starts from either one finds it.
-      held.endLine = Math.max(held.endLine, endLine);
-      byNode.set(nodeKey(file, node), held);
-      return;
-    }
-    const at = name ?? node;
-    const record = keep({
-      file,
-      node,
-      module: container.owner.module,
-      position: renderPosition(file, targetRoot, at.getStart()),
-      endLine,
-      kind,
-      parentChain: chainOf(container.owner),
-      component,
-      localName: undefined,
-      parent: container.owner,
-      visibility: visibilityOf(node, name),
-      static: areStatic,
-      exported: false,
-      typeParameter: undefined,
-    });
-    seen.set(key, record);
-    declareTypeParameters(node, record);
-  }
-
-  function memberKindOf(container: Container, node: Node): SymbolKind | undefined {
-    if (container.isClass) {
-      if (
-        isPropertyDeclaration(node) ||
-        isMethodDeclaration(node) ||
-        isGetAccessorDeclaration(node) ||
-        isSetAccessorDeclaration(node) ||
-        isParameterProperty(node)
-      ) {
-        return classMemberKind(node);
-      }
-      return undefined;
-    }
-    if (container.memberKind === "enum-member") {
-      return isEnumMember(node) ? "enum-member" : undefined;
-    }
-    if (isPropertySignatureDeclaration(node) || isMethodSignatureDeclaration(node)) {
-      return typeMemberKind(node, container.memberKind === "interface-method");
-    }
-    if (isGetAccessorDeclaration(node) || isSetAccessorDeclaration(node)) {
-      return "type-member";
-    }
-    return undefined;
-  }
-
+function dependentsOf(
+  containers: readonly Container[],
+  recordAt: (node: Node) => Building | undefined,
+): ReadonlyMap<string, readonly string[]> {
   const dependents = new Map<string, readonly string[]>();
   for (const container of containers.filter((one) => one.memberKind === "enum-member")) {
     const ids = container.members.map((member) => {
-      const record = byNode.get(nodeKey(member.getSourceFile(), member));
+      const record = recordAt(member);
       return record === undefined ? undefined : positionKey(record.position);
     });
     container.members.forEach((_member, index) => {
@@ -1093,28 +657,25 @@ export function inventory<Brand>(
       }
     });
   }
+  return dependents;
+}
 
-  const byId = new Map(building.map((record) => [positionKey(record.position), record]));
-  const symbols = building.map(render).sort((a, b) => byPosition(a.position, b.position));
-
-  return {
-    symbols,
-    declarations: new Map(
-      [...byNode].map(([key, record]) => [key, positionKey(record.position)] as const),
-    ),
-    cost: { batches: 1, exportTables, memberTables },
-    unanswered: symbols
-      .filter((symbol) => underUnanswered(byId.get(symbol.id), unansweredOwners))
-      .map((symbol) => symbol.id),
-    byName: namesOf(building),
-    modules: new Map(modules.map(([record, name]) => [positionKey(record.position), name])),
-    ambient: new Set(
-      building
-        .filter((record) => isAmbient(record.file, record.node))
-        .map((record) => positionKey(record.position)),
-    ),
-    dependents,
-  };
+/** Each declaration but a file to where a directive binds it. */
+function placementOf(records: readonly Building[]): ReadonlyMap<string, Placement> {
+  const ascending = (lines: ReadonlySet<number>): readonly number[] =>
+    [...lines].sort((a, b) => a - b);
+  return new Map(
+    records
+      .filter((record) => record.kind !== "file")
+      .map((record) => [
+        positionKey(record.position),
+        {
+          startLines: ascending(record.startLines),
+          holder: positionKey((record.holder ?? record).position),
+          partLines: ascending(record.partLines),
+        },
+      ]),
+  );
 }
 
 /** Whether one declaration is, or is declared under, a scope or container left unanswered. */
@@ -1128,9 +689,9 @@ function underUnanswered(record: Building | undefined, owners: ReadonlySet<Build
 }
 
 /** Every declaration but a file, by each name a use may spell it with. */
-function namesOf(building: readonly Building[]): ReadonlyMap<string, readonly string[]> {
+function namesOf(records: readonly Building[]): ReadonlyMap<string, readonly string[]> {
   const byName = new Map<string, string[]>();
-  for (const record of building) {
+  for (const record of records) {
     if (record.kind === "file") {
       continue;
     }
@@ -1161,24 +722,18 @@ function chainOf(record: Building): readonly Component[] {
 
 /**
  * One declaration as the inventory reports it. The display name is the chain in the
- * spelling a reference gives it, except where the declaration carries a name of its
- * own the reference does not: a file, whose reference names its module, and a default
- * export, whose reference carries its export name.
+ * spelling a reference gives it, except where the declaration carries a name of its own
+ * the reference does not: a file, whose reference names its module, and a default export.
  */
 function render(record: Building): InventorySymbol {
   const chain = chainOf(record);
-  const spelled = chain
-    .map((component) =>
-      component.computed ? computedComponent(component.text) : nameComponent(component.text),
-    )
-    .join(".");
-  const name =
-    record.localName ??
-    (record.typeParameter === undefined ? spelled : `${spelled}<${record.typeParameter}>`);
+  const spelled = chain.map(spell).join(".");
   return {
     id: positionKey(record.position),
     ref: refOf(record, chain),
-    name,
+    name:
+      record.localName ??
+      (record.typeParameter === undefined ? spelled : `${spelled}<${record.typeParameter}>`),
     kind: record.kind,
     position: record.position,
     endLine: record.endLine,
@@ -1207,13 +762,4 @@ function refOf(record: Building, chain: readonly Component[]): string {
     static: record.static,
     ...(record.typeParameter === undefined ? {} : { typeParameter: record.typeParameter }),
   });
-}
-
-/**
- * Every declaration of an inventory other than a file, by each name a use may spell it
- * with. It is how a reference the checker could not resolve is still counted, as a
- * reference to every declaration that bears the name it spells.
- */
-export function declarationsByName(held: Inventory): ReadonlyMap<string, readonly string[]> {
-  return held.byName;
 }

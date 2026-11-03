@@ -149,6 +149,41 @@ describe("a worker a call addresses", () => {
   );
 
   it(
+    "is the file a URL imported from node:url names, and none where the URL imported is the target's own class",
+    () => {
+      expect(
+        workerRoots({
+          ...workers("imported", "owned"),
+          "src/url.d.ts": [
+            'declare module "url" {',
+            "  export class URL {",
+            "    constructor(input: string, base?: string);",
+            "  }",
+            "}",
+            'declare module "node:url" {',
+            '  export * from "url";',
+            "}",
+            "",
+          ].join("\n"),
+          "src/own-url.ts":
+            "export class URL {\n  constructor(readonly path: string, readonly base: string) {}\n}\n",
+          "src/app.ts": [
+            'import { URL } from "node:url";',
+            'export const a = new Worker(new URL("./imported.ts", import.meta.url) as never);',
+            "",
+          ].join("\n"),
+          "src/other.ts": [
+            'import { URL } from "./own-url.js";',
+            'export const b = new Worker(new URL("./owned.ts", import.meta.url) as never);',
+            "",
+          ].join("\n"),
+        }),
+      ).toEqual(["src/imported.ts#\tworker\t./imported.ts"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
     "is none for a call other than navigator.serviceWorker.register",
     () => {
       expect(

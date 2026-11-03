@@ -77,7 +77,7 @@ describe("a load whose target the analysis cannot resolve", () => {
     ]);
   });
 
-  it("lowers nothing where its literal start names a directory the entry rules root", () => {
+  it("lowers nothing where its literal start names a directory below the caller's, whose files it loads", () => {
     const report = analyzed("import(`./commands/${name}`)");
 
     expect(confidenceOf(report, "inner")).toBe("certain");
@@ -99,6 +99,38 @@ describe("a load whose target the analysis cannot resolve", () => {
 
     expect(confidenceOf(report, "inner")).toBe("certain");
     expect(report.notes).toEqual([]);
+  });
+
+  it("lowers nothing where `require` is an arrow function the project's own constant holds", () => {
+    const report = analyzed("require(name)", "const require = (path: string): string => path;\n\n");
+
+    expect(confidenceOf(report, "inner")).toBe("certain");
+    expect(report.notes).toEqual([]);
+  });
+
+  it("caps what only dead code reaches where `require` is the one createRequire returns", () => {
+    const report = analyzed(
+      "require(name)",
+      "declare function createRequire(path: string): (id: string) => unknown;\n" +
+        "const require = createRequire(import.meta.url);\n\n",
+    );
+
+    expect(confidenceOf(report, "inner")).toBe("probable");
+  });
+
+  it("caps what only dead code reaches where `require` is a callback's parameter", () => {
+    const report = analyzed(
+      'define(["require"], (require) => require(name))',
+      "declare function define(deps: string[], body: (require: (id: string) => unknown) => unknown): unknown;\n\n",
+    );
+
+    expect(confidenceOf(report, "inner")).toBe("probable");
+  });
+
+  it("caps what only dead code reaches where the project declares `require` only ambiently", () => {
+    const report = analyzed("require(name)", "declare function require(path: string): string;\n\n");
+
+    expect(confidenceOf(report, "inner")).toBe("probable");
   });
 
   it("caps what only dead code reaches where `require` is no declaration of the project's", () => {

@@ -4,7 +4,8 @@ import { dirname, join } from "node:path";
 import type { Symbol as TSSymbol } from "@typescript/native/sync";
 import { nodeHost } from "../bin/node-host.ts";
 import { discoverProjects, isTargetConfiguration, type Discovery } from "../src/load/discover.ts";
-import { inventory, type Inventory } from "../src/inventory.ts";
+import type { Inventory } from "../src/inventory.ts";
+import { inventory } from "../src/inventory/enumerate.ts";
 import { readManifest } from "../src/manifest.ts";
 import { relativePath } from "../src/paths.ts";
 import {

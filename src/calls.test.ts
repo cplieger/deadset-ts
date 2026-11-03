@@ -12,7 +12,7 @@ import {
   spelledDecorator,
 } from "./calls.ts";
 import { discoverProjects } from "./load/discover.ts";
-import { inventory } from "./inventory.ts";
+import { inventory } from "./inventory/enumerate.ts";
 import { scopeForDir } from "./scope.ts";
 import { openEngine, runSession, type Engine } from "./session.ts";
 

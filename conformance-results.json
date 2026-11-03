@@ -2,7 +2,7 @@
   "corpus_version": "6.0.0",
   "product": { "name": "deadset-ts", "version": "0.1.0", "language": "ts" },
   "result": "pass",
-  "totals": { "fixtures": 328, "pass": 307, "gap": 0, "fail": 0, "pending": 21 },
+  "totals": { "fixtures": 337, "pass": 316, "gap": 0, "fail": 0, "pending": 21 },
   "fixtures": [
     {
       "fixture": "abstract-member-through-this",
@@ -687,6 +687,26 @@
       "unexpected": []
     },
     {
+      "fixture": "computed-load-in-test-code",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "OnlyTested",
+          "result": "pass",
+          "actual": {
+            "report": "DS1102",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "Production", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "computed-load-lowers-roots-complete",
       "result": "pass",
       "expectations": [
@@ -708,6 +728,52 @@
           "actual": {
             "report": "DS1002",
             "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "computed-load-reads-text",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "HomeFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Logo",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "variable",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "LogoFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "OnlyTested",
+          "result": "pass",
+          "actual": {
+            "report": "DS1102",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "Run", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Title",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "variable",
             "confidence": "certain",
             "reachability_class": "certain",
             "liveness_relation": "reference-counting"
@@ -2649,6 +2715,19 @@
       "unexpected": []
     },
     {
+      "fixture": "effect-import-of-a-script",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "AliasedPolyfillFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "ImportedPolyfillFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "PolyfillFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "aliasedStamp", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "importedStamp", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "stamp", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "element-access-by-a-type-parameter-index",
       "result": "pass",
       "expectations": [
@@ -3849,6 +3928,140 @@
       "unexpected": []
     },
     {
+      "fixture": "load-in-dead-function",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "EagerFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "LiteralFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "probable",
+            "reachability_class": "certain"
+          }
+        },
+        {
+          "symbol": "PluginFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "probable",
+            "reachability_class": "certain"
+          }
+        },
+        {
+          "symbol": "WorkerFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "probable",
+            "reachability_class": "certain"
+          }
+        },
+        {
+          "symbol": "eagerValue",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "variable",
+            "confidence": "probable",
+            "reachability_class": "certain",
+            "liveness_relation": "reachability"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "literalValue",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "variable",
+            "confidence": "probable",
+            "reachability_class": "certain",
+            "liveness_relation": "reachability"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "loadEager",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "loadLiteral",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "loadPlugin",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "pluginValue",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "variable",
+            "confidence": "probable",
+            "reachability_class": "certain",
+            "liveness_relation": "reachability"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "workerURL",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "workerValue",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "variable",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "makefile-recipe-entry",
       "result": "pass",
       "expectations": [
@@ -4396,6 +4609,26 @@
       "fixture": "module-url-augmented-global",
       "result": "pass",
       "expectations": [{ "symbol": "Worker", "result": "pass", "actual": { "report": "none" } }],
+      "unexpected": []
+    },
+    {
+      "fixture": "module-url-imported-url",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "WorkerFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "handle",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
       "unexpected": []
     },
     {
@@ -5081,24 +5314,10 @@
       "fixture": "package-only-commonjs",
       "result": "pending",
       "expectations": [
-        {
-          "symbol": "CFile",
-          "result": "fail",
-          "actual": { "report": "DS1602", "confidence": "certain" },
-          "message": "want no finding at target/c.js:1, got DS1602"
-        },
-        {
-          "symbol": "liveC",
-          "result": "fail",
-          "actual": { "report": "DS1002", "confidence": "probable" },
-          "message": "want no finding at target/c.js:2, got DS1002"
-        }
+        { "symbol": "CFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "liveC", "result": "pass", "actual": { "report": "none" } }
       ],
-      "unexpected": [
-        { "file": "target/c.js", "line": 1, "report": "DS1602" },
-        { "file": "target/c.js", "line": 2, "report": "DS1002" },
-        { "file": "target/c.js", "line": 3, "report": "DS1002" }
-      ]
+      "unexpected": []
     },
     {
       "fixture": "package-only-convention-output-excluded",
@@ -6460,6 +6679,26 @@
           },
           "suppression": { "suppressed": true, "stale": false }
         }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "require-declared-ambiently",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "GreetingFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "greeting", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "require-from-create-require",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "PluginFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "WidgetFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "plugin", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "widget", "result": "pass", "actual": { "report": "none" } }
       ],
       "unexpected": []
     },
@@ -9318,6 +9557,70 @@
             "confidence": "certain",
             "reachability_class": "certain"
           }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "worker-in-dead-function",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "WorkerFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "spawn",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "workerValue",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "variable",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "worker-url-from-node-url",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "WorkerFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "spawn",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "workerValue",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "variable",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
         }
       ],
       "unexpected": []

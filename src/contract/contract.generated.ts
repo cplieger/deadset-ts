@@ -1297,6 +1297,7 @@ export const FAILURE_CLASSES = {
   "unreadable-document": "setup",
   "missing-import-path": "setup",
   "binding-undecodable": "setup",
+  "unsupported-language": "setup",
   "unwritten-output": "run",
   "unreportable-path": "run",
   "memory-exhausted": "run",

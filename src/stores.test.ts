@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
 import { writeProject } from "../__test-helpers__/projects.ts";
-import { inventory } from "./inventory.ts";
+import { inventory } from "./inventory/enumerate.ts";
 import type { Reference } from "./references.ts";
 import { openEngine, runSession } from "./session.ts";
 import { accessorsOf, storesOf } from "./stores.ts";

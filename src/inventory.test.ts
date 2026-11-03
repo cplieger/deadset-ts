@@ -10,7 +10,8 @@ import {
   writeProject,
 } from "../__test-helpers__/projects.ts";
 import { discoverProjects } from "./load/discover.ts";
-import { inventory, type InventorySymbol, type Visibility } from "./inventory.ts";
+import { type InventorySymbol, type Visibility } from "./inventory.ts";
+import { inventory } from "./inventory/enumerate.ts";
 import { positionKey } from "./position.ts";
 import { UNANSWERED } from "./query.ts";
 import { scopeForDir } from "./scope.ts";

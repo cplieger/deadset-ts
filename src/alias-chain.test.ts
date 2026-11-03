@@ -10,7 +10,7 @@ import { nodeHost } from "../bin/node-host.ts";
 import { targetConfigFiles, writeProject } from "../__test-helpers__/projects.ts";
 import { aliasChains, type ChainTarget } from "./alias-chain.ts";
 import { discoverProjects } from "./load/discover.ts";
-import { inventory } from "./inventory.ts";
+import { inventory } from "./inventory/enumerate.ts";
 import { scopeForDir } from "./scope.ts";
 import { openEngine, runSession, type Engine } from "./session.ts";
 
