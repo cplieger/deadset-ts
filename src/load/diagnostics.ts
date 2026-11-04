@@ -121,10 +121,18 @@ export function diagnosticErrors(sets: {
   return [...sets.configParsing, ...sets.syntactic, ...sets.semantic].filter(isError);
 }
 
+/**
+ * The code of a configuration whose only parse error is that its inputs name no file: it reads
+ * as written and holds no program.
+ */
+const NO_INPUTS = 18003;
+
 /** Why one open project cannot be analyzed as it stands, split by whether it loaded at all. */
 interface ProjectErrors {
   /** The configuration's own errors and the errors in no file the table reads as a load failure. */
   readonly load: readonly LocatedDiagnostic[];
+  /** Whether the compiler cannot read the configuration: a parse error other than {@link NO_INPUTS}. */
+  readonly unreadable: boolean;
   /** The errors in the files of a project that loaded. */
   readonly check: readonly LocatedDiagnostic[];
   /** The libraries the configuration names that the compiler cannot find, of a project that loaded. */
@@ -135,9 +143,11 @@ interface ProjectErrors {
 export function projectErrors(sets: ProjectDiagnostics): ProjectErrors {
   const unplaced = (kind: DiagnosticClass): readonly Diagnostic[] =>
     sets.unplaced.filter((diagnostic) => classOf(diagnostic, false) === kind);
-  const load = [...sets.configParsing.filter(isError), ...unplaced("load")];
+  const parsing = sets.configParsing.filter(isError);
+  const load = [...parsing, ...unplaced("load")];
   return {
     load: locatedIn(load, sets.locate),
+    unreadable: parsing.some(({ code }) => code !== NO_INPUTS),
     check: load.length > 0 ? [] : locatedIn(diagnosticErrors(sets), sets.locate),
     unfound: load.length > 0 ? [] : locatedIn(unplaced("unfound-library"), sets.locate),
   };

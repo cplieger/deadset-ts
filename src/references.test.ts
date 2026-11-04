@@ -67,6 +67,7 @@ function accountedFor(analyzed: Analyzed): number {
       held.cost.residueFallbacks +
       held.cost.shorthandLookups +
       held.cost.aliasSteps +
+      held.cost.platformLookups +
       held.cost.patternBatches +
       held.cost.patternLookups +
       held.cost.contextualBatches +
@@ -583,6 +584,7 @@ function accounted(cost: References["cost"] | undefined): number {
         cost.residueFallbacks +
         cost.shorthandLookups +
         cost.aliasSteps +
+        cost.platformLookups +
         cost.patternBatches +
         cost.patternLookups +
         cost.contextualBatches +
@@ -748,7 +750,7 @@ describe("the default batch cap", () => {
   });
 });
 
-/** An application whose entry builds a module URL in each form, and five that load nothing. */
+/** An application whose entry builds a module URL in each form, and two that load nothing. */
 const MODULE_URLS: Readonly<Record<string, string>> = {
   "package.json": '{ "name": "@example/app", "type": "module", "main": "./main.ts" }\n',
   "deadset.json": '{ "target": { "kind": "application" } }\n',
@@ -805,12 +807,12 @@ describe("a module URL", () => {
     ["worker", "new URL with import.meta.url as its base"],
     ["resolved", "import.meta.resolve"],
     ["templated", "a template literal with no substitution"],
+    ["bare", "a relative URL reference with no leading ./ or ../"],
   ])("imports %s.ts for its effects, through %s, referencing none of its exports", (name) => {
     expect(found.filter((line) => line.includes(name))).toEqual([`DS1001 ${name}Value`]);
   });
 
   it.each([
-    ["bare", "a string with no leading ./ or ../"],
     ["based", "a base other than import.meta.url"],
     ["shadowed", "a URL the target declares"],
   ])("loads no file through %s.ts, named by %s", (name) => {

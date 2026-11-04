@@ -59,6 +59,7 @@ import {
   type DeclarationSource,
   type SymbolKind,
 } from "../inventory.ts";
+import { callsPlatformBy, lexicalBinding, writtenName, type BindingOf } from "../platform-calls.ts";
 import type { Component } from "../ref.ts";
 import { spellsNoBinding } from "../spelled-names.ts";
 import { unwrapped } from "../unwrap.ts";
@@ -67,13 +68,14 @@ import { unwrapped } from "../unwrap.ts";
  * The export table of a CommonJS file: the module value `module.exports` is assigned and
  * the properties written on it, read from the top-level unconditional statements in order,
  * as Node runs them (https://nodejs.org/api/modules.html#moduleexports). Each entry is
- * keyed by the node that writes it, which is the checker's declaration of the export where
- * it binds one, so the two name one subject. Any other write of the exports opens the
- * table: its entries are kept and the file is listed open.
+ * keyed by the node that writes it, the checker's declaration of the export where it binds
+ * one. Any other write of the exports opens the table: its entries are kept and the file is
+ * listed open. `declarationOf` reads a `require()` call through the file's own scopes.
  */
 export function commonJS(
   typeIsModule: (path: string) => boolean,
   resolved: Resolved,
+  declarationOf: (occurrence: Identifier) => Node | undefined,
 ): DeclarationSource {
   return {
     declare(file: SourceFile, owner: Building, into: Builder): void {
@@ -82,7 +84,12 @@ export function commonJS(
       }
       const bound = boundOccurrences(file, resolved);
       const free = (node: Node): boolean => !bound.has(node);
-      const table = readTable(file, free, topLevelDeclarations(file));
+      const table = readTable(
+        file,
+        free,
+        topLevelDeclarations(file),
+        lexicalBinding(declarationOf),
+      );
       const open = table.open || opens(file, free, table.modelled);
       for (const entry of table.entries.values()) {
         const record = into.declare(entry.node, owner, entry.kind, entry.name, {
@@ -267,6 +274,8 @@ interface Entry {
   readonly component: Component;
   readonly localName: string | undefined;
   readonly kind: SymbolKind;
+  /** The value written under the key, undefined for an accessor. */
+  readonly value: Node | undefined;
   /** The declaration of the file the module value names, which the export then exports. */
   readonly target?: Node;
   /** The class whose members the entry holds. */
@@ -279,6 +288,10 @@ interface Table {
   readonly open: boolean;
   /** Every write the scan read, which the opening walk then passes over. */
   readonly modelled: ReadonlySet<Node>;
+  /** The value the last assignment of `module.exports` writes, undefined where none does. */
+  readonly whole: Node | undefined;
+  /** Whether a member write opens the table, apart from a module value the table cannot read. */
+  readonly membersOpen: boolean;
 }
 
 const DEFAULT: Component = { text: "default", computed: false };
@@ -288,23 +301,34 @@ function readTable(
   file: SourceFile,
   isFree: (node: Node) => boolean,
   declarations: ReadonlyMap<string, Node>,
+  bindingOf: BindingOf,
 ): Table {
   const entries = new Map<string, Entry>();
   const modelled = new Set<Node>();
-  let open = false;
+  // Written inside the closures below, which the compiler's narrowing does not follow.
+  let open = false as boolean;
   let aliasing = true;
+  let whole: Node | undefined;
+  let wholeOpen = false;
   const free = (node: Node, name: string): boolean =>
     isIdentifier(node) && node.text === name && isFree(node);
   const isModuleExports = (node: Node): node is PropertyAccessExpression =>
     isPropertyAccessExpression(node) &&
     free(node.expression, "module") &&
     node.name.text === "exports";
-  const isRequire = (node: Node): boolean =>
-    isCallExpression(node) &&
-    free(node.expression, "require") &&
-    node.arguments.length === 1 &&
-    node.arguments[0] !== undefined &&
-    isLiteralText(node.arguments[0]);
+  const isRequire = (node: Node): boolean => {
+    if (!isCallExpression(node) || node.arguments.length !== 1) {
+      return false;
+    }
+    const [argument] = node.arguments;
+    const callee = writtenName(node.expression);
+    return (
+      argument !== undefined &&
+      isLiteralText(argument) &&
+      callee !== undefined &&
+      callsPlatformBy("require", callee, bindingOf)
+    );
+  };
 
   /** What a value written under one key declares. */
   const entryOf = (
@@ -314,7 +338,7 @@ function readTable(
     value: Node | undefined,
   ): Entry => {
     const held = value === undefined ? undefined : unwrapped(value);
-    const base = { node, name, component, localName: undefined };
+    const base = { node, name, component, localName: undefined, value };
     if (held === undefined) {
       return { ...base, kind: "variable" };
     }
@@ -365,6 +389,7 @@ function readTable(
   /** The module value one assignment writes, placed at the `exports` name it assigns. */
   const moduleValue = (node: BinaryExpression, name: Node): void => {
     entries.clear();
+    whole = node.right;
     const value = unwrapped(node.right);
     if (isRequire(value)) {
       return;
@@ -373,7 +398,7 @@ function readTable(
       value.properties.forEach(literalProperty);
       return;
     }
-    const base = { node, name, component: DEFAULT };
+    const base = { node, name, component: DEFAULT, value: node.right };
     const target = isIdentifier(value) ? declarations.get(value.text) : undefined;
     if (target !== undefined) {
       entries.set("default", { ...base, localName: undefined, kind: "export-alias", target });
@@ -389,7 +414,7 @@ function readTable(
         members: value,
       });
     } else {
-      open = true;
+      wholeOpen = true;
     }
   };
 
@@ -422,8 +447,18 @@ function readTable(
         }
       } else if (isModuleExports(left)) {
         modelled.add(expression);
-        moduleValue(expression, left.name);
-        aliasing = false;
+        const inner = unwrapped(expression.right);
+        const chained =
+          isBinaryExpression(inner) &&
+          inner.operatorToken.kind === SyntaxKind.EqualsToken &&
+          free(inner.left, "exports")
+            ? inner
+            : undefined;
+        if (chained !== undefined) {
+          modelled.add(chained);
+        }
+        moduleValue(chained ?? expression, left.name);
+        aliasing = chained !== undefined;
       } else if (isPropertyAccessExpression(left) || isElementAccessExpression(left)) {
         const object = exportsObject(left.expression);
         const key = isPropertyAccessExpression(left) ? left.name : left.argumentExpression;
@@ -454,7 +489,57 @@ function readTable(
       }
     }
   }
-  return { entries, open, modelled };
+  return { entries, open: open || wholeOpen, modelled, whole, membersOpen: open };
+}
+
+/** One member a CommonJS file's module value holds, as {@link commonJSModuleValue} reads it. */
+interface WrittenMember {
+  readonly key: string;
+  /** The value written, undefined for an accessor. */
+  readonly value: Node | undefined;
+  /** The node that writes the member. */
+  readonly node: Node;
+}
+
+/** The module value a CommonJS file leaves once Node has run its top level. */
+export interface ModuleValue {
+  /** The value the last assignment of `module.exports` writes, where that is no object literal. */
+  readonly whole: Node | undefined;
+  /** The members written on the module value, an object literal assigned to `module.exports` among them. */
+  readonly members: readonly WrittenMember[];
+  /** Whether a write the table does not model may set any member. */
+  readonly open: boolean;
+}
+
+/**
+ * The module value one file leaves where Node runs it as CommonJS, read by the one table
+ * the inventory's export table reads, or undefined where the file writes module syntax.
+ * `declarationOf` names the declaration each name resolves to, undefined for none, as a
+ * lexical reading of a file outside every program answers it.
+ */
+export function commonJSModuleValue(
+  file: SourceFile,
+  declarationOf: (occurrence: Identifier) => Node | undefined,
+): ModuleValue | undefined {
+  if (writesModuleSyntax(file)) {
+    return undefined;
+  }
+  const free = (node: Node): boolean => {
+    const declaration = isIdentifier(node) ? declarationOf(node) : undefined;
+    return declaration === undefined || !bindsOwn(declaration, file);
+  };
+  const table = readTable(file, free, topLevelDeclarations(file), lexicalBinding(declarationOf));
+  const held = table.whole === undefined ? undefined : unwrapped(table.whole);
+  const members = [...table.entries.values()].flatMap((entry) =>
+    entry.component === DEFAULT && held !== undefined && !isObjectLiteralExpression(held)
+      ? []
+      : [{ key: entry.component.text, value: entry.value, node: entry.node }],
+  );
+  return {
+    whole: held === undefined || isObjectLiteralExpression(held) ? undefined : table.whole,
+    members,
+    open: table.membersOpen || opens(file, free, table.modelled),
+  };
 }
 
 /** Whether one node is `Object.defineProperty`. */

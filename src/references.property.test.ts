@@ -35,7 +35,10 @@ const TSCONFIG = `${JSON.stringify(
 )}\n`;
 
 /** The one project a drawn tree becomes, resolved under `options`. */
-function analyze(files: Readonly<Record<string, string>>, options: ReferenceOptions): Analyzed {
+function analyze(
+  files: Readonly<Record<string, string>>,
+  options: Omit<ReferenceOptions, "directories">,
+): Analyzed {
   return analyzeProject({ "tsconfig.json": TSCONFIG, ...files }, { references: options });
 }
 
@@ -98,6 +101,7 @@ describe("batching", () => {
             (cost?.residueFallbacks ?? 0) +
             (cost?.shorthandLookups ?? 0) +
             (cost?.aliasSteps ?? 0) +
+            (cost?.platformLookups ?? 0) +
             (cost?.patternBatches ?? 0) +
             (cost?.patternLookups ?? 0) +
             (cost?.contextualBatches ?? 0) +

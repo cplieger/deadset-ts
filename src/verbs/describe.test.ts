@@ -53,6 +53,7 @@ describe("describe", () => {
         '  "contract_version": "8.0.0",\n' +
         '  "schema_versions_accepted": [\n    "9.0.0"\n  ],\n' +
         '  "languages": [\n    "ts"\n  ],\n' +
+        '  "facts_version_written": "1.0.0",\n' +
         '  "conformance": {\n' +
         `    "corpus_version": "${CONFORMANCE.corpusVersion}",\n` +
         `    "result": "${CONFORMANCE.result}",\n` +
@@ -69,6 +70,9 @@ describe("describe", () => {
 
     expect(described["contract_version"]).toBe(contract["contract_version"]);
     expect(described["schema_versions_accepted"]).toEqual(contract["schema_versions"]);
+    expect(described["facts_version_written"]).toBe(
+      (contract["facts_versions"] as readonly string[]).at(-1),
+    );
   });
 
   it("states a recorded conformance run as the report's analyzer object spells it", () => {
@@ -92,6 +96,7 @@ describe("describe", () => {
       "contract_version",
       "schema_versions_accepted",
       "languages",
+      "facts_version_written",
     ]);
     expect(validateDescribe(written)).toEqual([]);
   });

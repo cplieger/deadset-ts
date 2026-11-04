@@ -15,7 +15,7 @@ import type {
   FindingPosition,
   PositionedSymbol,
 } from "./finding.ts";
-import type { AppliedConvention } from "./conventions.ts";
+import type { AppliedConvention } from "./entries/conventions.ts";
 import type { PassResult } from "./findings-pass.ts";
 import type { StaleSuppression } from "./findings/self-check.ts";
 import type { TestFileRule } from "./references.ts";

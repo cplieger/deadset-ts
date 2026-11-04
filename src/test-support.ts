@@ -6,11 +6,11 @@
  * test code.
  */
 
-import { CONVENTION_ROWS, TEST_LIBRARIES, TEST_LIBRARY_SCOPES } from "./convention-rows.ts";
+import { CONVENTION_ROWS, TEST_LIBRARIES, TEST_LIBRARY_SCOPES } from "./entries/convention-rows.ts";
 import { packageOfSpecifier } from "./dependencies.ts";
 import type { InventorySymbol } from "./inventory.ts";
 import type { Reference } from "./references.ts";
-import type { Root } from "./roots.ts";
+import type { Root } from "./roots/root-set.ts";
 
 /** The root kind that never takes a file out of test-support code: the skip only withholds. */
 const SKIP_ROOT = "type-error";
@@ -20,7 +20,12 @@ const SKIP_ROOT = "type-error";
  * convention row reads test files for, and the convention table's test libraries.
  */
 const TEST_PACKAGES: ReadonlySet<string> = new Set([
-  ...CONVENTION_ROWS.filter((row) => row.testFiles !== undefined).map((row) => row.package),
+  ...CONVENTION_ROWS.filter(
+    (row) =>
+      row.testFiles !== undefined ||
+      row.testDirectories !== undefined ||
+      row.testRunner !== undefined,
+  ).map((row) => row.package),
   ...TEST_LIBRARIES,
 ]);
 

@@ -8,15 +8,13 @@ import type { SourceFile } from "@typescript/native/ast";
 import { commonDirectory, emittedFrom } from "./load/emit-map.ts";
 import { dirnamePath, joinPath, relativePath, resolvePath } from "./paths.ts";
 import type { ProjectView } from "./session.ts";
+import { OUTPUT_EXTENSIONS } from "./extensions.ts";
 
 /** The one character a subpath pattern of a manifest's `exports` holds. */
 const SUBPATH_WILDCARD = "*";
 
 /** The extension a source file's name drops when the project writes it out. */
 const SOURCE_EXTENSION = /\.[cm]?[jt]sx?$/u;
-
-/** The extensions the project may write a source file's output under. */
-const OUTPUT_EXTENSIONS = [".js", ".mjs", ".cjs", ".jsx", ".d.ts", ".d.mts", ".d.cts"] as const;
 
 /**
  * Whether one path is what a subpath pattern stands for: the text before the
@@ -90,13 +88,10 @@ function layoutOf<Brand>(
 }
 
 /**
- * The lookups over one project's own files.
- *
- * A path that names an emitted file is read back to the source the project would
- * emit it from through the project's own emit mapping and nothing else: the
- * extension is one the compiler emits from a source extension, and a path below the
- * output directory is read below the directory the compiler emits from, which the
- * configuration declares or which is the directory every input file shares.
+ * The lookups over one project's own files. A path naming an emitted file is read back to its
+ * source through the project's own emit mapping alone: the extension is one the compiler emits
+ * from a source extension, and a path below the output directory is read below the directory
+ * the compiler emits from, which the configuration declares or every input file shares.
  */
 export function sourceFilesOf<Brand>(project: ProjectView<Brand>, targetRoot: string): SourceFiles {
   const byName = new Map<string, SourceFile>();

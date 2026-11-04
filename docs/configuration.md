@@ -36,7 +36,7 @@ deadset-ts reads up to three JSON documents. A command-line option wins over `de
 | `reporters.cascade` | `roots` | `roots` lists the root members of a dead group with a count, `full` lists every member |
 | `reporters.max_findings` | `0` | The most findings a rendering prints. `0` prints every finding |
 | `reporters.fail_on` | `deny` | The lowest severity that fails the run: `allow`, `warn` or `deny` |
-| `ts.test_files` | `["**/*.test.{ts,tsx,mts,cts}", "**/*.test-d.{ts,tsx,mts,cts}", "**/*.spec-d.{ts,tsx,mts,cts}", "**/*.spec.*", "**/__tests__/**", "**/__mocks__/**", "**/test-d/**"]` | Globs naming the test files |
+| `ts.test_files` | `["**/*.test.{ts,tsx,mts,cts,js,jsx,mjs,cjs}", "**/*.test-d.{ts,tsx,mts,cts}", "**/*.spec-d.{ts,tsx,mts,cts}", "**/*.spec.*", "**/__tests__/**", "**/__mocks__/**", "**/test-d/**"]` | Globs naming the test files |
 | `ts.entry_files` | `[]` | Globs naming files whose exports are roots, beside the entry points the manifest names |
 | `ts.disabled_conventions` | `[]` | [Convention rows](how-it-works.md#the-roots) switched off, so they root no file. Name the files to keep in `ts.entry_files` |
 | `ts.component_extensions` | `[".vue", ".svelte", ".astro"]` | Extensions of component files, whose script blocks and frontmatter are read as one module. `[]` reads none |
@@ -71,7 +71,7 @@ An ignore file or a baseline larger than 1 MiB is refused with exit code 2. One 
 }
 ```
 
-A suppression that matches nothing is stale. It is reported as `DS9003` and fails the run with exit code 1, so a suppression is removed when the code it covered goes.
+A suppression that matches nothing is stale. It is reported as `DS9003` and fails the run with exit code 1, so a suppression is removed when the code it covered goes. A suppression on a declaration the analysis holds because it cannot decide it, one a command's text names or one the type checker left a question open about, is neither in effect nor stale: it fails nothing and waits until the analysis can decide that declaration. So is one whose finding a type error's skip withholds.
 
 A suppression names a declaration, so none can cover a finding about a file or a configuration entry: `DS1601`, `DS1602` and `DS9001` to `DS9006`. A suppression naming one of those codes is always stale. A `DS1701` finding about a manifest dependency is kept only by an ignore entry or a baseline row, as above, and never by an inline directive. Fix what the finding names, or set the code's severity under `severity`. `DS9003`, `DS9004` and `DS9006` have a fixed severity, so for those the only fix is the one the finding names.
 

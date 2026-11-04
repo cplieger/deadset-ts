@@ -26,7 +26,7 @@ import {
   resolveEntries,
   spelledEntry,
   type ResolvedEntry,
-} from "./configured-declarations.ts";
+} from "./roots/configured-declarations.ts";
 import type { DetectorInput, Evidence } from "./exempt.ts";
 import { nodeKey, type Inventory } from "./inventory.ts";
 import { renderPosition } from "./position.ts";

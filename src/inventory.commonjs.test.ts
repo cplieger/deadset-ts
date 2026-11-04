@@ -75,10 +75,15 @@ describe("a CommonJS export table", () => {
     const files = {
       "f.js": "module.exports = function () {};\n",
       "c.js": "exports = module.exports = function () {};\nexports.extra = 1;\n",
+      "m.js": "module.exports = exports = function () {};\nexports.extra = 1;\n",
     };
     expect(declared(files, "f.js")).toEqual(["function default #default 1:8 exported held"]);
     expect(declared(files, "c.js")).toEqual([
       "function default #default 1:18 exported held",
+      "variable extra #extra 2:9 exported held",
+    ]);
+    expect(declared(files, "m.js")).toEqual([
+      "function default #default 1:8 exported held",
       "variable extra #extra 2:9 exported held",
     ]);
     const ids = (inventoryOf(files)?.symbols ?? []).map((symbol) => symbol.id);
@@ -95,6 +100,27 @@ describe("a CommonJS export table", () => {
     };
     expect(declared(files, "w.js")).toEqual(["function default #default 1:8 exported held"]);
     expect(declared(files, "r.js")).toEqual(["variable after #after 3:16 exported held"]);
+  });
+
+  it("reads a parenthesized require and module.require through another name as the module system's", () => {
+    const files = {
+      "p.js": "module.exports = (require)('./x.js');\nmodule.exports.after = 2;\n",
+      "m.js":
+        "const load = module.require;\nmodule.exports = load('./x.js');\nmodule.exports.after = 2;\n",
+      "o.js":
+        "function load(id) {\n  return id;\n}\nmodule.exports = load('./x.js');\nmodule.exports.after = 2;\n",
+      "x.js": "exports.x = 1;\n",
+    };
+    expect(declared(files, "p.js")).toEqual(["variable after #after 2:16 exported held"]);
+    expect(declared(files, "m.js")).toEqual([
+      "variable load #load 1:7 local",
+      "variable after #after 3:16 exported held",
+    ]);
+    expect(declared(files, "o.js")).toEqual([
+      "function load #load 1:10 local",
+      "variable after #after 5:16 exported held",
+      "open",
+    ]);
   });
 
   it("reads a require another file declares as the module system's", () => {

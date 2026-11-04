@@ -27,6 +27,12 @@ interface KindsDocument {
   readonly reachability_classes: readonly string[];
   readonly fixabilities: readonly string[];
   readonly subjects: readonly string[];
+  readonly remedies: readonly {
+    readonly subject: string;
+    readonly names: string;
+    readonly suppressions: readonly string[];
+    readonly remedy: string;
+  }[];
   readonly symbol_kinds: Readonly<Record<string, string>>;
   readonly ranges: readonly {
     readonly start: string;
@@ -94,6 +100,17 @@ export async function generated(read: Reader): Promise<string> {
   const contract = doc("contract/contract.json") as {
     contract_version: string;
     schema_versions: readonly string[];
+    facts_versions: readonly string[];
+  };
+  const generators = doc("contract/generators.json") as {
+    generators: readonly {
+      id: string;
+      plugin: string;
+      language: string;
+      versions?: { min: string; max: string };
+      header: string;
+      cell: string;
+    }[];
   };
   const corpus = doc("corpus-document/corpus.json") as { corpus_version: string };
   const exemptions = doc("contract/exemptions.json") as {
@@ -119,6 +136,7 @@ export async function generated(read: Reader): Promise<string> {
       analyzer?: string;
       markers: readonly string[];
       skipped_directories: readonly string[];
+      skipped_files: readonly string[];
     }[];
   };
   const formats = config.properties.reporters.properties.formats.items.enum;
@@ -134,6 +152,7 @@ export async function generated(read: Reader): Promise<string> {
     `export const CONTRACT_VERSION = ${JSON.stringify(contract.contract_version)};`,
     `export const SCHEMA_VERSIONS = ${JSON.stringify(contract.schema_versions)} as const;`,
     `export const SCHEMA_VERSION = ${JSON.stringify(contract.schema_versions.at(-1))};`,
+    `export const FACTS_VERSION = ${JSON.stringify(contract.facts_versions.at(-1))};`,
     `export const CORPUS_VERSION = ${JSON.stringify(corpus.corpus_version)};`,
     `export const CODE_PREFIX = ${JSON.stringify(kinds.prefix)};`,
     `export const FAMILY_KEY_LENGTH = ${String(familyKeyLength)};`,
@@ -162,6 +181,7 @@ export async function generated(read: Reader): Promise<string> {
                     analyzer: row.analyzer,
                     markers: row.markers,
                     skippedDirectories: row.skipped_directories,
+                    skippedFiles: row.skipped_files,
                   },
                 ],
               ],
@@ -175,6 +195,7 @@ export async function generated(read: Reader): Promise<string> {
             readonly analyzer: string;
             readonly markers: readonly string[];
             readonly skippedDirectories: readonly string[];
+            readonly skippedFiles: readonly string[];
           }
         >
       >
@@ -222,6 +243,15 @@ export async function generated(read: Reader): Promise<string> {
     "",
     `export const SYMBOL_SUBJECTS = ${JSON.stringify(kinds.symbol_kinds)} as const satisfies Readonly<Record<string, Subject>>;`,
     "",
+    `export const REMEDIES = ${JSON.stringify(
+      Object.fromEntries(
+        kinds.remedies.map((row) => [
+          row.subject,
+          { names: row.names, suppressions: row.suppressions, remedy: row.remedy },
+        ]),
+      ),
+    )} as const satisfies Readonly<Record<Subject, { readonly names: string; readonly suppressions: readonly ("inline" | "ignore" | "baseline")[]; readonly remedy: string }>>;`,
+    "",
     `export const EXEMPTION_CLASSES = ${JSON.stringify(
       exemptions.exemptions.map((row) =>
         picked(row, [
@@ -245,6 +275,19 @@ export async function generated(read: Reader): Promise<string> {
         ]),
       ),
     )} as const;`,
+    "",
+    "/** The generators whose TypeScript output a generated file is matched against, in the document's order. */",
+    `export const GENERATORS = ${JSON.stringify(
+      generators.generators
+        .filter((row) => row.language === "ts")
+        .map((row) => ({
+          id: row.id,
+          plugin: row.plugin,
+          header: row.header,
+          ...(row.versions === undefined ? {} : { versions: row.versions }),
+          cell: row.cell,
+        })),
+    )} as const satisfies readonly { readonly id: string; readonly plugin: string; readonly header: string; readonly versions?: { readonly min: string; readonly max: string }; readonly cell: string }[];`,
     "",
     "/** Each group of failure classes, and the text opening the line that names one of its failures. */",
     `export const FAILURE_PREFIXES = ${JSON.stringify(Object.fromEntries(Object.entries(exits.failure_classes).map(([group, row]) => [group, row.prefix])))} as const;`,

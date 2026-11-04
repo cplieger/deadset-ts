@@ -6,7 +6,7 @@
  */
 
 import type { Host } from "../host.ts";
-import type { Manifest, ManifestEntry } from "../manifest.ts";
+import type { Manifest, ManifestEntry } from "../roots/manifest.ts";
 import { relativePath } from "../paths.ts";
 import type { Engine } from "../session.ts";
 import type { LocatedDiagnostic } from "./diagnostics.ts";

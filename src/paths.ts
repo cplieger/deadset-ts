@@ -98,6 +98,24 @@ export function resolvePath(against: string, path: string): string {
 }
 
 /**
+ * A URL reference's scheme. A reference with none that does not start with a solidus is
+ * relative, the bare name included: https://url.spec.whatwg.org/#relative-url-string
+ */
+const URL_SCHEME = /^[a-z][a-z\d+.-]*:/iu;
+
+/**
+ * The path a relative URL reference names against `dir`, its query and its fragment
+ * removed, which name no part of the file; undefined where the reference is not relative.
+ */
+export function relativeURLPath(dir: string, reference: string): string | undefined {
+  if (reference === "" || reference.startsWith("/") || URL_SCHEME.test(reference)) {
+    return undefined;
+  }
+  const cut = reference.search(/[?#]/u);
+  return resolvePath(dir, cut < 0 ? reference : reference.slice(0, cut));
+}
+
+/**
  * The relative path before the query of a relative module specifier such as
  * `./worker.ts?worker`, the module a bundler loads; undefined for a specifier with no
  * query, one that is not relative, and one whose query has a `raw` parameter, which

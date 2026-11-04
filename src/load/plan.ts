@@ -1,10 +1,19 @@
 import type { CreateSnapshotProgramParams } from "@typescript/native/sync";
 import type { PartialConfig } from "../config.ts";
-import { readConventions, type ConventionManifest, type Conventions } from "../conventions.ts";
+import {
+  readConventions,
+  type ConventionManifest,
+  type Conventions,
+} from "../entries/conventions.ts";
 import { holdsManifest, inInstalledPackages, MANIFEST, readManifestAt } from "../fs/manifest.ts";
 import { gitIgnored } from "../git-ignore.ts";
 import type { Host } from "../host.ts";
-import { packageEntries, readManifest, type Manifest, type ManifestEntry } from "../manifest.ts";
+import {
+  packageEntries,
+  readManifest,
+  type Manifest,
+  type ManifestEntry,
+} from "../roots/manifest.ts";
 import {
   ancestors,
   dirnamePath,

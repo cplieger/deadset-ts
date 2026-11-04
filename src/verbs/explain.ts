@@ -11,7 +11,7 @@ import { resolvePath } from "../paths.ts";
 import { positionKey } from "../position.ts";
 import type { Reference } from "../references.ts";
 import { resolve } from "../resolve.ts";
-import type { Root } from "../roots.ts";
+import type { Root } from "../roots/root-set.ts";
 import { type Verb, type VerbOptions } from "./verb.ts";
 import { UsageError } from "../usage.ts";
 import { bytewise } from "../text/compare.ts";

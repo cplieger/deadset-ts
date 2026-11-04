@@ -9,7 +9,7 @@ import { graphOf, OUTSIDE, type Graph } from "./graph.ts";
 import type { InventorySymbol } from "./inventory.ts";
 import { byPosition } from "./position.ts";
 import type { Reference } from "./references.ts";
-import type { Root } from "./roots.ts";
+import type { Root } from "./roots/root-set.ts";
 import {
   reachedWithTheTests,
   sweep,
@@ -198,19 +198,12 @@ export function matrixOf(per: readonly Configured[]): Matrix {
 }
 
 /**
- * Answers which declarations of the run are dead in every configuration that holds them.
- *
- * Liveness is a question about one configuration, because a file another configuration
- * does not compile makes no reference there and a root it does not hold seeds nothing
- * there, so each configuration is swept on its own graph under the run's input. A
- * declaration is a candidate when every configuration holding it judged it one: a
- * reference under one configuration is a reference, so what one project uses is never
- * reported, and a configuration that does not hold a declaration says nothing about it.
- * The candidate's relation is reference counting where every configuration found it so,
- * and reachability otherwise; its counts are the union's, one per reference.
- *
- * The components are computed once, over the union and the intersected dead set, so one
- * dead component is one entry of the run with one identifier.
+ * Which declarations of the run are dead in every configuration that holds them. Each
+ * configuration is swept on its own graph, since a file it does not compile references nothing
+ * there and a root it does not hold seeds nothing. A declaration is a candidate when every
+ * configuration holding it judged it one; its relation is reference counting where every one
+ * found it so, else reachability, and its counts are the union's. Components are computed once,
+ * over the union and the intersected dead set, so one dead component has one identifier.
  */
 export function sweepMatrix(matrix: Matrix, input: SweepInput): SweepResult {
   const per = matrix.graphs.map((graph) => sweep(graph, input));

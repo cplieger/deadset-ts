@@ -3,7 +3,7 @@ import { contractDocument } from "../__test-helpers__/fixtures.ts";
 import { graphOf, OUTSIDE, swept } from "./graph.ts";
 import type { InventorySymbol, SymbolKind } from "./inventory.ts";
 import type { Reference } from "./references.ts";
-import type { Root } from "./roots.ts";
+import type { Root } from "./roots/root-set.ts";
 
 /**
  * Every kind of declaration the inventory enumerates. The record's type makes the list

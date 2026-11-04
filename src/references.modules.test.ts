@@ -118,6 +118,87 @@ describe("a module's evaluation", () => {
     ]);
   });
 
+  it("is the file a literal require names, read whole only where the call's value is used and no import binds it", () => {
+    const script = "const stamp = String(Date.now());\nvoid stamp;\n";
+    const { references, label } = analyzed(
+      {
+        "package.json": CJS,
+        "tsconfig.json": JSON.stringify({
+          compilerOptions: { module: "commonjs", moduleResolution: "node10", target: "es2023" },
+        }),
+        "env.d.ts": "declare function require(id: string): any;\n",
+        "polyfill.ts": script,
+        "voided.ts": script,
+        "helpers.ts": "export function used(): void {}\nexport function other(): void {}\n",
+        "own.ts": "export const ownValue = 1;\n",
+        "main.ts": [
+          'require("./polyfill");',
+          'void require("./voided");',
+          'const helpers = require("./helpers");',
+          "helpers.used();",
+          "function load(path: string): void {",
+          "  console.log(path);",
+          "}",
+          'load("./own");',
+          'require("./absent");',
+          "export {};",
+          "",
+        ].join("\n"),
+      },
+      {},
+    );
+
+    expect(
+      references
+        .filter((reference) => evaluation(reference) || read(reference))
+        .filter((reference) => reference.position.path === "main.ts")
+        .map(
+          (reference) =>
+            `${positionKey(reference.position)} ${label(reference.to)} ${reference.use}`,
+        )
+        .filter((line) => !/ (?:load|helpers|require) /u.test(line)),
+    ).toEqual([
+      "main.ts:1:9 polyfill.ts evaluation",
+      "main.ts:2:14 voided.ts evaluation",
+      "main.ts:3:25 helpers.ts evaluation",
+      "main.ts:3:25 used read",
+      "main.ts:3:25 other read",
+    ]);
+  });
+
+  it("is the file a literal module.require names where nothing declares module, and the one a require a destructured createRequire returns names", () => {
+    const script = "const stamp = String(Date.now());\nvoid stamp;\n";
+    const { references, label } = analyzed(
+      {
+        "package.json": CJS,
+        "tsconfig.json": JSON.stringify({
+          compilerOptions: {
+            module: "commonjs",
+            moduleResolution: "node10",
+            target: "es2023",
+            allowJs: true,
+          },
+        }),
+        "polyfill.js": script,
+        "own.js": script,
+        "main.js": [
+          'module.require("./polyfill");',
+          'const { createRequire: make } = require("node:module");',
+          "const load = make(__filename);",
+          'load("./own");',
+          "",
+        ].join("\n"),
+      },
+      {},
+    );
+
+    expect(
+      references
+        .filter((reference) => evaluation(reference) && reference.position.path === "main.js")
+        .map((reference) => `${positionKey(reference.position)} ${label(reference.to)}`),
+    ).toEqual(["main.js:1:16 polyfill.js", "main.js:4:6 own.js"]);
+  });
+
   it("is what a value import, a re-export and a literal dynamic import write, and no type-only import", () => {
     expect(
       referencesOf(
@@ -430,6 +511,132 @@ describe("a load by a computed path", () => {
       true,
     ],
     [
+      "a require createRequire returns under another name loads",
+      {
+        "node.d.ts": NODE_TYPES,
+        "app.ts": `import { createRequire } from "node:module";\nconst load = createRequire(import.meta.url);\n${LOAD.replace("require(", "load(")}`,
+      },
+      true,
+    ],
+    [
+      "a require a createRequire imported under another name returns loads",
+      {
+        "node.d.ts": NODE_TYPES,
+        "app.ts": `import { createRequire as make } from "node:module";\nconst load = make(import.meta.url);\n${LOAD.replace("require(", "load(")}`,
+      },
+      true,
+    ],
+    [
+      "a require a createRequire imported under another name from a module the program does not resolve returns loads",
+      {
+        "app.ts": `import { createRequire as make } from "node:module";\nconst load = make(import.meta.url);\n${LOAD.replace("require(", "load(")}`,
+      },
+      true,
+    ],
+    [
+      "a require imported under another name from a module the program does not resolve loads",
+      {
+        "app.ts": `import { require as load } from "loader";\n${LOAD.replace("require(", "load(")}`,
+      },
+      true,
+    ],
+    [
+      "a require another file creates loads",
+      {
+        "node.d.ts": NODE_TYPES,
+        "req.ts": `import { createRequire } from "node:module";\nexport const load = createRequire(import.meta.url);\n`,
+        "app.ts": `import { load } from "./req.js";\n${LOAD.replace("require(", "load(")}`,
+      },
+      true,
+    ],
+    [
+      "a require a createRequire re-exported under another name from a module the program does not resolve returns loads",
+      {
+        "re.ts": 'export { createRequire as make } from "node:module";\n',
+        "app.ts": `import { make } from "./re.js";\nconst load = make(import.meta.url);\n${LOAD.replace("require(", "load(")}`,
+      },
+      true,
+    ],
+    [
+      "a require a variable holding createRequire returns loads",
+      {
+        "app.ts": `import { createRequire as make } from "node:module";\nconst build = make;\nconst load = build(import.meta.url);\n${LOAD.replace("require(", "load(")}`,
+      },
+      true,
+    ],
+    [
+      "a require a createRequire destructured under another name returns loads",
+      {
+        "env.d.ts": "declare function require(path: string): any;\n",
+        "app.ts": `const { createRequire: make } = require("node:module");\nconst load = make(import.meta.url);\n${LOAD.replace("require(", "load(")}`,
+      },
+      true,
+    ],
+    [
+      "a require another file creates, read as a member of its namespace, loads",
+      {
+        "node.d.ts": NODE_TYPES,
+        "req.ts": `import { createRequire } from "node:module";\nexport const load = createRequire(import.meta.url);\n`,
+        "app.ts": `import * as req from "./req.js";\n${LOAD.replace("require(", "req.load(")}`,
+      },
+      true,
+    ],
+    [
+      "a require a createRequire the target writes and imports under another name returns loads nothing",
+      {
+        "own.ts": `export function createRequire(path: string): (id: string) => unknown {\n  return (id) => id + path;\n}\n`,
+        "app.ts": `import { createRequire as make } from "./own.js";\nconst load = make(import.meta.url);\n${LOAD.replace("require(", "load(")}`,
+      },
+      false,
+    ],
+    [
+      "a require a createRequire the calling file writes returns loads nothing",
+      {
+        "app.ts": `function createRequire(path: string): (id: string) => unknown {\n  return (id) => id + path;\n}\nconst load = createRequire(import.meta.url);\n${LOAD.replace("require(", "load(")}`,
+      },
+      false,
+    ],
+    [
+      "a require method the target writes loads nothing",
+      {
+        "app.ts": `const loader = {\n  require(path: string): unknown {\n    return path;\n  },\n};\n${LOAD.replace("require(", "loader.require(")}`,
+      },
+      false,
+    ],
+    [
+      "a require written in parentheses loads",
+      { "app.ts": LOAD.replace("require(", "(require)(") },
+      true,
+    ],
+    [
+      "a binding of the platform's require under another name loads",
+      {
+        "env.d.ts": "declare function require(path: string): unknown;\n",
+        "app.ts": `const plain = require;\nconst again = plain;\n${LOAD.replace("require(", "again(")}`,
+      },
+      true,
+    ],
+    [
+      "the require a declaration file gives module loads",
+      {
+        "env.d.ts": "declare const module: { require(id: string): unknown };\n",
+        "app.ts": LOAD.replace("require(", "module.require("),
+      },
+      true,
+    ],
+    [
+      "the require of a module nothing declares loads",
+      { "app.ts": LOAD.replace("require(", "module.require(") },
+      true,
+    ],
+    [
+      "a function of another name the target writes loads nothing",
+      {
+        "app.ts": `function load(path: string): unknown {\n  return path;\n}\n${LOAD.replace("require(", "load(")}`,
+      },
+      false,
+    ],
+    [
       "a function require the target writes loads nothing",
       {
         "app.ts": `function require(path: string): unknown {\n  return path;\n}\n${LOAD}`,
@@ -503,6 +710,73 @@ describe("a load by a computed path", () => {
       "app.ts:7:23 object objectOne read",
       "app.ts:8:25 template template/one.ts evaluation",
     ]);
+  });
+
+  it("reads a glob as Vite does: / against the project root, ./ against the base, ** as written, ! removing", () => {
+    expect(
+      computedLoadsOf({
+        "package.json": ESM,
+        "env.d.ts": GLOB,
+        "web/vite.config.ts": 'export default { root: "app" };\n',
+        "web/app/main.ts": [
+          'export const rooted = import.meta.glob("/plugins/*.ts");',
+          'export const based = import.meta.glob("./*.ts", { base: "./pages" });',
+          'export const top = import.meta.glob("./*.ts", { base: "/routes" });',
+          'export const deep = import.meta.glob(["**/deep/*.ts", "!**/deep/skip.ts"]);',
+          "",
+        ].join("\n"),
+        ...Object.fromEntries(
+          [
+            "web/app/plugins/p",
+            "web/plugins/outside",
+            "web/app/pages/page",
+            "web/app/routes/route",
+            "web/app/deep/kept",
+            "web/app/deep/skip",
+          ].map((stem) => [
+            `${stem}.ts`,
+            `export const ${stem.slice(stem.lastIndexOf("/") + 1)}Value = 1;\n`,
+          ]),
+        ),
+      }).filter((line) => line.endsWith("evaluation")),
+    ).toEqual([
+      "web/app/main.ts:1:23 rooted web/app/plugins/p.ts evaluation",
+      "web/app/main.ts:2:22 based web/app/pages/page.ts evaluation",
+      "web/app/main.ts:3:20 top web/app/routes/route.ts evaluation",
+      "web/app/main.ts:4:21 deep web/app/deep/kept.ts evaluation",
+    ]);
+  });
+
+  it("leaves unresolved a glob through an alias, a computed base, a root the configuration hides, and a require under another name", () => {
+    const result = analyzeProject(
+      {
+        "package.json": ESM,
+        "env.d.ts": `${GLOB}declare module "node:module" {\n  export function createRequire(path: string): (id: string) => unknown;\n}\n`,
+        "hidden/vite.config.ts": "const root = process.cwd();\nexport default { root };\n",
+        "hidden/main.ts": 'export const hidden = import.meta.glob("/plugins/*.ts");\n',
+        "main.ts": [
+          'import { createRequire } from "node:module";',
+          "declare const base: string;",
+          "declare const name: string;",
+          "function own(value: number | string): number {",
+          "  return Number(value);",
+          "}",
+          "const load = createRequire(import.meta.url);",
+          'export const aliased = import.meta.glob("@/plugins/*.ts");',
+          'export const based = import.meta.glob("./*.ts", { base });',
+          "export const loaded = load(name);",
+          "export const counted = own(2) + own(name);",
+          "export const pushed = [name].push(name);",
+          "",
+        ].join("\n"),
+      },
+      { references: { testFiles: [] } },
+    );
+
+    expect(
+      (result.references[0]?.unseenLoads ?? []).map(positionKey).sort(),
+      "a call of the target's own function and a method of another name load nothing",
+    ).toEqual(["hidden/main.ts:1:23", "main.ts:10:23", "main.ts:8:24", "main.ts:9:22"]);
   });
 
   it("is made by the declaration holding the call, but an eager glob evaluates its files from the file", () => {
@@ -663,6 +937,48 @@ describe("a module URL", () => {
       { "url.d.ts": URL_MODULES, "main.ts": `import { URL } from "node:url";\n${WORKER}` },
       true,
     ],
+    [
+      "a renamed import of the URL node:url exports loads",
+      {
+        "url.d.ts": URL_MODULES,
+        "main.ts": `import { URL as NodeURL } from "node:url";\n${WORKER.replace("new URL", "new NodeURL")}`,
+      },
+      true,
+    ],
+    [
+      "a renamed import of URL from a module the program does not resolve loads",
+      {
+        "main.ts": `import { URL as NodeURL } from "node:url";\n${WORKER.replace("new URL", "new NodeURL")}`,
+      },
+      true,
+    ],
+    [
+      "a URL re-exported under another name from a module the program does not resolve loads",
+      {
+        "re.ts": 'export { URL as Address } from "node:url";\n',
+        "main.ts": `import { Address } from "./re.js";\n${WORKER.replace("new URL", "new Address")}`,
+      },
+      true,
+    ],
+    [
+      "the URL of a namespace import of node:url loads",
+      {
+        "url.d.ts": URL_MODULES,
+        "main.ts": `import * as url from "node:url";\n${WORKER.replace("new URL", "new url.URL")}`,
+      },
+      true,
+    ],
+    ["globalThis.URL loads", { "main.ts": WORKER.replace("new URL", "new globalThis.URL") }, true],
+    [
+      "a URL written in parentheses loads",
+      { "main.ts": WORKER.replace("new URL", "new (URL)") },
+      true,
+    ],
+    [
+      "a binding of the global URL under another name loads",
+      { "main.ts": `const Address = URL;\n${WORKER.replace("new URL", "new Address")}` },
+      true,
+    ],
     ["a URL class the target writes loads nothing", { "main.ts": `${URL_CLASS}${WORKER}` }, false],
     [
       "a URL class the target writes and imports loads nothing",
@@ -682,13 +998,32 @@ describe("a module URL", () => {
     ).toBe(loads);
   });
 
+  it("loads the file a bare relative URL reference names, its query and its fragment removed, and none a scheme or a solidus names", () => {
+    expect(
+      referencesOf(
+        {
+          "package.json": ESM,
+          ...modules("inner", "queried", "remote", "rooted"),
+          "main.ts": [
+            'export const inner = new URL("pkg/./../inner.ts", import.meta.url);',
+            'export const queried = new URL("queried.ts?raw#top", import.meta.url);',
+            'export const remote = new URL("https://example.com/remote.ts", import.meta.url);',
+            'export const rooted = new URL("/rooted.ts", import.meta.url);',
+            'export const resolved = import.meta.resolve("rooted.ts");',
+            "",
+          ].join("\n"),
+        },
+        evaluation,
+      ),
+    ).toEqual(["main.ts:1:22 inner.ts", "main.ts:2:24 queried.ts"]);
+  });
+
   it("loads nothing where the constructor, the base, the method or the path is another", () => {
     expect(
       referencesOf(
         {
           "package.json": ESM,
           ...modules("constructed", "pattern", "based", "metaBased", "called", "metaCalled"),
-          "pkg/inner.ts": "export const innerValue = 1;\n",
           "main.ts": [
             "declare global {",
             "  interface ImportMeta {",
@@ -716,14 +1051,12 @@ describe("a module URL", () => {
             'export const pattern = new RegExp("./pattern.ts", import.meta.url);',
             'export const metaBased = new URL("./metaBased.ts", import.meta.base);',
             'export const metaCalled = import.meta.other("./metaCalled.ts");',
-            'export const inner = new URL("pkg/./inner.ts", import.meta.url);',
             "",
           ].join("\n"),
         },
         evaluation,
       ),
-      "a class the target declares and one it does not, `new.target` for `import.meta`, another member of `import.meta`, " +
-        "and a path that starts with neither ./ nor ../",
+      "a class the target declares and one it does not, `new.target` for `import.meta`, and another member of `import.meta`",
     ).toEqual([]);
   });
 });

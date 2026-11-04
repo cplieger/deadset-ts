@@ -31,14 +31,14 @@ import {
 } from "@typescript/native/ast";
 import { automaticTypes, type AutomaticTypes } from "./automatic-types.ts";
 import {
-  configurationFiles,
   declaredIn as declaredBeside,
   dependenciesNamed,
   moduleStrings,
   outsideChain,
+  type ConfigurationFiles,
   type OutsideModule,
   type ParseFile,
-} from "./configuration-files.ts";
+} from "./entries/configuration-files.ts";
 import type { FindingPosition } from "./finding.ts";
 import type { Host } from "./host.ts";
 import { nodeKey, type Inventory } from "./inventory.ts";
@@ -55,8 +55,11 @@ import type { DependencySection, Module } from "./ref.ts";
 import { UNANSWERED } from "./query.ts";
 import type { Handle, ProjectView } from "./session.ts";
 import { sourceFilesOf, type SourceFiles } from "./source-files.ts";
-import { manifestCommands, nodemonTexts } from "./manifest.ts";
-import { commandFileTexts, workflowCommands } from "./workflow-steps.ts";
+import { manifestCommands, nodemonTexts } from "./roots/manifest.ts";
+import { writtenName } from "./platform-calls.ts";
+import { callsPlatform } from "./platform-symbols.ts";
+import { parenthesesRemoved } from "./unwrap.ts";
+import type { Workflows } from "./entries/workflow-steps.ts";
 import {
   pathsNamed,
   preloadedPackages,
@@ -355,8 +358,9 @@ function bindingsOf(node: Node | undefined): readonly Texted[] {
  * Every package one project needs, and which declaration each use is written in.
  * One local walk and one batched resolution per file: a use of an import binding is
  * an identifier resolving to the binding's own symbol, so a local declaration that
- * shadows the name is not one. A string of a configuration file uses each dependency
- * the manifest beside the file declares that it spells.
+ * shadows the name is not one. A string of a configuration file, as the entry sources
+ * read them in `configuration`, uses each dependency the manifest beside the file
+ * declares that it spells.
  */
 export function projectNeeds<Brand>(
   project: ProjectView<Brand>,
@@ -364,6 +368,8 @@ export function projectNeeds<Brand>(
   host: Host,
   targetRoot: string,
   parse: ParseFile,
+  configuration: ConfigurationFiles,
+  workflows: Workflows,
 ): ProjectNeeds {
   const programPackages = new Set<string>();
   for (const name of project.program.getSourceFileNames()) {
@@ -417,7 +423,6 @@ export function projectNeeds<Brand>(
     return names;
   };
   const files = sourceFilesOf(project, targetRoot);
-  const configuration = configurationFiles(host, targetRoot, files, parse);
   for (const { file, manifestDir } of configuration.modules) {
     const names = declaredAt(joinPath(manifestDir, MANIFEST));
     for (const { node, text } of moduleStrings(file)) {
@@ -437,7 +442,7 @@ export function projectNeeds<Brand>(
     targetRoot,
     files,
     parse,
-    scriptRunFiles(host, targetRoot, files),
+    scriptRunFiles(host, targetRoot, files, workflows),
   );
   for (const { file, manifestDirs } of [...configuration.outside, ...ranFiles]) {
     for (const manifestDir of manifestDirs) {
@@ -460,6 +465,7 @@ function scriptRunFiles(
   host: Host,
   targetRoot: string,
   files: SourceFiles,
+  workflows: Workflows,
 ): readonly { readonly path: string; readonly manifestDir: string }[] {
   const root = resolvePath(host.workingDirectory(), targetRoot);
   const dirs = new Set<string>([root]);
@@ -472,12 +478,7 @@ function scriptRunFiles(
     }
   }
   const named = new Map<string, readonly string[]>([
-    [
-      root,
-      workflowReadings(host, root)
-        .flatMap(pathsNamed)
-        .map((one) => one.path),
-    ],
+    [root, workflows.readings.flatMap(pathsNamed).map((one) => one.path)],
   ]);
   for (const dir of dirs) {
     const read = readDocument(host, joinPath(dir, MANIFEST));
@@ -522,20 +523,9 @@ function manifestUses(host: Host, dir: string, manifest: Record<string, unknown>
 }
 
 /** What the target root's workflow steps, git hooks and recipes use, held with their files' whole text. */
-function workflowUses(host: Host, targetRoot: string): CommandUses {
-  const uses = usesOf(workflowReadings(host, targetRoot));
-  return { ...uses, held: [uses.held, ...commandFileTexts(host, targetRoot)].join("\n") };
-}
-
-/**
- * What the target root's workflow steps, git hooks, hook managers and recipes run, each held
- * with the directory the file writes for it.
- */
-function workflowReadings(host: Host, targetRoot: string): readonly CommandReading[] {
-  return workflowCommands(host, targetRoot).map(({ text, dir, writtenDirectory }) => {
-    const reading = readCommands(text, dir);
-    return { ...reading, held: [reading.held, writtenDirectory ?? ""].join("\n") };
-  });
+function workflowUses(workflows: Workflows): CommandUses {
+  const uses = usesOf(workflows.readings);
+  return { ...uses, held: [uses.held, ...workflows.texts].join("\n") };
 }
 
 /** What some command strings say about the packages they use. */
@@ -661,8 +651,16 @@ function fileNeeds<Brand>(
   if (names.size > 0 || automatic.globals.size > 0) {
     visit(file);
   }
+  const loads = runtimeLoads(file);
+  const callees = loads.flatMap((load) => load.callees);
 
-  const asked = [...specifiers, ...bindings.map(({ node }) => node), ...candidates, ...globals];
+  const asked = [
+    ...specifiers,
+    ...bindings.map(({ node }) => node),
+    ...candidates,
+    ...globals,
+    ...callees,
+  ];
   const handles: Handle<Brand>[] = asked.map((node) => project.handle(node));
   const resolved = project.symbolsAt(handles);
 
@@ -738,35 +736,83 @@ function fileNeeds<Brand>(
   for (const reference of file.typeReferenceDirectives) {
     use(ownersOf(file, held, file), typePackages(reference.fileName, programPackages));
   }
-  for (const specifier of resolvedSpecifiers(file)) {
-    const named = packageOfSpecifier(specifier.text);
-    if (named !== undefined) {
+  // A callee the checker leaves unanswered may be a require, so its call holds the
+  // dependency it names by live code, as program.33 holds one.
+  const calleesAt = unresolvedAt + globals.length;
+  const decided = new Map<string, boolean>();
+  const requires = new Set<Identifier>();
+  const unansweredCallees = new Set<Identifier>();
+  callees.forEach((callee, index) => {
+    const symbol = resolved[calleesAt + index];
+    if (symbol === UNANSWERED) {
+      unansweredCallees.add(callee);
+      return;
+    }
+    // The decision reads the callee's symbol and its written name, and nothing else of it.
+    const key = symbol === undefined ? undefined : `${symbol.id}\u0000${callee.text}`;
+    const answer =
+      (key === undefined ? undefined : decided.get(key)) ??
+      callsPlatform(project, "require", callee, symbol, () => undefined);
+    if (key !== undefined) {
+      decided.set(key, answer);
+    }
+    if (answer) {
+      requires.add(callee);
+    }
+  });
+  for (const { specifier, named, callees: through } of loads) {
+    if (through.length === 0 || through.some((one) => requires.has(one))) {
       use(ownersOf(file, held, specifier), [named]);
+    } else if (through.some((one) => unansweredCallees.has(one))) {
+      use([PROJECT_OWNER], [named]);
     }
   }
   return resolved.slice(0, specifiers.length).includes(UNANSWERED);
 }
 
 /**
- * The literal specifiers one file asks the runtime to resolve, through `import.meta.resolve`
- * or `require.resolve`, each of which needs the package it names installed.
+ * A call of one file that may load or resolve a package at run time: the literal specifier
+ * naming it, and the names a `require` would be written with, of which one has to be a
+ * `require` for the call to need the package; none for a use where it stands.
  */
-function resolvedSpecifiers(file: SourceFile): readonly Texted[] {
-  const found: Texted[] = [];
-  if (!file.text.includes(".resolve(")) {
-    return found;
-  }
+interface RuntimeLoad {
+  readonly specifier: Texted;
+  readonly named: string;
+  readonly callees: readonly Identifier[];
+}
+
+/**
+ * The calls one file may load or resolve a package with at run time, each of whose first
+ * argument is literal text naming a package: a `require()` call, which the compiler lists among
+ * a file's imports only in a JavaScript file and only through the bare name; a `.resolve` of
+ * another name, which needs it where that name is a `require`; and `import.meta.resolve` or
+ * a `.resolve` of the name `require`, whatever it names, a use where it stands.
+ */
+function runtimeLoads(file: SourceFile): readonly RuntimeLoad[] {
+  const found: RuntimeLoad[] = [];
   const visit = (node: Node): void => {
-    if (isCallExpression(node) && isPropertyAccessExpression(node.expression)) {
-      const callee = node.expression;
+    if (isCallExpression(node)) {
       const [argument] = node.arguments;
-      const receiver = callee.expression;
-      const resolving =
-        callee.name.text === "resolve" &&
-        ((isMetaProperty(receiver) && receiver.name.text === "meta") ||
-          (isIdentifier(receiver) && receiver.text === "require"));
-      if (resolving && argument !== undefined && isLiteralText(argument)) {
-        found.push(argument);
+      if (argument !== undefined && isLiteralText(argument)) {
+        const named = packageOfSpecifier(argument.text);
+        const callee = parenthesesRemoved(node.expression);
+        const receiver =
+          isPropertyAccessExpression(callee) && callee.name.text === "resolve"
+            ? parenthesesRemoved(callee.expression)
+            : undefined;
+        const stands =
+          receiver !== undefined &&
+          ((isMetaProperty(receiver) && receiver.name.text === "meta") ||
+            (isIdentifier(receiver) && receiver.text === "require"));
+        const callees = stands
+          ? []
+          : [
+              writtenName(callee),
+              receiver === undefined ? undefined : writtenName(receiver),
+            ].filter((one) => one !== undefined);
+        if (named !== undefined && (stands || callees.length > 0)) {
+          found.push({ specifier: argument, named, callees });
+        }
       }
     }
     node.forEachChild(visit);
@@ -989,6 +1035,7 @@ function addNeededPeers(
 export function dependenciesOf(
   host: Host,
   targetRoot: string,
+  workflows: Workflows,
   perProject: readonly ProjectNeeds[],
   candidates: readonly string[],
   members: readonly string[] = [],
@@ -1011,7 +1058,7 @@ export function dependenciesOf(
       unbuilt.add(path);
     }
   }
-  const workflow = workflowUses(host, targetRoot);
+  const workflow = workflowUses(workflows);
   const declared: DeclaredDependency[] = [];
   const ran = new Set<string>();
   const peers = new Map<string, readonly string[]>();

@@ -14,17 +14,19 @@ import {
   configuredDeclarations,
   configuredRef,
   declarationsNamed,
-} from "./configured-declarations.ts";
+} from "./roots/configured-declarations.ts";
 import { decorator } from "./decorator.ts";
 import { configurationNeeds, dependenciesOf, projectNeeds } from "./dependencies.ts";
 import { deprecatedDeclarations, type Deprecation } from "./deprecation.ts";
 import { moduleIdentity, type LoadedConsumer, type NotBuilt } from "./load/discover.ts";
 import type { LibraryUnfound } from "./load/classify.ts";
 import { loadRun, type LoadedRun } from "./load/load.ts";
-import { generatedFiles, type AppliedConvention } from "./conventions.ts";
+import type { AppliedConvention } from "./entries/conventions.ts";
+import { readSources, type SourceFacts } from "./entries/sources.ts";
+import { readWorkflows, type Workflows } from "./entries/workflow-steps.ts";
 import { readEdgeSides } from "./edges.ts";
 import { enumGroup } from "./enum-group.ts";
-import { generatedFile, generatedFilesOf } from "./generated-file.ts";
+import { generatedFile, generatedFilesOf, type GeneratedFact } from "./generated-file.ts";
 import { inOperandNames } from "./in-operands.ts";
 import { sourceFilesOf } from "./source-files.ts";
 import {
@@ -53,7 +55,7 @@ import { interfaceSatisfaction, settledSatisfaction } from "./interface-satisfac
 import { intraFunctionFacts, projectParts, type ProjectParts } from "./intra-function-parts.ts";
 import { type Inventory, type InventorySymbol } from "./inventory.ts";
 import { inventory } from "./inventory/enumerate.ts";
-import { readManifest, type ManifestEntry } from "./manifest.ts";
+import { readManifest, type ManifestEntry } from "./roots/manifest.ts";
 import {
   liveFilesAt,
   matrixOf,
@@ -74,22 +76,20 @@ import {
 import type { UnansweredQuestion } from "./query.ts";
 import { byPosition, isComponentFile, type Position } from "./position.ts";
 import type { TypeErrorSkip, UnansweredCount } from "./report.ts";
-import { skippedRoots, skippedUnits, type SkippedUnit } from "./type-errors.ts";
+import { skippedUnits, type SkippedUnit } from "./type-errors.ts";
 import { reflectiveLookup } from "./reflective-lookup.ts";
 import { references, testFileRulesOf, type Reference, type TestFileRule } from "./references.ts";
 import {
-  roots,
+  rootSet,
   unmatchedEverywhere,
-  type Root,
   type RootKind,
   type Roots,
   type HeldScripts,
-} from "./roots.ts";
+} from "./roots/root-set.ts";
 import type { Scope } from "./scope.ts";
 import { decodedMembers, serializationContract, type Decoded } from "./serialization-contract.ts";
 import { outsideTestReferences, testFilesAt, type OutsideTest } from "./outside-tests.ts";
-import { mergedGlobalInterfaces } from "./augmentations.ts";
-import { unseenLoadsOf, type UnseenLoad } from "./unseen-loads.ts";
+import type { UnseenLoad } from "./roots/unseen-loads.ts";
 import type { UnresolvedSpecifier } from "./load/specifiers.ts";
 import type { UnreadInput } from "./load/plan.ts";
 import { GLOBALS_RUNNER, namesTestGlobals } from "./load/test-globals.ts";
@@ -103,6 +103,7 @@ import type { Exemption, Mode, SweepInput } from "./sweep.ts";
 import { readTemplates, templateField } from "./template-field.ts";
 import { bytewise } from "./text/compare.ts";
 import { holdsManifest, manifestAt } from "./fs/manifest.ts";
+import { runDirectories } from "./entries/run-directories.ts";
 import { globExpression } from "./text/glob.ts";
 
 /** The setting whose source decides where a finding about a configured root sits. */
@@ -176,10 +177,10 @@ interface ProjectRead {
   readonly typeErrorSkips: readonly TypeErrorSkip[];
   /** The lines each of those skips withholds every finding on. */
   readonly skipped: readonly SkippedUnit[];
-  /** The project's generated files, by path below the target root, each with the detail its retentions name. */
-  readonly generated: ReadonlyMap<string, string>;
-  /** The files, absolute, an applied convention row names as test files. */
-  readonly testFileNames: ReadonlySet<string>;
+  /** The project's generated files, by path below the target root, each with what decided it. */
+  readonly generated: ReadonlyMap<string, GeneratedFact>;
+  /** What the project's entry sources enter and name, read once. */
+  readonly sources: SourceFacts;
 }
 
 /** One target project the run analyzes, as its stage is handed it. */
@@ -196,6 +197,8 @@ interface ProjectsRead<Answer> {
   readonly references: readonly Reference[];
   /** The test files below the target root no project the run reads holds, parsed. */
   readonly outsideTests: readonly OutsideTest[];
+  /** The target root's workflow steps, git hooks and makefile, read once for every project. */
+  readonly workflows: Workflows;
 }
 
 /**
@@ -216,14 +219,13 @@ function readProjects<Answer>(
   const parse = (fileName: string, text: string) => engine.parseSourceFile(fileName, text);
   return loadRun(engine, host, scope, config, ({ plan, classified, runFiles }) => {
     const { packages, conventions } = plan;
+    const workflows = readWorkflows(host, targetRoot);
     const options = {
       host,
       manifest: packages.manifest,
       otherPackages: packages.entries,
       patterns: config.roots.patterns,
       entryFiles: config.ts.entry_files,
-      conventions,
-      testFiles: config.ts.test_files,
       parse,
       publishedAPI: config.target.kind !== undefined && kindOf(config.target.kind) === "library",
       publishedMembers: packages.published,
@@ -233,19 +235,17 @@ function readProjects<Answer>(
     const answers = classified.analyzed.map(({ plan: planned, project, skips, referenceOnly }) => {
       const read = (): ProjectRead => {
         const held = inventory(project, host, targetRoot);
-        const found = roots(project, held, targetRoot, options);
-        const kept = skippedRoots(project, held, skips);
-        const rooted =
-          kept.length === 0
-            ? found
-            : {
-                ...found,
-                liveUnderReachability: [
-                  ...found.liveUnderReachability,
-                  ...kept.map((id) => ({ id, kind: "type-error" as const, source: "" })),
-                ],
-              };
         const own = sourceFilesOf(project, targetRoot);
+        const sources = readSources({
+          host,
+          targetRoot,
+          files: own,
+          parse,
+          testFiles: config.ts.test_files,
+          conventions,
+          workflows,
+        });
+        const rooted = rootSet(project, held, targetRoot, { ...options, sources, skips });
         return {
           configuration: planned.id,
           configFile: project.configFile,
@@ -257,8 +257,8 @@ function readProjects<Answer>(
             .ownSourceFiles()
             .filter((file) => referenceOnly(file.fileName))
             .flatMap((file) => relativePath(absoluteRoot, file.fileName) ?? []),
-          generated: generatedFilesOf(own, generatedFiles(conventions, own)),
-          testFileNames: conventions.testFiles,
+          generated: generatedFilesOf(own, sources.generated),
+          sources,
         };
       };
       for (const file of project.ownSourceFiles()) {
@@ -269,7 +269,7 @@ function readProjects<Answer>(
     const consumed = new Map<string, Reference>();
     for (const { project, consumer } of classified.consumed) {
       const side = { id: consumer.id, root: consumer.path };
-      for (const reference of consumerReferences(project, host, targetRoot, side, config)) {
+      for (const reference of consumerReferences(project, host, targetRoot, side, config, parse)) {
         consumed.set(referenceKey(reference), reference);
       }
     }
@@ -281,7 +281,7 @@ function readProjects<Answer>(
       ),
       parse,
     );
-    return { answers, references: [...consumed.values()], outsideTests };
+    return { answers, references: [...consumed.values()], outsideTests, workflows };
   });
 }
 
@@ -463,8 +463,6 @@ interface ReadProject<Extra> {
   readonly componentWarnings: readonly ComponentWarning[];
   /** Per own file below the target root, the module specifiers its imports write. */
   readonly imports: ReadonlyMap<string, readonly string[]>;
-  /** The global augmentations a declaration outside the project names. */
-  readonly augmented: readonly Root[];
   /** The data members its production code decodes into. */
   readonly decoded: Decoded;
   readonly extra: Extra;
@@ -499,6 +497,8 @@ interface ReadRun<Extra> {
   readonly memberDirs: readonly string[];
   /** The directory of every nested package, absolute. */
   readonly nestedDirs: readonly string[];
+  /** The target root's workflow steps, git hooks and makefile, read once. */
+  readonly workflows: Workflows;
 }
 
 /** The manifest section of a package test evidence counts, and the sections that keep one out of it. */
@@ -564,6 +564,7 @@ function readRun<Extra>(
     read: ProjectRead,
     references: readonly Reference[],
     testFiles: readonly string[],
+    unseenLoads: readonly UnseenLoad[],
   ) => Extra,
 ): ReadRun<Extra> {
   const targetRoot = scope.target.path;
@@ -572,11 +573,15 @@ function readRun<Extra>(
     ? { delimiters: config.analysis.template_delimiters, files: [] }
     : readTemplates(host, targetRoot, config.analysis);
   const consumers = scope.consumers.map((consumer) => consumer.path);
+  const directories = runDirectories(host, targetRoot, (fileName, text) =>
+    engine.parseSourceFile(fileName, text),
+  );
   const read = readProjects<ReadProject<Extra>>(engine, host, scope, config, (project, opened) => {
     const projectRead = opened.read();
     const resolved = references(project, projectRead.held, targetRoot, {
       testFiles: config.ts.test_files,
-      testFileNames: projectRead.testFileNames,
+      testFileNames: projectRead.sources.testFiles,
+      directories,
     });
     const evidence = evidenceRecords(
       {
@@ -605,11 +610,6 @@ function readRun<Extra>(
       testFiles: resolved.testFilePaths,
       evidence,
       componentFiles: components.map(pathOf),
-      augmented: mergedGlobalInterfaces(
-        project,
-        projectRead.held,
-        sourceFilesOf(project, targetRoot),
-      ).map((id): Root => ({ id, kind: "global-augmentation", source: "" })),
       imports: new Map(
         project.ownSourceFiles().flatMap((file) => {
           const path = relativePath(targetRoot, file.fileName);
@@ -641,7 +641,16 @@ function readRun<Extra>(
         productionFiles(project, targetRoot, resolved.testFilePaths),
         consumers,
       ),
-      extra: extra(project, projectRead, resolved.references, resolved.testFilePaths),
+      extra: extra(
+        project,
+        projectRead,
+        resolved.references,
+        resolved.testFilePaths,
+        resolved.unseenLoads.map((position) => ({
+          configuration: projectRead.configuration,
+          position,
+        })),
+      ),
     };
   });
   const outsidePaths = read.result.outsideTests.map((one) => one.path);
@@ -658,7 +667,12 @@ function readRun<Extra>(
   const { support, testUsed } = testSupportFiles(
     withOutside.flatMap((one) => one.projectRead.held.symbols),
     withOutside.flatMap((one) => one.references),
-    withOutside.flatMap((one) => one.projectRead.rooted.liveUnderReachability),
+    // An outside declaration naming a global augmentation calls nothing of its file.
+    withOutside.flatMap((one) =>
+      one.projectRead.rooted.liveUnderReachability.filter(
+        (root) => root.kind !== "global-augmentation",
+      ),
+    ),
     withOutside.flatMap((one) => one.testFiles),
     testEvidence(host, targetRoot, withOutside),
   );
@@ -699,9 +713,7 @@ function readRun<Extra>(
       configuration: projectRead.configuration,
       symbols: projectRead.held.symbols,
       references: [...made, ...evidenceReferences(projectRead.held.symbols, detected.inTestFiles)],
-      // The augmentations are rooted after test support is read: an outside declaration
-      // naming one calls nothing of its file.
-      roots: [...projectRead.rooted.liveUnderReachability, ...one.augmented],
+      roots: projectRead.rooted.liveUnderReachability,
       testFiles: [...one.testFiles, ...supportFiles],
       ...(supportFiles.length === 0 ? {} : { supportFiles }),
       ...(testUsedFiles.length === 0 ? {} : { testUsedFiles }),
@@ -769,6 +781,7 @@ function readRun<Extra>(
     conventionUses: read.plan.conventions.uses,
     memberDirs: read.plan.packages.members,
     nestedDirs: read.plan.packages.nested,
+    workflows: read.result.workflows,
   };
 }
 
@@ -958,7 +971,7 @@ interface EmitterExtra {
   readonly needs: ReturnType<typeof projectNeeds>;
   readonly implementations: ReturnType<typeof implementations>;
   readonly heldByInclusion: readonly string[];
-  readonly generated: readonly string[];
+  readonly generated: ReadonlyMap<string, GeneratedFact>;
   readonly inOperands: readonly string[];
   readonly rooted: Roots;
   readonly directives: readonly InlineDirective[];
@@ -996,15 +1009,21 @@ export function readEmitterRun(
     config,
     mode,
     detectors,
-    (project, read, references, testFiles) => ({
+    (project, read, references, testFiles, unseenLoads) => ({
       deprecation: deprecatedDeclarations(project, read.held),
       accessors: accessorsOf(project, read.held),
-      needs: projectNeeds(project, read.held, host, targetRoot, (fileName, text) =>
-        engine.parseSourceFile(fileName, text),
+      needs: projectNeeds(
+        project,
+        read.held,
+        host,
+        targetRoot,
+        (fileName, text) => engine.parseSourceFile(fileName, text),
+        read.sources.configuration,
+        read.sources.workflows,
       ),
       implementations: implementations(project, read.held),
       heldByInclusion: heldByInclusion(project, targetRoot),
-      generated: [...read.generated.keys()],
+      generated: read.generated,
       inOperands: inOperandNames(project, targetRoot, testFiles),
       rooted: read.rooted,
       directives: inlineDirectives(project, read.held, targetRoot).filter(
@@ -1012,7 +1031,7 @@ export function readEmitterRun(
       ),
       declarationsNamed: declarationsNamed(project, read.held, configuredDeclarations(config)),
       parts: projectParts(project, read.held, references, targetRoot),
-      unseenLoads: unseenLoadsOf(project, read.configuration, targetRoot, testFiles),
+      unseenLoads,
     }),
   );
   // Whether a declaration carries the marker decides its code, so one whose answer went
@@ -1101,6 +1120,7 @@ export function emitterInputOver(
     dependencies: dependenciesOf(
       host,
       targetRoot,
+      read.workflows,
       [...projects.map((one) => one.extra.needs), configurationNeeds(read.conventionUses)],
       swept.sweep.candidates.map((candidate) => candidate.id),
       members.read,
@@ -1111,7 +1131,7 @@ export function emitterInputOver(
     files: {
       tree: sourceTree(host, targetRoot),
       heldByInclusion: new Set(projects.flatMap((one) => one.extra.heldByInclusion)),
-      generated: new Set(projects.flatMap((one) => one.extra.generated)),
+      generated: new Set(projects.flatMap((one) => [...one.extra.generated.keys()])),
       inOperands: new Set(projects.flatMap((one) => one.extra.inOperands)),
       unseenLoads: projects.flatMap((one) => one.extra.unseenLoads),
     },
@@ -1211,6 +1231,7 @@ function readAnalysis(
         one.heldScripts.map((held) => ({ ...held, configFile: one.configFile })),
       ),
       unseenLoads: read.projects.flatMap((one) => one.extra.unseenLoads),
+      generated: new Map(read.projects.flatMap((one) => [...one.extra.generated])),
     },
     configured: read.projects.map((one) => one.configured),
     symbols,
@@ -1317,6 +1338,8 @@ interface RunFacts {
   readonly heldScripts: readonly (HeldScripts & { readonly configFile: string })[];
   /** The loads of production files whose target the run cannot resolve, per configuration. */
   readonly unseenLoads: readonly UnseenLoad[];
+  /** Every generated file of the run, by its path below the target root, each once. */
+  readonly generated: ReadonlyMap<string, GeneratedFact>;
 }
 
 /** One configuration whose component files a run cannot read. */

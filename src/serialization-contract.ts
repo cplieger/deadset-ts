@@ -72,7 +72,7 @@ import {
   namesADeclaration,
   resolveEntries,
   spelledEntry,
-} from "./configured-declarations.ts";
+} from "./roots/configured-declarations.ts";
 import type { DetectorInput, Evidence } from "./exempt.ts";
 import { nodeKey, type Inventory } from "./inventory.ts";
 import { renderPosition, type Position } from "./position.ts";

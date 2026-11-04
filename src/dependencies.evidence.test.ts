@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { configurationNeeds, dependenciesOf, type ProjectNeeds } from "./dependencies.ts";
 import type { Host } from "./host.ts";
+import { readWorkflows } from "./entries/workflow-steps.ts";
 
 /** A host holding the given files and nothing else. */
 function hostWith(files: Readonly<Record<string, string>>): Host {
@@ -59,7 +60,7 @@ describe("the manifests a run reads", () => {
     const host = hostWith({ "/repo/package.json": manifest });
 
     expect(
-      dependenciesOf(host, "/repo", [], []).declared.map(
+      dependenciesOf(host, "/repo", readWorkflows(host, "/repo"), [], []).declared.map(
         (one) => `${one.name} ${String(one.position.line)}:${String(one.position.column)}`,
       ),
     ).toEqual(["a 3:21"]);
@@ -72,9 +73,14 @@ describe("the manifests a run reads", () => {
     });
 
     expect(
-      dependenciesOf(host, "/repo/pkg", [], [], ["/repo/other", "/repo/pkg"]).declared.map(
-        (one) => `${one.position.path} ${one.name}`,
-      ),
+      dependenciesOf(
+        host,
+        "/repo/pkg",
+        readWorkflows(host, "/repo/pkg"),
+        [],
+        [],
+        ["/repo/other", "/repo/pkg"],
+      ).declared.map((one) => `${one.position.path} ${one.name}`),
     ).toEqual(["package.json own"]);
   });
 });
@@ -86,18 +92,22 @@ describe("the last uses a deletion candidate holds", () => {
     });
     const perProject = [needs({ "x.ts:1:1": ["c", "a", "b", "shared"], "y.ts:1:1": ["shared"] })];
 
-    expect(dependenciesOf(host, "/repo", perProject, ["x.ts:1:1"]).lastUses).toEqual(
-      new Map([["x.ts:1:1", ["a", "b", "c"]]]),
-    );
+    expect(
+      dependenciesOf(host, "/repo", readWorkflows(host, "/repo"), perProject, ["x.ts:1:1"])
+        .lastUses,
+    ).toEqual(new Map([["x.ts:1:1", ["a", "b", "c"]]]));
   });
 
   it("are no entry for a candidate holding none", () => {
     const host = hostWith({ "/repo/package.json": '{ "dependencies": { "shared": "1" } }' });
     const perProject = [needs({ "x.ts:1:1": ["shared"], "y.ts:1:1": ["shared"] })];
 
-    expect(dependenciesOf(host, "/repo", perProject, ["x.ts:1:1", "z.ts:1:1"]).lastUses).toEqual(
-      new Map(),
-    );
+    expect(
+      dependenciesOf(host, "/repo", readWorkflows(host, "/repo"), perProject, [
+        "x.ts:1:1",
+        "z.ts:1:1",
+      ]).lastUses,
+    ).toEqual(new Map());
   });
 
   it("leave out a dependency an unanswered specifier may also use", () => {
@@ -109,7 +119,10 @@ describe("the last uses a deletion candidate holds", () => {
       needs({}, ["/repo/src/unknown.ts"]),
     ];
 
-    expect(dependenciesOf(host, "/repo", perProject, ["x.ts:1:1"]).lastUses).toEqual(new Map());
+    expect(
+      dependenciesOf(host, "/repo", readWorkflows(host, "/repo"), perProject, ["x.ts:1:1"])
+        .lastUses,
+    ).toEqual(new Map());
   });
 
   it("leave out a dependency a configuration's own reading also uses", () => {
@@ -121,8 +134,9 @@ describe("the last uses a deletion candidate holds", () => {
       configurationNeeds(["helpers"]),
     ];
 
-    expect(dependenciesOf(host, "/repo", perProject, ["x.ts:1:1"]).lastUses).toEqual(
-      new Map([["x.ts:1:1", ["sole"]]]),
-    );
+    expect(
+      dependenciesOf(host, "/repo", readWorkflows(host, "/repo"), perProject, ["x.ts:1:1"])
+        .lastUses,
+    ).toEqual(new Map([["x.ts:1:1", ["sole"]]]));
   });
 });

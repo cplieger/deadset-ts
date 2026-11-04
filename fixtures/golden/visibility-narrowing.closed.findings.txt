@@ -5,3 +5,4 @@ src/helper.ts:43:17: function behindForgotten: exported function is referenced o
 src/helper.ts:47:17: function deadCaller: exported function has no reference in the target, and nothing outside can import the file that declares it (DS1101)
 src/index.ts:11:17: function publishedLocal: exported function is referenced only inside the file that declares it (DS1503)
 src/index.ts:16:17: function publishedShared: exported function is referenced only inside the package that declares it (DS1501)
+src/worker.ts:3:17: function workerLocal: exported function is referenced only inside the file that declares it (DS1503)

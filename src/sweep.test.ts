@@ -8,7 +8,7 @@ import { graphOf } from "./graph.ts";
 import type { InventorySymbol } from "./inventory.ts";
 import type { Reference } from "./references.ts";
 import { resolve } from "./resolve.ts";
-import type { Root } from "./roots.ts";
+import type { Root } from "./roots/root-set.ts";
 import { scopeForDir } from "./scope.ts";
 import { openEngine } from "./session.ts";
 import type { SweepResult } from "./matrix.ts";
@@ -287,7 +287,7 @@ describe("the sweep over an in-memory graph", () => {
     const user = declared("user", 5);
     const own = [worker, exported, helper];
     const all = [source, user, ...own];
-    const rooted: Root[] = [{ id: worker.id, kind: "worker", source: "./worker.ts" }];
+    const rooted: Root[] = [{ id: worker.id, kind: "test-runner", source: "**/*.test.ts" }];
     const byItself = graphOf(own, [reference(exported, helper)], rooted, []);
     const namespace: Root[] = [{ id: user.id, kind: "configured", source: "user" }];
     const throughNamespace = graphOf(

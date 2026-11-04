@@ -1,4 +1,4 @@
-// A browser test the test directory holds and the runner's own pattern matches.
+// A Playwright test in a package that declares no Playwright, so no row reads it.
 
 import { helper } from "./helper.ts";
 

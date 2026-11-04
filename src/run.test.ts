@@ -587,6 +587,7 @@ describe("print-projects", () => {
       {
         "package.json":
           '{ "name": "app", "private": true, "devDependencies": { "jest": "29.0.0" } }\n',
+        "node_modules/jest/package.json": '{ "name": "jest", "version": "29.0.0" }\n',
         "tsconfig.json":
           '{ "compilerOptions": { "strict": true, "noEmit": true, "esModuleInterop": false }, "include": ["src/*.ts"], "exclude": ["**/*.test.ts"] }\n',
         "src/main.test.ts": 'import { main } from "./main";\nconsole.log(main);\n',
@@ -599,6 +600,7 @@ describe("print-projects", () => {
         "package.json": '{ "private": true, "workspaces": ["web"] }\n',
         "web/package.json":
           '{ "name": "web", "private": true, "devDependencies": { "jest": "29.0.0" } }\n',
+        "node_modules/jest/package.json": '{ "name": "jest", "version": "29.0.0" }\n',
         "web/tsconfig.json":
           '{ "compilerOptions": { "strict": true, "outDir": "./dist/" }, "include": ["./src/**/*"], "exclude": ["**/*.test.ts"] }\n',
         "web/src/a.ts": "export const a = 1;\n",

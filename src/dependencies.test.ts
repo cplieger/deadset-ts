@@ -7,6 +7,7 @@ import {
   type ProjectNeeds,
 } from "./dependencies.ts";
 import type { Host } from "./host.ts";
+import { readWorkflows } from "./entries/workflow-steps.ts";
 
 /** A host holding the given files and nothing else. */
 function hostWith(files: Readonly<Record<string, string>>): Host {
@@ -48,12 +49,8 @@ function usesAt(
 
 /** Each declared dependency of the manifest at `/repo/pkg`, as `name section line:column`. */
 function declared(manifest: string): string[] {
-  return dependenciesOf(
-    hostWith({ "/repo/pkg/package.json": manifest }),
-    "/repo/pkg",
-    [],
-    [],
-  ).declared.map(
+  const host = hostWith({ "/repo/pkg/package.json": manifest });
+  return dependenciesOf(host, "/repo/pkg", readWorkflows(host, "/repo/pkg"), [], []).declared.map(
     (one) =>
       `${one.name} ${one.section} ${String(one.position.line)}:${String(one.position.column)}`,
   );
@@ -113,10 +110,9 @@ describe("dependenciesOf", () => {
       "/repo/pkg/node_modules/plugin/package.json": '{ "bin": { "plugin": "./cli.js" } }',
     });
 
-    expect(used(dependenciesOf(host, "/repo/pkg", [], []))).toEqual([
-      "package.json @scope/single",
-      "package.json tool",
-    ]);
+    expect(
+      used(dependenciesOf(host, "/repo/pkg", readWorkflows(host, "/repo/pkg"), [], [])),
+    ).toEqual(["package.json @scope/single", "package.json tool"]);
   });
 
   it("uses the declaration whose command a script of its own manifest or a workflow step runs, and nothing for a command no one runs", () => {
@@ -156,7 +152,11 @@ describe("dependenciesOf", () => {
       unanswered: [],
     };
 
-    expect(used(dependenciesOf(host, "/repo", [plugin], [], ["/repo/member"]))).toEqual([
+    expect(
+      used(
+        dependenciesOf(host, "/repo", readWorkflows(host, "/repo"), [plugin], [], ["/repo/member"]),
+      ),
+    ).toEqual([
       "member/package.json other",
       "member/package.json vitest",
       "package.json ci",
@@ -186,7 +186,7 @@ describe("dependenciesOf", () => {
             : [],
     };
 
-    expect(used(dependenciesOf(host, "/repo", [], []))).toEqual([
+    expect(used(dependenciesOf(host, "/repo", readWorkflows(host, "/repo"), [], []))).toEqual([
       "package.json hook-noted",
       "package.json setup-tool",
       "package.json watcher",
@@ -232,14 +232,16 @@ describe("dependenciesOf", () => {
       unanswered: [],
     };
 
-    expect(used(dependenciesOf(host, "/repo", [plugin], []))).toEqual([
-      "package.json optional-host",
-      "package.json peer-of-peer",
-      "package.json plugin",
-      "package.json required-host",
-      "package.json runner",
-      "package.json runner-peer",
-    ]);
+    expect(used(dependenciesOf(host, "/repo", readWorkflows(host, "/repo"), [plugin], []))).toEqual(
+      [
+        "package.json optional-host",
+        "package.json peer-of-peer",
+        "package.json plugin",
+        "package.json required-host",
+        "package.json runner",
+        "package.json runner-peer",
+      ],
+    );
   });
 
   it("judges a nested package's dependency only where something installs it", () => {
@@ -250,9 +252,16 @@ describe("dependenciesOf", () => {
     });
 
     expect(
-      dependenciesOf(host, "/repo", [], [], [], [], ["/repo/pins"]).declared.map(
-        (one) => `${one.position.path} ${one.name}`,
-      ),
+      dependenciesOf(
+        host,
+        "/repo",
+        readWorkflows(host, "/repo"),
+        [],
+        [],
+        [],
+        [],
+        ["/repo/pins"],
+      ).declared.map((one) => `${one.position.path} ${one.name}`),
     ).toEqual(["package.json rooted", "pins/package.json present"]);
   });
 
@@ -268,10 +277,18 @@ describe("dependenciesOf", () => {
       unanswered: ["/repo/a/src/x.ts"],
     };
 
-    expect(used(dependenciesOf(host, "/repo", [unanswered], [], ["/repo/a", "/repo/b"]))).toEqual([
-      "a/package.json near",
-      "package.json top",
-    ]);
+    expect(
+      used(
+        dependenciesOf(
+          host,
+          "/repo",
+          readWorkflows(host, "/repo"),
+          [unanswered],
+          [],
+          ["/repo/a", "/repo/b"],
+        ),
+      ),
+    ).toEqual(["a/package.json near", "package.json top"]);
   });
 
   it("needs a dependency of a nested manifest only by a use at or below its directory, and its peers only from it or above", () => {
@@ -297,7 +314,20 @@ describe("dependenciesOf", () => {
       unanswered: [],
     };
 
-    expect(used(dependenciesOf(host, "/repo", [project], [], [], [], ["/repo/nested"]))).toEqual([
+    expect(
+      used(
+        dependenciesOf(
+          host,
+          "/repo",
+          readWorkflows(host, "/repo"),
+          [project],
+          [],
+          [],
+          [],
+          ["/repo/nested"],
+        ),
+      ),
+    ).toEqual([
       "nested/package.json npeer",
       "nested/package.json nplugin",
       "nested/package.json own",
@@ -321,10 +351,20 @@ describe("dependenciesOf", () => {
       unanswered: [],
     };
 
-    expect(used(dependenciesOf(host, "/repo", [project], [], [], [], ["/repo/nested"]))).toEqual([
-      "nested/package.json charts",
-      "package.json rooted",
-    ]);
+    expect(
+      used(
+        dependenciesOf(
+          host,
+          "/repo",
+          readWorkflows(host, "/repo"),
+          [project],
+          [],
+          [],
+          [],
+          ["/repo/nested"],
+        ),
+      ),
+    ).toEqual(["nested/package.json charts", "package.json rooted"]);
   });
 
   it("names the manifests of members holding source only in configurations the run could not build", () => {
@@ -333,7 +373,15 @@ describe("dependenciesOf", () => {
       "/repo/tools/package.json": '{ "dependencies": { "ghost": "1" } }',
     });
 
-    const found = dependenciesOf(host, "/repo", [], [], [], ["/repo/tools"]);
+    const found = dependenciesOf(
+      host,
+      "/repo",
+      readWorkflows(host, "/repo"),
+      [],
+      [],
+      [],
+      ["/repo/tools"],
+    );
 
     expect(found.declared.map((one) => one.name)).toEqual(["top", "ghost"]);
     expect([...found.unbuilt]).toEqual(["tools/package.json"]);
@@ -353,9 +401,10 @@ describe("dependenciesOf", () => {
       project({ "x.ts:1:1": ["a"], "y.test.ts:1:1": ["b"] }),
     ];
 
-    expect(dependenciesOf(host, "/repo/pkg", perProject, ["x.ts:1:1"]).lastUses).toEqual(
-      new Map([["x.ts:1:1", ["a"]]]),
-    );
+    expect(
+      dependenciesOf(host, "/repo/pkg", readWorkflows(host, "/repo/pkg"), perProject, ["x.ts:1:1"])
+        .lastUses,
+    ).toEqual(new Map([["x.ts:1:1", ["a"]]]));
   });
 });
 

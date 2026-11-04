@@ -5,8 +5,9 @@ import type { Symbol as TSSymbol } from "@typescript/native/sync";
 import { nodeHost } from "../bin/node-host.ts";
 import { discoverProjects, isTargetConfiguration, type Discovery } from "../src/load/discover.ts";
 import type { Inventory } from "../src/inventory.ts";
+import { runDirectories } from "../src/entries/run-directories.ts";
 import { inventory } from "../src/inventory/enumerate.ts";
-import { readManifest } from "../src/manifest.ts";
+import { readManifest } from "../src/roots/manifest.ts";
 import { relativePath } from "../src/paths.ts";
 import {
   references,
@@ -14,7 +15,11 @@ import {
   type ReferenceOptions,
   type References,
 } from "../src/references.ts";
-import { roots, type RootOptions, type Roots } from "../src/roots.ts";
+import type { Conventions } from "../src/entries/conventions.ts";
+import { readSources } from "../src/entries/sources.ts";
+import { rootSet, type RootOptions, type Roots } from "../src/roots/root-set.ts";
+import { sourceFilesOf } from "../src/source-files.ts";
+import { readWorkflows } from "../src/entries/workflow-steps.ts";
 import { scopeForDir } from "../src/scope.ts";
 import {
   narrowedTo,
@@ -154,13 +159,13 @@ export interface AnalyzeOptions {
    * Absent leaves the reference pass unrun, so a case that reads declarations alone
    * pays nothing for it.
    */
-  readonly references?: ReferenceOptions;
+  readonly references?: Omit<ReferenceOptions, "directories">;
   /**
    * Resolve the root set too, under these options and the manifest at the root.
    * Absent leaves it unresolved, so a case that reads declarations alone pays nothing
    * for it.
    */
-  readonly roots?: Omit<RootOptions, "manifest" | "host">;
+  readonly roots?: RootCase;
   /**
    * The questions the compiler server panics on, by accessor and the locations asked,
    * each location `<file>:<offset>`. Absent, every question is answered.
@@ -172,6 +177,12 @@ export interface AnalyzeOptions {
    */
   readonly components?: readonly string[];
 }
+
+/** The root options of one case: the run's, with the entry sources' inputs in place of their facts. */
+type RootCase = Omit<RootOptions, "manifest" | "host" | "sources" | "skips"> & {
+  readonly testFiles: readonly string[];
+  readonly conventions?: Conventions | undefined;
+};
 
 /** Enumerates one project under `root`, in one client and one snapshot. */
 export function analyzeRoot(root: string, options: AnalyzeOptions = {}): Analyzed {
@@ -209,11 +220,29 @@ export function analyzeRoot(root: string, options: AnalyzeOptions = {}): Analyze
     if (wanted !== undefined) {
       const before = engine.getTimingInfo().totals.requestCount;
       const requestCount = (): number => engine.getTimingInfo().totals.requestCount;
-      resolved.push(references(project, held, root, { ...wanted, requestCount }));
+      resolved.push(
+        references(project, held, root, {
+          ...wanted,
+          requestCount,
+          directories: runDirectories(host, root, (fileName, text) =>
+            opened.parseSourceFile(fileName, text),
+          ),
+        }),
+      );
       requests += engine.getTimingInfo().totals.requestCount - before;
     }
     if (options.roots !== undefined) {
-      rooted.push(roots(project, held, root, { ...options.roots, manifest, host }));
+      const { testFiles, conventions, ...rest } = options.roots;
+      const sources = readSources({
+        host,
+        targetRoot: root,
+        files: sourceFilesOf(project, root),
+        parse: rest.parse,
+        testFiles,
+        conventions,
+        workflows: readWorkflows(host, root),
+      });
+      rooted.push(rootSet(project, held, root, { ...rest, sources, skips: [], manifest, host }));
     }
     return held;
   });
@@ -267,23 +296,23 @@ export function consumerPass(
     const targetRoot = join(root, target);
     const consumerRoot = join(root, consumer);
     const passes: ConsumerPass[] = [];
-    runSession(
-      openEngine({ collectTiming: false }),
-      [join(consumerRoot, "tsconfig.json")],
-      (project) => {
-        const held = inventory(
-          narrowedTo(project, (file) => relativePath(targetRoot, file.fileName) !== undefined),
-          host,
-          targetRoot,
-        );
-        const found = references(project, held, targetRoot, {
-          testFiles: [],
-          consumer: { id: "@example/consumer", root: consumerRoot },
-        });
-        passes.push({ references: found.references, held });
-        return held;
-      },
-    );
+    const engine = openEngine({ collectTiming: false });
+    runSession(engine, [join(consumerRoot, "tsconfig.json")], (project) => {
+      const held = inventory(
+        narrowedTo(project, (file) => relativePath(targetRoot, file.fileName) !== undefined),
+        host,
+        targetRoot,
+      );
+      const found = references(project, held, targetRoot, {
+        testFiles: [],
+        consumer: { id: "@example/consumer", root: consumerRoot },
+        directories: runDirectories(host, consumerRoot, (fileName, text) =>
+          engine.parseSourceFile(fileName, text),
+        ),
+      });
+      passes.push({ references: found.references, held });
+      return held;
+    });
     const [pass] = passes;
     if (pass === undefined) {
       throw new Error(`no project opened at ${consumer}/tsconfig.json`);

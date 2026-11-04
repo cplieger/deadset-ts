@@ -22,22 +22,34 @@ export function inInstalledPackages(path: string): boolean {
   return path.split("/").includes(INSTALLED_PACKAGES);
 }
 
+/** What one JSON file reads as: its text and decoded value, text that does not parse, or a file that cannot be read, with the read's error. */
+type JSONRead =
+  | { readonly kind: "read"; readonly text: string; readonly value: unknown }
+  | { readonly kind: "malformed" }
+  | { readonly kind: "unread"; readonly reason: string };
+
+/** One JSON file, read and parsed, as {@link JSONRead} tells its states apart. */
+export function readJSONFile(host: Host, path: string): JSONRead {
+  let text: string;
+  try {
+    text = host.readFile(path);
+  } catch (error: unknown) {
+    return { kind: "unread", reason: message(error) };
+  }
+  try {
+    return { kind: "read", text, value: JSON.parse(text) as unknown };
+  } catch {
+    return { kind: "malformed" };
+  }
+}
+
 /** One JSON file's text and decoded value, or undefined where it cannot be read or parsed. */
 export function readDocument(
   host: Host,
   path: string,
 ): { text: string; value: unknown } | undefined {
-  let text: string;
-  try {
-    text = host.readFile(path);
-  } catch {
-    return undefined;
-  }
-  try {
-    return { text, value: JSON.parse(text) as unknown };
-  } catch {
-    return undefined;
-  }
+  const read = readJSONFile(host, path);
+  return read.kind === "read" ? { text: read.text, value: read.value } : undefined;
 }
 
 /** One JSON file's decoded value, or undefined where it cannot be read or parsed. */
@@ -71,19 +83,11 @@ export function readManifestAt(host: Host, dir: string): ManifestRead {
   if (!holdsManifest(host, dir)) {
     return { kind: "absent" };
   }
-  let text: string;
-  try {
-    text = host.readFile(joinPath(dir, MANIFEST));
-  } catch (error: unknown) {
-    return { kind: "unread", reason: message(error) };
+  const read = readJSONFile(host, joinPath(dir, MANIFEST));
+  if (read.kind !== "read") {
+    return read;
   }
-  let value: unknown;
-  try {
-    value = JSON.parse(text);
-  } catch {
-    return { kind: "malformed" };
-  }
-  return isRecord(value) ? { kind: "read", manifest: value } : { kind: "malformed" };
+  return isRecord(read.value) ? { kind: "read", manifest: read.value } : { kind: "malformed" };
 }
 
 /** Whether one directory holds a manifest file. */

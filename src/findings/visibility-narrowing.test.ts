@@ -100,15 +100,15 @@ const COMPLETE = JSON.stringify({
 });
 
 describe("the visibility-narrowing family with the consumer set not declared complete", () => {
-  it("reports an export used only inside its own file that no manifest export reaches, and nothing in a published or an entry file", () => {
+  it("reports an export used only inside its own file that no manifest export reaches, a file a worker runs included, and nothing in a published or an entry file", () => {
     expect(
       named(emitted(inputOf(NARROWING))).filter((entry) => entry.startsWith("DS1503")),
-    ).toEqual(["DS1503 Labels", "DS1503 helperLocal"]);
+      "a worker imports its file for its effects and reads no name it exports",
+    ).toEqual(["DS1503 Labels", "DS1503 helperLocal", "DS1503 workerLocal"]);
   });
 
   it.each([
     ["declared in a file the configuration names as an entry file", "routeLocal"],
-    ["declared in a file a worker runs", "workerLocal"],
     ["a root the configuration names", "configuredLocal"],
     ["a member of a namespace", "Labels.label"],
   ])("reports nothing about an export used only in its own file that is %s", (_what, name) => {
@@ -160,6 +160,7 @@ describe("the visibility-narrowing family with the consumer set declared complet
       "DS1503 helperLocal",
       "DS1503 publishedLocal",
       "DS1501 publishedShared",
+      "DS1503 workerLocal",
     ]);
     await expect(
       `${findings.map(line).join("\n")}\n`,
@@ -178,6 +179,7 @@ describe("the visibility-narrowing family with the consumer set declared complet
     expect(named(findings).filter((entry) => !entry.startsWith("DS1101"))).toEqual([
       "DS1503 Labels",
       "DS1503 helperLocal",
+      "DS1503 workerLocal",
     ]);
   });
 

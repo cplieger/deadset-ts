@@ -161,18 +161,22 @@ function dialledOver(
   unmarked: readonly CompletedFinding[],
 ): Omit<DecidedFindings, "would"> {
   const would = [...unmarked, ...found];
-  const ledger = ledgerOf(suppressed.records, would, dialsOver(input, found, suppressed, unmarked));
   const unanswered = heldKeys(input);
+  const heldIds = new Set(input.swept.heldByUnanswered);
+  const keyOf = (finding: CompletedFinding): string =>
+    declarationKey(finding.symbol.holder ?? finding.symbol.ref, finding.position.path);
+  const held = (finding: CompletedFinding): boolean =>
+    unanswered.has(keyOf(finding)) || insideSkipped(input.swept.skipped, finding.position);
+  const ledger = ledgerOf(
+    suppressed.records,
+    would,
+    dialsOver(input, found, suppressed, unmarked),
+    { withholds: held, holdsRecord: (record) => heldIds.has(record.bound) },
+  );
   const markup = markupKeys(input);
-  const candidates = found.filter((finding) => {
-    const key = declarationKey(finding.symbol.holder ?? finding.symbol.ref, finding.position.path);
-    return (
-      !ledger.withheld(finding) &&
-      !unanswered.has(key) &&
-      !markup.has(key) &&
-      !insideSkipped(input.swept.skipped, finding.position)
-    );
-  });
+  const candidates = found.filter(
+    (finding) => !ledger.withheld(finding) && !held(finding) && !markup.has(keyOf(finding)),
+  );
   const kept = reportable(input, candidates);
   const evaluated = evaluateEdges(kept, input.boundary.edges, input.swept.matrix.union.symbols);
   return {

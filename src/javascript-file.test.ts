@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { minified } from "./javascript-file.ts";
+import { minifiedBy } from "./javascript-file.ts";
 
 describe("a JavaScript file minified by its size", () => {
   it.each([
@@ -13,10 +13,22 @@ describe("a JavaScript file minified by its size", () => {
     ["lone surrogates one byte short", "\ud800".repeat(3_413), false],
   ])("counts %s in UTF-8", (_label, text, want) => {
     expect(new TextEncoder().encode(text).byteLength >= 10_240).toBe(want);
-    expect(minified("bundle.js", text)).toBe(want);
+    expect(minifiedBy("bundle.js", text)).toBe(want ? "long lines" : undefined);
   });
 
   it("is no minified file where its lines are short", () => {
-    expect(minified("bundle.js", `${"a".repeat(400)}\n`.repeat(30))).toBe(false);
+    expect(minifiedBy("bundle.js", `${"a".repeat(400)}\n`.repeat(30))).toBeUndefined();
+  });
+});
+
+describe("a JavaScript file minified by its name", () => {
+  it.each([
+    ["vendor/lib.min.js", "*.min.js"],
+    ["lib.min.cjs", "*.min.cjs"],
+    ["lib.min.mjs", "*.min.mjs"],
+    ["lib.mini.js", undefined],
+    ["lib.min.ts", undefined],
+  ])("names %s by the pattern it matches", (fileName, want) => {
+    expect(minifiedBy(fileName, "export {};\n")).toBe(want);
   });
 });

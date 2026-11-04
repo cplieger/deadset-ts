@@ -9,7 +9,7 @@ import {
   type ResolvedConfig,
   type Source,
 } from "./config.ts";
-import { CONVENTION_ROWS } from "./convention-rows.ts";
+import { CONVENTION_ROWS } from "./entries/convention-rows.ts";
 import { refuseOverBound } from "./fs/document.ts";
 import {
   dotted,

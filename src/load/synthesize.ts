@@ -6,14 +6,14 @@
  */
 
 import { readCommands } from "../commands/read.ts";
-import { CONVENTION_ROWS } from "../convention-rows.ts";
-import type { Conventions } from "../conventions.ts";
+import { CONVENTION_ROWS } from "../entries/convention-rows.ts";
+import type { Conventions } from "../entries/conventions.ts";
 import { holdsManifest, MANIFEST, readManifestAt, type ManifestRead } from "../fs/manifest.ts";
 import { filesBelow } from "../fs/tree.ts";
 import type { Host } from "../host.ts";
-import { JAVASCRIPT_FILE, minified, minifiedByName } from "../javascript-file.ts";
+import { JAVASCRIPT_FILE, minifiedBy, minifiedByName } from "../javascript-file.ts";
 import { isRecord } from "../json-document.ts";
-import { manifestCommands } from "../manifest.ts";
+import { manifestCommands } from "../roots/manifest.ts";
 import { ancestors, dirnamePath, joinPath, relativePath } from "../paths.ts";
 import type { Engine } from "../session.ts";
 import { bytewise } from "../text/compare.ts";
@@ -50,11 +50,11 @@ interface CandidateContext {
 
 /** Whether one file is minified build output; one that cannot be read is left to the compiler. */
 function minifiedFile(host: Host, file: string): boolean {
-  if (minifiedByName(file)) {
+  if (minifiedByName(file) !== undefined) {
     return true;
   }
   try {
-    return minified(file, host.readFile(file));
+    return minifiedBy(file, host.readFile(file)) !== undefined;
   } catch {
     return false;
   }

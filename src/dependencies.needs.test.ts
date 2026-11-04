@@ -159,15 +159,15 @@ describe("what one project's files need", () => {
   );
 
   it(
-    "holds a use the checker leaves unanswered by its declaration, and the file's specifiers answered",
+    "holds a use the checker leaves unanswered by its declaration, the package its literal argument names by live code, and the file's specifiers answered",
     () => {
       const main = [...IMPORTS, 'export function padded(): string { return pad("a"); }', ""].join(
         "\n",
       );
 
       expect(needsOf(main, ['pad("a")'])).toEqual({
-        uses: { "src/main.ts:1:1": ["polyfill"], "src/main.ts:5:17": ["left-pad"] },
-        at: { "src/main.ts": ["left-pad", "pathy", "polyfill"] },
+        uses: { "": ["a"], "src/main.ts:1:1": ["polyfill"], "src/main.ts:5:17": ["left-pad"] },
+        at: { "src/main.ts": ["a", "left-pad", "pathy", "polyfill"] },
         unanswered: [],
       });
     },
@@ -342,6 +342,142 @@ describe("what the type packages a compiler includes automatically declare", () 
       expect(
         needsOf(main, [], { ...AUTOMATIC, "tsconfig.json": JSON.stringify(tsconfig) }),
       ).toEqual({ uses: {}, at: {}, unanswered: [] });
+    },
+    LOAD_TIMEOUT,
+  );
+});
+
+describe("what a require through another name needs", () => {
+  it(
+    "holds the package a createRequire'd require loads or resolves, a parenthesized require loads, and require.resolve names whatever require is",
+    () => {
+      const main = [
+        "declare function createRequire(url: string): (id: string) => unknown;",
+        "declare const require: (id: string) => unknown;",
+        "const r = createRequire(import.meta.url) as ((id: string) => unknown) & { resolve(id: string): string };",
+        'export const where = r.resolve("left-pad");',
+        'export const loaded = r("pathy");',
+        'export const wrapped = (require)("polyfill");',
+        "export function own(): unknown {",
+        "  function require(id: string): string {",
+        "    return id;",
+        "  }",
+        '  return require.resolve("@types/globals");',
+        "}",
+        "const load = (id: string): string => id;",
+        'export const named = load("own-only");',
+        "",
+      ].join("\n");
+
+      expect(needsOf(main).at).toEqual({
+        "src/main.ts": ["@types/globals", "left-pad", "pathy", "polyfill"],
+      });
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "holds the package a require another file creates loads or resolves, and one a createRequire imported under another name loads",
+    () => {
+      const files = {
+        "src/node.d.ts": [
+          'declare module "node:module" {',
+          "  export function createRequire(url: string): ((id: string) => unknown) & { resolve(id: string): string };",
+          "}",
+          "",
+        ].join("\n"),
+        "src/req.ts": [
+          'import { createRequire } from "node:module";',
+          "export const load = createRequire(import.meta.url);",
+          "",
+        ].join("\n"),
+      };
+      const main = [
+        'import { createRequire as make } from "node:module";',
+        'import { load } from "./req";',
+        'export const loaded = load("left-pad");',
+        'export const where = load.resolve("pathy");',
+        "const r = make(import.meta.url);",
+        'export const made = r("polyfill");',
+        "",
+      ].join("\n");
+
+      expect(needsOf(main, [], files).at).toEqual({
+        "src/main.ts": ["left-pad", "pathy", "polyfill"],
+      });
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "holds the package a require loads that a createRequire re-exported under another name from a module the program does not resolve returns",
+    () => {
+      const files = { "src/re.ts": 'export { createRequire as make } from "node:module";\n' };
+      const main = [
+        'import { make } from "./re";',
+        "const r = make(import.meta.url);",
+        'export const loaded = r("left-pad");',
+        "",
+      ].join("\n");
+
+      expect(needsOf(main, [], files).at).toEqual({ "src/main.ts": ["left-pad"] });
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "holds the package module.require loads or resolves where nothing declares module",
+    () => {
+      const main = [
+        'export const loaded = module.require("left-pad");',
+        'export const where = module.require.resolve("pathy");',
+        "",
+      ].join("\n");
+
+      expect(needsOf(main).at).toEqual({ "src/main.ts": ["left-pad", "pathy"] });
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "holds no package a require the target's own createRequire returns loads, imported under another name or written in the file",
+    () => {
+      const own = [
+        "export function createRequire(url: string): (id: string) => unknown {",
+        "  return (id) => id + url;",
+        "}",
+        "",
+      ].join("\n");
+      const main = [
+        'import { createRequire as make } from "./own";',
+        "const r = make(import.meta.url);",
+        'export const imported = r("left-pad");',
+        own.replace("export ", ""),
+        "const s = createRequire(import.meta.url);",
+        'export const written = s("pathy");',
+        "",
+      ].join("\n");
+
+      expect(needsOf(main, [], { "src/own.ts": own }).at).toEqual({});
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "holds the package a call names where the checker leaves its callee unanswered",
+    () => {
+      const main = [
+        "declare const loader: (id: string) => unknown;",
+        'export const loaded = loader("left-pad");',
+        "",
+      ].join("\n");
+
+      expect(needsOf(main).at, "a callee the checker answers as no require").toEqual({});
+      expect(needsOf(main, ['loader("left-pad")'])).toEqual({
+        uses: { "": ["left-pad"] },
+        at: { "src/main.ts": ["left-pad"] },
+        unanswered: [],
+      });
     },
     LOAD_TIMEOUT,
   );
