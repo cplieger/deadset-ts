@@ -6920,17 +6920,6 @@
           "symbol": "Event.seq",
           "result": "pass",
           "actual": { "report": "none", "retained_by": ["serialization-contract"] }
-        },
-        {
-          "symbol": "Status.spare",
-          "result": "pass",
-          "actual": {
-            "report": "DS1003",
-            "confidence": "certain",
-            "reachability_class": "certain",
-            "liveness_relation": "reference-counting"
-          },
-          "suppression": { "suppressed": true, "stale": false }
         }
       ],
       "unexpected": []
