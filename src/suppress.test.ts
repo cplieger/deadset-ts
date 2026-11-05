@@ -9,6 +9,7 @@ import {
   isSymbolRef,
   ledgerOf,
   type Dials,
+  type Holds,
   type SuppressionRecord,
 } from "./suppress.ts";
 import { IGNORE_FILE, readIgnoreFile } from "./suppress-file.ts";
@@ -108,6 +109,20 @@ describe("the ledger over a run's records", () => {
 
     expect(ledger.verdicts).toEqual(["stale"]);
     expect(ledger.withheld(helper)).toBe(false);
+  });
+
+  it("finds a bound record a hold touches dormant: one whose declaration a hold keeps live, and one whose every finding a hold withholds", () => {
+    const record = recordOf(helper, "inline");
+    const holds: Holds = {
+      withholds: (one) => one === helper,
+      holdsRecord: (one) => one.bound === record.bound,
+    };
+
+    expect(ledgerOf([record], [], OPEN, holds).verdicts).toEqual(["dormant"]);
+    expect(ledgerOf([record], [helper], OPEN, holds).verdicts).toEqual(["dormant"]);
+    expect(ledgerOf([{ ...record, bound: "" }], [], OPEN, holds).verdicts).toEqual(["stale"]);
+    expect(ledgerOf([record], [], OPEN).verdicts).toEqual(["stale"]);
+    expect(ledgerOf([record], [helper], OPEN).verdicts).toEqual(["in-effect"]);
   });
 
   it("finds a bound record that matches nothing dormant only where its own code is at allow", () => {

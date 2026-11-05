@@ -1,4 +1,4 @@
-// A file below the test directory that is no test: the browser test imports it.
+// A file the Playwright test imports.
 
 export function helper(): boolean {
   return true;

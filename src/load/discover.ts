@@ -8,7 +8,7 @@ import { LANGUAGE, message } from "../product.ts";
 import type { Module, Scope } from "../scope.ts";
 import type { Engine } from "../session.ts";
 import { globExpression } from "../text/glob.ts";
-import { failureExit, type FailureExit } from "../failure.ts";
+import { failureExit, type Failure, type FailureExit } from "../failure.ts";
 import { MANIFEST } from "../fs/manifest.ts";
 
 /** The names of the files a program of the language is read from. */
@@ -72,6 +72,8 @@ export interface NotBuilt {
   readonly configFile: string;
   /** The error's first line, every path below the target root spelled relative to it. */
   readonly error: string;
+  /** The setup failures that dropped it, where one did. */
+  readonly failures?: readonly [Failure, ...Failure[]];
 }
 
 /**
@@ -165,11 +167,9 @@ function readConfiguration(
   try {
     const parsed = engine.parseConfigFile(configFile);
     const circular = parsed.errors.find(({ code }) => code === CIRCULAR_EXTENDS);
-    // The compiler leaves the message's `{0}` unfilled:
-    // https://github.com/microsoft/TypeScript/pull/64755
     return circular === undefined
       ? { parsed }
-      : { reason: `TS${String(circular.code)}: ${circular.text.replace("{0}", () => configFile)}` };
+      : { reason: `TS${String(circular.code)}: ${circular.text}` };
   } catch (error: unknown) {
     return { reason: message(error) };
   }
@@ -274,11 +274,17 @@ export function targetWithoutSources(target: string): FailureExit {
 }
 
 /** A target configuration a matrix or the invocation names that cannot be built, ending the run. */
-function unbuilt(named: string, reason: string): never {
-  throw failureExit(
-    "no-program",
-    `${named} ${reason}: correct the configuration, or name the configurations to analyze`,
-  );
+function unbuilt(
+  named: string,
+  reason: string,
+  failureClass: Failure["failureClass"] = "no-program",
+): never {
+  throw failureExit(failureClass, unreadableDetail(named, reason));
+}
+
+/** What fails and the fix, for a configuration `named` that `reason` keeps from being built. */
+export function unreadableDetail(named: string, reason: string): string {
+  return `${named} ${reason}: correct the configuration, or name the configurations to analyze`;
 }
 
 /**
@@ -321,7 +327,11 @@ function declaredProjects(
     }
     const read = readConfiguration(engine, configFile);
     if ("reason" in read) {
-      unbuilt(named, `cannot be read as a compiler configuration: ${read.reason}`);
+      unbuilt(
+        named,
+        `cannot be read as a compiler configuration: ${read.reason}`,
+        "unreadable-configuration",
+      );
     }
     references.set(configFile, referencesOf(read.parsed));
     const configuration: Configuration = {
@@ -377,13 +387,19 @@ function derivedProjects(
     [...fromScope, ...configFilesUnder(host, targetRoot)],
     (reference) => relativePath(rootDir, reference) !== undefined,
     (configFile, reason) => {
+      const why = `cannot be read as a compiler configuration: ${reason}`;
       if (fromScope.includes(configFile)) {
-        unbuilt(configFile, `cannot be read as a compiler configuration: ${reason}`);
+        unbuilt(configFile, why, "unreadable-configuration");
       }
+      const failure: Failure = {
+        failureClass: "unreadable-configuration",
+        detail: targetRelative(unreadableDetail(idOf(configFile), why), absoluteRoot),
+      };
       notBuilt.push({
         id: idOf(configFile),
         configFile,
         error: targetRelative(reason, absoluteRoot),
+        failures: [failure],
       });
     },
   );

@@ -30,7 +30,6 @@
         "NewExpression",
         "Node",
         "NodeFlags",
-        "ObjectBindingPattern",
         "ObjectLiteralElementLike",
         "ObjectLiteralExpression",
         "ParameterDeclaration",
@@ -56,6 +55,7 @@
         "isBlock",
         "isBreakStatement",
         "isCallExpression",
+        "isCaseBlock",
         "isCaseClause",
         "isCatchClause",
         "isClassDeclaration",
@@ -112,7 +112,6 @@
         "isModuleBlock",
         "isModuleDeclaration",
         "isNamedExports",
-        "isNamedImports",
         "isNamespaceExport",
         "isNamespaceExportDeclaration",
         "isNamespaceImport",
@@ -204,12 +203,15 @@
     "@typescript/native/ast/utils",
     "@typescript/native/ast/visitor",
     "@typescript/native/async",
+    "@typescript/native/async/transport",
     "@typescript/native/fs",
     "@typescript/native/package.json",
     "@typescript/native/path",
     "@typescript/native/proto",
     "@typescript/native/schemas/jsconfig.schema.json",
     "@typescript/native/schemas/tsconfig.schema.json",
-    "@typescript/native/vscode"
+    "@typescript/native/sync/transport",
+    "@typescript/native/vscode",
+    "@typescript/native/wasm"
   ]
 }

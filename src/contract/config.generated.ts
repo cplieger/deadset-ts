@@ -291,7 +291,7 @@ export const SETTINGS: readonly SettingRow[] = [
     role: "setting",
     read: true,
     default: [
-      "**/*.test.{ts,tsx,mts,cts}",
+      "**/*.test.{ts,tsx,mts,cts,js,jsx,mjs,cjs}",
       "**/*.test-d.{ts,tsx,mts,cts}",
       "**/*.spec-d.{ts,tsx,mts,cts}",
       "**/*.spec.*",

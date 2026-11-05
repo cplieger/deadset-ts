@@ -30,7 +30,7 @@ import type { Position } from "./position.ts";
 import type { Reference } from "./references.ts";
 import { Unanswerable } from "./query.ts";
 import { resolve } from "./resolve.ts";
-import type { Root } from "./roots.ts";
+import type { Root } from "./roots/root-set.ts";
 import { run, type Writer } from "./run.ts";
 import { scopeForDir } from "./scope.ts";
 import { openEngine } from "./session.ts";

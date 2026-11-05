@@ -35,16 +35,18 @@ import {
   isStringLiteralLikeNode,
   isVoidExpression,
   SyntaxKind,
+  type Identifier,
   type Node,
   type ParameterDeclaration,
   type SourceFile,
+  type StringLiteralLikeNode,
 } from "@typescript/native/ast";
 import { parenthesesRemoved } from "./unwrap.ts";
 import type { Symbol as TSSymbol } from "@typescript/native/sync";
 import { aliasChains, type ChainTarget } from "./alias-chain.ts";
 import { contextualUses, type FlowAt, type LiteralAt } from "./contextual-uses.ts";
 import { destructuring, propertyReadsOf, type PropertyRead } from "./destructuring.ts";
-import { specifierCandidates } from "./configuration-files.ts";
+import { specifierCandidates } from "./entries/configuration-files.ts";
 import { namespaceUses } from "./namespace-objects.ts";
 import { isParameterProperty, nodeKey, type Inventory, type InventorySymbol } from "./inventory.ts";
 import { ambientGlobalInterfaces, augmentationReferences } from "./augmentations.ts";
@@ -54,14 +56,23 @@ import { keyofComparisonReferences } from "./keyof-comparisons.ts";
 import { unimplementedCalleeReads } from "./unimplemented-callees.ts";
 import { moduleDeclarationReferences } from "./module-declarations.ts";
 import { overrideReferences } from "./overrides.ts";
-import { dirnamePath, queriedModulePath, relativePath, resolvePath } from "./paths.ts";
+import {
+  dirnamePath,
+  queriedModulePath,
+  relativePath,
+  relativeURLPath,
+  resolvePath,
+} from "./paths.ts";
 import { byPosition, isComponentFile, renderPosition, type Position } from "./position.ts";
 import { DEFAULT_BATCH_CAP, propertyTables, UNANSWERED, type Answer } from "./query.ts";
 import type { ProjectView } from "./session.ts";
+import { sourceFilesOf, type SourceFiles } from "./source-files.ts";
 import { typeParameterReads } from "./type-parameter-reads.ts";
 import { typeQueryAliases } from "./type-query-alias.ts";
-import { hasOwnBody } from "./own-body.ts";
-import { computedLoadsOf, isLoadCall, type LoadCall } from "./unseen-loads.ts";
+import { callsPlatform, isPlatformGlobal, startsThread } from "./platform-symbols.ts";
+import { writtenName } from "./platform-calls.ts";
+import type { RunDirectories } from "./entries/run-directories.ts";
+import { computedLoadsOf, isLoadCall, type LoadCall } from "./roots/unseen-loads.ts";
 import {
   computedKeyNames,
   iterationReferences,
@@ -180,6 +191,12 @@ export interface ReferenceCost {
   /** Per-symbol lookups that step from one alias to what it names, one per alias. */
   readonly aliasSteps: number;
   /**
+   * Per-node and per-symbol lookups that decide whether a load call is the platform's
+   * `require`, a construction its `URL`, or a `Worker` Node's, for a callee the pass's own
+   * chains leave open.
+   */
+  readonly platformLookups: number;
+  /**
    * Batched type lookups for the object patterns: per file, the patterns and the values
    * assigned to destructuring targets, divided by the batch cap, rounded up.
    */
@@ -214,6 +231,11 @@ export interface References {
    * classification that marks the references the file makes.
    */
   readonly testFilePaths: readonly string[];
+  /**
+   * Each load by a computed path a production file of the target writes whose files the
+   * analysis cannot name (confidence.26), in file then source order; none for a consumer.
+   */
+  readonly unseenLoads: readonly Position[];
   readonly cost: ReferenceCost;
 }
 
@@ -241,6 +263,8 @@ export interface ReferenceOptions {
   readonly consumer?: ConsumerSide;
   /** The client's running request count, where the caller measures the client. */
   readonly requestCount?: () => number;
+  /** The directories a thread's path and a glob's root are read against. */
+  readonly directories: RunDirectories;
 }
 
 /**
@@ -448,6 +472,10 @@ interface Evaluation {
   /** The module specifier, whose symbol is the module evaluated. */
   readonly node: Node;
   readonly from: string;
+  /** The name a `require()` call is written with; {@link callsPlatform} owns which one loads. */
+  readonly require?: Identifier;
+  /** Whether the call's value is used, which reads the loaded file's export table. */
+  readonly whole?: boolean;
 }
 
 /**
@@ -457,13 +485,26 @@ interface Evaluation {
  */
 interface ModuleURL {
   readonly specifier: string;
-  /** The `URL` the constructor names; {@link hasOwnBody} owns which one loads nothing. */
-  readonly constructor: Node | undefined;
+  /** The name the constructor is written with; {@link callsPlatform} owns which one is `URL`. */
+  readonly constructor: Identifier | undefined;
   readonly at: Node;
 }
 
 /** One module URL, and the declaration whose code builds it. */
 interface ModuleURLAt extends ModuleURL {
+  readonly from: string;
+}
+
+/** One worker a call starts by a literal address (references-ts.2), and the declaration whose code starts it. */
+interface WorkerSite {
+  readonly address: StringLiteralLikeNode;
+  /** The name the constructor or `navigator` is written with. */
+  readonly constructor: Identifier;
+  /** The namespace the constructor is read through, as `threads` in `threads.Worker`. */
+  readonly holder: Identifier | undefined;
+  /** Whether an options literal writes an `eval` other than `false`, which makes a thread's address code. */
+  readonly evaluated: boolean;
+  readonly at: Node;
   readonly from: string;
 }
 
@@ -504,6 +545,7 @@ interface FileSites {
   readonly evaluations: readonly Evaluation[];
   readonly wholes: readonly WholeRead[];
   readonly urls: readonly ModuleURLAt[];
+  readonly workers: readonly WorkerSite[];
   readonly loadCalls: readonly LoadCall[];
   readonly decorated: readonly Decorated[];
   readonly parameterWrites: readonly ParameterWrite[];
@@ -523,26 +565,24 @@ function isImportMetaURL(node: Node): boolean {
 
 /** The module URL one node builds, where it builds one. */
 function moduleURLOf(node: Node): ModuleURL | undefined {
-  const relative = (argument: Node | undefined): string | undefined => {
+  const literal = (argument: Node | undefined): string | undefined => {
     const at = argument === undefined ? undefined : parenthesesRemoved(argument);
-    return at !== undefined &&
-      (isStringLiteral(at) || isNoSubstitutionTemplateLiteral(at)) &&
-      /^\.\.?\//u.test(at.text)
-      ? at.text
-      : undefined;
+    return isLiteralText(at) ? at.text : undefined;
   };
-  if (isNewExpression(node) && isIdentifier(node.expression) && node.expression.text === "URL") {
+  const constructor = isNewExpression(node) ? writtenName(node.expression) : undefined;
+  if (isNewExpression(node) && constructor !== undefined) {
     const [reference, base] = node.arguments ?? [];
-    const specifier = relative(reference);
+    const specifier = literal(reference);
     return specifier !== undefined && base !== undefined && isImportMetaURL(base)
-      ? { specifier, constructor: node.expression, at: node }
+      ? { specifier, constructor, at: node }
       : undefined;
   }
   if (isCallExpression(node)) {
     const callee = parenthesesRemoved(node.expression);
-    const specifier = relative(node.arguments[0]);
+    const specifier = literal(node.arguments[0]);
     if (
       specifier !== undefined &&
+      /^\.\.?\//u.test(specifier) &&
       isPropertyAccessExpression(callee) &&
       isMetaProperty(callee.expression) &&
       callee.expression.keywordToken === SyntaxKind.ImportKeyword &&
@@ -552,6 +592,75 @@ function moduleURLOf(node: Node): ModuleURL | undefined {
     }
   }
   return undefined;
+}
+
+/** The constructors whose first argument addresses a worker. */
+const WORKER_CONSTRUCTORS: ReadonlySet<string> = new Set(["Worker", "SharedWorker"]);
+
+/** Whether an options argument is an object literal whose `eval` member is written as anything but `false`. */
+function evaluatesCode(options: Node | undefined): boolean {
+  const at = options === undefined ? undefined : parenthesesRemoved(options);
+  return (
+    at !== undefined &&
+    isObjectLiteralExpression(at) &&
+    at.properties.some(
+      (property) =>
+        (isShorthandPropertyAssignment(property) &&
+          isIdentifier(property.name) &&
+          property.name.text === "eval") ||
+        (isPropertyAssignment(property) &&
+          (isIdentifier(property.name) || isStringLiteral(property.name)) &&
+          property.name.text === "eval" &&
+          parenthesesRemoved(property.initializer).kind !== SyntaxKind.FalseKeyword),
+    )
+  );
+}
+
+/** The worker one node starts by a literal address, where it starts one. */
+function workerOf(node: Node): Omit<WorkerSite, "from"> | undefined {
+  if (isNewExpression(node)) {
+    const constructor = writtenName(node.expression);
+    const [address, options] = node.arguments ?? [];
+    const literal = address === undefined ? undefined : parenthesesRemoved(address);
+    // A thread's constructor may be imported under another name, whose path is relative.
+    if (
+      constructor === undefined ||
+      !isLiteralText(literal) ||
+      (!WORKER_CONSTRUCTORS.has(constructor.text) && !/^\.\.?\//u.test(literal.text))
+    ) {
+      return undefined;
+    }
+    const callee = parenthesesRemoved(node.expression);
+    const holder = isPropertyAccessExpression(callee)
+      ? parenthesesRemoved(callee.expression)
+      : undefined;
+    return {
+      address: literal,
+      constructor,
+      holder: holder !== undefined && isIdentifier(holder) ? holder : undefined,
+      evaluated: evaluatesCode(options),
+      at: node,
+    };
+  }
+  if (!isCallExpression(node)) {
+    return undefined;
+  }
+  const callee = parenthesesRemoved(node.expression);
+  const registry =
+    isPropertyAccessExpression(callee) && callee.name.text === "register"
+      ? parenthesesRemoved(callee.expression)
+      : undefined;
+  const navigator =
+    registry !== undefined &&
+    isPropertyAccessExpression(registry) &&
+    registry.name.text === "serviceWorker"
+      ? writtenName(registry.expression)
+      : undefined;
+  const [address] = node.arguments;
+  const literal = address === undefined ? undefined : parenthesesRemoved(address);
+  return navigator?.text === "navigator" && isLiteralText(literal)
+    ? { address: literal, constructor: navigator, holder: undefined, evaluated: false, at: node }
+    : undefined;
 }
 
 /** The file of the target a relative specifier written in `file` names, by its source or output name. */
@@ -566,17 +675,44 @@ function fileNamed(
 }
 
 /** Whether one node is a string literal or a template literal with no substitution. */
-function isLiteralText(node: Node | undefined): node is Node {
+function isLiteralText(node: Node | undefined): node is StringLiteralLikeNode {
   return node !== undefined && (isStringLiteral(node) || isNoSubstitutionTemplateLiteral(node));
 }
 
 /**
  * The module specifier of the module one node evaluates, if it evaluates one: an import
  * declaration, an import-equals declaration of an external module, an export
- * declaration that names a module, and an `import()` call whose argument is literal
- * text. A type-only form evaluates nothing. An `import()` of a computed argument names
- * no module this pass can know.
+ * declaration that names a module, an `import()` call whose argument is literal text, and
+ * a call that may be a `require()` of literal text: one written as the name `require`, or
+ * one of a relative specifier through another name. A type-only form evaluates nothing.
+ * An `import()` of a computed argument names no module this pass can know.
  */
+function evaluationOf(node: Node): Omit<Evaluation, "from"> | undefined {
+  if (isCallExpression(node) && node.expression.kind !== SyntaxKind.ImportKeyword) {
+    const [argument] = node.arguments;
+    const require = writtenName(node.expression);
+    if (
+      require === undefined ||
+      !isLiteralText(argument) ||
+      (require.text !== "require" && !/^\.\.?\//u.test(argument.text))
+    ) {
+      return undefined;
+    }
+    return { node: argument, require, whole: !discarded(node) };
+  }
+  const specifier = evaluatedBy(node);
+  return specifier === undefined ? undefined : { node: specifier };
+}
+
+/** Whether an expression's value is thrown away: it is a statement of its own, or `void`'s operand. */
+function discarded(expression: Node): boolean {
+  let at = expression.parent;
+  while (isParenthesizedExpression(at)) {
+    at = at.parent;
+  }
+  return isExpressionStatement(at) || isVoidExpression(at);
+}
+
 function evaluatedBy(node: Node): Node | undefined {
   if (isImportDeclaration(node)) {
     return node.importClause?.phaseModifier === SyntaxKind.TypeKeyword
@@ -705,6 +841,7 @@ function sitesOf(
   const evaluations: Evaluation[] = [];
   const wholes: WholeRead[] = [];
   const urls: ModuleURLAt[] = [];
+  const workers: WorkerSite[] = [];
   const loadCalls: LoadCall[] = [];
   const decorated: Decorated[] = [];
   const parameterWrites: ParameterWrite[] = [];
@@ -782,13 +919,17 @@ function sitesOf(
       reads.push({ ...read, from: enclosing });
     }
     links.push(...linksOf(file, node, declarations, enclosing));
-    const evaluated = evaluatedBy(node);
+    const evaluated = evaluationOf(node);
     if (evaluated !== undefined) {
-      evaluations.push({ node: evaluated, from: enclosing });
+      evaluations.push({ ...evaluated, from: enclosing });
     }
     const url = moduleURLOf(node);
     if (url !== undefined) {
       urls.push({ ...url, from: enclosing });
+    }
+    const worker = workerOf(node);
+    if (worker !== undefined) {
+      workers.push({ ...worker, from: enclosing });
     }
     if (isLoadCall(node)) {
       loadCalls.push({ call: node, from: enclosing });
@@ -825,6 +966,7 @@ function sitesOf(
     evaluations,
     wholes,
     urls,
+    workers,
     loadCalls,
     decorated,
     parameterWrites,
@@ -1040,6 +1182,10 @@ export function references<Brand>(
   let batched = 0;
   let fileBatches = 0;
   let residueFallbacks = 0;
+  let platformLookups = 0;
+  const asked = (): void => {
+    platformLookups += 1;
+  };
   let shorthandLookups = 0;
 
   const consumer = options.consumer;
@@ -1082,6 +1228,8 @@ export function references<Brand>(
     return moduleBodies.get(moduleId) ?? [];
   };
 
+  let ownFiles: SourceFiles | undefined;
+  const unseenLoads: Position[] = [];
   const exportsCache = new Map<number, readonly ChainTarget[]>();
   /**
    * Every declaration one module exports, each re-export walked along its chain. A module
@@ -1218,6 +1366,7 @@ export function references<Brand>(
   const loadable = walked
     .filter((one) => fileIds.has(one.fileId))
     .map(({ file, fileId }) => ({ file, fileId }));
+  const loadableById = new Map(loadable.map((one) => [one.fileId, one.file]));
   const contextual = contextualUses(
     project,
     held,
@@ -1317,13 +1466,16 @@ export function references<Brand>(
     evaluations,
     wholes,
     urls,
+    workers,
     loadCalls,
     decorated,
     parameterWrites,
     keyed,
   } of walked) {
     const test = testFile.get(file) === true;
-    const loads = computedLoadsOf(file, loadCalls, loadable);
+    const loads = computedLoadsOf(file, loadCalls, loadable, (fileName) =>
+      options.directories.bundlerRootOf(fileName),
+    );
     // A component file's markup may use any binding its blocks declare at the top level.
     const markup = isComponentFile(file);
     const bindings = markup ? importBindings(file) : [];
@@ -1363,9 +1515,19 @@ export function references<Brand>(
       ...new Set([
         ...uses.filter((site) => site.shorthand === undefined).map((site) => site.node),
         ...links.map((link) => link.node),
-        ...evaluations.map((evaluation) => evaluation.node),
+        ...evaluations.flatMap((evaluation) =>
+          evaluation.require === undefined
+            ? [evaluation.node]
+            : [
+                evaluation.require,
+                ...(evaluation.require.text === "require" ? [evaluation.node] : []),
+              ],
+        ),
         ...wholes.map((whole) => whole.specifier),
         ...urls.flatMap((url) => url.constructor ?? []),
+        ...workers.flatMap((worker) =>
+          worker.holder === undefined ? [worker.constructor] : [worker.constructor, worker.holder],
+        ),
         ...bindings.map((binding) => binding.node),
         ...loads.flatMap((load) => [
           ...(load.require === undefined ? [] : [load.require]),
@@ -1412,9 +1574,14 @@ export function references<Brand>(
       }
     }
 
+    const loading = evaluations.filter(
+      (one) =>
+        one.require === undefined ||
+        callsPlatform(project, "require", one.require, answered.get(one.require), asked),
+    );
     // A script declares no module, so the checker names nothing for a specifier of one;
     // the compiler's module resolution still names its file.
-    const unnamed = evaluations.flatMap(({ node }) =>
+    const unnamed = loading.flatMap(({ node }) =>
       answered.get(node) === undefined &&
       isStringLiteralLikeNode(node) &&
       queriedFile(file, node, fileIdByName) === undefined
@@ -1428,7 +1595,8 @@ export function references<Brand>(
         return [node, name === undefined ? undefined : fileIdByName.get(name)];
       }),
     );
-    for (const evaluation of evaluations) {
+    const wholeReads: { readonly evaluation: Evaluation; readonly fileId: string }[] = [];
+    for (const evaluation of loading) {
       const queried = queriedFile(file, evaluation.node, fileIdByName);
       if (queried !== undefined) {
         found.push({
@@ -1441,7 +1609,19 @@ export function references<Brand>(
         });
       }
       const module = answered.get(evaluation.node);
-      const script = scripts.get(evaluation.node);
+      // Node's require resolves a relative specifier the program records no resolution for,
+      // as in a TypeScript file, by its own extension search.
+      const script =
+        scripts.get(evaluation.node) ??
+        (evaluation.require !== undefined &&
+        module === undefined &&
+        isLiteralText(evaluation.node) &&
+        /^\.\.?\//u.test(evaluation.node.text)
+          ? fileNamed(file, evaluation.node.text, fileIdByName)
+          : undefined);
+      if (script !== undefined && evaluation.whole === true && module === undefined) {
+        wholeReads.push({ evaluation, fileId: script });
+      }
       if (script !== undefined) {
         found.push({
           from: evaluation.from,
@@ -1472,12 +1652,40 @@ export function references<Brand>(
       }
     }
 
+    // A required file the checker names no module for is read whole where the call's value
+    // is used: the value is the file's exports object, which this pass does not follow.
+    const required = wholeReads.flatMap((one) => {
+      const loaded = loadableById.get(one.fileId);
+      return loaded === undefined ? [] : [{ ...one, loaded }];
+    });
+    const modules = project.symbolsAt(
+      required.map((one) => project.handle(one.loaded)),
+      cap,
+    );
+    required.forEach(({ evaluation }, at) => {
+      const module = modules[at];
+      const position = renderPosition(file, root, evaluation.node.getStart());
+      for (const target of module === undefined ? [] : exportsRead(module)) {
+        found.push({
+          from: evaluation.from,
+          to: target.id,
+          position,
+          use: "read",
+          resolution: target.guessed ? "by-name" : "batch",
+          test,
+        });
+      }
+    });
+
     for (const url of urls) {
-      const constructor = url.constructor === undefined ? undefined : answered.get(url.constructor);
-      if (typeof constructor === "object" && hasOwnBody(project, constructor)) {
+      if (
+        url.constructor !== undefined &&
+        !callsPlatform(project, "URL", url.constructor, answered.get(url.constructor), asked)
+      ) {
         continue;
       }
-      const loaded = fileNamed(file, url.specifier, fileIdByName);
+      const path = relativeURLPath(dirnamePath(file.fileName), url.specifier);
+      const loaded = path === undefined ? undefined : fileNamed(file, path, fileIdByName);
       if (loaded !== undefined) {
         found.push({
           from: url.from,
@@ -1490,15 +1698,52 @@ export function references<Brand>(
       }
     }
 
+    for (const worker of workers) {
+      const symbol = answered.get(worker.constructor);
+      const text = worker.address.text;
+      let path: string | undefined;
+      if (startsThread(project, symbol, worker.holder && answered.get(worker.holder), asked)) {
+        path =
+          worker.evaluated || !/^\.\.?\//u.test(text)
+            ? undefined
+            : resolvePath(options.directories.workingDirectoryOf(file.fileName), text);
+      } else if (
+        (WORKER_CONSTRUCTORS.has(worker.constructor.text) ||
+          worker.constructor.text === "navigator") &&
+        isPlatformGlobal(project, symbol)
+      ) {
+        path = relativeURLPath(dirnamePath(file.fileName), text);
+      }
+      ownFiles ??= sourceFilesOf(project, targetRoot);
+      for (const started of path === undefined ? [] : ownFiles.named(path)) {
+        const to = declaredAt(started);
+        if (to !== undefined && fileIds.has(to)) {
+          found.push({
+            from: worker.from,
+            to,
+            position: renderPosition(file, root, worker.at.getStart()),
+            use: "evaluation",
+            resolution: "syntax",
+            test,
+          });
+        }
+      }
+    }
+
     // A computed load imports each file it loads where the call is written, reading what
-    // the file exports unless it reads the file as text or a URL; hasOwnBody owns which
-    // `require` loads nothing.
+    // the file exports unless it reads the file as text or a URL; callsPlatform owns which
+    // call is a `require`.
     for (const load of loads) {
-      const callee = load.require === undefined ? undefined : answered.get(load.require);
-      if (typeof callee === "object" && hasOwnBody(project, callee)) {
+      if (
+        load.require !== undefined &&
+        !callsPlatform(project, "require", load.require, answered.get(load.require), asked)
+      ) {
         continue;
       }
       const position = renderPosition(file, root, load.call.getStart());
+      if (!load.resolved && !test && consumer === undefined && !file.isDeclarationFile) {
+        unseenLoads.push(position);
+      }
       for (const loaded of load.files) {
         found.push({
           from: load.eager ? fileId : load.from,
@@ -1736,12 +1981,14 @@ export function references<Brand>(
         ? found
         : found.map((reference) => ({ ...reference, consumer: consumer.id })),
     testFilePaths: tests.sort(bytewise),
+    unseenLoads,
     cost: {
       batched,
       fileBatches,
       residueFallbacks,
       shorthandLookups,
       aliasSteps: chains.steps,
+      platformLookups,
       patternBatches: destructured.cost.patternBatches,
       patternLookups: destructured.cost.patternLookups,
       contextualBatches: contextual.batches,

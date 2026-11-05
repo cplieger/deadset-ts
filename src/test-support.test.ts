@@ -5,7 +5,7 @@ import { writeProject } from "../__test-helpers__/projects.ts";
 import type { InventorySymbol } from "./inventory.ts";
 import type { Reference } from "./references.ts";
 import { resolve } from "./resolve.ts";
-import type { Root } from "./roots.ts";
+import type { Root } from "./roots/root-set.ts";
 import { testSupportFiles, type TestEvidence } from "./test-support.ts";
 
 /**

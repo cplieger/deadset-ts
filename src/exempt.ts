@@ -8,6 +8,7 @@
  */
 
 import { EXEMPTION_CLASSES } from "./contract/contract.generated.ts";
+import type { GeneratedFact } from "./generated-file.ts";
 import type { ResolvedConfig } from "./config.ts";
 import {
   TS_EXEMPTION_CLASSES,
@@ -51,8 +52,8 @@ export interface DetectorInput<Brand> {
   readonly ts: ResolvedConfig["ts"];
   /** The absolute path of each declared consumer, whose modules are part of the analysis. */
   readonly consumers: readonly string[];
-  /** The project's generated files, by path below the target root, each with the detail its retentions name. */
-  readonly generated?: ReadonlyMap<string, string>;
+  /** The project's generated files, by path below the target root, each with what decided it. */
+  readonly generated?: ReadonlyMap<string, GeneratedFact>;
 }
 
 /**

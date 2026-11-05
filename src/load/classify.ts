@@ -1,5 +1,5 @@
 import type { SourceFile } from "@typescript/native/ast";
-import { conventionFailuresFor } from "../conventions.ts";
+import { conventionFailuresFor } from "../entries/conventions.ts";
 import type { Host } from "../host.ts";
 import { relativePath, resolvePath } from "../paths.ts";
 import { diagnosticsOf, ownedAs, type Engine, type ProjectView } from "../session.ts";
@@ -11,7 +11,13 @@ import {
   renderDiagnostic,
   type LocatedDiagnostic,
 } from "./diagnostics.ts";
-import { targetRelative, type LoadedConsumer, type NotBuilt, type Origin } from "./discover.ts";
+import {
+  targetRelative,
+  unreadableDetail,
+  type LoadedConsumer,
+  type NotBuilt,
+  type Origin,
+} from "./discover.ts";
 import { missingModule, pathsOf, type ModuleContext } from "./expected-module.ts";
 import { FailureExit, failureLine, type Failure } from "../failure.ts";
 import type { ProgramPlan, RunPlan } from "./plan.ts";
@@ -21,8 +27,12 @@ import { ownErrors } from "./workspace-run.ts";
 
 /** What keeps one configuration from being analyzed. */
 type Failed =
-  /** Its project carries an error that leaves it unloaded. */
-  | { readonly kind: "load"; readonly errors: readonly [LocatedDiagnostic, ...LocatedDiagnostic[]] }
+  /** Its project carries an error that leaves it unloaded, its configuration unreadable or not. */
+  | {
+      readonly kind: "load";
+      readonly errors: readonly [LocatedDiagnostic, ...LocatedDiagnostic[]];
+      readonly unreadable: boolean;
+    }
   | { readonly kind: "setup"; readonly failures: readonly [Failure, ...Failure[]] }
   /** The snapshot opened no project for it. */
   | { readonly kind: "unopened" };
@@ -162,7 +172,7 @@ function classifyTarget<Brand>(
   const raw = projectErrors(diagnosticsOf(project));
   const load = nonEmpty(raw.load);
   if (load !== undefined) {
-    return { kind: "load", errors: load };
+    return { kind: "load", errors: load, unreadable: raw.unreadable };
   }
   const reading = readErrors(project, plan, ownErrors(raw.check, referenceOnly), {
     host,
@@ -236,7 +246,7 @@ function classifyConsumer<Brand>(
   const raw = projectErrors(diagnosticsOf(project));
   const load = nonEmpty(raw.load);
   if (load !== undefined) {
-    return { kind: "load", errors: load };
+    return { kind: "load", errors: load, unreadable: raw.unreadable };
   }
   let faulted: string | undefined;
   const reading = readErrors(project, plan, raw.check, {
@@ -283,7 +293,8 @@ function ending(plan: ProgramPlan, failed: Failed, root: string): readonly Failu
   return plan.consumer === undefined
     ? [
         {
-          failureClass: "no-program",
+          failureClass:
+            failed.kind === "load" && failed.unreadable ? "unreadable-configuration" : "no-program",
           detail: `${what}: correct the configuration, or name the configurations to analyze`,
         },
       ]
@@ -293,6 +304,30 @@ function ending(plan: ProgramPlan, failed: Failed, root: string): readonly Failu
           detail: `${what}, for the consumer ${plan.consumer.path}: check the consumer out at ${plan.consumer.path} and install its dependencies`,
         },
       ];
+}
+
+/** The setup failures a dropped derived configuration counts as, where it counts as any. */
+function droppedFailures(
+  failed: Failed,
+  plan: ProgramPlan,
+  root: string,
+): { readonly failures?: readonly [Failure, ...Failure[]] } {
+  if (failed.kind === "setup") {
+    return { failures: failed.failures };
+  }
+  return failed.kind === "load" && failed.unreadable
+    ? {
+        failures: [
+          {
+            failureClass: "unreadable-configuration",
+            detail: unreadableDetail(
+              plan.id,
+              `cannot be read as a compiler configuration: ${droppedBy(failed, root)}`,
+            ),
+          },
+        ],
+      }
+    : {};
 }
 
 /** The first line of the error that drops one derived configuration. */
@@ -326,7 +361,6 @@ export function classify(
   const analyzed: Analyzed<unknown>[] = [];
   const consumed: Consumed<unknown>[] = [];
   const ended = new Map<Failed["kind"], { plan: ProgramPlan; failed: Failed }[]>();
-  const dropped: Failed[] = [];
   const unopened = run.plans.filter((plan) => !views.has(plan.configFile));
   const outcomes = [
     ...run.plans.flatMap((plan) => {
@@ -355,8 +389,12 @@ export function classify(
     } else if (POLICY[plan.origin][outcome.kind] === "end") {
       ended.set(outcome.kind, [...(ended.get(outcome.kind) ?? []), { plan, failed: outcome }]);
     } else {
-      dropped.push(outcome);
-      notBuilt.push({ id: plan.id, configFile: plan.configFile, error: droppedBy(outcome, root) });
+      notBuilt.push({
+        id: plan.id,
+        configFile: plan.configFile,
+        error: droppedBy(outcome, root),
+        ...droppedFailures(outcome, plan, root),
+      });
     }
   }
   for (const kind of ["unopened", "setup", "load"] as const) {
@@ -369,9 +407,7 @@ export function classify(
       );
     }
   }
-  const setupDropped = nonEmpty(
-    dropped.flatMap((one) => (one.kind === "setup" ? one.failures : [])),
-  );
+  const setupDropped = nonEmpty(notBuilt.flatMap((one) => one.failures ?? []));
   const [first] = notBuilt;
   if (analyzed.length === 0 && first !== undefined) {
     throw new FailureExit(

@@ -10,7 +10,7 @@ import { packageScope } from "./load/package-scope.ts";
 import { dirnamePath, joinPath, relativePath, resolvePath } from "./paths.ts";
 import { renderRef } from "./ref.ts";
 import type { ProjectView } from "./session.ts";
-import type { UnseenLoad } from "./unseen-loads.ts";
+import type { UnseenLoad } from "./roots/unseen-loads.ts";
 import { filesBelow } from "./fs/tree.ts";
 
 /** A file name the compiler reads as a source file. */

@@ -8,7 +8,7 @@
 
 import { emittedFrom } from "./emit-map.ts";
 import type { Host } from "../host.ts";
-import { readManifest, type Manifest, type ManifestEntry } from "../manifest.ts";
+import { readManifest, type Manifest, type ManifestEntry } from "../roots/manifest.ts";
 import { joinPath, relativePath } from "../paths.ts";
 import type { WorkspaceMember } from "./workspace.ts";
 import type { WorkspaceResolver } from "./workspace-resolution.ts";

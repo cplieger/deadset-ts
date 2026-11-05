@@ -130,6 +130,45 @@ describe("every run that ends with the failure code", () => {
         "b.ts": "export const b = 1;\n",
       },
       ["print-projects", "--target=."],
+      "unreadable-configuration",
+    ],
+    [
+      "a declared configuration whose extends chain is circular",
+      {
+        "deadset.json": declared([["b", "tsconfig.json"]]),
+        "tsconfig.json": '{ "extends": "./tsconfig.json", "include": ["*.ts"] }\n',
+        "b.ts": "export const b = 1;\n",
+      },
+      ["print-projects", "--target=."],
+      "unreadable-configuration",
+    ],
+    [
+      "a derived configuration whose options do not parse and no other to analyze",
+      {
+        "deadset.json": '{ "target": { "kind": "application" } }\n',
+        "tsconfig.json": UNPARSED,
+        "b.ts": "export const b = 1;\n",
+      },
+      ["print-projects", "--target=."],
+      "unreadable-configuration",
+    ],
+    [
+      "a derived configuration that extends a file the compiler cannot read and no other to analyze",
+      {
+        "deadset.json": '{ "target": { "kind": "application" } }\n',
+        "tsconfig.json": '{ "extends": "./absent.json", "include": ["*.ts"] }\n',
+        "b.ts": "export const b = 1;\n",
+      },
+      ["print-projects", "--target=."],
+      "unreadable-configuration",
+    ],
+    [
+      "a derived configuration whose inputs name no file and no other to analyze",
+      {
+        "deadset.json": '{ "target": { "kind": "application" } }\n',
+        "tsconfig.json": '{ "include": ["src/**/*.ts"] }\n',
+      },
+      ["print-projects", "--target=."],
       "no-program",
     ],
     [
@@ -286,7 +325,7 @@ describe("every run that ends with the failure code", () => {
         /tsconfig\.json(?::\d+:\d+)?: TS5023: Unknown compiler option 'noSuchOption'\./u,
       );
       expect(got.lines[1]).toBe(
-        "setup failure: no-program: the configuration tsconfig.json does not load, its errors printed above: correct the configuration, or name the configurations to analyze",
+        "setup failure: unreadable-configuration: the configuration tsconfig.json does not load, its errors printed above: correct the configuration, or name the configurations to analyze",
       );
     },
     LOAD_TIMEOUT,

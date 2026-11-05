@@ -15,6 +15,7 @@ import { relativePath } from "../paths.ts";
 import { renderPosition } from "../position.ts";
 import { isAnswered, UNANSWERED } from "../query.ts";
 import type { Handle, ProjectView } from "../session.ts";
+import { declarationOf } from "../entries/static-module.ts";
 import { commonJS, type Resolved } from "./commonjs.ts";
 import { SYNTAX } from "./syntax.ts";
 
@@ -34,7 +35,7 @@ export function inventory<Brand>(
   const moduleOf = packageScope(host, targetRoot);
   const sources: readonly DeclarationSource[] = [
     SYNTAX,
-    commonJS(packageTypeIsModule(host, targetRoot), resolvedIn(project)),
+    commonJS(packageTypeIsModule(host, targetRoot), resolvedIn(project), declarationOf),
   ];
   const into = new Builder(targetRoot);
   for (const file of files) {

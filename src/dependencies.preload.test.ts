@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { declarationKey, dependenciesOf } from "./dependencies.ts";
 import type { Host } from "./host.ts";
+import { readWorkflows } from "./entries/workflow-steps.ts";
 
 /** A host holding the given files and nothing else. */
 function hostWith(files: Readonly<Record<string, string>>): Host {
@@ -67,12 +68,8 @@ describe("a module a script preloads by a runtime flag", () => {
         ].map((name) => [name, "1.0.0"]),
       ),
     };
-    const found = dependenciesOf(
-      hostWith({ "/repo/package.json": JSON.stringify(manifest) }),
-      "/repo",
-      [],
-      [],
-    );
+    const host = hostWith({ "/repo/package.json": JSON.stringify(manifest) });
+    const found = dependenciesOf(host, "/repo", readWorkflows(host, "/repo"), [], []);
 
     expect(
       found.declared
@@ -99,7 +96,8 @@ describe("a module a script preloads by a runtime flag", () => {
     const names = ["ts-node", "tsx", "dotenv", "@scope/recipe", "unflagged"];
     const declared = { devDependencies: Object.fromEntries(names.map((name) => [name, "1.0.0"])) };
     const ran = (files: Readonly<Record<string, string>>): readonly string[] => {
-      const found = dependenciesOf(hostWith(files), "/repo", [], []);
+      const host = hostWith(files);
+      const found = dependenciesOf(host, "/repo", readWorkflows(host, "/repo"), [], []);
       return found.declared
         .filter((one) => found.ran.has(declarationKey(one)))
         .map((one) => one.name)

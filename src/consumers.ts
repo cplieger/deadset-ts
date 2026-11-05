@@ -1,4 +1,6 @@
 import type { PartialConfig } from "./config.ts";
+import type { ParseFile } from "./entries/configuration-files.ts";
+import { runDirectories } from "./entries/run-directories.ts";
 import type { Host } from "./host.ts";
 import { inventory } from "./inventory/enumerate.ts";
 import { relativePath } from "./paths.ts";
@@ -18,6 +20,7 @@ export function consumerReferences<Brand>(
   targetRoot: string,
   consumer: ConsumerSide,
   config: PartialConfig,
+  parse: ParseFile,
 ): readonly Reference[] {
   const held = inventory(
     narrowedTo(project, (file) => relativePath(targetRoot, file.fileName) !== undefined),
@@ -27,6 +30,7 @@ export function consumerReferences<Brand>(
   const found = references(project, held, targetRoot, {
     testFiles: config.ts.test_files,
     consumer,
+    directories: runDirectories(host, consumer.root, parse),
   }).references;
   if (config.analysis.consumer_tests !== "production") {
     return found;

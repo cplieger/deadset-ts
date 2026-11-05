@@ -9,10 +9,11 @@ import {
 import { kindOf } from "../config.ts";
 import { CONFORMANCE, DECLARED_GAPS } from "../conformance.ts";
 import { analyzerProvenance, verdictOf } from "../findings-pass.ts";
+import { factsDocument } from "../facts.ts";
 import { dirnamePath, joinPath, normalizePath, relativePath, resolvePath } from "../paths.ts";
 import type { Host } from "../host.ts";
-import type { ManifestEntry } from "../manifest.ts";
-import type { HeldScripts } from "../roots.ts";
+import type { ManifestEntry } from "../roots/manifest.ts";
+import type { HeldScripts } from "../roots/root-set.ts";
 import { moduleIdentity, type NotBuilt } from "../load/discover.ts";
 import { partialNotes } from "../partial.ts";
 import {
@@ -29,7 +30,7 @@ import { RENDERINGS } from "../reporters/reporters.ts";
 import { parseTemplate, TemplateError, type Template } from "../reporters/template.ts";
 import { resolve } from "../resolve.ts";
 import { otherSchemeRows, rowReason, writeBaseline, type Recorded } from "../suppress-file.ts";
-import type { UnseenLoad } from "../unseen-loads.ts";
+import type { UnseenLoad } from "../roots/unseen-loads.ts";
 import type { UnreadInput } from "../load/plan.ts";
 import type { UnresolvedSpecifier } from "../load/specifiers.ts";
 
@@ -42,7 +43,7 @@ import { ownVersion } from "./version.ts";
 
 /** The options `analyze` takes beside the ones every verb takes. */
 export const ANALYZE_OPTIONS: VerbOptions = {
-  plain: ["report", "baseline-write", "exit-code", "template"],
+  plain: ["report", "facts", "baseline-write", "exit-code", "template"],
   repeatable: ["format"],
 };
 
@@ -258,6 +259,7 @@ function templateOf(
 /** Every document one invocation asked for: the report, each rendering beside it, a baseline. */
 interface Documents {
   readonly report: string;
+  readonly facts: string | undefined;
   readonly formats: readonly Format[];
   readonly baseline: string | undefined;
 }
@@ -286,8 +288,13 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
   const { config, provenance } = resolve(inputs());
   const invoked = host.workingDirectory();
   const baseline = option("baseline-write");
+  const facts = option("facts");
+  if (facts === "") {
+    throw new UsageError("--facts names the path the facts document is written to, and named none");
+  }
   const documents: Documents = {
     report: resolvePath(invoked, reportPath),
+    facts: facts === undefined ? undefined : resolvePath(invoked, facts),
     formats: formatsOf(repeated("format"), config.reporters.formats),
     baseline: baseline === undefined ? undefined : resolvePath(invoked, baseline),
   };
@@ -378,6 +385,12 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
     );
   }
   writeDocument(host, documents.report, "name a path the run can write", () => json(report));
+  const factsPath = documents.facts;
+  if (factsPath !== undefined) {
+    writeDocument(host, factsPath, "name a path the run can write", () => [
+      factsDocument(version, run.generated),
+    ]);
+  }
   const options = {
     readSource: (path: string) => host.readFile(joinPath(targetRoot, path)),
     template,

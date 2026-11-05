@@ -2,6 +2,7 @@ import {
   CONTRACT_VERSION,
   EXIT_CLEAN,
   EXIT_USAGE,
+  FACTS_VERSION,
   SCHEMA_VERSIONS,
 } from "../contract/contract.generated.ts";
 import { CONFORMANCE, type Conformance } from "../conformance.ts";
@@ -11,8 +12,9 @@ import { ownVersion } from "./version.ts";
 
 /**
  * The document `describe` writes: the analyzer, the Contract version it implements, the
- * report schema versions it reads, the languages it claims, and its recorded result over
- * the conformance corpus, a member the document omits where no run is recorded.
+ * report schema versions it reads, the languages it claims, the facts version it writes,
+ * and its recorded result over the conformance corpus, a member the document omits where
+ * no run is recorded.
  */
 export function describeDocument(version: string, recorded: Conformance | undefined): string {
   const document = {
@@ -21,6 +23,7 @@ export function describeDocument(version: string, recorded: Conformance | undefi
     contract_version: CONTRACT_VERSION,
     schema_versions_accepted: SCHEMA_VERSIONS,
     languages: [LANGUAGE],
+    facts_version_written: FACTS_VERSION,
     ...(recorded === undefined
       ? {}
       : {

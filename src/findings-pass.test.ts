@@ -30,7 +30,7 @@ import {
 } from "./findings-pass.ts";
 import { resolve } from "./resolve.ts";
 import { scopeForDir } from "./scope.ts";
-import { isRowCode, isRowSubject } from "./suppress.ts";
+import { isRowSubject, subjectOfCode } from "./suppress.ts";
 import { openEngine } from "./session.ts";
 import { BASELINE_FILE, otherSchemeRows, writeBaseline } from "./suppress-file.ts";
 import { whole } from "../__test-helpers__/whole.ts";
@@ -162,20 +162,24 @@ describe("a record naming a row of a document", () => {
 
   it("is stale where the row is no dependency row, and its message names the remedy", () => {
     expect(stale(result).filter((one) => one.includes("ignore:"))).toEqual([
-      "deadset-ignore.json:1:169 ignore: ignore entry for DS9004 matches no current finding, because DS9004 reports a row of a document, which no suppression can name; fix what the finding names instead; its declaration reports DS1002",
+      "deadset-ignore.json:1:169 ignore: ignore entry for DS9004 matches no current finding, because DS9004 reports a record of deadset's own configuration, which no suppression can name; fix what the finding names instead; its declaration reports DS1002",
     ]);
   });
 
   it("is stale inline, and its message names every row code and what its declaration reports", () => {
     expect(stale(result).filter((one) => /^src\/lib\.ts:3[69]:/u.test(one))).toEqual([
-      "src/lib.ts:36:1 inline: inline directive for DS1701 and DS9004 matches no current finding, because DS9004 reports a row of a document, which no suppression can name; fix what the finding names instead; DS1701 reports a dependency row, which only an ignore entry or a baseline row can name; its declaration reports DS1002",
+      "src/lib.ts:36:1 inline: inline directive for DS1701 and DS9004 matches no current finding, because DS1701 reports a dependency row, which only an ignore entry or a baseline row can name; DS9004 reports a record of deadset's own configuration, which no suppression can name; fix what the finding names instead; its declaration reports DS1002",
       "src/lib.ts:39:1 inline: inline directive for DS1001 and DS1701 matches no current finding, because DS1701 reports a dependency row, which only an ignore entry or a baseline row can name; its declaration reports DS1002",
     ]);
   });
 
   it("reports a row code exactly where its subject is a row of a document", () => {
     const codes = result.findings.map(
-      (one) => `${one.code} ${String(isRowCode(one.code) === isRowSubject(one.symbol.kind))}`,
+      (one) =>
+        `${one.code} ${String(
+          ["file", "dependency", "record"].includes(subjectOfCode(one.code) ?? "declaration") ===
+            isRowSubject(one.symbol.kind),
+        )}`,
     );
     expect(codes).toContain("DS1701 true");
     expect(codes.filter((one) => one.endsWith("false"))).toEqual([]);

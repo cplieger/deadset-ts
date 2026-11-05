@@ -1,12 +1,12 @@
-import { CODE } from "../contract/contract.generated.ts";
+import { CODE, REMEDIES, type Subject } from "../contract/contract.generated.ts";
 import { REPOSITORY_DOCUMENT } from "../config.ts";
 import type { Finding, FindingDetails, SuppressionEntry } from "../finding.ts";
 import type { InventorySymbol } from "../inventory.ts";
 import { FIXED_SEVERITY_CODES } from "../kinds.ts";
 import type { Position } from "../position.ts";
 import {
-  isDependencyCode,
-  isUnsuppressibleCode,
+  names,
+  subjectOfCode,
   type Mechanism,
   type Refusal,
   type SuppressionRecord,
@@ -70,6 +70,43 @@ export function fileRefsOf(symbols: readonly InventorySymbol[]): FileRefs {
       .map((symbol) => [symbol.position.path, symbol.ref]),
   );
   return (path) => byPath.get(path);
+}
+
+/**
+ * Why a record of `mechanism` naming `codes` can match nothing, one clause per subject whose
+ * findings kinds.json's remedies table lets no record of that mechanism name, in subject order.
+ */
+function unnameable(codes: readonly string[], mechanism: Mechanism): readonly string[] {
+  return (Object.keys(REMEDIES) as Subject[]).flatMap((subject) => {
+    const named = codes.filter((code) => subjectOfCode(code) === subject);
+    if (named.length === 0 || names(subject, mechanism)) {
+      return [];
+    }
+    const { names: what, suppressions } = REMEDIES[subject];
+    const reports = `${spelled(named)} ${named.length === 1 ? "reports" : "each report"} ${what}`;
+    if (suppressions.length > 0) {
+      const records = suppressions.map((one) => articled(WRITTEN[one]));
+      return [`${reports}, which only ${spelledOr(records)} can name`];
+    }
+    const settable = named.filter((code) => !FIXED_SEVERITY_CODES.includes(code));
+    const remedy =
+      settable.length === 0
+        ? "fix what the finding names instead"
+        : `fix what the finding names or set the severity of ${spelled(settable)} instead`;
+    return [`${reports}, which no suppression can name; ${remedy}`];
+  });
+}
+
+/** A record's written name with its indefinite article. */
+function articled(name: string): string {
+  return `${/^[aeiou]/u.test(name) ? "an" : "a"} ${name}`;
+}
+
+/** A list as a sentence names alternatives. */
+function spelledOr(items: readonly string[]): string {
+  return items.length < 2
+    ? items.join("")
+    : `${items.slice(0, -1).join(", ")} or ${items.at(-1) ?? ""}`;
 }
 
 /** A list of codes as a sentence names them. */
@@ -176,26 +213,8 @@ export function staleSuppressions(
     const reports = [...new Set(records.flatMap((one) => one.reports))]
       .filter((code) => !codes.includes(code))
       .sort(bytewise);
-    const rows = codes.filter(isUnsuppressibleCode);
-    const dependencies = first.mechanism === "inline" ? codes.filter(isDependencyCode) : [];
-    const settable = rows.filter((code) => !FIXED_SEVERITY_CODES.includes(code));
-    const remedy =
-      settable.length === 0
-        ? "fix what the finding names instead"
-        : `fix what the finding names or set the severity of ${spelled(settable)} instead`;
     const declared = reports.length === 0 ? "" : `its declaration reports ${spelled(reports)}`;
-    const because = [
-      ...(rows.length > 0
-        ? [
-            `${spelled(rows)} ${rows.length === 1 ? "reports a row" : "report rows"} of a document, which no suppression can name; ${remedy}`,
-          ]
-        : []),
-      ...(dependencies.length > 0
-        ? [
-            `${spelled(dependencies)} ${dependencies.length === 1 ? "reports a dependency row" : "report dependency rows"}, which only an ignore entry or a baseline row can name`,
-          ]
-        : []),
-    ];
+    const because = unnameable(codes, first.mechanism);
     const instead =
       because.length > 0
         ? `, because ${because.join("; ")}${declared === "" ? "" : `; ${declared}`}`

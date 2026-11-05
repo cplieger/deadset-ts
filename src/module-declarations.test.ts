@@ -269,6 +269,7 @@ describe("an ambient module declaration of an exact name", () => {
         (cost?.residueFallbacks ?? 0) +
         (cost?.shorthandLookups ?? 0) +
         (cost?.aliasSteps ?? 0) +
+        (cost?.platformLookups ?? 0) +
         (cost?.patternBatches ?? 0) +
         (cost?.patternLookups ?? 0) +
         (cost?.contextualBatches ?? 0) +

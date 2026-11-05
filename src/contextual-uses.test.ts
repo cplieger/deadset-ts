@@ -55,6 +55,7 @@ function accounted(cost: ReferenceCost): number {
     cost.residueFallbacks +
     cost.shorthandLookups +
     cost.aliasSteps +
+    cost.platformLookups +
     cost.patternBatches +
     cost.patternLookups +
     cost.contextualBatches +

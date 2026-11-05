@@ -25,7 +25,7 @@ import {
   type SourceFile,
   type Statement,
 } from "@typescript/native/ast";
-import type { ParseFile } from "./configuration-files.ts";
+import type { ParseFile } from "./entries/configuration-files.ts";
 import type { Host } from "./host.ts";
 import { ancestors, dirnamePath, joinPath, resolvePath } from "./paths.ts";
 import { entriesOf } from "./fs/tree.ts";

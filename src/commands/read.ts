@@ -1,8 +1,8 @@
 /**
  * The one reader of every command string the analysis reads. Layer 3, the holding rule
- * `roots.ts` applies through `text/named-files.ts`, reads all of the string's text whatever
- * the other two layers make of it; layer 1 parses the string and layer 2 reads each simple
- * command a tool's reader understands, and they only add the files and modules it runs.
+ * `roots/root-set.ts` applies through `text/named-files.ts`, reads all of the string's text
+ * whatever the other two layers make of it; layer 1 parses the string and layer 2 reads each
+ * simple command a tool's reader understands, and they only add the files and modules it runs.
  */
 
 import { joinPath, resolvePath } from "../paths.ts";
@@ -16,6 +16,7 @@ import {
   type Preload,
   type Reading,
 } from "./tools.ts";
+import { APPENDED_EXTENSIONS } from "../extensions.ts";
 
 /** One program a read command runs. */
 interface Run {
@@ -159,9 +160,6 @@ export function readCommands(text: string, dir: string | undefined): CommandRead
   };
 }
 
-/** The extensions a runtime or a loader tries after a path written without one. */
-const TRIED_EXTENSIONS = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"] as const;
-
 /** One file a run loads, as written, and every absolute path it may be at. */
 interface Load {
   readonly written: string;
@@ -188,8 +186,8 @@ export function loadsOf(run: Run): readonly Load[] {
     written: one,
     paths: [
       path,
-      ...TRIED_EXTENSIONS.map((extension) => `${path}${extension}`),
-      ...TRIED_EXTENSIONS.map((extension) => joinPath(path, `index${extension}`)),
+      ...APPENDED_EXTENSIONS.map((extension) => `${path}${extension}`),
+      ...APPENDED_EXTENSIONS.map((extension) => joinPath(path, `index${extension}`)),
     ],
   }));
 }

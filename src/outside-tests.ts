@@ -19,7 +19,7 @@ import {
   type Node,
   type SourceFile,
 } from "@typescript/native/ast";
-import { RESOLVED_EXTENSIONS, type ParseFile } from "./configuration-files.ts";
+import { RESOLVED_EXTENSIONS, type ParseFile } from "./entries/configuration-files.ts";
 import { emittedFrom } from "./load/emit-map.ts";
 import type { Host } from "./host.ts";
 import type { Inventory } from "./inventory.ts";

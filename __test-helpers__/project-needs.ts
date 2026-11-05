@@ -1,7 +1,10 @@
 import { rmSync } from "node:fs";
 import { nodeHost } from "../bin/node-host.ts";
 import { targetConfigFiles, writeProject } from "./projects.ts";
+import { configurationFiles } from "../src/entries/configuration-files.ts";
 import { projectNeeds } from "../src/dependencies.ts";
+import { sourceFilesOf } from "../src/source-files.ts";
+import { readWorkflows } from "../src/entries/workflow-steps.ts";
 import { discoverProjects } from "../src/load/discover.ts";
 import { inventory } from "../src/inventory/enumerate.ts";
 import { relativePath } from "../src/paths.ts";
@@ -37,9 +40,17 @@ export function needsOf(
     const found: Needs[] = [];
     runSession(engine, configFiles, (project) => {
       const held = inventory(project, host, root);
+      const parse = (fileName: string, text: string) => engine.parseSourceFile(fileName, text);
+      const configuration = configurationFiles(host, root, sourceFilesOf(project, root), parse);
       armed = true;
-      const needs = projectNeeds(project, held, host, root, (fileName, text) =>
-        engine.parseSourceFile(fileName, text),
+      const needs = projectNeeds(
+        project,
+        held,
+        host,
+        root,
+        parse,
+        configuration,
+        readWorkflows(host, root),
       );
       armed = false;
       const below = (path: string): string => relativePath(root, path) ?? path;

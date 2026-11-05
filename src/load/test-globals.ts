@@ -23,7 +23,7 @@ import {
   type Node,
   type SourceFile,
 } from "@typescript/native/ast";
-import type { ParseFile } from "../configuration-files.ts";
+import type { ParseFile } from "../entries/configuration-files.ts";
 import type { Host } from "../host.ts";
 import { isRecord } from "../json-document.ts";
 import { ancestors, dirnamePath, joinPath } from "../paths.ts";

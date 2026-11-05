@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { nodeHost } from "../bin/node-host.ts";
+import { runDirectories } from "../src/entries/run-directories.ts";
 import { projectErrors, renderDiagnostic } from "../src/load/diagnostics.ts";
 import { discoverProjects, isTargetConfiguration } from "../src/load/discover.ts";
 import type { InventoryCost } from "../src/inventory.ts";
@@ -163,6 +164,7 @@ const NO_REFERENCE_COST: ReferenceCost = {
   residueFallbacks: 0,
   shorthandLookups: 0,
   aliasSteps: 0,
+  platformLookups: 0,
   patternBatches: 0,
   patternLookups: 0,
   contextualBatches: 0,
@@ -183,11 +185,14 @@ function onePass(dir: string, cap: Cap): Pass {
   const host = nodeHost();
   const scope = scopeForDir(host, dir);
   const targetRoot = scope.target.path;
+  const engine: Engine = openEngine({ collectTiming: true });
   const options: ReferenceOptions = {
     batchCap: cap === "uncapped" ? NO_CAP : cap,
     testFiles: resolvePartial({}).ts.test_files,
+    directories: runDirectories(host, targetRoot, (fileName, text) =>
+      engine.parseSourceFile(fileName, text),
+    ),
   };
-  const engine: Engine = openEngine({ collectTiming: true });
   const started = process.hrtime.bigint();
   let configFiles: readonly string[];
   try {
@@ -227,6 +232,7 @@ function onePass(dir: string, cap: Cap): Pass {
         residueFallbacks: sum.residueFallbacks + reference.residueFallbacks,
         shorthandLookups: sum.shorthandLookups + reference.shorthandLookups,
         aliasSteps: sum.aliasSteps + reference.aliasSteps,
+        platformLookups: sum.platformLookups + reference.platformLookups,
         patternBatches: sum.patternBatches + reference.patternBatches,
         patternLookups: sum.patternLookups + reference.patternLookups,
         contextualBatches: sum.contextualBatches + reference.contextualBatches,

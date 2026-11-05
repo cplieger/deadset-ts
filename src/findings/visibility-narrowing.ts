@@ -4,7 +4,7 @@ import { OUTSIDE, type Graph } from "../graph.ts";
 import type { InventorySymbol, SymbolKind } from "../inventory.ts";
 import type { MatrixCandidate } from "../matrix.ts";
 import { declarationKey } from "../ref.ts";
-import type { RootKind } from "../roots.ts";
+import type { RootKind } from "../roots/root-set.ts";
 import { runnerCalls } from "../sweep.ts";
 import type { Emitter, EmitterInput } from "./emitter.ts";
 import { writeOnlyDeclarations } from "./reads-and-writes.ts";

@@ -3,6 +3,7 @@
 export const CONTRACT_VERSION = "8.0.0";
 export const SCHEMA_VERSIONS = ["9.0.0"] as const;
 export const SCHEMA_VERSION = "9.0.0";
+export const FACTS_VERSION = "1.0.0";
 export const CORPUS_VERSION = "6.0.0";
 export const CODE_PREFIX = "DS";
 export const FAMILY_KEY_LENGTH = 4;
@@ -34,16 +35,19 @@ export const LANGUAGE_ROWS = {
     analyzer: "deadset-go",
     markers: ["go.mod"],
     skippedDirectories: ["node_modules", "testdata", "vendor", ".*", "_*"],
+    skippedFiles: ["_*", ".*"],
   },
   ts: {
     analyzer: "deadset-ts",
     markers: ["tsconfig*.json", "jsconfig*.json"],
     skippedDirectories: ["node_modules", ".git"],
+    skippedFiles: ["*.min.js", "*.min.cjs", "*.min.mjs"],
   },
   proto: {
     analyzer: "deadset-proto",
     markers: ["buf.yaml", "buf.work.yaml"],
     skippedDirectories: ["node_modules", "vendor", ".*"],
+    skippedFiles: [],
   },
 } as const satisfies Readonly<
   Partial<
@@ -53,6 +57,7 @@ export const LANGUAGE_ROWS = {
         readonly analyzer: string;
         readonly markers: readonly string[];
         readonly skippedDirectories: readonly string[];
+        readonly skippedFiles: readonly string[];
       }
     >
   >
@@ -494,9 +499,9 @@ export const KIND_ROWS = [
     languages: ["go", "ts"],
     subject: "dependency",
     holdsLive: false,
-    rule: "A directly declared dependency that no import in the target needs. On the Go side, a direct require whose module provides no package any target package or test variant imports. On the TypeScript side, a manifest dependency, development dependency or peer dependency the project's import closure does not need. A deletion finding whose fix would remove the last use of a dependency names that dependency. On the TypeScript side, a needed dependency whose every use is written inside declarations that are members of the run's dead components, or at the top level of a file reported under DS1602, that no command runs and that no needed dependency used otherwise names as a peer, is reported as well, dead only through that code: at the reachability class possible where one of those declarations belongs to a library's published API, and found under reachability alone where one of those declarations or files is, so at probable unless ts.roots_complete is true. A use the configuration makes, a use an unanswered specifier may make and an import none of whose bindings is used are uses by live code.",
+    rule: "A directly declared dependency that no import in the target needs. On the Go side, a direct require whose module provides no package any target package or test variant imports. On the TypeScript side, a manifest dependency, development dependency or peer dependency the project's import closure does not need. A deletion finding whose fix would remove the last use of a dependency names that dependency. On the TypeScript side, a needed dependency whose every use is written inside declarations that are members of the run's dead components, or at the top level of a file reported under DS1602, that no command runs and that no needed dependency used otherwise names as a peer, is reported as well, dead only through that code: at the reachability class possible where one of those declarations belongs to a library's published API, and found under reachability alone where one of those declarations or files is, so at probable unless ts.roots_complete is true. A use the configuration makes, a use an unanswered specifier or callee may make and an import none of whose bindings is used are uses by live code.",
     precondition:
-      "On the Go side the rule is the semantics of `go mod tidy -diff` exactly: a requirement marked indirect is never reported, because it exists to pin a transitive version and removing it changes the build list. On the TypeScript side the import closure is the files of the run's projects, and a call of `import.meta.resolve` or of `require.resolve` in them, whatever `require` names, whose first argument is a string literal or a template literal with no substitution needs each dependency an import of that specifier needs. A `@types/<name>` package in a type root of a compiler configuration that lists no `types`, a `node_modules/@types` directory at or above the configuration's directory or a `typeRoots` entry naming one, is needed by a use, in a file of that configuration, of a global name or an ambient module that one of the package's declaration files declares, which resolves to no declaration of the program: a compiler before version 6 includes every package of the type roots where `types` is not listed, and version 6 and later include none, so the program the analysis builds holds none of those declarations. A package's declaration files are the file its `types` or `typings` names, else its `index.d.ts`, and each file a `/// <reference path>` of one of them reaches inside the package. A global is a top-level declaration of such a file that is no module, or a declaration of a `declare global` block of one that is, and an ambient module is a `declare module` with a string name of a file that is no module. A name that names a member, a property or a label is no use of a global. Four more dependencies are needed: one whose command a script entry, a workflow step or a git hook runs, one that a string of a configuration file names, and one that a string names under a manifest key or a package key of an applied convention row, each as grammar/analysis/conventions.md states, and one that a needed dependency names as a peer, as stated below. A command no script entry, workflow step or git hook runs needs nothing. A declared dependency that the installed manifest of a needed declared dependency names in its peerDependencies is needed, and so on until no further dependency joins. A peer dependency is a package the needed dependency expects beside it at a version its manifest states, whether or not it imports the package, and the project's declaration is what keeps that package present at a version the project chooses, so removing the declaration can break the needed dependency where nothing the analysis reads imports the peer. A peer that peerDependenciesMeta marks optional is needed in the same way, because the needed dependency's manifest still names it as a package it works with, and a package manager may leave an optional peer out where the project does not declare it, so the project's declaration is what keeps it present for the needed dependency. A declared dependency that only dependencies nothing needs name as a peer is needed by nothing. A dependency of a manifest whose directory holds source only in configurations the run lists in configurations_not_built is reported at the reachability class possible, because the source that may import it was not analyzed. An installed manifest is the package's manifest in the nearest node_modules directory at or above the directory of the manifest that declares the dependency, and a dependency with none is decided by the import closure alone. On the TypeScript side, the dependencies judged are those of every manifest grammar/analysis/program.md says the analysis reads, a nested package's among them, each read against its own directory: a dependency is needed by a use written in a file at or below the directory of the manifest that declares it where no manifest between them declares a dependency of the same name, so a use below a nested manifest that declares the same dependency needs that nested manifest's declaration only, by a use no one file holds, and as a peer of a needed dependency of the same manifest or of a manifest below it. A dependency a nested package's manifest declares whose installed manifest the analysis cannot find is not judged, because no run requires a nested package to be installed and its commands and peers cannot be read, while a workspace member's and the target's own are judged as above.",
+      "On the Go side the rule is the semantics of `go mod tidy -diff` exactly: a requirement marked indirect is never reported, because it exists to pin a transitive version and removing it changes the build list. On the TypeScript side the import closure is the files of the run's projects, and a `require()` call as `roots.23` reads one, or a call of `import.meta.resolve`, of `require.resolve`, whatever `require` names, or of `resolve` on another name that is such a `require`, in them, whose first argument is a string literal or a template literal with no substitution needs each dependency an import of that specifier needs. A `@types/<name>` package in a type root of a compiler configuration that lists no `types`, a `node_modules/@types` directory at or above the configuration's directory or a `typeRoots` entry naming one, is needed by a use, in a file of that configuration, of a global name or an ambient module that one of the package's declaration files declares, which resolves to no declaration of the program: a compiler before version 6 includes every package of the type roots where `types` is not listed, and version 6 and later include none, so the program the analysis builds holds none of those declarations. A package's declaration files are the file its `types` or `typings` names, else its `index.d.ts`, and each file a `/// <reference path>` of one of them reaches inside the package. A global is a top-level declaration of such a file that is no module, or a declaration of a `declare global` block of one that is, and an ambient module is a `declare module` with a string name of a file that is no module. A name that names a member, a property or a label is no use of a global. Four more dependencies are needed: one whose command a script entry, a workflow step or a git hook runs, one that a string of a configuration file names, and one that a string names under a manifest key or a package key of an applied convention row, each as grammar/analysis/conventions.md states, and one that a needed dependency names as a peer, as stated below. A command no script entry, workflow step or git hook runs needs nothing. A declared dependency that the installed manifest of a needed declared dependency names in its peerDependencies is needed, and so on until no further dependency joins. A peer dependency is a package the needed dependency expects beside it at a version its manifest states, whether or not it imports the package, and the project's declaration is what keeps that package present at a version the project chooses, so removing the declaration can break the needed dependency where nothing the analysis reads imports the peer. A peer that peerDependenciesMeta marks optional is needed in the same way, because the needed dependency's manifest still names it as a package it works with, and a package manager may leave an optional peer out where the project does not declare it, so the project's declaration is what keeps it present for the needed dependency. A declared dependency that only dependencies nothing needs name as a peer is needed by nothing. A dependency of a manifest whose directory holds source only in configurations the run lists in configurations_not_built is reported at the reachability class possible, because the source that may import it was not analyzed. An installed manifest is the package's manifest in the nearest node_modules directory at or above the directory of the manifest that declares the dependency, and a dependency with none is decided by the import closure alone. On the TypeScript side, the dependencies judged are those of every manifest grammar/analysis/program.md says the analysis reads, a nested package's among them, each read against its own directory: a dependency is needed by a use written in a file at or below the directory of the manifest that declares it where no manifest between them declares a dependency of the same name, so a use below a nested manifest that declares the same dependency needs that nested manifest's declaration only, by a use no one file holds, and as a peer of a needed dependency of the same manifest or of a manifest below it. A dependency a nested package's manifest declares whose installed manifest the analysis cannot find is not judged, because no run requires a nested package to be installed and its commands and peers cannot be read, while a workspace member's and the target's own are judged as above.",
     details: { dependency_class: "required" },
     defaultEnabled: true,
     defaultSeverity: "deny",
@@ -768,6 +773,49 @@ export const SYMBOL_SUBJECTS = {
   "configured-declaration": "record",
   edge: "record",
 } as const satisfies Readonly<Record<string, Subject>>;
+
+export const REMEDIES = {
+  declaration: {
+    names: "a declaration",
+    suppressions: ["inline", "ignore", "baseline"],
+    remedy: "delete the symbol, or wire it up so the program uses it",
+  },
+  binding: {
+    names: "an import binding",
+    suppressions: ["inline", "ignore", "baseline"],
+    remedy: "delete the import, or use what it binds",
+  },
+  part: {
+    names: "a part of a declaration",
+    suppressions: ["inline", "ignore", "baseline"],
+    remedy: "remove the part, or use it",
+  },
+  file: {
+    names: "a file",
+    suppressions: [],
+    remedy:
+      "delete the file, name it as a root, or build it in a configuration of the build matrix",
+  },
+  dependency: {
+    names: "a dependency row",
+    suppressions: ["ignore", "baseline"],
+    remedy: "remove the dependency",
+  },
+  record: {
+    names: "a record of deadset's own configuration",
+    suppressions: [],
+    remedy: "correct or remove the record the finding names",
+  },
+} as const satisfies Readonly<
+  Record<
+    Subject,
+    {
+      readonly names: string;
+      readonly suppressions: readonly ("inline" | "ignore" | "baseline")[];
+      readonly remedy: string;
+    }
+  >
+>;
 
 export const EXEMPTION_CLASSES = [
   {
@@ -1283,6 +1331,93 @@ export const EVIDENCE = [
   },
 ] as const;
 
+/** The generators whose TypeScript output a generated file is matched against, in the document's order. */
+export const GENERATORS = [
+  {
+    id: "protoc-gen-es-2",
+    plugin: "protoc-gen-es",
+    header: "^// @generated by protoc-gen-es v2\\.",
+    versions: { min: "v2.10.0", max: "v2.16.0" },
+    cell: "exact",
+  },
+  {
+    id: "protoc-gen-es-2-fallback",
+    plugin: "protoc-gen-es",
+    header: "^// @generated by protoc-gen-es v2\\.",
+    cell: "fallback",
+  },
+  {
+    id: "protoc-gen-es-1",
+    plugin: "protoc-gen-es",
+    header: "^// @generated by protoc-gen-es v1\\.",
+    cell: "exact",
+  },
+  {
+    id: "protoc-gen-connect-es-1",
+    plugin: "protoc-gen-connect-es",
+    header: "^// @generated by protoc-gen-connect-es v1\\.",
+    cell: "exact",
+  },
+  {
+    id: "ts-proto-2-output-schema",
+    plugin: "ts-proto",
+    header: "^// Code generated by protoc-gen-ts_proto\\. DO NOT EDIT\\.$",
+    versions: { min: "v2.11.4", max: "v2.15.0" },
+    cell: "exact",
+  },
+  {
+    id: "ts-proto-2",
+    plugin: "ts-proto",
+    header: "^// Code generated by protoc-gen-ts_proto\\. DO NOT EDIT\\.$",
+    versions: { min: "v2.11.4", max: "v2.15.0" },
+    cell: "rpc-types-fallback",
+  },
+  {
+    id: "ts-proto-2-types",
+    plugin: "ts-proto",
+    header: "^// Code generated by protoc-gen-ts_proto\\. DO NOT EDIT\\.$",
+    versions: { min: "v2.11.4", max: "v2.15.0" },
+    cell: "fallback",
+  },
+  {
+    id: "ts-proto-2-fallback",
+    plugin: "ts-proto",
+    header: "^// Code generated by protoc-gen-ts_proto\\. DO NOT EDIT\\.$",
+    cell: "fallback",
+  },
+  {
+    id: "protoc-gen-js",
+    plugin: "protoc-gen-js",
+    header: "^// GENERATED CODE -- DO NOT EDIT!$",
+    cell: "fallback",
+  },
+  {
+    id: "protoc-gen-grpc-web",
+    plugin: "protoc-gen-grpc-web",
+    header: "^// Code generated by protoc-gen-grpc-web\\. DO NOT EDIT\\.$",
+    cell: "fallback",
+  },
+  {
+    id: "protobuf-ts",
+    plugin: "protobuf-ts",
+    header: "^// @generated by protobuf-ts ",
+    cell: "fallback",
+  },
+  { id: "ts-protoc-gen", plugin: "ts-protoc-gen", header: "^// package: ", cell: "fallback" },
+  {
+    id: "protoc-gen-es-unsupported",
+    plugin: "protoc-gen-es",
+    header: "^// @generated by protoc-gen-es v(?:0|[3-9]|[1-9][0-9]+)\\.",
+    cell: "unsupported",
+  },
+] as const satisfies readonly {
+  readonly id: string;
+  readonly plugin: string;
+  readonly header: string;
+  readonly versions?: { readonly min: string; readonly max: string };
+  readonly cell: string;
+}[];
+
 /** Each group of failure classes, and the text opening the line that names one of its failures. */
 export const FAILURE_PREFIXES = { setup: "setup failure: ", run: "run failure: " } as const;
 
@@ -1294,6 +1429,7 @@ export const FAILURE_CLASSES = {
   "workspace-member-without-source": "setup",
   "convention-not-literal": "setup",
   "no-program": "setup",
+  "unreadable-configuration": "setup",
   "unreadable-document": "setup",
   "missing-import-path": "setup",
   "binding-undecodable": "setup",

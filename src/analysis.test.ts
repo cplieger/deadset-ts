@@ -220,11 +220,29 @@ describe("the projects a run composes", () => {
 
     expect(run.configurations).toEqual(["tsconfig.json"]);
     expect(run.notBuilt).toEqual([
-      { id: "unread/tsconfig.json", configFile: unread, error: "the file is locked" },
+      {
+        id: "unread/tsconfig.json",
+        configFile: unread,
+        error: "the file is locked",
+        failures: [
+          {
+            failureClass: "unreadable-configuration",
+            detail:
+              "unread/tsconfig.json cannot be read as a compiler configuration: the file is locked: correct the configuration, or name the configurations to analyze",
+          },
+        ],
+      },
       {
         id: "broken/tsconfig.json",
         configFile: join(root, "broken", "tsconfig.json"),
         error: "broken/tsconfig.json: TS1109: Expression expected.",
+        failures: [
+          {
+            failureClass: "unreadable-configuration",
+            detail:
+              "broken/tsconfig.json cannot be read as a compiler configuration: broken/tsconfig.json: TS1109: Expression expected.: correct the configuration, or name the configurations to analyze",
+          },
+        ],
       },
     ]);
   });
@@ -256,14 +274,13 @@ describe("the projects a run composes", () => {
       "cycle/tsconfig.json",
       "outer/tsconfig.json",
     ]);
-    for (const one of run.notBuilt) {
-      expect(one.error, one.id).toMatch(
-        /^TS18000: Circularity detected while resolving configuration/u,
-      );
-    }
+    expect(run.notBuilt.map((one) => one.error)).toEqual([
+      "TS18000: Circularity detected while resolving configuration: cycle/tsconfig.json -> cycle/a.json -> cycle/tsconfig.json",
+      "TS18000: Circularity detected while resolving configuration: cycle/a.json -> cycle/tsconfig.json -> cycle/a.json",
+    ]);
   });
 
-  it("fail naming the first derived configuration when none of them could be built", () => {
+  it("fail on the derived configurations the compiler cannot read when none of them could be built", () => {
     const root = written({
       "app/broken/tsconfig.json": '{ "compilerOptions": ',
       "app/broken/broken.ts": "export const two = 2;\n",
@@ -281,9 +298,9 @@ describe("the projects a run composes", () => {
     ).toThrow(
       new FailureExit([
         {
-          failureClass: "no-program",
+          failureClass: "unreadable-configuration",
           detail:
-            "no configuration discovery derived could be built; broken/tsconfig.json: broken/tsconfig.json: TS1109: Expression expected.",
+            "broken/tsconfig.json cannot be read as a compiler configuration: broken/tsconfig.json: TS1109: Expression expected.: correct the configuration, or name the configurations to analyze",
         },
       ]),
     );
@@ -427,6 +444,39 @@ describe("the root set of a run", () => {
       "ts://./src/lib.ts#shared src/z-entry.ts one,two",
       "ts://./src/z-entry.ts# src/z-entry.ts one,two",
       "ts://./src/z-entry.ts#shared:alias src/z-entry.ts one,two",
+    ]);
+  });
+
+  it("lists the global augmentations among the roots", () => {
+    const root = written({
+      "src/main.ts": [
+        "export {};",
+        "declare global {",
+        "  interface Array<T> {",
+        "    first(): T | undefined;",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    });
+    const host: Host = { ...nodeHost(), workingDirectory: () => root };
+    const { config, provenance } = configured(APPLICATION);
+
+    const rooted = runRoots(
+      openEngine({ collectTiming: false }),
+      host,
+      scopeForDir(host, root),
+      config,
+      provenance,
+    );
+
+    expect(
+      rooted.roots
+        .filter((one) => one.kind === "global-augmentation")
+        .map((one) => `${one.ref} ${one.kind}`),
+    ).toEqual([
+      "ts://./src/main.ts#global global-augmentation",
+      "ts://./src/main.ts#global.Array global-augmentation",
     ]);
   });
 

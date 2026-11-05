@@ -253,11 +253,11 @@ describe("project discovery", () => {
     expect(found.notBuilt.map((one) => [one.id, one.error])).toEqual([
       [
         "cycle/tsconfig.json",
-        "TS18000: Circularity detected while resolving configuration: cycle/tsconfig.json",
+        "TS18000: Circularity detected while resolving configuration: cycle/tsconfig.json -> cycle/a.json -> cycle/tsconfig.json",
       ],
       [
         "outer/tsconfig.json",
-        "TS18000: Circularity detected while resolving configuration: outer/tsconfig.json",
+        "TS18000: Circularity detected while resolving configuration: cycle/a.json -> cycle/tsconfig.json -> cycle/a.json",
       ],
     ]);
   });
@@ -275,23 +275,7 @@ describe("project discovery", () => {
 
     expect(thrown).toBeInstanceOf(FailureExit);
     expect(thrown instanceof FailureExit ? thrown.message : "").toContain(
-      `the project "named" (${join(root, "tsconfig.json")}) cannot be read as a compiler configuration: TS18000: Circularity detected while resolving configuration: ${join(root, "tsconfig.json")}`,
-    );
-  });
-
-  it("names a circular configuration's path as written, replacement patterns included", () => {
-    const root = join(scratch(), "pro$&ject");
-    write(root, {
-      "tsconfig.json": '{ "extends": "./tsconfig.json", "include": ["*.ts"] }\n',
-      "main.ts": "export const one = 1;\n",
-    });
-
-    const thrown = thrownBy(() =>
-      discoverProjects(engine(), HOST, scopeOf(root), [{ id: "named", project: "tsconfig.json" }]),
-    );
-
-    expect(thrown instanceof FailureExit ? thrown.message : "").toContain(
-      `resolving configuration: ${join(root, "tsconfig.json")}`,
+      `the project "named" (${join(root, "tsconfig.json")}) cannot be read as a compiler configuration: TS18000: Circularity detected while resolving configuration: ${join(root, "tsconfig.json")} -> ${join(root, "tsconfig.json")}`,
     );
   });
 
@@ -527,7 +511,7 @@ describe("a declared matrix", () => {
 
     expect(thrown).toBeInstanceOf(FailureExit);
     expect(thrown instanceof FailureExit ? thrown.message : "").toBe(
-      `setup failure: no-program: the project "named" (${configFile}) cannot be read as a compiler configuration: ` +
+      `setup failure: unreadable-configuration: the project "named" (${configFile}) cannot be read as a compiler configuration: ` +
         `api: client error: could not read file "${configFile}": correct the configuration, or name the configurations to analyze`,
     );
   });

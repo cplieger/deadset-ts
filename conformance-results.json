@@ -2,7 +2,7 @@
   "corpus_version": "6.0.0",
   "product": { "name": "deadset-ts", "version": "0.1.0", "language": "ts" },
   "result": "pass",
-  "totals": { "fixtures": 337, "pass": 316, "gap": 0, "fail": 0, "pending": 21 },
+  "totals": { "fixtures": 360, "pass": 341, "gap": 0, "fail": 0, "pending": 19 },
   "fixtures": [
     {
       "fixture": "abstract-member-through-this",
@@ -67,6 +67,38 @@
       "unexpected": []
     },
     {
+      "fixture": "ava-runs-its-default-globs-by-version",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "HelperFile",
+          "result": "pass",
+          "actual": { "report": "DS1602", "confidence": "certain" }
+        },
+        { "symbol": "LegacyFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "MathFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "PrivateFile",
+          "result": "pass",
+          "actual": { "report": "DS1602", "confidence": "certain" }
+        },
+        { "symbol": "RootTestFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "onlyTested",
+          "result": "pass",
+          "actual": {
+            "report": "DS1102",
+            "symbol_kind": "function",
+            "confidence": "possible",
+            "reachability_class": "possible",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "awaited-promise-result",
       "result": "pass",
       "expectations": [
@@ -126,6 +158,48 @@
           "suppression": { "suppressed": true, "stale": false }
         },
         { "symbol": "Value", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "build-script-calls-a-required-bundler",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "Packed", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Unpacked", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "UnpackedFile", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "build-script-reads-requires-and-values-once",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "Created", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Fake", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "FakeFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Shadowed",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "ShadowedFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        }
       ],
       "unexpected": []
     },
@@ -687,6 +761,39 @@
       "unexpected": []
     },
     {
+      "fixture": "computed-load-in-a-javascript-package",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "OrphanFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        { "symbol": "PluginFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "TaskFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "build", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "orphan",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "variable",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "report", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "computed-load-in-test-code",
       "result": "pass",
       "expectations": [
@@ -784,6 +891,37 @@
       "unexpected": []
     },
     {
+      "fixture": "computed-require-through-another-name",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "calledOnlyByDead",
+          "result": "pass",
+          "actual": {
+            "report": "DS1002",
+            "symbol_kind": "function",
+            "confidence": "probable",
+            "reachability_class": "certain",
+            "liveness_relation": "reachability"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "deadCaller",
+          "result": "pass",
+          "actual": {
+            "report": "DS1002",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "configuration-base-url-paths",
       "result": "pass",
       "expectations": [
@@ -801,6 +939,16 @@
           },
           "suppression": { "suppressed": true, "stale": false }
         }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "configuration-chain-loads-through-the-platform-require",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "Held", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "HeldFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Loaded", "result": "pass", "actual": { "report": "none" } }
       ],
       "unexpected": []
     },
@@ -1120,6 +1268,39 @@
           },
           "suppression": { "suppressed": true, "stale": false }
         }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "convention-commonjs-module-value-as-node-runs-it",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "JestRunner",
+          "result": "pass",
+          "actual": {
+            "report": "DS1701",
+            "symbol_kind": "dependency",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "details": { "dependency_class": "dev-dependency" }
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "MochaRunner",
+          "result": "pass",
+          "actual": {
+            "report": "DS1701",
+            "symbol_kind": "dependency",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "details": { "dependency_class": "dev-dependency" }
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "StrykerCore", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "VitestRunner", "result": "pass", "actual": { "report": "none" } }
       ],
       "unexpected": []
     },
@@ -1632,6 +1813,15 @@
       "fixture": "convention-property-not-literal",
       "result": "pass",
       "expectations": [],
+      "unexpected": []
+    },
+    {
+      "fixture": "convention-require-through-create-require",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "App", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "AppFile", "result": "pass", "actual": { "report": "none" } }
+      ],
       "unexpected": []
     },
     {
@@ -3264,6 +3454,74 @@
       "unexpected": []
     },
     {
+      "fixture": "glob-forms-vite-reads",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "HomeFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "KeepFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "PluginFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "RouteFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "SkipFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        { "symbol": "homeValue", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "keepValue", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "pluginValue", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "routeValue", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "skipValue",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "variable",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "glob-through-alias-is-unresolved",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "calledOnlyByDead",
+          "result": "pass",
+          "actual": {
+            "report": "DS1002",
+            "symbol_kind": "function",
+            "confidence": "probable",
+            "reachability_class": "certain",
+            "liveness_relation": "reachability"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "deadCaller",
+          "result": "pass",
+          "actual": {
+            "report": "DS1002",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "global-declaration-merging",
       "result": "pass",
       "expectations": [
@@ -3335,6 +3593,14 @@
         },
         { "symbol": "global", "result": "pass", "actual": { "report": "none" } },
         { "symbol": "strictOption", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "held-text-record-is-dormant",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "ResetForTest", "result": "pass", "actual": { "report": "none" } }
       ],
       "unexpected": []
     },
@@ -3818,6 +4084,54 @@
         },
         { "symbol": "BagIterator", "result": "pass", "actual": { "report": "none" } },
         { "symbol": "PairIterator", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "javascript-test-files-by-default",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "ModuleTestFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "ScriptTestFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "UnitTestFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "main", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "onlyTested",
+          "result": "pass",
+          "actual": {
+            "report": "DS1102",
+            "symbol_kind": "function",
+            "confidence": "possible",
+            "reachability_class": "possible",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "jest-runs-the-files-its-roots-and-test-match-name",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "CheckFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "OutsideFile",
+          "result": "pass",
+          "actual": { "report": "DS1602", "confidence": "certain" }
+        },
+        {
+          "symbol": "onlyTested",
+          "result": "pass",
+          "actual": {
+            "report": "DS1102",
+            "symbol_kind": "function",
+            "confidence": "possible",
+            "reachability_class": "possible",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
       ],
       "unexpected": []
     },
@@ -4395,6 +4709,43 @@
       "unexpected": []
     },
     {
+      "fixture": "mocha-runs-the-files-its-configuration-and-scripts-name",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "DeepFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "FlowFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "HiddenFile",
+          "result": "pass",
+          "actual": { "report": "DS1602", "confidence": "certain" }
+        },
+        {
+          "symbol": "IgnoredFile",
+          "result": "pass",
+          "actual": { "report": "DS1602", "confidence": "certain" }
+        },
+        { "symbol": "UnitFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "UnrunFile",
+          "result": "pass",
+          "actual": { "report": "DS1602", "confidence": "certain" }
+        },
+        {
+          "symbol": "onlyTested",
+          "result": "pass",
+          "actual": {
+            "report": "DS1102",
+            "symbol_kind": "function",
+            "confidence": "possible",
+            "reachability_class": "possible",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "module-a-script-names-in-its-text",
       "result": "pass",
       "expectations": [
@@ -4909,6 +5260,33 @@
       "unexpected": []
     },
     {
+      "fixture": "node-test-runs-its-patterns-from-the-scripts",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "DashFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "SmokeFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "TestDirFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "UnrunFile",
+          "result": "pass",
+          "actual": { "report": "DS1602", "confidence": "certain" }
+        },
+        {
+          "symbol": "onlyTested",
+          "result": "pass",
+          "actual": {
+            "report": "DS1102",
+            "symbol_kind": "function",
+            "confidence": "possible",
+            "reachability_class": "possible",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "object-literal-to-unimplemented-callee",
       "result": "pass",
       "expectations": [
@@ -5315,6 +5693,8 @@
       "result": "pending",
       "expectations": [
         { "symbol": "CFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "SetupFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "configured", "result": "pass", "actual": { "report": "none" } },
         { "symbol": "liveC", "result": "pass", "actual": { "report": "none" } }
       ],
       "unexpected": []
@@ -5901,6 +6281,38 @@
       "unexpected": []
     },
     {
+      "fixture": "playwright-tests-need-its-package",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "CheckoutFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Login",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "LoginFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        { "symbol": "PaymentFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "RefundFile", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "private-member-unread",
       "result": "pass",
       "expectations": [
@@ -5935,108 +6347,107 @@
     },
     {
       "fixture": "proto-facts-leave-report-unchanged-ts",
-      "result": "pending",
+      "result": "pass",
       "expectations": [],
-      "unexpected": [],
-      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+      "unexpected": []
     },
     {
       "fixture": "proto-facts-unevaluated-before-serializers",
       "result": "pending",
       "expectations": [],
       "unexpected": [],
-      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+      "message": "want exactly one consumer record of PingRequest.number, got 0; want exactly one consumer record of PingRequest.text, got 0"
     },
     {
       "fixture": "proto-field-read-in-one-language",
       "result": "pending",
       "expectations": [],
       "unexpected": [],
-      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+      "message": "want exactly one consumer record of PingRequest.number, got 0; want exactly one consumer record of PingRequest.text, got 0"
     },
     {
       "fixture": "proto-field-written-only",
       "result": "pending",
       "expectations": [],
       "unexpected": [],
-      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+      "message": "want exactly one consumer record of PingRequest.number, got 0; want exactly one consumer record of PingRequest.text, got 0; want exactly one consumer record of PingRequest, got 0"
     },
     {
       "fixture": "proto-hand-serializer-reads",
       "result": "pending",
       "expectations": [],
       "unexpected": [],
-      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+      "message": "want exactly one consumer record of Item.number, got 0; want exactly one consumer record of Item.text, got 0; want exactly one consumer record of Envelope.item, got 0; want exactly one consumer record of Envelope.label, got 0; want exactly one consumer record of Other.number, got 0"
     },
     {
       "fixture": "proto-oneof-protobuf-es",
       "result": "pending",
       "expectations": [],
       "unexpected": [],
-      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+      "message": "want exactly one consumer record of Outcome.ok, got 0; want exactly one consumer record of Outcome.error, got 0; want exactly one consumer record of Outcome.pending, got 0; want exactly one consumer record of Outcome.skipped, got 0; want exactly one consumer record of Probe.a, got 0; want exactly one consumer record of Probe.b, got 0"
     },
     {
       "fixture": "proto-protobuf-es-v2-tags",
       "result": "pending",
       "expectations": [],
       "unexpected": [],
-      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+      "message": "want exactly one consumer record of PingRequest, got 0; want exactly one consumer record of PingRequestSchema, got 0; want exactly one consumer record of PingRequest.text, got 0; want exactly one consumer record of PingService, got 0; want exactly one consumer record of PingService.ping, got 0"
     },
     {
       "fixture": "proto-protojson-unmarshal-caps",
       "result": "pending",
       "expectations": [],
       "unexpected": [],
-      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+      "message": "want exactly one consumer record of PingRequest.number, got 0; want exactly one consumer record of PingRequest.text, got 0; want exactly one consumer record of PingResponse.number, got 0"
     },
     {
       "fixture": "proto-rpc-called-from-ts",
       "result": "pending",
       "expectations": [],
       "unexpected": [],
-      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+      "message": "want exactly one consumer record of PingService, got 0; want exactly one consumer record of PingService.ping, got 0; want exactly one consumer record of PingService.fail, got 0"
     },
     {
       "fixture": "proto-transport-reads-nothing",
       "result": "pending",
       "expectations": [],
       "unexpected": [],
-      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+      "message": "want exactly one consumer record of PingRequest.number, got 0; want exactly one consumer record of PingRequest.text, got 0; want exactly one consumer record of PingService.ping, got 0"
     },
     {
       "fixture": "proto-ts-create-literal-writes",
       "result": "pending",
       "expectations": [],
       "unexpected": [],
-      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+      "message": "want exactly one consumer record of PingRequest.number, got 0; want exactly one consumer record of PingRequest.text, got 0; want exactly one consumer record of PingRequestSchema, got 0"
     },
     {
       "fixture": "proto-ts-equals-reads",
       "result": "pending",
       "expectations": [],
       "unexpected": [],
-      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+      "message": "want exactly one consumer record of PingRequest.number, got 0; want exactly one consumer record of PingRequest.text, got 0; want exactly one consumer record of PingResponse.number, got 0"
     },
     {
       "fixture": "proto-ts-proto-default-rpc-only",
       "result": "pending",
       "expectations": [],
       "unexpected": [],
-      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+      "message": "want exactly one consumer record of PingService.Ping, got 0; want exactly one fallback record of ServiceFile, got 0; type-error skip at target/src/gen/v1/service.ts:211, which no name resolves to"
     },
     {
       "fixture": "proto-ts-proto-message-fns",
       "result": "pending",
       "expectations": [],
       "unexpected": [],
-      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+      "message": "want exactly one consumer record of PingRequest.number, got 0; want exactly one consumer record of PingRequest.text, got 0; want exactly one consumer record of PingResponse.number, got 0; type-error skip at target/src/gen/v1/service.ts:354, which no name resolves to"
     },
     {
       "fixture": "proto-ts-serialization-contract",
       "result": "pending",
       "expectations": [],
       "unexpected": [],
-      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+      "message": "want exactly one consumer record of PingRequest.number, got 0; want exactly one consumer record of PingRequest.text, got 0"
     },
     {
       "fixture": "published-accessor-pair-types",
@@ -6509,17 +6920,6 @@
           "symbol": "Event.seq",
           "result": "pass",
           "actual": { "report": "none", "retained_by": ["serialization-contract"] }
-        },
-        {
-          "symbol": "Status.spare",
-          "result": "pass",
-          "actual": {
-            "report": "DS1003",
-            "confidence": "certain",
-            "reachability_class": "certain",
-            "liveness_relation": "reference-counting"
-          },
-          "suppression": { "suppressed": true, "stale": false }
         }
       ],
       "unexpected": []
@@ -6683,6 +7083,90 @@
       "unexpected": []
     },
     {
+      "fixture": "require-and-url-by-their-symbols",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "AliasedFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "CreatedFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "GlobalUrlFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "NamespaceUrlFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "OwnFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        { "symbol": "ParenthesizedFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "ParenthesizedUrlFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "RenamedUrlFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "aliasedValue", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "createdValue", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "globalUrlValue", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "namespaceUrlValue", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "ownValue",
+          "result": "pass",
+          "actual": {
+            "report": "DS1002",
+            "symbol_kind": "variable",
+            "confidence": "probable",
+            "reachability_class": "certain",
+            "liveness_relation": "reachability"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "parenthesizedUrlValue", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "parenthesizedValue", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "renamedUrlValue", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "require-bindings-read-one-way",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "Chained", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Held",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "HeldFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        { "symbol": "ThreadFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "UnthreadedFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "require-declared-ambiently",
       "result": "pass",
       "expectations": [
@@ -6699,6 +7183,54 @@
         { "symbol": "WidgetFile", "result": "pass", "actual": { "report": "none" } },
         { "symbol": "plugin", "result": "pass", "actual": { "report": "none" } },
         { "symbol": "widget", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "require-literal-loads-its-file",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "LazyFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "probable",
+            "reachability_class": "certain"
+          }
+        },
+        { "symbol": "LoaderFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "PolyfillFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "ScriptFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "configured", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "deferred",
+          "result": "pass",
+          "actual": {
+            "report": "DS1002",
+            "symbol_kind": "variable",
+            "confidence": "probable",
+            "reachability_class": "certain",
+            "liveness_relation": "reachability"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "later",
+          "result": "pass",
+          "actual": {
+            "report": "DS1002",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "other", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "stamp", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "used", "result": "pass", "actual": { "report": "none" } }
       ],
       "unexpected": []
     },
@@ -8934,10 +9466,9 @@
     },
     {
       "fixture": "ts-generated-fact-evidence",
-      "result": "pending",
+      "result": "pass",
       "expectations": [],
-      "unexpected": [],
-      "message": "the first analysis exited 2: deadset-ts: unknown option \"--facts\"\nusage: deadset-ts <verb> [options]\nverbs: analyze, explain, print-config, print-projects, print-roots, print-retained, describe, version"
+      "unexpected": []
     },
     {
       "fixture": "type-argument-reaches-its-constraint",
@@ -9535,6 +10066,172 @@
       "unexpected": []
     },
     {
+      "fixture": "vitest-4-reads-no-workspace-file",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "FakeClock",
+          "result": "pass",
+          "actual": {
+            "report": "DS1102",
+            "symbol_kind": "function",
+            "confidence": "possible",
+            "reachability_class": "possible"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "NextSetup", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "OldSetup",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        {
+          "symbol": "OldWorkspace",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        {
+          "symbol": "OldWorkspaceDefault",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "export-alias",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "vitest-setup-files-in-every-argument",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "FakeClock",
+          "result": "pass",
+          "actual": {
+            "report": "DS1102",
+            "symbol_kind": "function",
+            "confidence": "possible",
+            "reachability_class": "possible"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "MergedSetup", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "vitest-workspace-file-by-version",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "PlainWorkspace",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        {
+          "symbol": "PlainWorkspaceDefault",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "export-alias",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "UnitSetup", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "worker-addresses-by-their-symbols",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "BesideFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        { "symbol": "DirectFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "EmittedFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "EvaluatedFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        {
+          "symbol": "IdleFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "probable",
+            "reachability_class": "certain"
+          }
+        },
+        { "symbol": "LocatedFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "OwnedFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        { "symbol": "RegisteredFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "RequiredFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "SharedFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "WebFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "idle",
+          "result": "pass",
+          "actual": {
+            "report": "DS1002",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "worker-augmented-platform-constructor",
       "result": "pass",
       "expectations": [
@@ -9565,7 +10262,16 @@
       "fixture": "worker-in-dead-function",
       "result": "pass",
       "expectations": [
-        { "symbol": "WorkerFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "WorkerFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "probable",
+            "reachability_class": "certain"
+          }
+        },
         {
           "symbol": "spawn",
           "result": "pass",
@@ -9597,7 +10303,16 @@
       "fixture": "worker-url-from-node-url",
       "result": "pass",
       "expectations": [
-        { "symbol": "WorkerFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "WorkerFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "probable",
+            "reachability_class": "certain"
+          }
+        },
         {
           "symbol": "spawn",
           "result": "pass",
