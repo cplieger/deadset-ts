@@ -7,7 +7,7 @@
 import type { SourceFile } from "@typescript/native/ast";
 import { resolveRelativeSpecifier } from "./configuration-files.ts";
 import type { Host } from "../host.ts";
-import { dirnamePath, joinPath, resolvePath } from "../paths.ts";
+import { dirnamePath, joinPath, resolvePath, startsRelativePath } from "../paths.ts";
 import type { SourceFiles } from "../source-files.ts";
 import { filesBelow } from "../fs/tree.ts";
 
@@ -154,7 +154,7 @@ function importedBy(
     }
     const matched = open === undefined ? IMPORT_LINE.exec(line) : null;
     const specifier = matched?.[2];
-    if (specifier?.startsWith("./") === true || specifier?.startsWith("../") === true) {
+    if (specifier !== undefined && startsRelativePath(specifier)) {
       found.push({ specifier, names: clauseNames(matched?.[1] ?? "") });
     }
   }

@@ -2,10 +2,10 @@ import { rmSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { nodeHost } from "../bin/node-host.ts";
 import { targetConfigFiles, writeProject } from "../__test-helpers__/projects.ts";
-import { aliasChains } from "./alias-chain.ts";
+import { runDirectories } from "./entries/run-directories.ts";
 import { discoverProjects } from "./load/discover.ts";
-import { indexedAccessReferences } from "./indexed-access.ts";
 import { inventory } from "./inventory/enumerate.ts";
+import { references } from "./references.ts";
 import { scopeForDir } from "./scope.ts";
 import { openEngine, runSession, type Engine } from "./session.ts";
 
@@ -15,7 +15,7 @@ const TSCONFIG = JSON.stringify({
 });
 
 /**
- * The indexed-access references of the project `main` is the one file of, each as
+ * The references to members the project `main` is the one file of makes, each as
  * `<from> -> <to>` by declaration name, while the checker panics on every question
  * through the accessor `unanswered`.
  */
@@ -39,11 +39,19 @@ function referencesOf(main: string, unanswered?: string): readonly string[] {
     runSession(engine, configFiles, (project) => {
       const held = inventory(project, host, root);
       const names = new Map(held.symbols.map((symbol) => [symbol.id, symbol.name]));
-      const chains = aliasChains(project, held);
       reading = true;
       try {
-        for (const one of indexedAccessReferences(project, held, chains, root, new Set())) {
-          found.add(`${names.get(one.from) ?? one.from} -> ${names.get(one.to) ?? one.to}`);
+        const read = references(project, held, root, {
+          testFile: () => false,
+          directories: runDirectories(host, root, (fileName, text) =>
+            opened.parseSourceFile(fileName, text),
+          ),
+        });
+        for (const one of read.references) {
+          const to = names.get(one.to) ?? one.to;
+          if (to.includes(".")) {
+            found.add(`${names.get(one.from) ?? one.from} -> ${to}`);
+          }
         }
       } finally {
         reading = false;

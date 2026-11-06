@@ -12,7 +12,15 @@ import {
 } from "@typescript/native/ast";
 import { resolveRelativeSpecifier, type ParseFile } from "./configuration-files.ts";
 import type { Host } from "../host.ts";
-import { ancestors, dirnamePath, joinPath, resolvePath } from "../paths.ts";
+import {
+  ancestors,
+  dirnamePath,
+  hasURLScheme,
+  isAbsolutePath,
+  isExplicitPath,
+  joinPath,
+  resolvePath,
+} from "../paths.ts";
 import type { SourceFiles } from "../source-files.ts";
 import { filesBelow } from "../fs/tree.ts";
 import { holdsManifest } from "../fs/manifest.ts";
@@ -32,14 +40,8 @@ const SCRIPT_END = /<\/script\s*>/iu;
 /** One attribute: a name, then a double-quoted, single-quoted or unquoted value. */
 const ATTRIBUTE = /([^\s"'=<>/]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/gu;
 
-/** A value that names a resource on another origin, or by another scheme. */
-const ELSEWHERE = /^(?:\/\/|[A-Za-z][A-Za-z\d+.-]*:)/u;
-
 /** The `type` values a classic script carries, compared in lowercase. */
 const CLASSIC_TYPES: ReadonlySet<string> = new Set(["text/javascript", "application/javascript"]);
-
-/** The prefixes an inline script's specifier names a file of the target with. */
-const FILE_PREFIXES = ["/", "./", "../"] as const;
 
 /** Each attribute of one start tag's attribute text, by its lowercase name. */
 function attributes(text: string): ReadonlyMap<string, string> {
@@ -94,9 +96,7 @@ function scriptValues(parse: ParseFile | undefined, path: string, text: string):
     const end = rest.search(SCRIPT_END);
     const content = end === -1 ? rest : rest.slice(0, end);
     values.push(
-      ...specifiersOf(parse, `${path}.${String(start)}.ts`, content).filter((specifier) =>
-        FILE_PREFIXES.some((prefix) => specifier.startsWith(prefix)),
-      ),
+      ...specifiersOf(parse, `${path}.${String(start)}.ts`, content).filter(isExplicitPath),
     );
   }
   return values;
@@ -132,18 +132,19 @@ export function htmlEntries(
     }
     const dir = dirnamePath(path);
     for (const value of scriptValues(parse, path, text)) {
-      if (ELSEWHERE.test(value)) {
+      // A value with a scheme, or one starting `//`, names a resource on another origin.
+      if (value.startsWith("//") || hasURLScheme(value)) {
         continue;
       }
-      const base = value.startsWith("/") ? manifestDirectory(host, root, dir) : dir;
-      const relative = value.startsWith("/") ? `.${value}` : value;
+      const base = isAbsolutePath(value) ? manifestDirectory(host, root, dir) : dir;
+      const relative = isAbsolutePath(value) ? `.${value}` : value;
       const reached = resolveRelativeSpecifier(host, base, relative);
       const file = reached === undefined ? undefined : files.byName.get(reached);
       if (file !== undefined) {
         found.push({ file, source: value });
         continue;
       }
-      const served = value.startsWith("/")
+      const served = isAbsolutePath(value)
         ? files.outputDirs.filter((outDir) => outDir === dir)
         : [];
       const emitting = [base, ...served].flatMap((against) =>

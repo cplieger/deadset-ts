@@ -2,8 +2,8 @@
  * The calls and decorators of one project that the configured classes read: what each
  * callee resolves to, and which of the target's classes a call passes or a decorator
  * is attached to. A class is passed as an argument, or as an element of an array
- * literal or a property value of an object literal written as one, at any depth, and a
- * decorator written as a call is a call.
+ * literal or a property value of an object literal written as one, at any depth, named
+ * directly or through variables, and a decorator written as a call is a call.
  */
 
 import {
@@ -18,6 +18,7 @@ import {
   isPropertyAssignment,
   isShorthandPropertyAssignment,
   isSpreadElement,
+  isVariableDeclaration,
   type CallExpression,
   type Decorator,
   type Expression,
@@ -28,6 +29,7 @@ import type { AliasChains } from "./alias-chain.ts";
 import { nodeKey, type Inventory } from "./inventory.ts";
 import { must } from "./query.ts";
 import type { ProjectView } from "./session.ts";
+import { unwrapped } from "./unwrap.ts";
 
 /** One value written where a call passes it, and the node its declaration is resolved from. */
 interface PassedValue {
@@ -145,8 +147,10 @@ export function valuesPassed(argument: Expression): readonly PassedValue[] {
 }
 
 /**
- * The classes of the target each call passes, by the call. A value that names no
- * class of the target, a class of another program included, passes nothing here.
+ * The classes of the target each call passes, by the call. A name that is no class is
+ * followed through the initializer of each variable it declares, so a class bound to a
+ * variable first is passed. A value that names no class of the target, a class of
+ * another program included, passes nothing here.
  */
 export function classesPassed<Brand>(
   project: ProjectView<Brand>,
@@ -165,13 +169,27 @@ export function classesPassed<Brand>(
   const classes = new Set(
     held.symbols.filter((symbol) => symbol.kind === "class").map((symbol) => symbol.id),
   );
+  const reached = (symbol: TSSymbol, seen: Set<number>): readonly string[] => {
+    const ids = chains.declarationsOf(symbol).filter((id) => classes.has(id));
+    if (ids.length > 0 || seen.has(symbol.id)) {
+      return ids;
+    }
+    seen.add(symbol.id);
+    return symbol.declarations.flatMap((handle) => {
+      const node = project.declarationAt(handle)?.node;
+      if (node === undefined || !isVariableDeclaration(node) || node.initializer === undefined) {
+        return [];
+      }
+      const name = calleeName(unwrapped(node.initializer));
+      const next = name === undefined ? undefined : resolvedTargets(project, [name]).get(name);
+      return next === undefined ? [] : reached(next, seen);
+    });
+  };
   const classesOf = (value: PassedValue): readonly string[] => {
     const symbol = value.shorthand
       ? must(project.shorthandValueAt(project.handle(value.name)))
       : targets.get(value.name);
-    return symbol === undefined
-      ? []
-      : chains.declarationsOf(symbol).filter((id) => classes.has(id));
+    return symbol === undefined ? [] : reached(symbol, new Set());
   };
   return new Map(
     [...passed].map(([call, values]) => [

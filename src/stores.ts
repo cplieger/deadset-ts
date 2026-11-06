@@ -13,6 +13,7 @@ import { nodeKey, type Inventory } from "./inventory.ts";
 import type { Reference } from "./references.ts";
 import type { ProjectView } from "./session.ts";
 import type { Exemption, Mode } from "./sweep.ts";
+import { classedAsTest, madeByTestCode, withheldBy } from "./tests/file-class.ts";
 
 /** One run's stores and reads, over every configuration. */
 export interface Stores {
@@ -39,6 +40,8 @@ export interface Stores {
 /** What one configuration contributes to the run's stores. */
 interface ConfigurationStores {
   readonly references: readonly Reference[];
+  /** The configuration's test-support files, whose references are test code's. */
+  readonly support: ReadonlySet<string>;
   readonly accessors: readonly string[];
 }
 
@@ -71,12 +74,20 @@ export function storesOf(
 ): Stores {
   return {
     references: per.flatMap((one) =>
-      one.references.filter((reference) => !mode.production || !reference.test),
+      one.references.filter((reference) => !withheldBy(mode, reference, one.support)),
     ),
     readInTests: new Set(
       per.flatMap((one) =>
         one.references
-          .filter((reference) => reference.test && reference.use !== "write")
+          .filter(
+            (reference) =>
+              reference.use !== "write" &&
+              classedAsTest(
+                madeByTestCode(reference, one.support),
+                reference.consumer !== undefined,
+                mode,
+              ),
+          )
           .map((reference) => reference.to),
       ),
     ),

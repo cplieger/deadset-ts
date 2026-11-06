@@ -164,6 +164,24 @@ describe("the classes a call passes", () => {
       "register(helper, unknownName):",
     ]);
   });
+
+  it("are the classes it names through variables, a variable named by another's initializer included", () => {
+    expect(
+      readCalls({
+        "main.ts": lines(
+          "class Alpha {}",
+          "declare function register(...values: unknown[]): void;",
+          "declare function make(): unknown;",
+          "const First = Alpha;",
+          "const Second = (First);",
+          "const Made = make();",
+          "var looped = again, again = looped;",
+          "register(Second);",
+          "register(Made, looped);",
+        ),
+      }).passed,
+    ).toEqual(["make():", "register(Second): Alpha@Second", "register(Made, looped):"]);
+  });
 });
 
 describe("the decorated classes", () => {

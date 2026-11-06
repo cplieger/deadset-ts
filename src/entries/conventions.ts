@@ -42,6 +42,7 @@ import {
 import type { Host } from "../host.ts";
 import {
   ancestors,
+  cannotStartPackageName,
   dirnamePath,
   joinPath,
   normalizePath,
@@ -683,7 +684,7 @@ function prefixedPackage(value: string, reading: PrefixedNameReading): string | 
   const { prefix, marker } = reading;
   let name: string;
   if (marker === undefined) {
-    if (value.includes(":") || value.startsWith(".") || value.startsWith("/")) {
+    if (value.includes(":") || cannotStartPackageName(value)) {
       return undefined;
     }
     const parts = value.split("/");

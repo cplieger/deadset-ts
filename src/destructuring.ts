@@ -213,17 +213,6 @@ function sourceOf(target: Node): Source | undefined {
   }
 }
 
-/** What resolving one project's property reads cost at the client boundary. */
-interface DestructuringCost {
-  /** Batched type lookups, one per capped run of a file's patterns and assigned values. */
-  readonly patternBatches: number;
-  /**
-   * Per-type lookups: one property table per distinct destructured type, and each step
-   * an assignment target takes into its assigned value.
-   */
-  readonly patternLookups: number;
-}
-
 /** Resolves property reads to the symbols the destructured values' types declare. */
 interface Destructuring {
   /**
@@ -232,7 +221,6 @@ interface Destructuring {
    * {@link UNANSWERED} where a question about the value's type went unanswered.
    */
   resolve(reads: readonly PropertyRead[]): readonly Answer<TSSymbol | undefined>[];
-  readonly cost: DestructuringCost;
 }
 
 /** A type along a destructuring, or the mark that a question about it went unanswered. */
@@ -250,8 +238,6 @@ export function destructuring<Brand>(
 ): Destructuring {
   const queries = project.queries;
   const tables = new Map<number, Answer<ReadonlyMap<string, TSSymbol>>>();
-  let patternBatches = 0;
-  let patternLookups = 0;
 
   const tableOf = (type: Type): Answer<ReadonlyMap<string, TSSymbol>> => {
     const known = tables.get(type.id);
@@ -261,7 +247,6 @@ export function destructuring<Brand>(
     let table: Answer<ReadonlyMap<string, TSSymbol>> = new Map<string, TSSymbol>();
     if ((type.flags & TypeFlags.AnyOrUnknown) === 0) {
       const read = properties.of(type);
-      patternLookups += read.asked ? 1 : 0;
       table = isAnswered(read.properties)
         ? new Map(read.properties.map((property) => [property.name, property]))
         : UNANSWERED;
@@ -274,7 +259,6 @@ export function destructuring<Brand>(
     if ((type.flags & TypeFlags.Union) === 0) {
       return type;
     }
-    patternLookups += 1;
     return queries.nonNullable(type);
   };
 
@@ -290,11 +274,9 @@ export function destructuring<Brand>(
       if (index === undefined) {
         return undefined;
       }
-      patternLookups += 1;
       const elements = queries.typeArguments(type);
       return isAnswered(elements) ? elements[index] : UNANSWERED;
     }
-    patternLookups += 1;
     const array = queries.isArray(type);
     if (!isAnswered(array)) {
       return UNANSWERED;
@@ -302,7 +284,6 @@ export function destructuring<Brand>(
     if (!array) {
       return undefined;
     }
-    patternLookups += 1;
     const elements = queries.typeArguments(type);
     return isAnswered(elements) ? elements[0] : UNANSWERED;
   };
@@ -320,7 +301,6 @@ export function destructuring<Brand>(
     if (more.length > 0) {
       return UNANSWERED;
     }
-    patternLookups += 1;
     return queries.typeOfSymbol(property);
   };
 
@@ -328,7 +308,6 @@ export function destructuring<Brand>(
     if (callee === undefined || callee === UNANSWERED) {
       return callee;
     }
-    patternLookups += 1;
     const signatures = queries.signaturesOf(callee, SignatureKind.Call);
     if (!isAnswered(signatures)) {
       return UNANSWERED;
@@ -337,7 +316,6 @@ export function destructuring<Brand>(
     if (signature === undefined) {
       return undefined;
     }
-    patternLookups += 1;
     return queries.returnTypeOf(signature);
   };
 
@@ -369,7 +347,6 @@ export function destructuring<Brand>(
     if (result !== undefined && result !== UNANSWERED) {
       let parts: Answer<readonly Type[]> = [result];
       if (result.isUnionType()) {
-        patternLookups += 1;
         parts = queries.constituents(result);
       }
       const values: readonly Found[] = isAnswered(parts)
@@ -403,7 +380,6 @@ export function destructuring<Brand>(
       if (property === undefined) {
         return undefined;
       }
-      patternLookups += 1;
       return queries.typeOfSymbol(property);
     }
     return elementOf(defined, next.index);
@@ -425,7 +401,6 @@ export function destructuring<Brand>(
       }
     }
     const asked = [...asking];
-    patternBatches += Math.ceil(asked.length / cap);
     const answered = new Map<Node, Found>();
     queries.typesAt(asked, cap).forEach((type, index) => {
       const node = asked[index];
@@ -456,10 +431,5 @@ export function destructuring<Brand>(
     });
   };
 
-  return {
-    resolve,
-    get cost() {
-      return { patternBatches, patternLookups };
-    },
-  };
+  return { resolve };
 }

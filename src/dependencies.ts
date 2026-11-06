@@ -29,6 +29,7 @@ import {
   type Node,
   type SourceFile,
 } from "@typescript/native/ast";
+import { amdLoadOf, amdPlatform } from "./amd.ts";
 import { automaticTypes, type AutomaticTypes } from "./automatic-types.ts";
 import {
   declaredIn as declaredBeside,
@@ -41,12 +42,13 @@ import {
 } from "./entries/configuration-files.ts";
 import type { FindingPosition } from "./finding.ts";
 import type { Host } from "./host.ts";
+import { declarationBindings } from "./import-bindings.ts";
 import { nodeKey, type Inventory } from "./inventory.ts";
 import { packageScope } from "./load/package-scope.ts";
 import {
   ancestors,
+  cannotStartPackageName,
   dirnamePath,
-  isAbsolutePath,
   joinPath,
   relativePath,
   resolvePath,
@@ -302,7 +304,7 @@ function configurationPackages(
     }
     seen.add(file);
     for (const entry of extendsOf(host, file, parse)) {
-      if (entry.startsWith(".") || isAbsolutePath(entry)) {
+      if (cannotStartPackageName(entry)) {
         const local = resolvePath(dirnamePath(file), entry);
         pending.push(local.endsWith(".json") ? local : `${local}.json`);
       } else {
@@ -332,26 +334,9 @@ function importOf(specifier: Node): Node | undefined {
 
 /** The local names one import declaration binds. */
 function bindingsOf(node: Node | undefined): readonly Texted[] {
-  if (node === undefined) {
-    return [];
-  }
-  if (isImportEqualsDeclaration(node)) {
-    return [node.name];
-  }
-  if (!isImportDeclaration(node) || node.importClause === undefined) {
-    return [];
-  }
-  const clause = node.importClause;
-  const names: Texted[] = clause.name === undefined ? [] : [clause.name];
-  const bindings = clause.namedBindings;
-  if (bindings !== undefined) {
-    if (bindings.kind === SyntaxKind.NamespaceImport) {
-      names.push(bindings.name);
-    } else {
-      names.push(...bindings.elements.map((element) => element.name));
-    }
-  }
-  return names;
+  return node !== undefined && (isImportDeclaration(node) || isImportEqualsDeclaration(node))
+    ? declarationBindings(node).map((binding) => binding.name)
+    : [];
 }
 
 /**
@@ -653,6 +638,7 @@ function fileNeeds<Brand>(
   }
   const loads = runtimeLoads(file);
   const callees = loads.flatMap((load) => load.callees);
+  const amdCallees = new Set(loads.flatMap((load) => (load.amd ? load.callees : [])));
 
   const asked = [
     ...specifiers,
@@ -748,11 +734,13 @@ function fileNeeds<Brand>(
       unansweredCallees.add(callee);
       return;
     }
-    // The decision reads the callee's symbol and its written name, and nothing else of it.
-    const key = symbol === undefined ? undefined : `${symbol.id}\u0000${callee.text}`;
+    // The decision reads the callee's symbol, its written name and its platform name, and nothing else.
+    const platform = amdCallees.has(callee) ? amdPlatform(callee) : "require";
+    const key =
+      symbol === undefined ? undefined : `${symbol.id}\u0000${platform}\u0000${callee.text}`;
     const answer =
       (key === undefined ? undefined : decided.get(key)) ??
-      callsPlatform(project, "require", callee, symbol, () => undefined);
+      callsPlatform(project, platform, callee, symbol);
     if (key !== undefined) {
       decided.set(key, answer);
     }
@@ -779,6 +767,8 @@ interface RuntimeLoad {
   readonly specifier: Texted;
   readonly named: string;
   readonly callees: readonly Identifier[];
+  /** Whether the specifier is an id of an AMD call's dependency list, its callee AMD's `define` or `require`. */
+  readonly amd: boolean;
 }
 
 /**
@@ -786,12 +776,21 @@ interface RuntimeLoad {
  * argument is literal text naming a package: a `require()` call, which the compiler lists among
  * a file's imports only in a JavaScript file and only through the bare name; a `.resolve` of
  * another name, which needs it where that name is a `require`; and `import.meta.resolve` or
- * a `.resolve` of the name `require`, whatever it names, a use where it stands.
+ * a `.resolve` of the name `require`, whatever it names, a use where it stands; and each id of
+ * an AMD dependency list (references-ts.37), which needs it where the call is AMD's.
  */
 function runtimeLoads(file: SourceFile): readonly RuntimeLoad[] {
   const found: RuntimeLoad[] = [];
   const visit = (node: Node): void => {
-    if (isCallExpression(node)) {
+    const amd = amdLoadOf(node);
+    if (amd !== undefined) {
+      for (const { id } of amd.ids) {
+        const named = packageOfSpecifier(id.text);
+        if (named !== undefined) {
+          found.push({ specifier: id, named, callees: [amd.callee], amd: true });
+        }
+      }
+    } else if (isCallExpression(node)) {
       const [argument] = node.arguments;
       if (argument !== undefined && isLiteralText(argument)) {
         const named = packageOfSpecifier(argument.text);
@@ -811,7 +810,7 @@ function runtimeLoads(file: SourceFile): readonly RuntimeLoad[] {
               receiver === undefined ? undefined : writtenName(receiver),
             ].filter((one) => one !== undefined);
         if (named !== undefined && (stands || callees.length > 0)) {
-          found.push({ specifier: argument, named, callees });
+          found.push({ specifier: argument, named, callees, amd: false });
         }
       }
     }

@@ -1,6 +1,6 @@
 /**
- * Which calls are the platform's `require` and which constructions its `URL` (roots.23,
- * references-ts.1), decided once over the bindings of the names a callee is written with: the
+ * Which calls are the platform's `require` or AMD's `define` and which constructions its `URL`
+ * (roots.23, references-ts.37, references-ts.1), decided once over the bindings of the names a callee is written with: the
  * checker's in a program, the file's own scopes in a module read outside every program.
  */
 
@@ -19,7 +19,7 @@ import {
 import { parenthesesRemoved, unwrapped } from "./unwrap.ts";
 
 /** A name of the platform the analysis reads calls of. */
-type PlatformName = "require" | "createRequire" | "URL";
+type PlatformName = "require" | "createRequire" | "define" | "URL";
 
 /** What one written name is bound to, as far as its reader can tell. */
 export interface Bound {

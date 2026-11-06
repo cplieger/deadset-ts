@@ -6,11 +6,15 @@
  * test code.
  */
 
-import { CONVENTION_ROWS, TEST_LIBRARIES, TEST_LIBRARY_SCOPES } from "./entries/convention-rows.ts";
-import { packageOfSpecifier } from "./dependencies.ts";
-import type { InventorySymbol } from "./inventory.ts";
-import type { Reference } from "./references.ts";
-import type { Root } from "./roots/root-set.ts";
+import {
+  CONVENTION_ROWS,
+  TEST_LIBRARIES,
+  TEST_LIBRARY_SCOPES,
+} from "../entries/convention-rows.ts";
+import { packageOfSpecifier } from "../dependencies.ts";
+import type { InventorySymbol } from "../inventory.ts";
+import type { Reference } from "../references.ts";
+import type { Root } from "../roots/root-set.ts";
 
 /** The root kind that never takes a file out of test-support code: the skip only withholds. */
 const SKIP_ROOT = "type-error";
@@ -213,19 +217,4 @@ export function testSupportFiles(
     new Set([...onlyTests].filter((path) => carries(onlyTests, path))),
   );
   return { support, testUsed: new Set([...onlyTests].filter((path) => !support.has(path))) };
-}
-
-/** The references with every one a test-support file makes counted as a test reference. */
-export function supportReferences(
-  references: readonly Reference[],
-  support: ReadonlySet<string>,
-): readonly Reference[] {
-  if (support.size === 0) {
-    return references;
-  }
-  return references.map((reference) =>
-    !reference.test && support.has(reference.position.path)
-      ? { ...reference, test: true }
-      : reference,
-  );
 }

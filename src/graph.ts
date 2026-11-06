@@ -7,6 +7,7 @@
 
 import type { InventorySymbol, SymbolKind } from "./inventory.ts";
 import type { Reference } from "./references.ts";
+import { madeByTestCode } from "./tests/file-class.ts";
 import type { Root, RootKind } from "./roots/root-set.ts";
 
 /** The position of a declaration the inventory does not hold. */
@@ -85,12 +86,22 @@ export interface Edge {
    * module's top level and none of what it exports.
    */
   readonly evaluation: boolean;
+  /**
+   * Whether a loaded consumer made it, whose test references a mode may class as
+   * production. Only a consumed edge can be one.
+   */
+  readonly consumer: boolean;
 }
 
-/** How many references one declaration carries, split by the classification of the file that made each. */
-interface Counts {
+/**
+ * How many references one declaration carries, split by the classification of the file that
+ * made each; `consumerTest` counts the test references a loaded consumer's test files made,
+ * which a mode may class as production (`sweep.ts` `countedRefs`).
+ */
+export interface Counts {
   readonly production: number;
   readonly test: number;
+  readonly consumerTest: number;
 }
 
 /** One root the inventory holds, at the position of the declaration it names. */
@@ -156,23 +167,30 @@ export function graphOf(
   const tests = new Set(testFiles);
 
   const out: Edge[][] = symbols.map(() => []);
-  const made = symbols.map(() => ({ production: 0, test: 0 }));
+  const made = symbols.map(() => ({ production: 0, test: 0, consumerTest: 0 }));
   const consumed: Edge[] = [];
   for (const reference of references) {
     const to = at(reference.to);
     if (to === OUTSIDE) {
       continue;
     }
+    const test = madeByTestCode(reference, supports);
     const counts = made[to];
     if (counts !== undefined) {
-      if (reference.test) {
+      if (test) {
         counts.test += 1;
+        counts.consumerTest += reference.consumer === undefined ? 0 : 1;
       } else {
         counts.production += 1;
       }
     }
-    const edge = { to, test: reference.test, evaluation: reference.use === "evaluation" };
-    if (reference.consumer !== undefined || reference.unheld === true) {
+    const edge = {
+      to,
+      test,
+      evaluation: reference.use === "evaluation",
+      consumer: reference.consumer !== undefined,
+    };
+    if (edge.consumer || reference.unheld === true) {
       consumed.push(edge);
       continue;
     }

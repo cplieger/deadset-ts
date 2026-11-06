@@ -3,10 +3,9 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { emitterInputOf, findingsOf } from "../__test-helpers__/emitter-input.ts";
 import { fixture } from "../__test-helpers__/fixtures.ts";
-import { analyzeProject, analyzeRoot } from "../__test-helpers__/projects.ts";
+import { analyzeProject, analyzeRoot, type Analyzed } from "../__test-helpers__/projects.ts";
 import { positionKey } from "./position.ts";
 import { resolve } from "./resolve.ts";
-import type { ReferenceCost } from "./references.ts";
 
 /** The fixture holding one instance of every destructuring form, resolved once for every case. */
 const TARGET = fixture("projects", "destructuring");
@@ -32,19 +31,10 @@ function readsAt(line: number): string[] {
   return READS.filter((read) => read.startsWith(`src/readers.ts:${String(line)}:`));
 }
 
-/** Every request the reference pass accounts for. */
-function accounted(cost: ReferenceCost | undefined): number {
-  return (
-    (cost?.fileBatches ?? 0) +
-    (cost?.residueFallbacks ?? 0) +
-    (cost?.shorthandLookups ?? 0) +
-    (cost?.aliasSteps ?? 0) +
-    (cost?.platformLookups ?? 0) +
-    (cost?.patternBatches ?? 0) +
-    (cost?.patternLookups ?? 0) +
-    (cost?.contextualBatches ?? 0) +
-    (cost?.contextualLookups ?? 0) +
-    (cost?.typedLookups ?? 0)
+/** The requests one analysis's reference pass put to the client, by accessor. */
+function asked(analyzed: Analyzed): Readonly<Record<string, number>> {
+  return Object.fromEntries(
+    [...(analyzed.referenceAsks[0] ?? new Map())].map(([accessor, one]) => [accessor, one.calls]),
   );
 }
 
@@ -137,14 +127,6 @@ describe("the members a destructuring reads", () => {
     ]);
   });
 
-  it("accounts for every request it makes", () => {
-    expect(RESOLVED?.cost.patternBatches, "one batch for the one module holding patterns").toBe(1);
-    expect(RESOLVED?.cost.typedLookups, "and the typed reads' batches of argument types").toBe(14);
-    expect(ANALYZED.referenceRequests, "and the client measured no other").toBe(
-      accounted(RESOLVED?.cost),
-    );
-  });
-
   it("reads an iterable's element through the iteration protocol, and by name where the protocol answers two", () => {
     const analyzed = analyzeProject(
       {
@@ -214,29 +196,29 @@ describe("the members a destructuring reads", () => {
   });
 
   it("reads one property table per destructured type, whatever the patterns over it", () => {
-    const over = (count: number): ReferenceCost | undefined =>
-      analyzeProject(
-        {
-          "unit.ts": [
-            "export interface Shape {\n  readonly a: number;\n  readonly b: number;\n}\n",
-            ...Array.from(
-              { length: count },
-              (_, index) =>
-                `export function read${String(index)}({ a, b }: Shape): number {\n  return a + b;\n}\n`,
-            ),
-          ].join("\n"),
-        },
-        { references: { testFiles: [] } },
-      ).references[0]?.cost;
+    const over = (count: number): Readonly<Record<string, number>> =>
+      asked(
+        analyzeProject(
+          {
+            "unit.ts": [
+              "export interface Shape {\n  readonly a: number;\n  readonly b: number;\n}\n",
+              ...Array.from(
+                { length: count },
+                (_, index) =>
+                  `export function read${String(index)}({ a, b }: Shape): number {\n  return a + b;\n}\n`,
+              ),
+            ].join("\n"),
+          },
+          { references: { testFiles: [] } },
+        ),
+      );
+    const one = over(1);
 
-    expect(over(1), "one pattern costs one batch and one table").toMatchObject({
-      patternBatches: 1,
-      patternLookups: 1,
-    });
-    expect(over(6), "and six over the same type cost the same").toMatchObject({
-      patternBatches: 1,
-      patternLookups: 1,
-    });
+    expect(one["getPropertiesOfType"], "one pattern reads the type's table").toBeGreaterThan(0);
+    expect(
+      [over(6)["getPropertiesOfType"], over(6)["getTypeAtLocation"]],
+      "and six over the same type read the same tables in the same batches",
+    ).toEqual([one["getPropertiesOfType"], one["getTypeAtLocation"]]);
   });
 });
 
@@ -256,7 +238,7 @@ const SHAPES = [
 function patternReads(
   body: string,
   panicsOn?: (accessor: string) => boolean,
-): { readonly reads: readonly string[]; readonly cost: ReferenceCost | undefined } {
+): { readonly reads: readonly string[]; readonly cost: Readonly<Record<string, number>> } {
   const analyzed = analyzeProject(
     { "unit.ts": `${SHAPES}\n${body}` },
     {
@@ -273,7 +255,7 @@ function patternReads(
         (one) =>
           `${String(one.position.line - offset)} ${symbols.find((symbol) => symbol.id === one.to)?.name ?? one.to} ${one.resolution}`,
       ),
-    cost: analyzed.references[0]?.cost,
+    cost: asked(analyzed),
   };
 }
 
@@ -301,9 +283,9 @@ describe("the members an assignment target reads", () => {
 
     expect(reads).toEqual(["3 Row.key destructured"]);
     expect(
-      cost,
-      "one batch and the tuple's element types: the row's table is the one an earlier pass read",
-    ).toMatchObject({ patternBatches: 1, patternLookups: 1 });
+      [cost["getPropertiesOfType"], cost["getTypeAtLocation"]],
+      "the tuple's element types and one table each: the row's table is the one an earlier read asked",
+    ).toEqual([5, 2]);
   });
 
   it("are read off an array's element type, asking once whether it is an array and once for the element", () => {
@@ -312,7 +294,7 @@ describe("the members an assignment target reads", () => {
     );
 
     expect(reads).toEqual(["3 Row.value destructured"]);
-    expect(cost).toMatchObject({ patternBatches: 1, patternLookups: 2 });
+    expect([cost["getPropertiesOfType"], cost["getTypeAtLocation"]]).toEqual([4, 2]);
   });
 
   it("are read by name where the checker does not answer whether the value is an array", () => {
@@ -330,24 +312,22 @@ describe("the members an assignment target reads", () => {
     );
 
     expect(reads).toEqual([]);
-    expect(cost).toMatchObject({ patternBatches: 1, patternLookups: 14 });
+    expect(cost["isArrayType"], "no array question for a string").toBeUndefined();
+    expect(cost["getReturnTypeOfSignature"], "the iteration protocol's lookups").toBe(2);
   });
 
   it("cost no non-nullable lookup where the value is no union, and one where it is", () => {
     expect(
       patternReads(
         'export function plain(row: Row): string {\n  let key = "";\n  ({ key } = row);\n  return key;\n}',
-      ).cost,
-      "no lookup of its own: the row's table is the one an earlier pass read",
-    ).toMatchObject({ patternBatches: 1, patternLookups: 0 });
+      ).cost["getNonNullableType"],
+      "no non-nullable lookup for a value that is no union",
+    ).toBeUndefined();
     const optional = patternReads(
       'export function optional(bag: Bag): string {\n  let note = "";\n  ({ extra: { note } = { note: "" } } = bag);\n  return note;\n}',
     );
     expect(optional.reads).toEqual(["3 Bag.extra destructured", "3 Extra.note destructured"]);
-    expect(
-      optional.cost,
-      "the member's type, its non-nullable part and that part's table",
-    ).toMatchObject({ patternBatches: 1, patternLookups: 3 });
+    expect(optional.cost["getNonNullableType"], "and one for the member's optional type").toBe(1);
   });
 
   it("is read where the assignment is a property's value in a literal that is no target", () => {
@@ -364,7 +344,10 @@ describe("the members an assignment target reads", () => {
     );
 
     expect(reads).toEqual([]);
-    expect(cost).toMatchObject({ patternBatches: 0, patternLookups: 0 });
+    expect(
+      [cost["isArrayType"], cost["getShorthandAssignmentValueSymbol"]],
+      "no pattern is asked about",
+    ).toEqual([undefined, undefined]);
   });
 });
 
@@ -389,7 +372,7 @@ describe("the members a binding pattern reads", () => {
     );
 
     expect(reads).toEqual([]);
-    expect(cost).toMatchObject({ patternBatches: 1, patternLookups: 0 });
+    expect(cost["getPropertiesOfType"], "no table for any").toBeUndefined();
   });
 });
 

@@ -27,4 +27,6 @@ export interface Boundary {
   readonly edges: readonly EdgeSide[];
   /** The members a function outside the analysis fills, which it may read unseen. */
   readonly filledOutside?: ReadonlySet<string>;
+  /** The files and declarations only a bundler's retry of an import Node leaves unresolved names. */
+  readonly possiblyLoaded?: ReadonlySet<string>;
 }

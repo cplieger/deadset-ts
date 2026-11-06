@@ -1,5 +1,6 @@
 import { CONTRACT_VERSION, EXIT_CLEAN, type Format } from "../contract/contract.generated.ts";
 import {
+  productionMode,
   runAnalysis,
   runBaselineWrite,
   unansweredCounts,
@@ -306,7 +307,7 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
 
   let recorded: readonly Recorded[];
   const root = runRelative(invoked, targetRoot);
-  const mode = { production: true };
+  const mode = productionMode(config);
   let analysis: RunAnalysis;
   if (documents.baseline === undefined) {
     analysis = runAnalysis(openClient(config), host, scoped, config, provenance, mode);
@@ -388,7 +389,7 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
   const factsPath = documents.facts;
   if (factsPath !== undefined) {
     writeDocument(host, factsPath, "name a path the run can write", () => [
-      factsDocument(version, run.generated),
+      factsDocument(version, run.generated, run.bindings),
     ]);
   }
   const options = {

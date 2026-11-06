@@ -132,6 +132,12 @@ const RUNTIME_OPTIONS = {
   node: { module: "nodenext", moduleResolution: "nodenext" },
 } as const satisfies Record<Runtime, Readonly<Record<string, string>>>;
 
+/** Whether one configuration is a program the run formed to resolve its modules as Node does. */
+export function formedForNode(configuration: Configuration): boolean {
+  const options = configuration.written?.["compilerOptions"];
+  return isRecord(options) && options["moduleResolution"] === RUNTIME_OPTIONS.node.moduleResolution;
+}
+
 /** The manifest members that say a package is written for Node. */
 const NODE_MEMBERS = ["main", "exports", "bin", "type"] as const;
 

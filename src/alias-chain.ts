@@ -49,8 +49,6 @@ export interface AliasChains {
    * link is declared.
    */
   nextDeclared(symbol: TSSymbol): readonly ChainTarget[];
-  /** How many steps the compiler was asked for: one per alias, whatever the chains it heads. */
-  readonly steps: number;
 }
 
 /**
@@ -65,7 +63,6 @@ export function aliasChains<Brand>(project: ProjectView<Brand>, held: Inventory)
   const ownFiles = project.ownPaths();
   const steps = new Map<number, Answer<TSSymbol | undefined>>();
   const chains = new Map<number, readonly ChainTarget[]>();
-  let asked = 0;
 
   const declarationsOf = (symbol: TSSymbol): string[] => {
     const ids: string[] = [];
@@ -102,7 +99,6 @@ export function aliasChains<Brand>(project: ProjectView<Brand>, held: Inventory)
       return steps.get(symbol.id);
     }
     const next = project.aliasStepOf(symbol);
-    asked += 1;
     steps.set(symbol.id, next);
     return next;
   };
@@ -197,8 +193,5 @@ export function aliasChains<Brand>(project: ProjectView<Brand>, held: Inventory)
     declarationsOf,
     chainOf,
     nextDeclared,
-    get steps() {
-      return asked;
-    },
   };
 }

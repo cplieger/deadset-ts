@@ -7,7 +7,8 @@
  */
 
 import type { TSExemptionClass } from "./exempt-classes.ts";
-import { namesACaller, OUTSIDE, type Edge, type Graph } from "./graph.ts";
+import { namesACaller, OUTSIDE, type Counts, type Edge, type Graph } from "./graph.ts";
+import { edgeWithheldBy } from "./tests/file-class.ts";
 import type { InventorySymbol } from "./inventory.ts";
 import type { Position } from "./position.ts";
 
@@ -54,6 +55,32 @@ export interface Mode {
    * in a test file makes is such a reference, so nothing only a test reaches is live.
    */
   readonly production: boolean;
+  /**
+   * Classes a reference a loaded consumer's test file made as a production one rather than a
+   * test one, `analysis.consumer_tests` at `production`: a classification, not a filter, so it
+   * decides the split a candidate reports as well as what a production sweep counts.
+   */
+  readonly consumerTestsProduction?: boolean;
+}
+
+/** The references to one declaration the mode counts: under `production` none test code made but those it classes as production. */
+function countedRefs(made: Counts | undefined, mode: Mode): number {
+  if (made === undefined) {
+    return 0;
+  }
+  if (!mode.production) {
+    return made.production + made.test;
+  }
+  return made.production + (mode.consumerTestsProduction === true ? made.consumerTest : 0);
+}
+
+/** The references to one declaration, split as the mode classes them, whatever it counts. */
+export function splitRefs(
+  made: Counts | undefined,
+  mode: Mode,
+): { readonly production: number; readonly test: number } {
+  const moved = mode.consumerTestsProduction === true ? (made?.consumerTest ?? 0) : 0;
+  return { production: (made?.production ?? 0) + moved, test: (made?.test ?? 0) - moved };
 }
 
 /** What one sweep runs over besides the graph. */
@@ -134,13 +161,7 @@ export function sweep(graph: Graph, input: SweepInput): Liveness {
     }
   }
 
-  const counted = (at: number): number => {
-    const made = graph.made[at];
-    if (made === undefined) {
-      return 0;
-    }
-    return input.mode.production ? made.production : made.production + made.test;
-  };
+  const counted = (at: number): number => countedRefs(graph.made[at], input.mode);
   const reached = reachable(graph, held, input.mode);
   const liveUnder = graph.symbols.map((_symbol, at): readonly Relation[] => {
     const relations: Relation[] = [];
@@ -169,10 +190,11 @@ export function sweep(graph: Graph, input: SweepInput): Liveness {
     if (dead[at] !== true) {
       return;
     }
+    const split = splitRefs(graph.made[at], input.mode);
     candidates.push({
       id: symbol.id,
-      productionRefs: graph.made[at]?.production ?? 0,
-      testRefs: graph.made[at]?.test ?? 0,
+      productionRefs: split.production,
+      testRefs: split.test,
       relation: counted(at) === 0 ? "reference-counting" : "reachability",
       testOfDeadCode: testOfDeadCode[at] === true,
     });
@@ -223,11 +245,12 @@ export function reachedWithTheTests(
 }
 
 /**
- * The references a loaded consumer makes that the mode counts. A production mode counts
- * none a consumer's test file made, as it counts none of the target's.
+ * The references a loaded consumer or an unheld file makes that the mode counts. A
+ * production mode counts no test reference, but a loaded consumer's where the mode classes
+ * a consumer's tests as production.
  */
 function callsOf(graph: Graph, mode: Mode): readonly Edge[] {
-  return graph.consumed.filter((edge) => !mode.production || !edge.test);
+  return graph.consumed.filter((edge) => !edgeWithheldBy(mode, edge));
 }
 
 /** Per declaration of the graph, whether one of the identifiers names it. */
@@ -280,7 +303,7 @@ function reachable(
   const walk = (holding: boolean): void => {
     for (let at = queue.pop(); at !== undefined; at = queue.pop()) {
       for (const edge of graph.out[at] ?? []) {
-        if (!holding && mode.production && edge.test) {
+        if (!holding && edgeWithheldBy(mode, edge)) {
           continue;
         }
         enter(edge.to, namespaces && !edge.evaluation);

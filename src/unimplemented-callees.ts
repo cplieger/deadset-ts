@@ -37,12 +37,8 @@ import {
   type SourceFile,
 } from "@typescript/native/ast";
 import { SymbolFlags, type Symbol as TSSymbol, type Type } from "@typescript/native/sync";
-import type { AliasChains } from "./alias-chain.ts";
-import { nodeKey, type Inventory } from "./inventory.ts";
-import { renderPosition } from "./position.ts";
 import { UNANSWERED } from "./query.ts";
-import type { Reference } from "./references.ts";
-import type { ProjectView } from "./session.ts";
+import type { Read, ReadRule } from "./references/read-rule.ts";
 
 /** One call or construction passing an object literal, and the declaration that writes it. */
 interface Passing {
@@ -118,294 +114,315 @@ function literalsOf(argument: Expression): readonly ObjectLiteralExpression[] {
 }
 
 /**
- * The reads the object-literal arguments of one project's own files make of the members of
- * the types they are checked against, where the callee has no implementation in the target.
+ * The reads the object-literal arguments of a side's files make of the members of the types
+ * they are checked against, where the callee has no implementation in the target, and the
+ * reads of every member of each target type an outside value is handed over as. A type the
+ * checker leaves unanswered holds what its answer could have read.
  */
-export function unimplementedCalleeReads<Brand>(
-  project: ProjectView<Brand>,
-  held: Inventory,
-  chains: AliasChains,
-  root: string,
-  testFiles: ReadonlySet<string>,
-): readonly Reference[] {
-  const queries = project.queries;
-  const own = project.ownPaths();
-  const passing: Passing[] = [];
-  const implementing: Node[] = [];
-  const asserted: (HandedOver & { readonly operand: Expression })[] = [];
-  const constructed: Passing[] = [];
-  const handing: (CallExpression | NewExpression)[] = [];
-  for (const file of project.ownSourceFiles()) {
-    const fileId = held.declarations.get(nodeKey(file, file));
-    if (fileId === undefined) {
-      continue;
-    }
-    const visit = (node: Node, from: string): void => {
-      const holder = held.declarations.get(nodeKey(file, node)) ?? from;
-      if (
-        (isCallExpression(node) || isNewExpression(node)) &&
-        (node.arguments ?? []).some((argument) => isObjectLiteralExpression(argument))
-      ) {
-        passing.push({ file, from: holder, call: node });
-      }
-      if (isNewExpression(node)) {
-        constructed.push({ file, from: holder, call: node });
-      }
-      if (
-        (isCallExpression(node) || isNewExpression(node)) &&
-        (node.arguments ?? []).some(
-          (argument) => isFunctionLike(argument) || isIdentifier(argument),
-        )
-      ) {
-        handing.push(node);
-      }
-      if (isAsExpression(node) && !isAsExpression(node.parent)) {
-        asserted.push({ file, from: holder, node, operand: castOperand(node) });
-      }
-      if (isClassDeclaration(node) || isClassExpression(node)) {
-        for (const clause of node.heritageClauses ?? []) {
-          if (isHeritageClause(clause)) {
-            implementing.push(
-              ...clause.types.map((one) =>
-                isTypeReferenceNode(one) ? one.typeName : one.expression,
-              ),
-            );
+export const unimplementedCallees: ReadRule = {
+  start() {
+    const passing: Passing[] = [];
+    const implementing: Node[] = [];
+    const asserted: (HandedOver & { readonly operand: Expression })[] = [];
+    const constructed: Passing[] = [];
+    const handing: (CallExpression | NewExpression)[] = [];
+    return {
+      visit(node, { file, from }) {
+        if (
+          (isCallExpression(node) || isNewExpression(node)) &&
+          (node.arguments ?? []).some((argument) => isObjectLiteralExpression(argument))
+        ) {
+          passing.push({ file, from, call: node });
+        }
+        if (isNewExpression(node)) {
+          constructed.push({ file, from, call: node });
+        }
+        if (
+          (isCallExpression(node) || isNewExpression(node)) &&
+          (node.arguments ?? []).some(
+            (argument) => isFunctionLike(argument) || isIdentifier(argument),
+          )
+        ) {
+          handing.push(node);
+        }
+        if (isAsExpression(node) && !isAsExpression(node.parent)) {
+          asserted.push({ file, from, node, operand: castOperand(node) });
+        }
+        if (isClassDeclaration(node) || isClassExpression(node)) {
+          for (const clause of node.heritageClauses ?? []) {
+            if (isHeritageClause(clause)) {
+              implementing.push(
+                ...clause.types.map((one) =>
+                  isTypeReferenceNode(one) ? one.typeName : one.expression,
+                ),
+              );
+            }
           }
         }
-      }
-      // An object literal typed as an interface implements that interface's methods.
-      if (
-        isVariableDeclaration(node) &&
-        node.type !== undefined &&
-        isTypeReferenceNode(node.type) &&
-        node.initializer !== undefined &&
-        isObjectLiteralExpression(node.initializer)
-      ) {
-        implementing.push(node.type.typeName);
-      }
-      if (
-        (isSatisfiesExpression(node) || isAsExpression(node)) &&
-        isObjectLiteralExpression(node.expression) &&
-        isTypeReferenceNode(node.type)
-      ) {
-        implementing.push(node.type.typeName);
-      }
-      node.forEachChild((child) => {
-        visit(child, holder);
-      });
-    };
-    file.forEachChild((child) => {
-      visit(child, fileId);
-    });
-  }
-  if (passing.length === 0 && asserted.length === 0 && constructed.length === 0) {
-    return [];
-  }
+        // An object literal typed as an interface implements that interface's methods.
+        if (
+          isVariableDeclaration(node) &&
+          node.type !== undefined &&
+          isTypeReferenceNode(node.type) &&
+          node.initializer !== undefined &&
+          isObjectLiteralExpression(node.initializer)
+        ) {
+          implementing.push(node.type.typeName);
+        }
+        if (
+          (isSatisfiesExpression(node) || isAsExpression(node)) &&
+          isObjectLiteralExpression(node.expression) &&
+          isTypeReferenceNode(node.type)
+        ) {
+          implementing.push(node.type.typeName);
+        }
+      },
+      reads({ project, chains }) {
+        const queries = project.queries;
+        const own = project.ownPaths();
+        const found: Read[] = [];
+        if (passing.length === 0 && asserted.length === 0 && constructed.length === 0) {
+          return found;
+        }
 
-  const resolved = (symbol: TSSymbol | undefined | typeof UNANSWERED): TSSymbol | undefined => {
-    if (symbol === UNANSWERED || symbol === undefined) {
-      return undefined;
-    }
-    if ((symbol.flags & SymbolFlags.Alias) === 0) {
-      return symbol;
-    }
-    const target = queries.aliased(symbol);
-    return target === UNANSWERED ? undefined : target;
-  };
-  const declarationsOf = (symbol: TSSymbol | undefined): readonly Node[] =>
-    (symbol?.declarations ?? []).flatMap((handle) => {
-      const node = project.declarationAt(handle)?.node;
-      return node === undefined ? [] : [node];
-    });
+        const resolved = (
+          symbol: TSSymbol | undefined | typeof UNANSWERED,
+        ): TSSymbol | undefined => {
+          if (symbol === UNANSWERED || symbol === undefined) {
+            return undefined;
+          }
+          if ((symbol.flags & SymbolFlags.Alias) === 0) {
+            return symbol;
+          }
+          const target = queries.aliased(symbol);
+          return target === UNANSWERED ? undefined : target;
+        };
+        const declarationsOf = (symbol: TSSymbol | undefined): readonly Node[] =>
+          (symbol?.declarations ?? []).flatMap((handle) => {
+            const node = project.declarationAt(handle)?.node;
+            return node === undefined ? [] : [node];
+          });
 
-  const implemented = new Set<Node>(
-    queries.symbolsAt(implementing).flatMap((symbol) => declarationsOf(resolved(symbol))),
-  );
+        const implemented = new Set<Node>(
+          queries.symbolsAt(implementing).flatMap((symbol) => declarationsOf(resolved(symbol))),
+        );
 
-  /** Whether a declaration is a function or a class of the target, or a variable or property it initializes. */
-  const ownFunction = (node: Node): boolean =>
-    own.has(node.getSourceFile().fileName) &&
-    (isFunctionLike(node) ||
-      ((isVariableDeclaration(node) || isPropertyAssignment(node) || isPropertyDeclaration(node)) &&
-        isFunctionLike(node.initializer)));
+        /** Whether a declaration is a function or a class of the target, or a variable or property it initializes. */
+        const ownFunction = (node: Node): boolean =>
+          own.has(node.getSourceFile().fileName) &&
+          (isFunctionLike(node) ||
+            ((isVariableDeclaration(node) ||
+              isPropertyAssignment(node) ||
+              isPropertyDeclaration(node)) &&
+              isFunctionLike(node.initializer)));
 
-  /**
-   * Whether a function or a class of the target reaches one parameter of a function of the
-   * target, passed for it by a call that names the function. A call through another name
-   * is not followed, so its callee keeps no implementation and its literal reads more.
-   */
-  const reachedParameters = new Map<ParameterDeclaration, boolean>();
-  const parameterReached = (parameter: ParameterDeclaration): boolean => {
-    const known = reachedParameters.get(parameter);
-    if (known !== undefined) {
-      return known;
-    }
-    const fn = parameter.parent;
-    const fnName = nameOf(fn) ?? (isVariableDeclaration(fn.parent) ? nameOf(fn.parent) : undefined);
-    const at =
-      (fn as { readonly parameters?: readonly Node[] }).parameters?.indexOf(parameter) ?? -1;
-    const passed = handing.flatMap((call) => {
-      const callee = call.expression;
-      const name = isPropertyAccessExpression(callee) ? callee.name : callee;
-      if (fnName === undefined || !isIdentifier(name) || name.text !== fnName) {
-        return [];
-      }
-      const signature = queries.resolvedSignature(call);
-      const handle =
-        signature === UNANSWERED || signature === undefined ? undefined : signature.declaration;
-      const argument =
-        handle === undefined || project.declarationAt(handle)?.node !== fn
-          ? undefined
-          : (call.arguments ?? [])[at];
-      return argument === undefined || at < 0 ? [] : [argument];
-    });
-    const named = passed.filter((argument) => isIdentifier(argument));
-    const reached =
-      passed.some((argument) => isFunctionLike(argument)) ||
-      queries
-        .symbolsAt(named)
-        .some((symbol) => declarationsOf(resolved(symbol)).some((node) => ownFunction(node)));
-    reachedParameters.set(parameter, reached);
-    return reached;
-  };
+        /**
+         * Whether a function or a class of the target reaches one parameter of a function of the
+         * target, passed for it by a call that names the function. A call through another name
+         * is not followed, so its callee keeps no implementation and its literal reads more.
+         */
+        const reachedParameters = new Map<ParameterDeclaration, boolean>();
+        const parameterReached = (parameter: ParameterDeclaration): boolean => {
+          const known = reachedParameters.get(parameter);
+          if (known !== undefined) {
+            return known;
+          }
+          const fn = parameter.parent;
+          const fnName =
+            nameOf(fn) ?? (isVariableDeclaration(fn.parent) ? nameOf(fn.parent) : undefined);
+          const at =
+            (fn as { readonly parameters?: readonly Node[] }).parameters?.indexOf(parameter) ?? -1;
+          const passed = handing.flatMap((call) => {
+            const callee = call.expression;
+            const name = isPropertyAccessExpression(callee) ? callee.name : callee;
+            if (fnName === undefined || !isIdentifier(name) || name.text !== fnName) {
+              return [];
+            }
+            const signature = queries.resolvedSignature(call);
+            const handle =
+              signature === UNANSWERED || signature === undefined
+                ? undefined
+                : signature.declaration;
+            const argument =
+              handle === undefined || project.declarationAt(handle)?.node !== fn
+                ? undefined
+                : (call.arguments ?? [])[at];
+            return argument === undefined || at < 0 ? [] : [argument];
+          });
+          const named = passed.filter((argument) => isIdentifier(argument));
+          const reached =
+            passed.some((argument) => isFunctionLike(argument)) ||
+            queries
+              .symbolsAt(named)
+              .some((symbol) => declarationsOf(resolved(symbol)).some((node) => ownFunction(node)));
+          reachedParameters.set(parameter, reached);
+          return reached;
+        };
 
-  /** Whether some function, class or object literal of the target stands for a signature. */
-  const standsFor = (passed: Passing): boolean => {
-    const signature = queries.resolvedSignature(passed.call);
-    const handle =
-      signature === UNANSWERED || signature === undefined ? undefined : signature.declaration;
-    const declaration = handle === undefined ? undefined : project.declarationAt(handle)?.node;
-    if (declaration === undefined) {
-      return true;
-    }
-    if (hasBody(declaration) || overloadImplemented(declaration)) {
-      return own.has(handle?.path ?? "");
-    }
-    const holder = declaration.parent as Node | undefined;
-    if (holder !== undefined && implemented.has(holder)) {
-      return true;
-    }
-    const callee = passed.call.expression;
-    const name = isPropertyAccessExpression(callee) ? callee.name : callee;
-    const [named] = queries.symbolsAt([name]);
-    return declarationsOf(resolved(named)).some((node) =>
-      isParameterDeclaration(node)
-        ? own.has(node.getSourceFile().fileName) && parameterReached(node)
-        : ownFunction(node) && !isFunctionLike(node),
-    );
-  };
+        /** Whether some function, class or object literal of the target stands for a signature. */
+        const standsFor = (passed: Passing): boolean => {
+          const signature = queries.resolvedSignature(passed.call);
+          // A callee the checker cannot resolve may be code the target cannot see.
+          if (signature === UNANSWERED) {
+            return false;
+          }
+          const handle = signature?.declaration;
+          const declaration =
+            handle === undefined ? undefined : project.declarationAt(handle)?.node;
+          if (declaration === undefined) {
+            return true;
+          }
+          if (hasBody(declaration) || overloadImplemented(declaration)) {
+            return own.has(handle?.path ?? "");
+          }
+          const holder = declaration.parent as Node | undefined;
+          if (holder !== undefined && implemented.has(holder)) {
+            return true;
+          }
+          const callee = passed.call.expression;
+          const name = isPropertyAccessExpression(callee) ? callee.name : callee;
+          const [named] = queries.symbolsAt([name]);
+          return declarationsOf(resolved(named)).some((node) =>
+            isParameterDeclaration(node)
+              ? own.has(node.getSourceFile().fileName) && parameterReached(node)
+              : ownFunction(node) && !isFunctionLike(node),
+          );
+        };
 
-  const literals: { readonly passed: Passing; readonly literal: ObjectLiteralExpression }[] = [];
-  for (const passed of passing) {
-    if (standsFor(passed)) {
-      continue;
-    }
-    for (const argument of passed.call.arguments ?? []) {
-      literals.push(...literalsOf(argument).map((literal) => ({ passed, literal })));
-    }
-  }
-  const contexts = queries.contextualTypes(literals.map((one) => one.literal));
+        const literals: { readonly passed: Passing; readonly literal: ObjectLiteralExpression }[] =
+          [];
+        for (const passed of passing) {
+          if (standsFor(passed)) {
+            continue;
+          }
+          for (const argument of passed.call.arguments ?? []) {
+            literals.push(...literalsOf(argument).map((literal) => ({ passed, literal })));
+          }
+        }
+        const contexts = queries.contextualTypes(literals.map((one) => one.literal));
 
-  const found: Reference[] = [];
-  literals.forEach(({ passed, literal }, at) => {
-    const context = contexts[at];
-    if (context === UNANSWERED || context === undefined) {
-      return;
-    }
-    const parts = queries.constituents(context);
-    const position = renderPosition(passed.file, root, literal.getStart());
-    for (const part of parts === UNANSWERED ? [context] : parts) {
-      const properties = queries.propertiesOf(part);
-      for (const property of properties === UNANSWERED ? [] : properties) {
-        for (const to of chains.declarationsOf(property)) {
-          found.push({
-            from: passed.from,
-            to,
-            position,
-            use: "read",
-            resolution: "contextual",
-            test: testFiles.has(position.path),
+        literals.forEach(({ passed, literal }, at) => {
+          const context = contexts[at];
+          if (context === UNANSWERED) {
+            found.push({ kind: "held", from: passed.from, names: propertyNames(literal) });
+            return;
+          }
+          if (context === undefined) {
+            return;
+          }
+          const parts = queries.constituents(context);
+          for (const part of parts === UNANSWERED ? [context] : parts) {
+            const properties = queries.propertiesOf(part);
+            if (properties === UNANSWERED) {
+              found.push({ kind: "held", from: passed.from, names: propertyNames(literal) });
+              continue;
+            }
+            for (const property of properties) {
+              for (const to of chains.declarationsOf(property)) {
+                found.push({
+                  kind: "named",
+                  from: passed.from,
+                  to,
+                  file: passed.file,
+                  at: literal,
+                  use: "read",
+                  via: "contextual",
+                });
+              }
+            }
+          }
+        });
+        handedOver();
+        return found;
+
+        /** Whether a type is an object no file of the project declares, a platform object's among them. */
+        function outsideValue(type: Type): boolean {
+          if (!type.isObjectType()) {
+            return false;
+          }
+          const symbol = queries.symbolOfType(type);
+          const declared = symbol === UNANSWERED ? undefined : symbol;
+          return declared?.declarations.every((handle) => !own.has(handle.path)) === true;
+        }
+
+        /** Whether a type is an object type a file of the project declares. */
+        function ownObject(type: Type | undefined | typeof UNANSWERED): type is Type {
+          const known = type === UNANSWERED ? undefined : type;
+          if (!known?.isObjectType()) {
+            return false;
+          }
+          const symbol = queries.symbolOfType(known);
+          const declared = symbol === UNANSWERED ? undefined : symbol;
+          return declared?.declarations.some((handle) => own.has(handle.path)) === true;
+        }
+
+        /** The reads of every member of each target type an outside value is handed over as. */
+        function handedOver(): void {
+          const operandTypes = queries.typesAt(asserted.map((one) => one.operand));
+          // An operand the checker cannot type may be an outside value.
+          const fromCasts: HandedOver[] = asserted.filter((_one, at) => {
+            const type = operandTypes[at];
+            return type === UNANSWERED || (type !== undefined && outsideValue(type));
+          });
+          const newTypes = queries.typesAt(constructed.map((one) => one.call));
+          // A construct signature whose declared result is one of its type parameters names no
+          // type the target declares, so only a result the signature itself names is handed over.
+          const fromConstructors: HandedOver[] = constructed
+            .filter((one, at) => {
+              if (!ownObject(newTypes[at]) || standsFor(one)) {
+                return false;
+              }
+              const signature = queries.resolvedSignature(one.call);
+              const result =
+                signature === UNANSWERED || signature === undefined
+                  ? undefined
+                  : queries.returnTypeOf(signature);
+              return result !== UNANSWERED && result !== undefined && !result.isTypeParameter();
+            })
+            .map((one) => ({ file: one.file, from: one.from, node: one.call }));
+          const handed = [...fromCasts, ...fromConstructors];
+          const types = queries.typesAt(handed.map((one) => one.node));
+          handed.forEach((one, at) => {
+            const type = types[at];
+            if (type === UNANSWERED) {
+              found.push({ kind: "held", from: one.from, members: true });
+              return;
+            }
+            if (type === undefined) {
+              return;
+            }
+            const parts = queries.constituents(type);
+            for (const part of parts === UNANSWERED ? [type] : parts) {
+              if (!ownObject(part)) {
+                continue;
+              }
+              const properties = queries.propertiesOf(part);
+              if (properties === UNANSWERED) {
+                found.push({ kind: "held", from: one.from, types: [part] });
+                continue;
+              }
+              for (const property of properties) {
+                for (const to of chains.declarationsOf(property)) {
+                  found.push({
+                    kind: "named",
+                    from: one.from,
+                    to,
+                    file: one.file,
+                    at: one.node,
+                    use: "read",
+                    via: "contextual",
+                  });
+                }
+              }
+            }
           });
         }
-      }
-    }
-  });
-  found.push(...handedOver());
-  return found;
+      },
+    };
+  },
+};
 
-  /** Whether a type is an object no file of the project declares, a platform object's among them. */
-  function outsideValue(type: Type): boolean {
-    if (!type.isObjectType()) {
-      return false;
-    }
-    const symbol = queries.symbolOfType(type);
-    const declared = symbol === UNANSWERED ? undefined : symbol;
-    return declared?.declarations.every((handle) => !own.has(handle.path)) === true;
-  }
-
-  /** Whether a type is an object type a file of the project declares. */
-  function ownObject(type: Type | undefined | typeof UNANSWERED): type is Type {
-    const known = type === UNANSWERED ? undefined : type;
-    if (!known?.isObjectType()) {
-      return false;
-    }
-    const symbol = queries.symbolOfType(known);
-    const declared = symbol === UNANSWERED ? undefined : symbol;
-    return declared?.declarations.some((handle) => own.has(handle.path)) === true;
-  }
-
-  /** The reads of every member of each target type an outside value is handed over as. */
-  function handedOver(): readonly Reference[] {
-    const operandTypes = queries.typesAt(asserted.map((one) => one.operand));
-    const fromCasts: HandedOver[] = asserted.filter((_one, at) => {
-      const type = operandTypes[at];
-      return type !== UNANSWERED && type !== undefined && outsideValue(type);
-    });
-    const newTypes = queries.typesAt(constructed.map((one) => one.call));
-    // A construct signature whose declared result is one of its type parameters names no
-    // type the target declares, so only a result the signature itself names is handed over.
-    const fromConstructors: HandedOver[] = constructed
-      .filter((one, at) => {
-        if (!ownObject(newTypes[at]) || standsFor(one)) {
-          return false;
-        }
-        const signature = queries.resolvedSignature(one.call);
-        const result =
-          signature === UNANSWERED || signature === undefined
-            ? undefined
-            : queries.returnTypeOf(signature);
-        return result !== UNANSWERED && result !== undefined && !result.isTypeParameter();
-      })
-      .map((one) => ({ file: one.file, from: one.from, node: one.call }));
-    const handed = [...fromCasts, ...fromConstructors];
-    const types = queries.typesAt(handed.map((one) => one.node));
-    const reads: Reference[] = [];
-    handed.forEach((one, at) => {
-      const type = types[at];
-      if (type === UNANSWERED || type === undefined) {
-        return;
-      }
-      const position = renderPosition(one.file, root, one.node.getStart());
-      const parts = queries.constituents(type);
-      for (const part of parts === UNANSWERED ? [type] : parts) {
-        if (!ownObject(part)) {
-          continue;
-        }
-        const properties = queries.propertiesOf(part);
-        for (const property of properties === UNANSWERED ? [] : properties) {
-          for (const to of chains.declarationsOf(property)) {
-            reads.push({
-              from: one.from,
-              to,
-              position,
-              use: "read",
-              resolution: "contextual",
-              test: testFiles.has(position.path),
-            });
-          }
-        }
-      }
-    });
-    return reads;
-  }
+/** The names an object literal's own properties spell. */
+function propertyNames(literal: ObjectLiteralExpression): readonly string[] {
+  return literal.properties.flatMap((property) => nameOf(property) ?? []);
 }

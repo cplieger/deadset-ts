@@ -6,7 +6,7 @@
  * the command unread.
  */
 
-import { resolvePath } from "../paths.ts";
+import { hasURLScheme, isPathSpecifier, resolvePath } from "../paths.ts";
 import type { Word } from "./shell.ts";
 
 /** One module a runtime loads before its entry, and the resolution its option names it by. */
@@ -92,12 +92,6 @@ function optionsOf(words: readonly Word[], options: Options): Read | undefined {
   return { values, at: words.length, ended: false };
 }
 
-/** A specifier that starts with a URL scheme, `file:` and `node:` among them. */
-const SCHEME = /^[a-z][a-z\d+.-]*:/iu;
-
-/** A specifier written as a path: `.`, `..`, or one starting `./`, `../` or `/`. */
-const RELATIVE = /^(?:\.{1,2}(?:\/|$)|\/)/u;
-
 /**
  * The path a URL's path text names, percent-decoded as Node's `fileURLToPath` does, with a
  * backslash read as the URL parser reads it, or `undefined` where it does not decode or
@@ -127,19 +121,19 @@ export function preloadTarget(
 ): { readonly path: string } | { readonly package: string } | undefined {
   const { specifier, resolution } = preload;
   if (resolution === "require") {
-    return RELATIVE.test(specifier)
+    return isPathSpecifier(specifier)
       ? { path: resolvePath(dir, specifier) }
-      : SCHEME.test(specifier)
+      : hasURLScheme(specifier)
         ? undefined
         : { package: specifier };
   }
-  if (!RELATIVE.test(specifier) && !SCHEME.test(specifier)) {
+  if (!isPathSpecifier(specifier) && !hasURLScheme(specifier)) {
     return { package: specifier };
   }
   const local = /^file:(?:\/\/(?=\/))?/iu.exec(specifier);
   const rest = specifier.slice(local?.[0].length ?? 0);
   // `file://host/…` names a file on another host.
-  if ((SCHEME.test(specifier) && local === null) || rest.startsWith("//")) {
+  if ((hasURLScheme(specifier) && local === null) || rest.startsWith("//")) {
     return undefined;
   }
   const path = urlPath(rest);

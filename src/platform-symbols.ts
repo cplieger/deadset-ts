@@ -28,19 +28,11 @@ import { isAmbient } from "./inventory.ts";
 import { callsPlatformBy, carriedNames, type BindingOf, type Bound } from "./platform-calls.ts";
 import { unwrapped } from "./unwrap.ts";
 
-/** Counts one request a platform decision puts to the checker. */
-type Asked = () => void;
-
 /** The symbol one symbol names through its aliases, or the symbol itself where it is none. */
-function dealiased<Brand>(
-  project: ProjectView<Brand>,
-  symbol: TSSymbol,
-  asked: Asked,
-): Answer<TSSymbol> {
+function dealiased<Brand>(project: ProjectView<Brand>, symbol: TSSymbol): Answer<TSSymbol> {
   if ((symbol.flags & SymbolFlags.Alias) === 0) {
     return symbol;
   }
-  asked();
   return project.queries.aliased(symbol);
 }
 
@@ -84,7 +76,6 @@ function writesBody(node: Node): boolean {
 function boundBy<Brand>(
   project: ProjectView<Brand>,
   symbol: Answer<TSSymbol> | undefined,
-  asked: Asked,
 ): Bound | undefined {
   if (typeof symbol !== "object") {
     return undefined;
@@ -101,7 +92,6 @@ function boundBy<Brand>(
     if ((at.flags & SymbolFlags.Alias) === 0) {
       return { names, own, provenOwn: own.some(writesBody) };
     }
-    asked();
     const next = project.aliasStepOf(at);
     at = typeof next === "object" ? next : undefined;
   }
@@ -109,29 +99,24 @@ function boundBy<Brand>(
 }
 
 /** Each written name's binding, as this project's checker answers it. */
-function checkerBinding<Brand>(project: ProjectView<Brand>, asked: Asked): BindingOf {
-  return (written) => {
-    asked();
-    return boundBy(project, project.symbolsAt([project.handle(written)])[0], asked);
-  };
+function checkerBinding<Brand>(project: ProjectView<Brand>): BindingOf {
+  return (written) => boundBy(project, project.symbolsAt([project.handle(written)])[0]);
 }
 
 /**
  * Whether a call or construction through `callee`, the batch's answer for which is `symbol`,
- * is one of the platform's `require` or `URL` (roots.23, references-ts.1), as
- * {@link callsPlatformBy} decides it over this project's checker, each request it puts
- * counted by `asked`.
+ * is one of the platform's `require`, AMD's `define` or `URL` (roots.23, references-ts.37,
+ * references-ts.1), as {@link callsPlatformBy} decides it over this project's checker.
  */
 export function callsPlatform<Brand>(
   project: ProjectView<Brand>,
-  name: "require" | "URL",
+  name: "require" | "define" | "URL",
   callee: Identifier,
   symbol: Answer<TSSymbol> | undefined,
-  asked: Asked,
 ): boolean {
-  const others = checkerBinding(project, asked);
+  const others = checkerBinding(project);
   return callsPlatformBy(name, callee, (written) =>
-    written === callee ? boundBy(project, symbol, asked) : others(written),
+    written === callee ? boundBy(project, symbol) : others(written),
   );
 }
 
@@ -177,15 +162,14 @@ function inThreadsModule(node: Node): boolean {
  * (references-ts.2): its symbol resolves to a declaration of `worker_threads`, or one of its
  * own declarations binds the module's `Worker`, or `holder`, the namespace it is read
  * through, binds the module, each binding read as {@link boundExports} reads one, which
- * decides where the module has no declaration. Each request it puts is counted by `asked`.
+ * decides where the module has no declaration.
  */
 export function startsThread<Brand>(
   project: ProjectView<Brand>,
   symbol: Answer<TSSymbol> | undefined,
   holder: Answer<TSSymbol> | undefined,
-  asked: Asked,
 ): boolean {
-  const bindingOf = checkerBinding(project, asked);
+  const bindingOf = checkerBinding(project);
   const declared = (one: Answer<TSSymbol> | undefined, member: string): boolean =>
     typeof one === "object" &&
     ownDeclarations(project, one).some((node) =>
@@ -194,7 +178,7 @@ export function startsThread<Brand>(
   if (declared(symbol, "Worker") || declared(holder, NAMESPACE)) {
     return true;
   }
-  const named = typeof symbol === "object" ? dealiased(project, symbol, asked) : undefined;
+  const named = typeof symbol === "object" ? dealiased(project, symbol) : undefined;
   return (
     typeof named === "object" &&
     named.declarations.some((handle) => {

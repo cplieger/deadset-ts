@@ -23,13 +23,16 @@ import type { Failure } from "../failure.ts";
 import { readManifestAt } from "../fs/manifest.ts";
 import type { Host } from "../host.ts";
 import { JAVASCRIPT_FILE } from "../javascript-file.ts";
-import { ancestors, dirnamePath, relativePath, resolvePath } from "../paths.ts";
+import {
+  ancestors,
+  dirnamePath,
+  isRelativeSpecifier,
+  relativePath,
+  resolvePath,
+} from "../paths.ts";
 import { renderPosition, type Position } from "../position.ts";
 import { batched, type Engine, type ProjectView } from "../session.ts";
 import { dependencySpecifiers } from "./module-lookup.ts";
-
-/** A relative specifier: `.`, `..`, or one starting `./` or `../`. */
-const RELATIVE = /^\.\.?(?:\/|$)/u;
 
 /** One relative specifier of a JavaScript file that resolves to no file. */
 export interface UnresolvedSpecifier {
@@ -141,7 +144,7 @@ export function readSpecifiers<Brand>(
     const resolved = (answers[at]?.resolvedFileName ?? "") !== "";
     const specifier = usage.node.text;
     const name = packageOfSpecifier(specifier);
-    if (RELATIVE.test(specifier)) {
+    if (isRelativeSpecifier(specifier)) {
       const named = resolvePath(dirnamePath(usage.file.fileName), specifier);
       if (!resolved && !outputs.some((dir) => relativePath(dir, named) !== undefined)) {
         unresolved.push({

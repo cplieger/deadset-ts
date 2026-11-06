@@ -7,10 +7,12 @@ import { projectErrors, renderDiagnostic } from "../src/load/diagnostics.ts";
 import { discoverProjects, isTargetConfiguration } from "../src/load/discover.ts";
 import type { InventoryCost } from "../src/inventory.ts";
 import { inventory } from "../src/inventory/enumerate.ts";
-import { references, type ReferenceCost, type ReferenceOptions } from "../src/references.ts";
+import { references, type ReferenceOptions } from "../src/references.ts";
 import { scopeForDir } from "../src/scope.ts";
 import { diagnosticsOf, openEngine, runSession, type Engine } from "../src/session.ts";
 import { resolvePartial } from "../src/resolve.ts";
+import { patternTestFile } from "../src/tests/file-class.ts";
+import { bytewise } from "../src/text/compare.ts";
 
 /**
  * Measures what one batch cap costs the reference pass, so the pass option's
@@ -61,9 +63,18 @@ export interface Sample {
   readonly serverTimeMs: number;
 }
 
+/** The questions the reference pass put through one accessor: the calls, and the locations they asked about. */
+interface Asked {
+  readonly calls: number;
+  readonly locations: number;
+}
+
+/** The questions the reference pass put, by accessor, summed over a package's projects. */
+type ReferenceAsks = Readonly<Record<string, Asked>>;
+
 /** The three terms that bound a run's round trips. */
 interface Bound {
-  /** Per file, the name-node count divided by the cap, rounded up, summed. */
+  /** The batched name lookups: per capped run of a file's name nodes, and per read rule's run. */
   readonly fileBatches: number;
   /** Per-node lookups for the name nodes a batch left unresolved. */
   readonly residueFallbacks: number;
@@ -84,8 +95,8 @@ interface CapResult {
   /** The median of each measurement over the repeats. */
   readonly median: Sample;
   readonly bound: Bound;
-  /** The reference pass's own accounting, summed over the package's projects. */
-  readonly referenceCost: ReferenceCost;
+  /** The questions the reference pass put, by accessor, counted at the client's question surface. */
+  readonly referenceAsks: ReferenceAsks;
   /** The inventory's accounting, summed over the package's projects. */
   readonly inventoryCost: InventoryCost;
 }
@@ -153,24 +164,10 @@ class Refused extends Error {
 /** What one pass over one package answered. */
 interface Pass {
   readonly sample: Sample;
-  readonly referenceCost: ReferenceCost;
+  readonly referenceAsks: ReferenceAsks;
   readonly inventoryCost: InventoryCost;
   readonly projects: number;
 }
-
-const NO_REFERENCE_COST: ReferenceCost = {
-  batched: 0,
-  fileBatches: 0,
-  residueFallbacks: 0,
-  shorthandLookups: 0,
-  aliasSteps: 0,
-  platformLookups: 0,
-  patternBatches: 0,
-  patternLookups: 0,
-  contextualBatches: 0,
-  contextualLookups: 0,
-  typedLookups: 0,
-};
 
 const NO_INVENTORY_COST: InventoryCost = { batches: 0, exportTables: 0, memberTables: 0 };
 
@@ -185,10 +182,25 @@ function onePass(dir: string, cap: Cap): Pass {
   const host = nodeHost();
   const scope = scopeForDir(host, dir);
   const targetRoot = scope.target.path;
-  const engine: Engine = openEngine({ collectTiming: true });
+  const opened: Engine = openEngine({ collectTiming: true });
+  const asks = new Map<string, Asked>();
+  let counting = false;
+  const engine: Engine = {
+    ...opened,
+    ask: (accessor, locations, question) => {
+      if (counting) {
+        const known = asks.get(accessor) ?? { calls: 0, locations: 0 };
+        asks.set(accessor, {
+          calls: known.calls + 1,
+          locations: known.locations + locations().length,
+        });
+      }
+      return opened.ask(accessor, locations, question);
+    },
+  };
   const options: ReferenceOptions = {
     batchCap: cap === "uncapped" ? NO_CAP : cap,
-    testFiles: resolvePartial({}).ts.test_files,
+    testFile: patternTestFile(resolvePartial({}).ts.test_files, targetRoot),
     directories: runDirectories(host, targetRoot, (fileName, text) =>
       engine.parseSourceFile(fileName, text),
     ),
@@ -213,7 +225,10 @@ function onePass(dir: string, cap: Cap): Pass {
       );
     }
     const held = inventory(project, host, targetRoot);
-    return { reference: references(project, held, targetRoot, options).cost, held: held.cost };
+    counting = true;
+    references(project, held, targetRoot, options);
+    counting = false;
+    return { held: held.cost };
   });
   const wallMs = Number(process.hrtime.bigint() - started) / 1e6;
   return {
@@ -225,22 +240,7 @@ function onePass(dir: string, cap: Cap): Pass {
       bytesReceived: timing.totals.bytesReceived,
       serverTimeMs: timing.totals.serverTimeMs,
     },
-    referenceCost: projects.reduce<ReferenceCost>(
-      (sum, { reference }) => ({
-        batched: sum.batched + reference.batched,
-        fileBatches: sum.fileBatches + reference.fileBatches,
-        residueFallbacks: sum.residueFallbacks + reference.residueFallbacks,
-        shorthandLookups: sum.shorthandLookups + reference.shorthandLookups,
-        aliasSteps: sum.aliasSteps + reference.aliasSteps,
-        platformLookups: sum.platformLookups + reference.platformLookups,
-        patternBatches: sum.patternBatches + reference.patternBatches,
-        patternLookups: sum.patternLookups + reference.patternLookups,
-        contextualBatches: sum.contextualBatches + reference.contextualBatches,
-        contextualLookups: sum.contextualLookups + reference.contextualLookups,
-        typedLookups: sum.typedLookups + reference.typedLookups,
-      }),
-      NO_REFERENCE_COST,
-    ),
+    referenceAsks: Object.fromEntries([...asks].sort(([a], [b]) => bytewise(a, b))),
     inventoryCost: projects.reduce<InventoryCost>(
       (sum, { held }) => ({
         batches: sum.batches + held.batches,
@@ -282,7 +282,7 @@ export function sweepPackage(
   let projects = 0;
   for (const cap of caps) {
     const samples: Sample[] = [];
-    let referenceCost = NO_REFERENCE_COST;
+    let referenceAsks: ReferenceAsks = {};
     let inventoryCost = NO_INVENTORY_COST;
     for (let round = 0; round < repeat; round += 1) {
       process.stderr.write(`${label} cap=${String(cap)} round ${String(round + 1)}\n`);
@@ -296,11 +296,11 @@ export function sweepPackage(
       projects = pass.projects;
       // Both passes are deterministic, so every repeat at one cap costs the same
       // lookups. A repeat that does not means a number below is not this cap's.
-      const measured = JSON.stringify([pass.referenceCost, pass.inventoryCost]);
+      const measured = JSON.stringify([pass.referenceAsks, pass.inventoryCost]);
       if (round === 0) {
-        referenceCost = pass.referenceCost;
+        referenceAsks = pass.referenceAsks;
         inventoryCost = pass.inventoryCost;
-      } else if (measured !== JSON.stringify([referenceCost, inventoryCost])) {
+      } else if (measured !== JSON.stringify([referenceAsks, inventoryCost])) {
         throw new Error(`${label} cap=${String(cap)}: the pass cost differs between repeats`);
       }
     }
@@ -309,11 +309,11 @@ export function sweepPackage(
       samples,
       median: medianSample(samples),
       bound: {
-        fileBatches: referenceCost.fileBatches,
-        residueFallbacks: referenceCost.residueFallbacks,
+        fileBatches: referenceAsks["getSymbolAtLocation"]?.calls ?? 0,
+        residueFallbacks: referenceAsks["getResolvedSymbol"]?.calls ?? 0,
         pairAssignabilityCalls: 0,
       },
-      referenceCost,
+      referenceAsks,
       inventoryCost,
     });
   }

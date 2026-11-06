@@ -3,7 +3,7 @@ import type { ResolvedConfig } from "../config.ts";
 import type { Dependencies } from "../dependencies.ts";
 import type { FileFacts } from "../file-facts.ts";
 import type { Finding } from "../finding.ts";
-import type { Implementations } from "../implementations.ts";
+import type { Implementations } from "./implementations.ts";
 import type { IntraFunctionFacts } from "../intra-function-parts.ts";
 import type { Stores } from "../stores.ts";
 import type { Boundary } from "./boundary.ts";

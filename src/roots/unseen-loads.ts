@@ -19,9 +19,18 @@ import {
   type Node,
   type SourceFile,
 } from "@typescript/native/ast";
+import { amdLoadOf, amdUnresolved } from "../amd.ts";
 import { membersNamed, textsOf, writtenValue, type Value } from "../entries/static-module.ts";
 import { writtenName } from "../platform-calls.ts";
-import { dirnamePath, relativePath, resolvePath } from "../paths.ts";
+import {
+  cannotStartPackageName,
+  dirnamePath,
+  hasURLScheme,
+  isAbsolutePath,
+  relativePath,
+  resolvePath,
+  startsRelativePath,
+} from "../paths.ts";
 import type { Position } from "../position.ts";
 import { unwrapped } from "../unwrap.ts";
 import { globExpression } from "../text/glob.ts";
@@ -54,7 +63,7 @@ function leadingLiteral(node: Node): string | undefined {
  * it, each of which would name every sibling.
  */
 function computedLoadDirectory(dir: string, prefix: string): string | undefined {
-  if (!(prefix.startsWith("./") || prefix.startsWith("../")) || !prefix.endsWith("/")) {
+  if (!startsRelativePath(prefix) || !prefix.endsWith("/")) {
     return undefined;
   }
   const target = resolvePath(dir, prefix);
@@ -74,11 +83,13 @@ interface Loadable {
 }
 
 /** One load by a computed path whose files the analysis resolves. */
-interface ComputedLoad {
+export interface ComputedLoad {
   readonly call: CallExpression;
   readonly from: string;
   /** The name a `require()` call is written with; {@link callsPlatform} owns which one loads. */
   readonly require: Identifier | undefined;
+  /** Whether the call is an AMD `define` or `require` (references-ts.37). */
+  readonly amd: boolean;
   readonly files: readonly Loadable[];
   /** Whether the load reads each file as text or as a URL, which references no declaration of it. */
   readonly asset: boolean;
@@ -136,7 +147,7 @@ function globbed(
   const dir = dirnamePath(file.fileName);
   const root = (): string | undefined => rootOf(file.fileName);
   const against = (at: string): string | undefined => {
-    if (!at.startsWith("/")) {
+    if (!isAbsolutePath(at)) {
       return resolvePath(dir, at);
     }
     const top = root();
@@ -149,9 +160,9 @@ function globbed(
     const negated = written.startsWith("!");
     const pattern = negated ? written.slice(1) : written;
     let path: string | undefined;
-    if (pattern.startsWith("/")) {
+    if (isAbsolutePath(pattern)) {
       path = against(pattern);
-    } else if (pattern.startsWith("./") || pattern.startsWith("../")) {
+    } else if (startsRelativePath(pattern)) {
       path = from === undefined ? undefined : resolvePath(from, pattern);
     } else if (pattern.startsWith("**")) {
       path = pattern;
@@ -173,7 +184,8 @@ function globbed(
  * file itself: an `import()` or `require()` whose path starts with a relative literal naming
  * a directory below the file's loads every candidate below it, as a bundler's context module
  * reads it, and an `import.meta.glob` every candidate its globs match ({@link globbed}). A
- * call of a computed path that names no such directory and no package is an unresolved load.
+ * call of a computed path that names no such directory and no package is an unresolved load,
+ * and so is an AMD call one of whose dependencies names no path ({@link amdUnresolved}).
  */
 export function computedLoadsOf(
   file: SourceFile,
@@ -196,12 +208,30 @@ export function computedLoadsOf(
           call,
           from,
           require: undefined,
+          amd: false,
           files: files ?? [],
           resolved: files !== undefined,
           asset,
           eager: isEager(options),
         },
       ];
+    }
+    const amd = amdLoadOf(call);
+    if (amd !== undefined) {
+      return amdUnresolved(amd)
+        ? [
+            {
+              call,
+              from,
+              require: amd.callee,
+              amd: true,
+              files: [],
+              resolved: false,
+              asset: false,
+              eager: false,
+            },
+          ]
+        : [];
     }
     const argument = unwrapped(first);
     const require =
@@ -219,7 +249,16 @@ export function computedLoadsOf(
         ? []
         : others.filter((candidate) => relativePath(target, candidate.file.fileName) !== undefined);
     return [
-      { call, from, require, files, resolved: target !== undefined, asset: false, eager: false },
+      {
+        call,
+        from,
+        require,
+        amd: false,
+        files,
+        resolved: target !== undefined,
+        asset: false,
+        eager: false,
+      },
     ];
   });
 }
@@ -300,8 +339,7 @@ function namesPackage(prefix: string | undefined): boolean {
   return (
     prefix !== undefined &&
     prefix !== "" &&
-    !prefix.startsWith(".") &&
-    !prefix.startsWith("/") &&
-    !/^[A-Za-z][A-Za-z\d+.-]*:/u.test(prefix)
+    !cannotStartPackageName(prefix) &&
+    !hasURLScheme(prefix)
   );
 }

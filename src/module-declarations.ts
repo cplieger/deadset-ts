@@ -15,20 +15,18 @@ import {
   isImportTypeNode,
   isLiteralTypeNode,
   isModuleDeclaration,
-  isNamespaceExport,
-  isNamespaceImport,
   isNoSubstitutionTemplateLiteral,
   isStringLiteral,
   SyntaxKind,
   type Node,
   type SourceFile,
 } from "@typescript/native/ast";
+import { namesImported } from "./import-bindings.ts";
 import { nodeKey, type Inventory, type InventorySymbol } from "./inventory.ts";
-import { renderPosition } from "./position.ts";
 import { UNANSWERED } from "./query.ts";
 import { aliasFragment, nameComponent } from "./ref.ts";
-import type { Reference } from "./references.ts";
-import type { ProjectView } from "./session.ts";
+import type { Read, ReadRule } from "./references/read-rule.ts";
+import { isPathSpecifier } from "./paths.ts";
 
 /** Whether a node is a specifier's text: a string literal or a template with no substitution. */
 function literalText(node: Node | undefined): node is Node & { readonly text: string } {
@@ -59,32 +57,11 @@ function specifierOf(node: Node): (Node & { readonly text: string }) | undefined
 }
 
 /**
- * The export names an import or a re-export reads from the module it names: none for a
- * namespace, a star or a bare form.
- */
-export function namesImported(node: Node): readonly string[] {
-  if (isImportDeclaration(node)) {
-    const clause = node.importClause;
-    const bindings = clause?.namedBindings;
-    return [
-      ...(clause?.name === undefined ? [] : ["default"]),
-      ...(bindings === undefined || isNamespaceImport(bindings)
-        ? []
-        : bindings.elements.map((one) => (one.propertyName ?? one.name).text)),
-    ];
-  }
-  const clause = isExportDeclaration(node) ? node.exportClause : undefined;
-  return clause === undefined || isNamespaceExport(clause)
-    ? []
-    : clause.elements.map((one) => (one.propertyName ?? one.name).text);
-}
-
-/**
  * Whether a specifier matches a declaration's name, the name's one `*` standing for any run.
  * A relative name is resolved against its own file, so no specifier names it by its text.
  */
 function namesModule(specifier: string, name: string): boolean {
-  if (/^(?:\.{1,2}(?:\/|$)|\/)/u.test(name)) {
+  if (isPathSpecifier(name)) {
     return false;
   }
   const star = name.indexOf("*");
@@ -161,76 +138,75 @@ interface Declared {
 }
 
 /**
- * The references the imports of one project's own files make to the module declarations
- * they name, each at the import's specifier.
+ * The reads the imports of a side's files make of the module declarations of the target they
+ * name, each at the import's specifier. A specifier the checker leaves unanswered still names
+ * a declaration by its name or pattern.
  */
-export function moduleDeclarationReferences<Brand>(
-  project: ProjectView<Brand>,
-  held: Inventory,
-  root: string,
-  testFiles: ReadonlySet<string>,
-): readonly Reference[] {
-  const imports: Import[] = [];
-  const declared: Declared[] = [];
-  for (const file of project.ownSourceFiles()) {
-    const fileId = held.declarations.get(nodeKey(file, file));
-    if (fileId === undefined) {
-      continue;
-    }
-    const visit = (node: Node, from: string): void => {
-      const own = held.declarations.get(nodeKey(file, node));
-      if (isModuleDeclaration(node) && literalText(node.name) && own !== undefined) {
-        declared.push({ id: own, name: node.name });
-      }
-      const specifier = specifierOf(node);
-      if (specifier !== undefined) {
-        imports.push({ file, from, specifier, names: namesImported(node) });
-      }
-      node.forEachChild((child) => {
-        visit(child, own ?? from);
-      });
-    };
-    file.forEachChild((child) => {
-      visit(child, fileId);
-    });
-  }
-  if (declared.length === 0 || imports.length === 0) {
-    return [];
-  }
-
-  const asked = [...declared.map((one) => one.name), ...imports.map((one) => one.specifier)];
-  const answers = project.symbolsAt(asked.map((node) => project.handle(node)));
-  const moduleOf = (at: number): number | undefined => {
-    const symbol = answers[at];
-    return symbol === undefined || symbol === UNANSWERED ? undefined : symbol.id;
-  };
-
-  const named = namedBy(held);
-  const found: Reference[] = [];
-  imports.forEach((one, index) => {
-    const resolved = moduleOf(declared.length + index);
-    const position = renderPosition(one.file, root, one.specifier.getStart());
-    const read = (to: string, resolution: Reference["resolution"], test: boolean): void => {
-      found.push({ from: one.from, to, position, use: "read", resolution, test });
-    };
-    const test = testFiles.has(position.path);
-    const same = new Set(
-      declared
-        .filter((_, at) => resolved !== undefined && resolved === moduleOf(at))
-        .map((declaration) => declaration.id),
-    );
-    for (const id of same) {
-      read(id, "batch", test);
-    }
-    for (const declaration of named(one.specifier.text, one.names)) {
-      // A wildcard declaration is how the compiler types the file a matching specifier
-      // names, so the import uses it whoever writes it, a test included.
-      if (declaration.wildcard || !same.has(declaration.id)) {
-        for (const to of [declaration.id, ...declaration.members]) {
-          read(to, "syntax", test && !declaration.wildcard);
+export const moduleDeclarations: ReadRule = {
+  start() {
+    const imports: Import[] = [];
+    return {
+      visit(node, { file, from }) {
+        const specifier = specifierOf(node);
+        if (specifier !== undefined) {
+          imports.push({ file, from, specifier, names: namesImported(node) });
         }
-      }
-    }
-  });
-  return found;
-}
+      },
+      reads({ project, held }) {
+        const found: Read[] = [];
+        // A module declaration whose name is a string is written at a file's top level.
+        const declared: Declared[] = project.ownSourceFiles().flatMap((file) =>
+          file.statements.flatMap((statement) => {
+            const id = held.declarations.get(nodeKey(file, statement));
+            return isModuleDeclaration(statement) && literalText(statement.name) && id !== undefined
+              ? [{ id, name: statement.name }]
+              : [];
+          }),
+        );
+        if (declared.length === 0 || imports.length === 0) {
+          return found;
+        }
+        const asked = [...declared.map((one) => one.name), ...imports.map((one) => one.specifier)];
+        const answers = project.symbolsAt(asked.map((node) => project.handle(node)));
+        const moduleOf = (at: number): number | undefined => {
+          const symbol = answers[at];
+          return symbol === undefined || symbol === UNANSWERED ? undefined : symbol.id;
+        };
+        const named = namedBy(held);
+        imports.forEach((one, index) => {
+          const resolved = moduleOf(declared.length + index);
+          const read = (to: string, via: "batch" | "syntax", production: boolean): void => {
+            found.push({
+              kind: "named",
+              from: one.from,
+              to,
+              file: one.file,
+              at: one.specifier,
+              use: "read",
+              via,
+              ...(production ? { production: true as const } : {}),
+            });
+          };
+          const same = new Set(
+            declared
+              .filter((_, at) => resolved !== undefined && resolved === moduleOf(at))
+              .map((declaration) => declaration.id),
+          );
+          for (const id of same) {
+            read(id, "batch", false);
+          }
+          for (const declaration of named(one.specifier.text, one.names)) {
+            // A wildcard declaration is how the compiler types the file a matching specifier
+            // names, so the import uses it whoever writes it, a test included.
+            if (declaration.wildcard || !same.has(declaration.id)) {
+              for (const to of [declaration.id, ...declaration.members]) {
+                read(to, "syntax", declaration.wildcard);
+              }
+            }
+          }
+        });
+        return found;
+      },
+    };
+  },
+};

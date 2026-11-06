@@ -12,6 +12,7 @@ import {
   isIdentifier,
   isNewExpression,
   isPropertyAccessExpression,
+  isSourceFile,
   isTypeParameterDeclaration,
   SyntaxKind,
   type CallExpression,
@@ -21,12 +22,8 @@ import {
   type SourceFile,
 } from "@typescript/native/ast";
 import { SymbolFlags, type Type } from "@typescript/native/sync";
-import type { AliasChains } from "./alias-chain.ts";
-import { nodeKey, type Inventory } from "./inventory.ts";
-import { renderPosition } from "./position.ts";
-import { isAnswered } from "./query.ts";
-import type { Reference } from "./references.ts";
-import type { ProjectView } from "./session.ts";
+import { isAnswered, UNANSWERED } from "./query.ts";
+import type { Read as RuleRead, ReadRule } from "./references/read-rule.ts";
 
 /** How deep a parameter's type is matched against the type a call passes: `readonly T[]` is one level. */
 const MATCH_DEPTH = 3;
@@ -61,167 +58,199 @@ function assignedTo(access: PropertyAccessExpression): boolean {
   );
 }
 
+/** Whether one node is written inside a declaration that declares type parameters, itself included. */
+function inGeneric(node: Node): boolean {
+  for (let at = node; !isSourceFile(at); at = at.parent) {
+    if ((at as { readonly typeParameters?: readonly Node[] }).typeParameters !== undefined) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /**
- * The references the reads through type-parameter-typed values of one project's own files
- * make to the members of the types its calls pass, each made by the declaration holding
- * the read.
+ * The reads the reads through type-parameter-typed values of a side's files make of the
+ * members of the types its calls pass, each made by the declaration holding the read. A
+ * question the checker leaves unanswered holds every member the read's name spells.
  */
-export function typeParameterReads<Brand>(
-  project: ProjectView<Brand>,
-  held: Inventory,
-  chains: AliasChains,
-  root: string,
-  testFiles: ReadonlySet<string>,
-): readonly Reference[] {
-  const queries = project.queries;
-  const reads: Read[] = [];
-  const calls: (CallExpression | NewExpression)[] = [];
-  for (const file of project.ownSourceFiles()) {
-    const fileId = held.declarations.get(nodeKey(file, file));
-    if (fileId === undefined) {
-      continue;
-    }
-    const visit = (node: Node, from: string, generic: boolean): void => {
-      const holder = held.declarations.get(nodeKey(file, node)) ?? from;
-      const inside =
-        generic ||
-        (node as { readonly typeParameters?: readonly Node[] }).typeParameters !== undefined;
-      if (
-        inside &&
-        isPropertyAccessExpression(node) &&
-        isIdentifier(node.name) &&
-        !assignedTo(node)
-      ) {
-        reads.push({ file, from: holder, access: node });
-      }
-      if (isCallExpression(node) || isNewExpression(node)) {
-        calls.push(node);
-      }
-      node.forEachChild((child) => {
-        visit(child, holder, inside);
-      });
-    };
-    file.forEachChild((child) => {
-      visit(child, fileId, false);
-    });
-  }
-  if (reads.length === 0) {
-    return [];
-  }
-
-  // The reads whose receiver the checker types as a type parameter, by the generic declaring it.
-  const receivers = queries.typesAt(reads.map((read) => read.access.expression));
-  const byGeneric = new Map<Generic, { read: Read; parameter: Type }[]>();
-  reads.forEach((read, at) => {
-    const type = receivers[at];
-    if (type === undefined || !isAnswered(type) || !type.isTypeParameter()) {
-      return;
-    }
-    const symbol = queries.symbolOfType(type);
-    const declaration =
-      symbol === undefined || !isAnswered(symbol)
-        ? undefined
-        : symbol.declarations
-            .map((handle) => project.declarationAt(handle)?.node)
-            .find((node) => node !== undefined && isTypeParameterDeclaration(node));
-    const generic = declaration?.parent as Generic | undefined;
-    if (generic !== undefined) {
-      byGeneric.set(generic, [...(byGeneric.get(generic) ?? []), { read, parameter: type }]);
-    }
-  });
-  if (byGeneric.size === 0) {
-    return [];
-  }
-
-  /** The types `instantiated` holds where `declared` holds `parameter`, matched part for part. */
-  const passedFor = (
-    parameter: Type,
-    declared: Type,
-    instantiated: Type,
-    depth: number,
-  ): readonly Type[] => {
-    if (declared.id === parameter.id) {
-      return [instantiated];
-    }
-    if (depth >= MATCH_DEPTH) {
-      return [];
-    }
-    const a = queries.typeArguments(declared);
-    const b = queries.typeArguments(instantiated);
-    if (!isAnswered(a) || !isAnswered(b) || a.length !== b.length) {
-      return [];
-    }
-    return a.flatMap((one, at) => {
-      const other = b[at];
-      return other === undefined ? [] : passedFor(parameter, one, other, depth + 1);
-    });
-  };
-
-  // Only a call spelling a generic's name is resolved: one request each.
-  const spelled = new Set([...byGeneric.keys()].flatMap((generic) => nameOf(generic) ?? []));
-  const found = new Map<string, Reference>();
-  for (const call of calls) {
-    const callee = call.expression;
-    const written = isIdentifier(callee)
-      ? callee.text
-      : isPropertyAccessExpression(callee) && isIdentifier(callee.name)
-        ? callee.name.text
-        : undefined;
-    if (written === undefined || !spelled.has(written)) {
-      continue;
-    }
-    const resolved = queries.resolvedSignature(call);
-    if (resolved === undefined || !isAnswered(resolved) || resolved.declaration === undefined) {
-      continue;
-    }
-    const generic = project.declarationAt(resolved.declaration)?.node as Generic | undefined;
-    const pending = generic === undefined ? undefined : byGeneric.get(generic);
-    const declared = pending === undefined ? undefined : queries.genericOf(resolved);
-    if (pending === undefined || declared === undefined || !isAnswered(declared)) {
-      continue;
-    }
-    const count = (generic?.parameters ?? []).length;
-    for (const { read, parameter } of pending) {
-      const passed: Type[] = [];
-      for (let at = 0; at < count; at += 1) {
-        const own = queries.parameterType(declared, at);
-        const given = queries.typeAtPosition(resolved, at);
-        if (own !== undefined && isAnswered(own) && isAnswered(given)) {
-          passed.push(...passedFor(parameter, own, given, 0));
+export const typeParameterReads: ReadRule = {
+  start() {
+    const reads: Read[] = [];
+    const calls: (CallExpression | NewExpression)[] = [];
+    return {
+      visit(node, { file, from }) {
+        if (
+          isPropertyAccessExpression(node) &&
+          isIdentifier(node.name) &&
+          !assignedTo(node) &&
+          inGeneric(node)
+        ) {
+          reads.push({ file, from, access: node });
         }
-      }
-      const name = read.access.name.text;
-      const position = renderPosition(read.file, root, read.access.name.getStart());
-      for (const type of passed) {
-        const parts = type.isUnionType() ? queries.constituents(type) : [type];
-        for (const part of isAnswered(parts) ? parts : []) {
-          const owner = queries.symbolOfType(part);
-          if (
-            !isAnswered(owner) ||
-            owner === undefined ||
-            (owner.flags & SymbolFlags.Class) !== 0
-          ) {
+        if (isCallExpression(node) || isNewExpression(node)) {
+          calls.push(node);
+        }
+      },
+      reads({ project, chains }) {
+        const out: RuleRead[] = [];
+        if (reads.length === 0) {
+          return out;
+        }
+        const queries = project.queries;
+        const hold = (read: Read): void => {
+          out.push({ kind: "held", from: read.from, names: [read.access.name.text] });
+        };
+        // The reads whose receiver the checker types as a type parameter, by the generic declaring it.
+        const receivers = queries.typesAt(reads.map((read) => read.access.expression));
+        const byGeneric = new Map<Generic, { read: Read; parameter: Type }[]>();
+        reads.forEach((read, at) => {
+          const type = receivers[at];
+          if (type === UNANSWERED) {
+            hold(read);
+            return;
+          }
+          if (type?.isTypeParameter() !== true) {
+            return;
+          }
+          const symbol = queries.symbolOfType(type);
+          if (symbol === UNANSWERED) {
+            hold(read);
+            return;
+          }
+          const declaration =
+            symbol === undefined
+              ? undefined
+              : symbol.declarations
+                  .map((handle) => project.declarationAt(handle)?.node)
+                  .find((node) => node !== undefined && isTypeParameterDeclaration(node));
+          const generic = declaration?.parent as Generic | undefined;
+          if (generic !== undefined) {
+            byGeneric.set(generic, [...(byGeneric.get(generic) ?? []), { read, parameter: type }]);
+          }
+        });
+        if (byGeneric.size === 0) {
+          return out;
+        }
+
+        /** The types `instantiated` holds where `declared` holds `parameter`, matched part for part. */
+        const passedFor = (
+          read: Read,
+          parameter: Type,
+          declared: Type,
+          instantiated: Type,
+          depth: number,
+        ): readonly Type[] => {
+          if (declared.id === parameter.id) {
+            return [instantiated];
+          }
+          if (depth >= MATCH_DEPTH) {
+            return [];
+          }
+          const a = queries.typeArguments(declared);
+          const b = queries.typeArguments(instantiated);
+          if (!isAnswered(a) || !isAnswered(b)) {
+            hold(read);
+            return [];
+          }
+          if (a.length !== b.length) {
+            return [];
+          }
+          return a.flatMap((one, at) => {
+            const other = b[at];
+            return other === undefined ? [] : passedFor(read, parameter, one, other, depth + 1);
+          });
+        };
+
+        // Only a call spelling a generic's name is resolved: one request each.
+        const bySpelling = new Map<string, Read[]>();
+        for (const [generic, pending] of byGeneric) {
+          const name = nameOf(generic);
+          if (name !== undefined) {
+            bySpelling.set(name, [
+              ...(bySpelling.get(name) ?? []),
+              ...pending.map((one) => one.read),
+            ]);
+          }
+        }
+        const found = new Map<string, RuleRead>();
+        for (const call of calls) {
+          const callee = call.expression;
+          const written = isIdentifier(callee)
+            ? callee.text
+            : isPropertyAccessExpression(callee) && isIdentifier(callee.name)
+              ? callee.name.text
+              : undefined;
+          const spelledBy = written === undefined ? undefined : bySpelling.get(written);
+          if (spelledBy === undefined) {
             continue;
           }
-          const properties = queries.propertiesOf(part);
-          for (const property of isAnswered(properties) ? properties : []) {
-            if (property.name !== name) {
-              continue;
+          const resolved = queries.resolvedSignature(call);
+          if (resolved === UNANSWERED) {
+            spelledBy.forEach(hold);
+            continue;
+          }
+          if (resolved?.declaration === undefined) {
+            continue;
+          }
+          const generic = project.declarationAt(resolved.declaration)?.node as Generic | undefined;
+          const pending = generic === undefined ? undefined : byGeneric.get(generic);
+          const declared = pending === undefined ? undefined : queries.genericOf(resolved);
+          if (declared === UNANSWERED) {
+            pending?.forEach((one) => {
+              hold(one.read);
+            });
+            continue;
+          }
+          if (pending === undefined || declared === undefined) {
+            continue;
+          }
+          const count = (generic?.parameters ?? []).length;
+          for (const { read, parameter } of pending) {
+            const passed: Type[] = [];
+            for (let at = 0; at < count; at += 1) {
+              const own = queries.parameterType(declared, at);
+              const given = queries.typeAtPosition(resolved, at);
+              if (own === UNANSWERED || given === UNANSWERED) {
+                hold(read);
+              } else if (own !== undefined) {
+                passed.push(...passedFor(read, parameter, own, given, 0));
+              }
             }
-            for (const to of chains.declarationsOf(property)) {
-              found.set(`${read.from}\u0000${to}\u0000${String(read.access.name.pos)}`, {
-                from: read.from,
-                to,
-                position,
-                use: "read",
-                resolution: "batch",
-                test: testFiles.has(position.path),
-              });
+            const name = read.access.name.text;
+            for (const type of passed) {
+              const parts = type.isUnionType() ? queries.constituents(type) : [type];
+              for (const part of isAnswered(parts) ? parts : [type]) {
+                const owner = queries.symbolOfType(part);
+                const properties = queries.propertiesOf(part);
+                if (owner === UNANSWERED || properties === UNANSWERED) {
+                  hold(read);
+                  continue;
+                }
+                if (owner === undefined || (owner.flags & SymbolFlags.Class) !== 0) {
+                  continue;
+                }
+                for (const property of properties) {
+                  if (property.name !== name) {
+                    continue;
+                  }
+                  for (const to of chains.declarationsOf(property)) {
+                    found.set(`${read.from}\u0000${to}\u0000${String(read.access.name.pos)}`, {
+                      kind: "named",
+                      from: read.from,
+                      to,
+                      file: read.file,
+                      at: read.access.name,
+                      use: "read",
+                      via: "batch",
+                    });
+                  }
+                }
+              }
             }
           }
         }
-      }
-    }
-  }
-  return [...found.values()];
-}
+        return [...out, ...found.values()];
+      },
+    };
+  },
+};

@@ -1,13 +1,21 @@
+import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
+  cannotStartPackageName,
   dirnamePath,
   extensionOf,
+  hasURLScheme,
   isAbsolutePath,
+  isExplicitPath,
+  isPathRelativeURL,
+  isPathSpecifier,
+  isRelativeSpecifier,
   joinPath,
   normalizePath,
   queriedModulePath,
   relativePath,
   resolvePath,
+  startsRelativePath,
 } from "./paths.ts";
 
 describe("isAbsolutePath", () => {
@@ -126,5 +134,112 @@ describe("queriedModulePath", () => {
     { specifier: "pkg/page.ts?worker", path: undefined },
   ])("answers $path for $specifier", ({ specifier, path }) => {
     expect(queriedModulePath(specifier)).toBe(path);
+  });
+});
+
+describe("the relative-specifier predicates", () => {
+  /** Specifiers drawn from the characters that decide the answer, so the edges recur. */
+  const specifiers = fc.string({ unit: fc.constantFrom(".", "/", "a", "\\", ":"), maxLength: 6 });
+
+  it("start a relative path exactly where `./` or `../` begins the specifier", () => {
+    fc.assert(
+      fc.property(specifiers, (specifier) => {
+        expect(startsRelativePath(specifier)).toBe(/^\.\.?\//u.test(specifier));
+      }),
+    );
+  });
+
+  it("name a relative specifier exactly where it is `.`, `..` or starts a relative path", () => {
+    fc.assert(
+      fc.property(specifiers, (specifier) => {
+        expect(isRelativeSpecifier(specifier)).toBe(/^\.\.?(?:\/|$)/u.test(specifier));
+      }),
+    );
+  });
+
+  it.each([
+    { specifier: ".", starts: false, relative: true },
+    { specifier: "..", starts: false, relative: true },
+    { specifier: "./a", starts: true, relative: true },
+    { specifier: "../a", starts: true, relative: true },
+    { specifier: "...", starts: false, relative: false },
+    { specifier: ".a", starts: false, relative: false },
+    { specifier: "/a", starts: false, relative: false },
+    { specifier: ".\\a", starts: false, relative: false },
+    { specifier: "a/./b", starts: false, relative: false },
+  ])("answers $starts and $relative for $specifier", ({ specifier, starts, relative }) => {
+    expect(startsRelativePath(specifier)).toBe(starts);
+    expect(isRelativeSpecifier(specifier)).toBe(relative);
+  });
+});
+
+describe("the path and URL predicates", () => {
+  /** Strings drawn from the characters that decide each answer, so the edges recur. */
+  const texts = fc.string({
+    unit: fc.constantFrom(".", "/", "a", "Z", "1", "+", "-", ":", "\\"),
+    maxLength: 6,
+  });
+
+  it.each([
+    {
+      name: "isPathSpecifier",
+      predicate: isPathSpecifier,
+      replaced: (text: string) => /^(?:\.{1,2}(?:\/|$)|\/)/u.test(text),
+    },
+    {
+      name: "isExplicitPath",
+      predicate: isExplicitPath,
+      replaced: (text: string) => ["/", "./", "../"].some((prefix) => text.startsWith(prefix)),
+    },
+    {
+      name: "cannotStartPackageName",
+      predicate: cannotStartPackageName,
+      replaced: (text: string) => text.startsWith(".") || text.startsWith("/"),
+    },
+    {
+      name: "hasURLScheme",
+      predicate: hasURLScheme,
+      replaced: (text: string) => /^[A-Za-z][A-Za-z\d+.-]*:/u.test(text),
+    },
+    {
+      name: "isPathRelativeURL",
+      predicate: isPathRelativeURL,
+      replaced: (text: string) =>
+        !(text === "" || text.startsWith("/") || /^[A-Za-z][A-Za-z0-9+.-]*:/u.test(text)),
+    },
+  ])("$name answers as the check it replaced", ({ predicate, replaced }) => {
+    fc.assert(
+      fc.property(texts, (text) => {
+        expect(predicate(text)).toBe(replaced(text));
+      }),
+    );
+  });
+
+  it.each([
+    { text: ".", path: true, explicit: false, notPackage: true },
+    { text: "..", path: true, explicit: false, notPackage: true },
+    { text: "./a", path: true, explicit: true, notPackage: true },
+    { text: "/a", path: true, explicit: true, notPackage: true },
+    { text: ".a", path: false, explicit: false, notPackage: true },
+    { text: "a/b", path: false, explicit: false, notPackage: false },
+  ])(
+    "answers $path, $explicit and $notPackage for $text",
+    ({ text, path, explicit, notPackage }) => {
+      expect(isPathSpecifier(text)).toBe(path);
+      expect(isExplicitPath(text)).toBe(explicit);
+      expect(cannotStartPackageName(text)).toBe(notPackage);
+    },
+  );
+
+  it.each([
+    { text: "node:fs", scheme: true, relative: false },
+    { text: "a.b+c-d:x", scheme: true, relative: false },
+    { text: "1a:x", scheme: false, relative: true },
+    { text: "//host/a", scheme: false, relative: false },
+    { text: "a.js", scheme: false, relative: true },
+    { text: "", scheme: false, relative: false },
+  ])("answers $scheme and $relative for the URL $text", ({ text, scheme, relative }) => {
+    expect(hasURLScheme(text)).toBe(scheme);
+    expect(isPathRelativeURL(text)).toBe(relative);
   });
 });

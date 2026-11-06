@@ -1,9 +1,10 @@
 /**
- * The framework-lifecycle class: a member a `ts.lifecycle_contracts` entry lists is held
- * back on each class that is the entry's component, being a class a decorator or a call
- * the entry's `components` name is attached to or passes, or one extending, directly or
- * through a chain, a class its `bases` name. A component's members are its type's, so a
- * member a base class declares answers for every subclass.
+ * The framework-lifecycle class: a member a lifecycle contract lists is held back on each
+ * class that is the contract's component, being a class a decorator or a call the
+ * contract's `components` name is attached to or passes, or one extending, directly or
+ * through a chain, a class its `bases` name. The contracts are the platform's custom
+ * elements and each `ts.lifecycle_contracts` entry. A component's members are its type's,
+ * so a member a base class declares answers for every subclass.
  */
 
 import {
@@ -32,6 +33,30 @@ import { nodeKey, type Inventory } from "./inventory.ts";
 import { renderPosition } from "./position.ts";
 import { must } from "./query.ts";
 import type { ProjectView } from "./session.ts";
+
+/**
+ * The platform's own contract (references-ts.38): `CustomElementRegistry.define` reads
+ * these members off the class it registers, its constructor's and its prototype's
+ * (https://html.spec.whatwg.org/multipage/custom-elements.html#dom-customelementregistry-define),
+ * and calls each callback as a custom element reaction.
+ */
+const CUSTOM_ELEMENTS: LifecycleContract = {
+  components: [{ global: "CustomElementRegistry.define" }],
+  members: [
+    "observedAttributes:static",
+    "disabledFeatures:static",
+    "formAssociated:static",
+    "connectedCallback",
+    "disconnectedCallback",
+    "connectedMoveCallback",
+    "adoptedCallback",
+    "attributeChangedCallback",
+    "formAssociatedCallback",
+    "formResetCallback",
+    "formDisabledCallback",
+    "formStateRestoreCallback",
+  ],
+};
 
 /** One class that is a component of one contract, and what says it is. */
 interface Component {
@@ -238,16 +263,17 @@ function byBases<Brand>(
 
 /**
  * The framework-lifecycle detector: each member a contract lists, on each class that
- * is a component of that contract's framework, recorded where the class was found to
- * be one.
+ * is a component of that contract's framework, recorded once per place where the class
+ * was found to be one.
  */
 export function frameworkLifecycle<Brand>(input: DetectorInput<Brand>): readonly Evidence[] {
   const { project, held, targetRoot } = input;
-  if (input.ts.lifecycle_contracts.length === 0) {
+  const declared = [CUSTOM_ELEMENTS, ...input.ts.lifecycle_contracts];
+  const contracts = resolveContracts(project, held, declared);
+  if (contracts.every((one) => one.components.length === 0 && one.bases.length === 0)) {
     return [];
   }
   const chains = aliasChains(project, held);
-  const contracts = resolveContracts(project, held, input.ts.lifecycle_contracts);
   const components = [
     ...byComponents(project, held, chains, contracts),
     ...byBases(project, held, chains, contracts),
@@ -256,7 +282,7 @@ export function frameworkLifecycle<Brand>(input: DetectorInput<Brand>): readonly
     return [];
   }
   const ids = new Set(components.map((one) => one.id));
-  const sides: readonly ClassSide[] = input.ts.lifecycle_contracts.some((contract) =>
+  const sides: readonly ClassSide[] = declared.some((contract) =>
     contract.members.some((name) => name.endsWith(":static")),
   )
     ? ["instance", "static"]
@@ -264,7 +290,7 @@ export function frameworkLifecycle<Brand>(input: DetectorInput<Brand>): readonly
   const members = sides.map((side) => classMembers(project, held, ids, side));
   const byId = new Map(held.symbols.map((symbol) => [symbol.id, symbol]));
 
-  const found: Evidence[] = [];
+  const found = new Map<string, Evidence>();
   for (const component of components) {
     const listed = new Set(component.contract.members);
     const site = renderPosition(
@@ -275,10 +301,12 @@ export function frameworkLifecycle<Brand>(input: DetectorInput<Brand>): readonly
     for (const member of members.flatMap((side) => side.get(component.id) ?? [])) {
       const symbol = byId.get(member.id);
       const spelled = symbol === undefined ? undefined : memberComponent(symbol, byId);
-      if (spelled !== undefined && listed.has(spelled)) {
-        found.push({ id: member.id, detail: component.detail, site });
+      // A configured contract may name the platform's registry too; one record answers both.
+      const key = `${member.id}\0${component.detail}\0${site.path}:${String(site.line)}:${String(site.column)}`;
+      if (spelled !== undefined && listed.has(spelled) && !found.has(key)) {
+        found.set(key, { id: member.id, detail: component.detail, site });
       }
     }
   }
-  return found;
+  return [...found.values()];
 }

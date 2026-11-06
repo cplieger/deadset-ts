@@ -41,12 +41,8 @@ import {
   type SourceFile,
 } from "@typescript/native/ast";
 import type { Type } from "@typescript/native/sync";
-import type { AliasChains } from "./alias-chain.ts";
-import { nodeKey, type Inventory } from "./inventory.ts";
-import { renderPosition } from "./position.ts";
 import { UNANSWERED } from "./query.ts";
-import type { Reference } from "./references.ts";
-import type { ProjectView } from "./session.ts";
+import type { Read, ReadRule } from "./references/read-rule.ts";
 import { parenthesesRemoved } from "./unwrap.ts";
 
 type Use = "read" | "write" | "both";
@@ -242,190 +238,200 @@ interface Candidate {
 }
 
 /**
- * The references the element accesses of one project's own files make to the members their
- * index's literal type names, each made by the declaration holding the access or the call.
+ * The reads the element accesses of a side's files make of the members their index's literal
+ * type names, each made by the declaration holding the access or the call. A type the checker
+ * leaves unanswered holds what its answer could have read.
  */
-export function elementAccessReferences<Brand>(
-  project: ProjectView<Brand>,
-  held: Inventory,
-  chains: AliasChains,
-  root: string,
-  testFiles: ReadonlySet<string>,
-): readonly Reference[] {
-  const queries = project.queries;
-  const candidates: Candidate[] = [];
-  const calls = new Map<Node, { readonly file: SourceFile; readonly from: string }>();
-  const names: Identifier[] = [];
-
-  for (const file of project.ownSourceFiles()) {
-    const fileId = held.declarations.get(nodeKey(file, file));
-    if (fileId === undefined) {
-      continue;
-    }
-    const visit = (node: Node, from: string): void => {
-      const holder = held.declarations.get(nodeKey(file, node)) ?? from;
-      if (isElementAccessExpression(node) && !isLiteralIndex(node.argumentExpression)) {
-        candidates.push({ file, from: holder, access: node, use: useOf(node) });
-      }
-      if (isCallExpression(node)) {
-        calls.set(node, { file, from: holder });
-      }
-      if (isIdentifier(node)) {
-        names.push(node);
-      }
-      node.forEachChild((child) => {
-        visit(child, holder);
-      });
-    };
-    file.forEachChild((child) => {
-      visit(child, fileId);
-    });
-  }
-  if (candidates.length === 0) {
-    return [];
-  }
-
-  // A parameter index is decided at the calls only where the function is a callable every
-  // use of which is a call, so the symbols of the parameters and of every name are read.
-  const parameterOf = new Map<Candidate, { callable: Callable; at: number }>();
-  const byCallable = new Map<Identifier, Candidate[]>();
-  for (const candidate of candidates) {
-    const index = parenthesesRemoved(candidate.access.argumentExpression);
-    const fn = isIdentifier(index) ? enclosingFunction(candidate.access) : undefined;
-    const callable = fn === undefined ? undefined : callableOf(fn);
-    if (callable === undefined || !isIdentifier(index)) {
-      continue;
-    }
-    const at = callable.parameters.findIndex(
-      (parameter) => isIdentifier(parameter.name) && parameter.name.text === index.text,
-    );
-    if (at < 0 || assigns(callable.body, index.text)) {
-      continue;
-    }
-    parameterOf.set(candidate, { callable, at });
-    byCallable.set(callable.name, [...(byCallable.get(callable.name) ?? []), candidate]);
-  }
-  const callableNames = [...byCallable.keys()];
-  const spelled = new Set(callableNames.map((name) => name.text));
-  const sameName = names.filter((name) => spelled.has(name.text));
-  const symbols = queries.symbolsAt([...callableNames, ...sameName]);
-  const symbolOf = new Map<Node, unknown>();
-  [...callableNames, ...sameName].forEach((node, at) => {
-    const symbol = symbols[at];
-    if (symbol !== UNANSWERED && symbol !== undefined) {
-      symbolOf.set(node, symbol);
-    }
-  });
-  const callsOf = new Map<Node, CallExpression[] | undefined>();
-  for (const name of callableNames) {
-    const symbol = symbolOf.get(name);
-    let found: CallExpression[] | undefined = symbol === undefined ? undefined : [];
-    for (const use of sameName) {
-      if (found === undefined) {
-        break;
-      }
-      if (use === name || symbolOf.get(use) !== symbol) {
-        continue;
-      }
-      const parent = use.parent;
-      found =
-        isCallExpression(parent) && parent.expression === use ? [...found, parent] : undefined;
-    }
-    callsOf.set(name, found);
-  }
-
-  const lookups: Lookup[] = [];
-  for (const candidate of candidates) {
-    const deferred = parameterOf.get(candidate);
-    const sites = deferred === undefined ? undefined : callsOf.get(deferred.callable.name);
-    if (deferred === undefined || sites === undefined) {
-      lookups.push({
-        file: candidate.file,
-        from: candidate.from,
-        at: candidate.access.argumentExpression,
-        object: candidate.access.expression,
-        index: candidate.access.argumentExpression,
-        use: candidate.use,
-      });
-      continue;
-    }
-    // An object that is a parameter too is read as the argument each call passes there.
-    const object = parenthesesRemoved(candidate.access.expression);
-    const objectAt = isIdentifier(object)
-      ? deferred.callable.parameters.findIndex(
-          (parameter) => isIdentifier(parameter.name) && parameter.name.text === object.text,
-        )
-      : -1;
-    for (const call of sites) {
-      const parameter = deferred.callable.parameters[deferred.at];
-      const index = call.arguments[deferred.at] ?? parameter?.initializer;
-      const site = calls.get(call);
-      if (index === undefined || site === undefined) {
-        continue;
-      }
-      lookups.push({
-        file: site.file,
-        from: site.from,
-        at: call,
-        object:
-          (objectAt < 0 ? undefined : call.arguments[objectAt]) ?? candidate.access.expression,
-        index,
-        use: candidate.use,
-      });
-    }
-  }
-
-  const nodes = lookups.flatMap((one) => [one.index, one.object]);
-  const types = queries.typesAt(nodes);
-  const typeOf = (node: Node, at: number): Type | undefined => {
-    const type = types[at];
-    return nodes[at] === node && type !== UNANSWERED ? type : undefined;
-  };
-  // A type parameter's body serves every instantiation, so it reads what its constraint admits.
-  const keysOf = (type: Type): Type => {
-    if (!type.isTypeParameter()) {
-      return type;
-    }
-    const constraint = queries.constraintOf(type);
-    return constraint === UNANSWERED || constraint === undefined ? type : constraint;
-  };
-  const partsOf = (type: Type): readonly Type[] => {
-    const parts = queries.constituents(type);
-    return parts === UNANSWERED ? [type] : parts;
-  };
-
-  const found: Reference[] = [];
-  lookups.forEach((lookup, at) => {
-    const indexType = typeOf(lookup.index, 2 * at);
-    const objectType = typeOf(lookup.object, 2 * at + 1);
-    const literals = indexType === undefined ? undefined : literalNames(partsOf(keysOf(indexType)));
-    if (objectType === undefined || literals === undefined) {
-      return;
-    }
-    const position = renderPosition(lookup.file, root, lookup.at.getStart());
-    for (const part of partsOf(objectType)) {
-      const properties = queries.propertiesOf(part);
-      for (const property of properties === UNANSWERED ? [] : properties) {
-        if (!literals.has(property.escapedName)) {
-          continue;
+export const elementAccess: ReadRule = {
+  start() {
+    const candidates: Candidate[] = [];
+    const calls = new Map<Node, { readonly file: SourceFile; readonly from: string }>();
+    const names: Identifier[] = [];
+    return {
+      visit(node, { file, from }) {
+        if (isElementAccessExpression(node) && !isLiteralIndex(node.argumentExpression)) {
+          candidates.push({ file, from, access: node, use: useOf(node) });
         }
-        for (const to of chains.declarationsOf(property)) {
-          for (const use of lookup.use === "both" ? (["read", "write"] as const) : [lookup.use]) {
-            found.push({
-              from: lookup.from,
-              to,
-              position,
-              use,
-              resolution: "keyed",
-              test: testFiles.has(position.path),
+        if (isCallExpression(node)) {
+          calls.set(node, { file, from });
+        }
+        if (isIdentifier(node)) {
+          names.push(node);
+        }
+      },
+      reads({ project, chains }) {
+        const found: Read[] = [];
+        if (candidates.length === 0) {
+          return found;
+        }
+        const queries = project.queries;
+        // A parameter index is decided at the calls only where the function is a callable every
+        // use of which is a call, so the symbols of the parameters and of every name are read.
+        const parameterOf = new Map<Candidate, { callable: Callable; at: number }>();
+        const byCallable = new Map<Identifier, Candidate[]>();
+        for (const candidate of candidates) {
+          const index = parenthesesRemoved(candidate.access.argumentExpression);
+          const fn = isIdentifier(index) ? enclosingFunction(candidate.access) : undefined;
+          const callable = fn === undefined ? undefined : callableOf(fn);
+          if (callable === undefined || !isIdentifier(index)) {
+            continue;
+          }
+          const at = callable.parameters.findIndex(
+            (parameter) => isIdentifier(parameter.name) && parameter.name.text === index.text,
+          );
+          if (at < 0 || assigns(callable.body, index.text)) {
+            continue;
+          }
+          parameterOf.set(candidate, { callable, at });
+          byCallable.set(callable.name, [...(byCallable.get(callable.name) ?? []), candidate]);
+        }
+        const callableNames = [...byCallable.keys()];
+        const spelled = new Set(callableNames.map((name) => name.text));
+        const sameName = names.filter((name) => spelled.has(name.text));
+        const asked = [...callableNames, ...sameName];
+        const symbols = queries.symbolsAt(asked);
+        const symbolOf = new Map<Node, unknown>();
+        asked.forEach((node, at) => {
+          const symbol = symbols[at];
+          if (symbol !== undefined) {
+            symbolOf.set(node, symbol);
+          }
+        });
+        const callsOf = new Map<Node, CallExpression[] | undefined>();
+        for (const name of callableNames) {
+          const symbol = symbolOf.get(name);
+          let sites: CallExpression[] | undefined =
+            symbol === undefined || symbol === UNANSWERED ? undefined : [];
+          for (const use of sameName) {
+            if (sites === undefined) {
+              break;
+            }
+            const other = symbolOf.get(use);
+            if (use === name || (other !== symbol && other !== UNANSWERED)) {
+              continue;
+            }
+            // A use the checker could not resolve may be the function's, read where it is not called.
+            const parent = use.parent;
+            sites =
+              other !== UNANSWERED && isCallExpression(parent) && parent.expression === use
+                ? [...sites, parent]
+                : undefined;
+          }
+          callsOf.set(name, sites);
+        }
+
+        const lookups: Lookup[] = [];
+        for (const candidate of candidates) {
+          const deferred = parameterOf.get(candidate);
+          const sites = deferred === undefined ? undefined : callsOf.get(deferred.callable.name);
+          if (deferred === undefined || sites === undefined) {
+            lookups.push({
+              file: candidate.file,
+              from: candidate.from,
+              at: candidate.access.argumentExpression,
+              object: candidate.access.expression,
+              index: candidate.access.argumentExpression,
+              use: candidate.use,
+            });
+            continue;
+          }
+          // An object that is a parameter too is read as the argument each call passes there.
+          const object = parenthesesRemoved(candidate.access.expression);
+          const objectAt = isIdentifier(object)
+            ? deferred.callable.parameters.findIndex(
+                (parameter) => isIdentifier(parameter.name) && parameter.name.text === object.text,
+              )
+            : -1;
+          for (const call of sites) {
+            const parameter = deferred.callable.parameters[deferred.at];
+            const index = call.arguments[deferred.at] ?? parameter?.initializer;
+            const site = calls.get(call);
+            if (index === undefined || site === undefined) {
+              continue;
+            }
+            lookups.push({
+              file: site.file,
+              from: site.from,
+              at: call,
+              object:
+                (objectAt < 0 ? undefined : call.arguments[objectAt]) ??
+                candidate.access.expression,
+              index,
+              use: candidate.use,
             });
           }
         }
-      }
-    }
-  });
-  return found;
-}
+
+        const nodes = lookups.flatMap((one) => [one.index, one.object]);
+        const types = queries.typesAt(nodes);
+        // A type parameter's body serves every instantiation, so it reads what its constraint admits.
+        const keysOf = (type: Type): Type => {
+          if (!type.isTypeParameter()) {
+            return type;
+          }
+          const constraint = queries.constraintOf(type);
+          return constraint === UNANSWERED || constraint === undefined ? type : constraint;
+        };
+        const partsOf = (type: Type): readonly Type[] => {
+          const parts = queries.constituents(type);
+          return parts === UNANSWERED ? [type] : parts;
+        };
+        lookups.forEach((lookup, at) => {
+          const indexType = types[2 * at];
+          const objectType = types[2 * at + 1];
+          const literals =
+            indexType === undefined || indexType === UNANSWERED
+              ? undefined
+              : literalNames(partsOf(keysOf(indexType)));
+          if (indexType === UNANSWERED || objectType === UNANSWERED) {
+            found.push({
+              kind: "held",
+              from: lookup.from,
+              ...(literals === undefined ? {} : { names: [...literals] }),
+              ...(objectType === UNANSWERED || objectType === undefined
+                ? literals === undefined
+                  ? { members: true as const }
+                  : {}
+                : { types: partsOf(objectType) }),
+            });
+            return;
+          }
+          if (objectType === undefined || literals === undefined) {
+            return;
+          }
+          for (const part of partsOf(objectType)) {
+            const properties = queries.propertiesOf(part);
+            if (properties === UNANSWERED) {
+              found.push({ kind: "held", from: lookup.from, names: [...literals] });
+              continue;
+            }
+            for (const property of properties) {
+              if (!literals.has(property.escapedName)) {
+                continue;
+              }
+              for (const to of chains.declarationsOf(property)) {
+                for (const use of lookup.use === "both"
+                  ? (["read", "write"] as const)
+                  : [lookup.use]) {
+                  found.push({
+                    kind: "named",
+                    from: lookup.from,
+                    to,
+                    file: lookup.file,
+                    at: lookup.at,
+                    use,
+                    via: "keyed",
+                  });
+                }
+              }
+            }
+          }
+        });
+        return found;
+      },
+    };
+  },
+};
 
 /** The names a union of literal types spells, or none where a constituent is no string or number literal. */
 function literalNames(parts: readonly Type[]): ReadonlySet<string> | undefined {

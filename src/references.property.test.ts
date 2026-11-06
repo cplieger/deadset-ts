@@ -1,8 +1,8 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { analyzeProject, type Analyzed } from "../__test-helpers__/projects.ts";
+import { analyzeProject, type Analyzed, type ReferenceCase } from "../__test-helpers__/projects.ts";
 import type { InventorySymbol } from "./inventory.ts";
-import type { Reference, ReferenceOptions } from "./references.ts";
+import type { Reference } from "./references.ts";
 
 /**
  * One iteration of each property below writes a project, opens a compiler client and a
@@ -35,10 +35,7 @@ const TSCONFIG = `${JSON.stringify(
 )}\n`;
 
 /** The one project a drawn tree becomes, resolved under `options`. */
-function analyze(
-  files: Readonly<Record<string, string>>,
-  options: Omit<ReferenceOptions, "directories">,
-): Analyzed {
+function analyze(files: Readonly<Record<string, string>>, options: ReferenceCase): Analyzed {
   return analyzeProject({ "tsconfig.json": TSCONFIG, ...files }, { references: options });
 }
 
@@ -64,15 +61,14 @@ function declaredAt(analyzed: Analyzed, path: string, name: string): InventorySy
  * plus its per-node fallbacks, so the pass does not grow with the identifier count.
  *
  * The oracle is the client's own request counter, read either side of the pass, against
- * the pass's own accounting of what it asked: the two are independent measurements of
- * one thing, so a crossing the accounting does not name fails, and so does a batch
- * spent per name rather than per capped run of names. The satisfaction pass has its own
- * term and contributes none here, because this pass compares no types.
+ * the questions the pass put through the client's one question surface: the two are
+ * independent measurements of one thing, so a crossing outside that surface fails, and so
+ * does a batch spent per name rather than per capped run of names.
  *
- * It can fail in three ways that matter. The pass asks per node, and the request count
- * stops matching the batch count at any cap above one. The pass asks something it does
- * not count, and the request count exceeds the accounting. Or the batch stops being
- * capped, and the count stops rising as the cap falls.
+ * It can fail in three ways that matter. The pass asks per node, and the batch count stops
+ * matching the capped runs at any cap above one. The pass crosses outside the question
+ * surface, and the request count exceeds the questions. Or the batch stops being capped,
+ * and the count stops rising as the cap falls.
  */
 describe("batching", () => {
   it("bounds the round trips by the batches and the fallbacks, whatever the names cost", () => {
@@ -85,29 +81,19 @@ describe("batching", () => {
           },
           { testFiles: [], batchCap: cap },
         );
-        const cost = analyzed.references[0]?.cost;
+        const asks = analyzed.referenceAsks[0] ?? new Map();
+        const batch = asks.get("getSymbolAtLocation") ?? { calls: 0, locations: 0 };
 
-        expect(cost?.batched, "every name of the file reaches a batch").toBeGreaterThanOrEqual(
+        expect(batch.locations, "every name of the file reaches a batch").toBeGreaterThanOrEqual(
           reads,
         );
-        expect(cost?.fileBatches, "one batch per capped run of them").toBe(
-          Math.ceil((cost?.batched ?? 0) / cap),
+        expect(batch.calls, "one batch per capped run of them").toBe(
+          Math.ceil(batch.locations / cap),
         );
         expect(
           analyzed.referenceRequests,
-          "and the requests the client measured are the ones the pass accounts for",
-        ).toBe(
-          (cost?.fileBatches ?? 0) +
-            (cost?.residueFallbacks ?? 0) +
-            (cost?.shorthandLookups ?? 0) +
-            (cost?.aliasSteps ?? 0) +
-            (cost?.platformLookups ?? 0) +
-            (cost?.patternBatches ?? 0) +
-            (cost?.patternLookups ?? 0) +
-            (cost?.contextualBatches ?? 0) +
-            (cost?.contextualLookups ?? 0) +
-            (cost?.typedLookups ?? 0),
-        );
+          "and the client measured no request outside the questions the pass put",
+        ).toBeLessThanOrEqual([...asks.values()].reduce((sum, one) => sum + one.calls, 0));
       }),
       { numRuns: 20 },
     );

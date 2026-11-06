@@ -15,14 +15,14 @@ import {
   SyntaxKind,
   type HeritageClauseElement,
   type Node,
+  type SourceFile,
 } from "@typescript/native/ast";
-import type { AliasChains } from "./alias-chain.ts";
 import { memberComponent } from "./class-members.ts";
-import { nodeKey, type Inventory, type InventorySymbol } from "./inventory.ts";
+import { nodeKey, type InventorySymbol } from "./inventory.ts";
 import { SymbolFlags, type Symbol as TSSymbol, type Type } from "@typescript/native/sync";
 import { UNANSWERED } from "./query.ts";
 import { nameComponent } from "./ref.ts";
-import type { Reference } from "./references.ts";
+import type { Read, ReadRule } from "./references/read-rule.ts";
 import type { ProjectView } from "./session.ts";
 
 const CLASS_DECLARATIONS: ReadonlySet<SyntaxKind> = new Set([
@@ -41,141 +41,157 @@ function nameOf(entry: HeritageClauseElement): Node {
   return isQualifiedName(entry.typeName) ? entry.typeName.right : entry.typeName;
 }
 
-/** Each class of the target whose `extends` clause names a class, with the name node. */
-function extending<Brand>(
-  project: ProjectView<Brand>,
-  held: Inventory,
-): readonly { readonly id: string; readonly base: Node }[] {
-  const found: { id: string; base: Node }[] = [];
-  for (const file of project.ownSourceFiles()) {
-    const visit = (node: Node): void => {
-      if (isClassDeclaration(node) || isClassExpression(node)) {
-        const id = held.declarations.get(nodeKey(file, node));
-        const clause = node.heritageClauses?.find((one) => one.token === SyntaxKind.ExtendsKeyword);
-        const base = clause?.types[0];
-        if (id !== undefined && base !== undefined) {
-          found.push({ id, base: nameOf(base) });
-        }
-      }
-      node.forEachChild(visit);
-    };
-    file.forEachChild(visit);
-  }
-  return found;
+/** One class whose `extends` clause names a class, with the name node and its file. */
+interface Extending {
+  readonly node: Node;
+  readonly file: SourceFile;
+  readonly base: Node;
 }
 
 /**
- * The references each base class member makes to its overrides, for the classes of one
- * project that extend another class of the target, and each class makes to its members
- * that override a member of a class declared outside the target. A member a nearer base
- * already overrides is reached through that override. A private member is not
- * overridden. Each reference is placed at the override and made by its file.
+ * The reads each base class member makes of its overrides, for the classes of the target that
+ * extend another class of the target, and each class makes of its members that override a
+ * member of a class declared outside the target. A member a nearer base already overrides is
+ * reached through that override. A private member is not overridden. Each read is placed at
+ * the override. A class whose base the checker leaves unanswered holds every member it could
+ * override.
  */
-export function overrideReferences<Brand>(
-  project: ProjectView<Brand>,
-  held: Inventory,
-  chains: AliasChains,
-  testFiles: ReadonlySet<string>,
-): readonly Reference[] {
-  const classes = extending(project, held);
-  if (classes.length === 0) {
-    return [];
-  }
-  const byId = new Map(held.symbols.map((symbol) => [symbol.id, symbol]));
-  const members = new Map<string, Map<string, InventorySymbol>>();
-  for (const symbol of held.symbols) {
-    const component = memberComponent(symbol, byId);
-    if (
-      component === undefined ||
-      !OVERRIDABLE.has(symbol.kind) ||
-      symbol.visibility === "private" ||
-      symbol.visibility === "private-name"
-    ) {
-      continue;
-    }
-    const own = members.get(symbol.parent) ?? new Map<string, InventorySymbol>();
-    own.set(component, symbol);
-    members.set(symbol.parent, own);
-  }
-  const bases = new Map<string, readonly string[]>();
-  const outsideBases = new Map<string, TSSymbol>();
-  const own = project.ownPaths();
-  const symbols = project.symbolsAt(classes.map((one) => project.handle(one.base)));
-  classes.forEach(({ id }, index) => {
-    const symbol = symbols[index];
-    if (symbol !== undefined && symbol !== UNANSWERED) {
-      const inTarget = chains
-        .chainOf(symbol)
-        .map((target) => target.id)
-        .filter((target) => byId.get(target)?.kind === "class" && target !== id);
-      bases.set(id, inTarget);
-      const declared =
-        (symbol.flags & SymbolFlags.Alias) === 0 ? symbol : project.queries.aliased(symbol);
-      if (
-        inTarget.length === 0 &&
-        declared !== UNANSWERED &&
-        (((declared.flags & SymbolFlags.Class) !== 0 &&
-          // The target's augmentation of an outside class merges an interface into it,
-          // so only a class declaration says where the class is.
-          declared.declarations.some(
-            (handle) => CLASS_DECLARATIONS.has(handle.kind) && !own.has(handle.path),
-          )) ||
-          ((declared.flags & SymbolFlags.Interface) !== 0 &&
-            declared.declarations.some(
-              (handle) => handle.kind === SyntaxKind.VariableDeclaration && !own.has(handle.path),
-            )))
-      ) {
-        outsideBases.set(id, declared);
-      }
-    }
-  });
-
-  /** The nearest member of one component the class or a class it extends declares. */
-  const declaredAbove = (classId: string, component: string, seen: Set<string>): string[] => {
-    if (seen.has(classId)) {
-      return [];
-    }
-    seen.add(classId);
-    const own = members.get(classId)?.get(component);
-    if (own !== undefined) {
-      return [own.id];
-    }
-    return (bases.get(classId) ?? []).flatMap((base) => declaredAbove(base, component, seen));
-  };
-
-  const found: Reference[] = [];
-  const outsideNames = outsideMemberNames(project, bases, outsideBases);
-  for (const [classId, names] of outsideNames) {
-    for (const [component, member] of members.get(classId) ?? []) {
-      if (names.has(component)) {
-        found.push({
-          from: classId,
-          to: member.id,
-          position: member.position,
-          use: "read",
-          resolution: "override",
-          test: testFiles.has(member.position.path),
+export const overrides: ReadRule = {
+  start() {
+    const extending: Extending[] = [];
+    return {
+      visit(node, { file }) {
+        if (isClassDeclaration(node) || isClassExpression(node)) {
+          const clause = node.heritageClauses?.find(
+            (one) => one.token === SyntaxKind.ExtendsKeyword,
+          );
+          const base = clause?.types[0];
+          if (base !== undefined) {
+            extending.push({ node, file, base: nameOf(base) });
+          }
+        }
+      },
+      reads({ project, held, chains }) {
+        const found: Read[] = [];
+        const classes = extending.flatMap((one) => {
+          const id = held.declarations.get(nodeKey(one.file, one.node));
+          return id === undefined ? [] : [{ ...one, id }];
         });
-      }
-    }
-  }
-  for (const [classId, baseIds] of bases) {
-    for (const [component, member] of members.get(classId) ?? []) {
-      const seen = new Set([classId]);
-      for (const base of baseIds.flatMap((one) => declaredAbove(one, component, seen))) {
-        found.push({
-          from: base,
-          to: member.id,
-          position: member.position,
-          use: "read",
-          resolution: "override",
-          test: testFiles.has(member.position.path),
+        if (classes.length === 0) {
+          return found;
+        }
+        const byId = new Map(held.symbols.map((symbol) => [symbol.id, symbol]));
+        const members = new Map<string, Map<string, InventorySymbol>>();
+        for (const symbol of held.symbols) {
+          const component = memberComponent(symbol, byId);
+          if (
+            component === undefined ||
+            !OVERRIDABLE.has(symbol.kind) ||
+            symbol.visibility === "private" ||
+            symbol.visibility === "private-name"
+          ) {
+            continue;
+          }
+          const own = members.get(symbol.parent) ?? new Map<string, InventorySymbol>();
+          own.set(component, symbol);
+          members.set(symbol.parent, own);
+        }
+        const bases = new Map<string, readonly string[]>();
+        const outsideBases = new Map<string, TSSymbol>();
+        const fileOf = new Map(classes.map((one) => [one.id, one.file]));
+        const own = project.ownPaths();
+        const unanswered = new Set<string>();
+        const symbols = project.symbolsAt(classes.map((one) => project.handle(one.base)));
+        classes.forEach(({ id }, index) => {
+          const symbol = symbols[index];
+          if (symbol === UNANSWERED) {
+            unanswered.add(id);
+            return;
+          }
+          if (symbol === undefined) {
+            return;
+          }
+          const inTarget = chains
+            .chainOf(symbol)
+            .map((target) => target.id)
+            .filter((target) => byId.get(target)?.kind === "class" && target !== id);
+          bases.set(id, inTarget);
+          const declared =
+            (symbol.flags & SymbolFlags.Alias) === 0 ? symbol : project.queries.aliased(symbol);
+          if (declared === UNANSWERED) {
+            unanswered.add(id);
+            return;
+          }
+          if (
+            inTarget.length === 0 &&
+            (((declared.flags & SymbolFlags.Class) !== 0 &&
+              // The target's augmentation of an outside class merges an interface into it,
+              // so only a class declaration says where the class is.
+              declared.declarations.some(
+                (handle) => CLASS_DECLARATIONS.has(handle.kind) && !own.has(handle.path),
+              )) ||
+              ((declared.flags & SymbolFlags.Interface) !== 0 &&
+                declared.declarations.some(
+                  (handle) =>
+                    handle.kind === SyntaxKind.VariableDeclaration && !own.has(handle.path),
+                )))
+          ) {
+            outsideBases.set(id, declared);
+          }
         });
-      }
-    }
-  }
-  return found;
-}
+
+        /** The nearest member of one component the class or a class it extends declares. */
+        const declaredAbove = (classId: string, component: string, seen: Set<string>): string[] => {
+          if (seen.has(classId)) {
+            return [];
+          }
+          seen.add(classId);
+          const member = members.get(classId)?.get(component);
+          if (member !== undefined) {
+            return [member.id];
+          }
+          return (bases.get(classId) ?? []).flatMap((base) => declaredAbove(base, component, seen));
+        };
+
+        const read = (classId: string, from: string, member: InventorySymbol): void => {
+          const file = fileOf.get(classId);
+          if (file !== undefined) {
+            found.push({
+              kind: "named",
+              from,
+              to: member.id,
+              file,
+              at: member.position,
+              use: "read",
+              via: "override",
+            });
+          }
+        };
+        const outside = outsideMemberNames(project, bases, outsideBases);
+        for (const classId of [...unanswered, ...outside.unanswered]) {
+          const ids = [...(members.get(classId)?.values() ?? [])].map((member) => member.id);
+          found.push({ kind: "held", from: classId, ids });
+        }
+        for (const [classId, names] of outside.names) {
+          for (const [component, member] of members.get(classId) ?? []) {
+            if (names.has(component)) {
+              read(classId, classId, member);
+            }
+          }
+        }
+        for (const [classId, baseIds] of bases) {
+          for (const [component, member] of members.get(classId) ?? []) {
+            const seen = new Set([classId]);
+            for (const base of baseIds.flatMap((one) => declaredAbove(one, component, seen))) {
+              read(classId, base, member);
+            }
+          }
+        }
+        return found;
+      },
+    };
+  },
+};
 
 /**
  * Per class of the target with a class declared outside the target in its `extends`
@@ -186,12 +202,24 @@ function outsideMemberNames<Brand>(
   project: ProjectView<Brand>,
   bases: ReadonlyMap<string, readonly string[]>,
   outsideBases: ReadonlyMap<string, TSSymbol>,
-): ReadonlyMap<string, ReadonlySet<string>> {
+): {
+  readonly names: ReadonlyMap<string, ReadonlySet<string>>;
+  readonly unanswered: readonly string[];
+} {
   const direct = new Map<string, ReadonlySet<string>>();
+  const unanswered: string[] = [];
   const error = errorType(project);
   for (const [classId, base] of outsideBases) {
     const instance = project.queries.declaredTypeOf(base);
     const statics = project.queries.typeOfSymbol(base);
+    if (
+      instance === UNANSWERED ||
+      statics === UNANSWERED ||
+      project.queries.propertiesOf(instance) === UNANSWERED ||
+      (statics !== undefined && project.queries.propertiesOf(statics) === UNANSWERED)
+    ) {
+      unanswered.push(classId);
+    }
     const components = [
       ...namesOf(project, instance === UNANSWERED ? undefined : instance).map(nameComponent),
       ...(instance !== UNANSWERED && reaches(project, instance, error) ? ["toString"] : []),
@@ -220,7 +248,7 @@ function outsideMemberNames<Brand>(
       names.set(classId, found);
     }
   }
-  return names;
+  return { names, unanswered };
 }
 
 /** The global `Error` instance type's identifier, where the program's library declares one. */

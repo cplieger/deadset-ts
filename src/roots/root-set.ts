@@ -621,7 +621,7 @@ export function rootSet<Brand>(
   for (const id of skippedRoots(project, held, options.skips)) {
     add(id, "type-error", "");
   }
-  for (const id of mergedGlobalInterfaces(project, held, files)) {
+  for (const id of mergedGlobalInterfaces(project, held, files).kept) {
     add(id, "global-augmentation", "");
   }
 

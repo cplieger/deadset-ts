@@ -61,7 +61,7 @@ The report names the target relative to the directory the run is invoked from. R
 
 ## explain
 
-`explain --why=SYM` prints why one declaration is reported, retained, held by an unanswered question, live or dead. `--why-live=SYM` and `--why-not=SYM` are the same request. For a live declaration it prints the shortest reference path from a root or a loaded consumer, and it exits 0.
+`explain --why=SYM` prints why one declaration is reported, retained, held by an unanswered question, live or dead. `--why-live=SYM` and `--why-not=SYM` are the same request. For a live declaration it prints the shortest reference path from a root, a loaded consumer or a test file no project holds, and it exits 0.
 
 `SYM` is a stable symbol reference such as `ts://demo/src/greet.ts#Counter.reset`, the part after its `#`, or a declaration's name, each matched exactly. A request that names no single declaration exits 2 and lists up to 20 declarations it partially matches.
 

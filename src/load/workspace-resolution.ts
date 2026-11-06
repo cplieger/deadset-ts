@@ -10,7 +10,14 @@ import { emittedFrom } from "./emit-map.ts";
 import { packageOfSpecifier } from "../dependencies.ts";
 import { gitIgnored } from "../git-ignore.ts";
 import type { Host } from "../host.ts";
-import { ancestors, dirnamePath, joinPath, relativePath, resolvePath } from "../paths.ts";
+import {
+  ancestors,
+  cannotStartPackageName,
+  dirnamePath,
+  joinPath,
+  relativePath,
+  resolvePath,
+} from "../paths.ts";
 import { satisfies } from "../version-range.ts";
 import type { Workspace, WorkspaceMember } from "./workspace.ts";
 import { isRecord } from "../json-document.ts";
@@ -140,7 +147,7 @@ function dependsOn(specifier: string, member: WorkspaceMember, fromDir: string):
     member.version !== undefined && satisfies(member.version, range);
   if (specifier.startsWith("workspace:")) {
     const rest = specifier.slice("workspace:".length);
-    if (rest.startsWith(".") || rest.startsWith("/")) {
+    if (cannotStartPackageName(rest)) {
       return atPath(rest);
     }
     const alias = /^((?:@[^/@]+\/)?[^/@]+)@(.*)$/u.exec(rest);

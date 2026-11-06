@@ -78,7 +78,7 @@ function holdersOf(
  * file or a `declare` holds that a `declare global` block, or the top level of a file in
  * `scripts`, declares, directly or inside a namespace there.
  */
-export function ambientGlobalInterfaces(
+function ambientGlobalInterfaces(
   held: Inventory,
   interfaces: readonly string[],
   scripts: ReadonlySet<string>,
@@ -89,19 +89,31 @@ export function ambientGlobalInterfaces(
     : interfaces.filter((id) => held.ambient.has(id) && holders(id).global);
 }
 
+/** The ambient global interfaces of a project's own files that merge into a declaration outside them. */
+interface GlobalMerges {
+  /** The files that are no module, by identifier. */
+  readonly scripts: ReadonlySet<string>;
+  /** Each such interface, by identifier. */
+  readonly interfaces: ReadonlySet<string>;
+  /**
+   * Each such interface with every interface, namespace and block between it and the global
+   * scope: the outside declaration names it wherever a value is typed by it. Where every
+   * outside declaration is a package's, not the compiler's library, and declares no member,
+   * each member it declares as well: such an interface is a slot the package reads by type,
+   * as `keyof` does, in declarations the analysis does not walk.
+   */
+  readonly kept: readonly string[];
+}
+
 /**
- * Each ambient global interface of the project's own files that merges into an interface
- * declared outside them, with every interface, namespace and block between it and the
- * global scope: the outside declaration names it wherever a value is typed by it. Where
- * every outside declaration is a package's, not the compiler's library, and declares no
- * member, each member it declares as well: such an interface is a slot the package reads
- * by type, as `keyof` does, in declarations the analysis does not walk.
+ * Which ambient global interfaces of the project's own files, `files`, merge into an interface
+ * declared outside them, and what each merge keeps.
  */
 export function mergedGlobalInterfaces<Brand>(
   project: ProjectView<Brand>,
   held: Inventory,
   files: SourceFiles,
-): readonly string[] {
+): GlobalMerges {
   const scripts = new Set<string>();
   const names = new Map<string, Node>();
   for (const file of files.byName.values()) {
@@ -124,7 +136,7 @@ export function mergedGlobalInterfaces<Brand>(
   const global = new Set(ambientGlobalInterfaces(held, [...names.keys()], scripts));
   const asked = [...names].filter(([id]) => global.has(id));
   if (asked.length === 0) {
-    return [];
+    return { scripts, interfaces: new Set(), kept: [] };
   }
   const answers = project.symbolsAt(asked.map(([, name]) => project.handle(name)));
   const holders = holdersOf(held, scripts);
@@ -135,24 +147,26 @@ export function mergedGlobalInterfaces<Brand>(
     const node = project.declarationAt(handle)?.node;
     return node !== undefined && isInterfaceDeclaration(node) && node.members.length === 0;
   };
-  return [
-    ...new Set(
-      asked.flatMap(([id], at) => {
-        const symbol = answers[at];
-        if (typeof symbol !== "object") {
-          return [];
-        }
-        const outside = symbol.declarations.filter((handle) => !files.byName.has(handle.path));
-        if (outside.length === 0) {
-          return [];
-        }
-        const members = outside.every(empty)
-          ? held.symbols.filter((one) => one.parent === id).map((one) => one.id)
-          : [];
-        return [id, ...(holders?.(id).ids ?? []), ...members];
-      }),
-    ),
-  ];
+  const interfaces = new Set<string>();
+  const kept = new Set<string>();
+  asked.forEach(([id], at) => {
+    const symbol = answers[at];
+    const outside =
+      typeof symbol === "object"
+        ? symbol.declarations.filter((handle) => !files.byName.has(handle.path))
+        : [];
+    if (outside.length === 0) {
+      return;
+    }
+    interfaces.add(id);
+    const members = outside.every(empty)
+      ? held.symbols.filter((one) => one.parent === id).map((one) => one.id)
+      : [];
+    for (const one of [id, ...(holders?.(id).ids ?? []), ...members]) {
+      kept.add(one);
+    }
+  });
+  return { scripts, interfaces, kept: [...kept] };
 }
 
 /**

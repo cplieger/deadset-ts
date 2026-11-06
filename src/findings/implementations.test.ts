@@ -1,12 +1,12 @@
 import { rmSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { nodeHost } from "../bin/node-host.ts";
-import { targetConfigFiles, writeProject } from "../__test-helpers__/projects.ts";
-import { discoverProjects } from "./load/discover.ts";
+import { nodeHost } from "../../bin/node-host.ts";
+import { targetConfigFiles, writeProject } from "../../__test-helpers__/projects.ts";
+import { discoverProjects } from "../load/discover.ts";
 import { implementations, mergeImplementations, type Implementations } from "./implementations.ts";
-import { inventory } from "./inventory/enumerate.ts";
-import { scopeForDir } from "./scope.ts";
-import { openEngine, runSession, type Engine } from "./session.ts";
+import { inventory } from "../inventory/enumerate.ts";
+import { scopeForDir } from "../scope.ts";
+import { openEngine, runSession, type Engine } from "../session.ts";
 
 /** One run's answers, by display name: who implements what, how each method is written, what is unknown. */
 interface Read {
