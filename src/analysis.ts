@@ -26,8 +26,9 @@ import { readSources, type SourceFacts } from "./entries/sources.ts";
 import { readWorkflows, type Workflows } from "./entries/workflow-steps.ts";
 import { readEdgeSides } from "./edges.ts";
 import { enumGroup } from "./enum-group.ts";
+import { bindingsOf, distinctBindings, type BindingRecord } from "./bindings.ts";
 import { generatedFile, generatedFilesOf, type GeneratedFact } from "./generated-file.ts";
-import { inOperandNames } from "./in-operands.ts";
+import { inOperandNames } from "./findings/in-operands.ts";
 import { sourceFilesOf } from "./source-files.ts";
 import {
   evidenceRecords,
@@ -49,7 +50,7 @@ import type { EmitterInput } from "./findings/emitter.ts";
 import { unmatchedRootFindings, type SelfCheckFacts } from "./findings/self-check.ts";
 import { frameworkLifecycle } from "./framework-lifecycle.ts";
 import type { Host } from "./host.ts";
-import { implementations, mergeImplementations } from "./implementations.ts";
+import { implementations, mergeImplementations } from "./findings/implementations.ts";
 import { injectionContainer } from "./injection-container.ts";
 import { interfaceSatisfaction, settledSatisfaction } from "./interface-satisfaction.ts";
 import { intraFunctionFacts, projectParts, type ProjectParts } from "./intra-function-parts.ts";
@@ -78,7 +79,7 @@ import { byPosition, isComponentFile, type Position } from "./position.ts";
 import type { TypeErrorSkip, UnansweredCount } from "./report.ts";
 import { skippedUnits, type SkippedUnit } from "./type-errors.ts";
 import { reflectiveLookup } from "./reflective-lookup.ts";
-import { references, testFileRulesOf, type Reference, type TestFileRule } from "./references.ts";
+import { references, type Reference } from "./references.ts";
 import {
   rootSet,
   unmatchedEverywhere,
@@ -88,12 +89,20 @@ import {
 } from "./roots/root-set.ts";
 import type { Scope } from "./scope.ts";
 import { decodedMembers, serializationContract, type Decoded } from "./serialization-contract.ts";
-import { outsideTestReferences, testFilesAt, type OutsideTest } from "./outside-tests.ts";
+import { outsideTestReferences, testFilesAt, type OutsideTest } from "./tests/outside.ts";
 import type { UnseenLoad } from "./roots/unseen-loads.ts";
 import type { UnresolvedSpecifier } from "./load/specifiers.ts";
+import { formedForNode } from "./load/synthesize.ts";
 import type { UnreadInput } from "./load/plan.ts";
 import { GLOBALS_RUNNER, namesTestGlobals } from "./load/test-globals.ts";
-import { supportReferences, testSupportFiles, type TestEvidence } from "./test-support.ts";
+import {
+  targetTestFile,
+  testFilePaths,
+  testFileRulesOf,
+  withheldBy,
+  type TestFileRule,
+} from "./tests/file-class.ts";
+import { testSupportFiles, type TestEvidence } from "./tests/support.ts";
 import type { Engine, ProjectView } from "./session.ts";
 import { accessorsOf, storesOf } from "./stores.ts";
 import { isPartKind, type SuppressionRecord, type Suppressions, type Verdict } from "./suppress.ts";
@@ -179,8 +188,12 @@ interface ProjectRead {
   readonly skipped: readonly SkippedUnit[];
   /** The project's generated files, by path below the target root, each with what decided it. */
   readonly generated: ReadonlyMap<string, GeneratedFact>;
+  /** The binding identities its generated files publish (`bindings.6`, `bindings.7`). */
+  readonly bindings: readonly BindingRecord[];
   /** What the project's entry sources enter and name, read once. */
   readonly sources: SourceFacts;
+  /** Whether the run formed the program to resolve its modules as Node does (program.36). */
+  readonly formedForNode: boolean;
 }
 
 /** One target project the run analyzes, as its stage is handed it. */
@@ -195,6 +208,8 @@ interface ProjectsRead<Answer> {
   readonly answers: readonly Answer[];
   /** Every reference a consumer makes to a declaration of the target, each once. */
   readonly references: readonly Reference[];
+  /** The declarations a consumer's read rules held, each once. */
+  readonly consumerHeld: readonly string[];
   /** The test files below the target root no project the run reads holds, parsed. */
   readonly outsideTests: readonly OutsideTest[];
   /** The target root's workflow steps, git hooks and makefile, read once for every project. */
@@ -246,6 +261,7 @@ function readProjects<Answer>(
           workflows,
         });
         const rooted = rootSet(project, held, targetRoot, { ...options, sources, skips });
+        const generated = generatedFilesOf(own, sources.generated);
         return {
           configuration: planned.id,
           configFile: project.configFile,
@@ -257,8 +273,18 @@ function readProjects<Answer>(
             .ownSourceFiles()
             .filter((file) => referenceOnly(file.fileName))
             .flatMap((file) => relativePath(absoluteRoot, file.fileName) ?? []),
-          generated: generatedFilesOf(own, sources.generated),
+          generated,
+          bindings: bindingsOf(
+            own.byPath,
+            generated,
+            new Map(
+              held.symbols
+                .filter((one) => one.kind === "file")
+                .map((one) => [one.position.path, one.ref]),
+            ),
+          ),
           sources,
+          formedForNode: formedForNode(planned),
         };
       };
       for (const file of project.ownSourceFiles()) {
@@ -267,10 +293,15 @@ function readProjects<Answer>(
       return stage(project, { configuration: planned.id, read });
     });
     const consumed = new Map<string, Reference>();
+    const consumerHeld = new Set<string>();
     for (const { project, consumer } of classified.consumed) {
       const side = { id: consumer.id, root: consumer.path };
-      for (const reference of consumerReferences(project, host, targetRoot, side, config, parse)) {
+      const read = consumerReferences(project, host, targetRoot, side, config, parse);
+      for (const reference of read.references) {
         consumed.set(referenceKey(reference), reference);
+      }
+      for (const id of read.held) {
+        consumerHeld.add(id);
       }
     }
     const outsideTests = testFilesAt(
@@ -281,7 +312,13 @@ function readProjects<Answer>(
       ),
       parse,
     );
-    return { answers, references: [...consumed.values()], outsideTests, workflows };
+    return {
+      answers,
+      references: [...consumed.values()],
+      consumerHeld: [...consumerHeld],
+      outsideTests,
+      workflows,
+    };
   });
 }
 
@@ -386,6 +423,14 @@ export function runRoots(
   };
 }
 
+/** The production mode a configuration sets: a consumer's test reference is classed as `analysis.consumer_tests` says. */
+export function productionMode(config: PartialConfig): Mode {
+  return {
+    production: true,
+    consumerTestsProduction: config.analysis.consumer_tests === "production",
+  };
+}
+
 /** The run's sweep, beside the matrix it judged. */
 export interface RunSweep {
   readonly matrix: Matrix;
@@ -442,6 +487,8 @@ interface SweptProject<Extra> {
   readonly unanswered: readonly string[];
   /** The data members a generic declared outside the analysis fills, which it may read. */
   readonly filledOutside: readonly string[];
+  /** What only a bundler's retry of an import Node leaves unresolved names (program.38). */
+  readonly possiblyLoaded: readonly string[];
   readonly typeErrorSkips: readonly TypeErrorSkip[];
   readonly skipped: readonly SkippedUnit[];
   /** The component files the project holds of its own, by path below the target root. */
@@ -457,6 +504,9 @@ interface SweptProject<Extra> {
 interface ReadProject<Extra> {
   readonly projectRead: ProjectRead;
   readonly references: readonly Reference[];
+  /** The declarations its read rules held where the checker did not answer. */
+  readonly held: readonly string[];
+  readonly possiblyLoaded: readonly string[];
   readonly testFiles: readonly string[];
   readonly evidence: readonly Exemption[];
   readonly componentFiles: readonly string[];
@@ -578,11 +628,13 @@ function readRun<Extra>(
   );
   const read = readProjects<ReadProject<Extra>>(engine, host, scope, config, (project, opened) => {
     const projectRead = opened.read();
+    const testFile = targetTestFile(projectRead.sources.testFiles);
     const resolved = references(project, projectRead.held, targetRoot, {
-      testFiles: config.ts.test_files,
-      testFileNames: projectRead.sources.testFiles,
+      testFile,
       directories,
+      formedForNode: projectRead.formedForNode,
     });
+    const testFiles = testFilePaths(project, targetRoot, testFile);
     const evidence = evidenceRecords(
       {
         project,
@@ -607,7 +659,9 @@ function readRun<Extra>(
     return {
       projectRead,
       references: resolved.references,
-      testFiles: resolved.testFilePaths,
+      held: resolved.held,
+      possiblyLoaded: resolved.possiblyLoaded,
+      testFiles,
       evidence,
       componentFiles: components.map(pathOf),
       imports: new Map(
@@ -638,14 +692,14 @@ function readRun<Extra>(
       decoded: decodedMembers(
         project,
         projectRead.held,
-        productionFiles(project, targetRoot, resolved.testFilePaths),
+        productionFiles(project, targetRoot, testFiles),
         consumers,
       ),
       extra: extra(
         project,
         projectRead,
         resolved.references,
-        resolved.testFilePaths,
+        testFiles,
         resolved.unseenLoads.map((position) => ({
           configuration: projectRead.configuration,
           position,
@@ -705,7 +759,7 @@ function readRun<Extra>(
       testFiles: new Set([...one.testFiles, ...support]),
     });
     const exempt = detected.records;
-    const made = supportReferences([...one.references, ...(satisfied?.references ?? [])], support);
+    const made = [...one.references, ...(satisfied?.references ?? [])];
     const held = new Set(projectRead.held.symbols.map((symbol) => symbol.position.path));
     const supportFiles = [...support].filter((path) => held.has(path)).sort(bytewise);
     const testUsedFiles = [...testUsed].filter((path) => held.has(path)).sort(bytewise);
@@ -732,13 +786,13 @@ function readRun<Extra>(
       unanswered: [
         ...projectRead.held.unanswered,
         ...projectRead.rooted.unanswered,
-        ...made
-          .filter((reference) => reference.resolution === "by-name")
-          .map((reference) => reference.to),
+        ...made.filter((reference) => reference.guessed === true).map((reference) => reference.to),
+        ...one.held,
         ...exempt.filter(isUnansweredRecord).map((record) => record.id),
         ...one.decoded.unanswered,
       ],
       filledOutside: one.decoded.filled,
+      possiblyLoaded: one.possiblyLoaded,
       typeErrorSkips: projectRead.typeErrorSkips,
       unmappedEntries: projectRead.rooted.unmappedEntries,
       heldScripts: projectRead.rooted.heldScripts,
@@ -766,7 +820,8 @@ function readRun<Extra>(
     unansweredHeld: [
       ...new Set([
         ...answers.flatMap((one) => one.unanswered),
-        ...consumed.filter((one) => one.resolution === "by-name").map((one) => one.to),
+        ...consumed.filter((one) => one.guessed === true).map((one) => one.to),
+        ...read.result.consumerHeld,
       ]),
     ],
     projects,
@@ -855,8 +910,8 @@ function countedWrites(
   mode: Mode,
 ): ReadonlySet<string> {
   return new Set(
-    supportReferences(references, support).flatMap((reference) =>
-      reference.use === "write" && !(mode.production && reference.test) ? [reference.to] : [],
+    references.flatMap((reference) =>
+      reference.use === "write" && !withheldBy(mode, reference, support) ? [reference.to] : [],
     ),
   );
 }
@@ -869,8 +924,9 @@ function writtenOnly<Extra>(read: ReadRun<Extra>, mode: Mode): ReadonlySet<strin
   const written = new Set<string>();
   const readSome = new Set<string>();
   for (const { configured } of read.projects) {
+    const support = new Set(configured.supportFiles ?? []);
     for (const reference of configured.references) {
-      if (mode.production && reference.test) {
+      if (withheldBy(mode, reference, support)) {
         continue;
       }
       if (reference.use === "write" && reference.consumer === undefined) {
@@ -902,7 +958,7 @@ function sweptOf<Extra>(
     // over what it reads, the test of dead code among them, cannot judge it.
     for (const { configured } of read.projects) {
       for (const reference of configured.references) {
-        if (reference.resolution === "by-name") {
+        if (reference.guessed === true) {
           held.add(reference.from);
         }
       }
@@ -911,7 +967,7 @@ function sweptOf<Extra>(
     const answered = matrixOf(
       read.projects.map(({ configured }) => ({
         ...configured,
-        references: configured.references.filter((one) => one.resolution !== "by-name"),
+        references: configured.references.filter((one) => one.guessed !== true),
       })),
     );
     const bare: SweepInput = {
@@ -972,6 +1028,7 @@ interface EmitterExtra {
   readonly implementations: ReturnType<typeof implementations>;
   readonly heldByInclusion: readonly string[];
   readonly generated: ReadonlyMap<string, GeneratedFact>;
+  readonly bindings: readonly BindingRecord[];
   readonly inOperands: readonly string[];
   readonly rooted: Roots;
   readonly directives: readonly InlineDirective[];
@@ -1024,6 +1081,7 @@ export function readEmitterRun(
       implementations: implementations(project, read.held),
       heldByInclusion: heldByInclusion(project, targetRoot),
       generated: read.generated,
+      bindings: read.bindings,
       inOperands: inOperandNames(project, targetRoot, testFiles),
       rooted: read.rooted,
       directives: inlineDirectives(project, read.held, targetRoot).filter(
@@ -1112,6 +1170,7 @@ export function emitterInputOver(
     stores: storesOf(
       projects.map((one) => ({
         references: one.configured.references,
+        support: new Set(one.configured.supportFiles ?? []),
         accessors: one.extra.accessors,
       })),
       swept.exempt,
@@ -1143,6 +1202,7 @@ export function emitterInputOver(
       encapsulated: readManifest(host, targetRoot).declaresExports,
       edges: readEdgeSides(host, targetRoot),
       filledOutside: new Set(projects.flatMap((one) => one.filledOutside)),
+      possiblyLoaded: new Set(projects.flatMap((one) => one.possiblyLoaded)),
     },
     selfCheck,
     intraFunction: intraFunctionFacts(
@@ -1232,6 +1292,7 @@ function readAnalysis(
       ),
       unseenLoads: read.projects.flatMap((one) => one.extra.unseenLoads),
       generated: new Map(read.projects.flatMap((one) => [...one.extra.generated])),
+      bindings: distinctBindings(read.projects.flatMap((one) => one.extra.bindings)),
     },
     configured: read.projects.map((one) => one.configured),
     symbols,
@@ -1340,6 +1401,8 @@ interface RunFacts {
   readonly unseenLoads: readonly UnseenLoad[];
   /** Every generated file of the run, by its path below the target root, each once. */
   readonly generated: ReadonlyMap<string, GeneratedFact>;
+  /** Every binding record the run's generated files publish, each once. */
+  readonly bindings: readonly BindingRecord[];
 }
 
 /** One configuration whose component files a run cannot read. */

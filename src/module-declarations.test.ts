@@ -261,21 +261,10 @@ describe("an ambient module declaration of an exact name", () => {
       },
       { references: { testFiles: [] } },
     );
-    const cost = analyzed.references[0]?.cost;
-
-    expect(cost).toBeDefined();
-    expect(analyzed.referenceRequests).toBe(
-      (cost?.fileBatches ?? 0) +
-        (cost?.residueFallbacks ?? 0) +
-        (cost?.shorthandLookups ?? 0) +
-        (cost?.aliasSteps ?? 0) +
-        (cost?.platformLookups ?? 0) +
-        (cost?.patternBatches ?? 0) +
-        (cost?.patternLookups ?? 0) +
-        (cost?.contextualBatches ?? 0) +
-        (cost?.contextualLookups ?? 0) +
-        (cost?.typedLookups ?? 0),
-    );
+    expect(
+      analyzed.outsideDeclarations,
+      "the pass fetches no declaration outside the project's own files",
+    ).toEqual([0]);
   });
 
   it("is named by no specifier that only ends with its name", () => {

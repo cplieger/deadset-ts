@@ -9,12 +9,8 @@ import { runDirectories } from "../src/entries/run-directories.ts";
 import { inventory } from "../src/inventory/enumerate.ts";
 import { readManifest } from "../src/roots/manifest.ts";
 import { relativePath } from "../src/paths.ts";
-import {
-  references,
-  type Reference,
-  type ReferenceOptions,
-  type References,
-} from "../src/references.ts";
+import { references, type Reference, type References } from "../src/references.ts";
+import { patternTestFile, testFilePaths } from "../src/tests/file-class.ts";
 import type { Conventions } from "../src/entries/conventions.ts";
 import { readSources } from "../src/entries/sources.ts";
 import { rootSet, type RootOptions, type Roots } from "../src/roots/root-set.ts";
@@ -140,8 +136,18 @@ export interface Analyzed {
   readonly programFiles: readonly string[];
   /** The symbol tables every project's enumeration read, in order. */
   readonly tableReads: TableReads;
-  /** One entry per project, and none where no reference pass was asked for. */
-  readonly references: readonly References[];
+  /**
+   * One entry per project, and none where no reference pass was asked for, each with the
+   * files the case's test-file patterns classify, by their path below the root, ascending.
+   */
+  readonly references: readonly (References & { readonly testFilePaths: readonly string[] })[];
+  /** Per project, the requests the reference pass put to the client, by accessor. */
+  readonly referenceAsks: readonly ReadonlyMap<string, Asked>[];
+  /**
+   * Per project, the declarations outside the project's own files the reference pass read the
+   * node of: a pass that fetches one pays a request for a declaration no inventory holds.
+   */
+  readonly outsideDeclarations: readonly number[];
   /** One entry per project, and none where no root set was asked for. */
   readonly roots: readonly Roots[];
   /**
@@ -159,7 +165,7 @@ export interface AnalyzeOptions {
    * Absent leaves the reference pass unrun, so a case that reads declarations alone
    * pays nothing for it.
    */
-  readonly references?: Omit<ReferenceOptions, "directories">;
+  readonly references?: ReferenceCase;
   /**
    * Resolve the root set too, under these options and the manifest at the root.
    * Absent leaves it unresolved, so a case that reads declarations alone pays nothing
@@ -176,6 +182,20 @@ export interface AnalyzeOptions {
    * Absent, no mapper runs and no file is a component file.
    */
   readonly components?: readonly string[];
+}
+
+/** The requests one accessor received: the calls, and the locations they asked about. */
+interface Asked {
+  readonly calls: number;
+  readonly locations: number;
+  /** Each location asked about, `<file>:<offset>`, in the order asked. */
+  readonly at: readonly string[];
+}
+
+/** The reference options of one case: test files by pattern below the root. */
+export interface ReferenceCase {
+  readonly testFiles: readonly string[];
+  readonly batchCap?: number;
 }
 
 /** The root options of one case: the run's, with the entry sources' inputs in place of their facts. */
@@ -195,22 +215,31 @@ export function analyzeRoot(root: string, options: AnalyzeOptions = {}): Analyze
       : { components: { extensions: options.components, host } }),
   });
   const { panicsOn } = options;
-  const engine: Engine =
-    panicsOn === undefined
-      ? opened
-      : {
-          ...opened,
-          ask: (accessor, locations, question) => {
-            if (panicsOn(accessor, locations())) {
-              throw new Error(`panic: ${accessor}`);
-            }
-            return opened.ask(accessor, locations, question);
-          },
-        };
+  let asks: Map<string, Asked> | undefined;
+  const engine: Engine = {
+    ...opened,
+    ask: (accessor, locations, question) => {
+      if (asks !== undefined) {
+        const known = asks.get(accessor) ?? { calls: 0, locations: 0, at: [] };
+        const asked = locations();
+        asks.set(accessor, {
+          calls: known.calls + 1,
+          locations: known.locations + asked.length,
+          at: [...known.at, ...asked],
+        });
+      }
+      if (panicsOn?.(accessor, locations()) === true) {
+        throw new Error(`panic: ${accessor}`);
+      }
+      return opened.ask(accessor, locations, question);
+    },
+  };
   const configFiles = targetConfigFiles(discoverProjects(engine, host, scopeForDir(host, root)));
   const programFiles: string[] = [];
   const tally: Tally = { members: [], exports: [] };
-  const resolved: References[] = [];
+  const resolved: (References & { readonly testFilePaths: readonly string[] })[] = [];
+  const referenceAsks: ReadonlyMap<string, Asked>[] = [];
+  const outsideDeclarations: number[] = [];
   const rooted: Roots[] = [];
   const manifest = readManifest(host, root);
   let requests = 0;
@@ -219,16 +248,31 @@ export function analyzeRoot(root: string, options: AnalyzeOptions = {}): Analyze
     const held = inventory(recordingView(project, tally), host, root);
     if (wanted !== undefined) {
       const before = engine.getTimingInfo().totals.requestCount;
-      const requestCount = (): number => engine.getTimingInfo().totals.requestCount;
-      resolved.push(
-        references(project, held, root, {
-          ...wanted,
-          requestCount,
+      const testFile = patternTestFile(wanted.testFiles, root);
+      asks = new Map();
+      let outside = 0;
+      const counted = {
+        ...project,
+        declarationAt: (handle: Parameters<typeof project.declarationAt>[0]) => {
+          if (!project.ownPaths().has(handle.path)) {
+            outside += 1;
+          }
+          return project.declarationAt(handle);
+        },
+      };
+      resolved.push({
+        ...references(counted, held, root, {
+          testFile,
+          ...(wanted.batchCap === undefined ? {} : { batchCap: wanted.batchCap }),
           directories: runDirectories(host, root, (fileName, text) =>
             opened.parseSourceFile(fileName, text),
           ),
         }),
-      );
+        testFilePaths: testFilePaths(project, root, testFile),
+      });
+      referenceAsks.push(asks);
+      outsideDeclarations.push(outside);
+      asks = undefined;
       requests += engine.getTimingInfo().totals.requestCount - before;
     }
     if (options.roots !== undefined) {
@@ -251,6 +295,8 @@ export function analyzeRoot(root: string, options: AnalyzeOptions = {}): Analyze
     programFiles,
     tableReads: tally,
     references: resolved,
+    referenceAsks,
+    outsideDeclarations,
     roots: rooted,
     referenceRequests: requests,
   };
@@ -304,7 +350,7 @@ export function consumerPass(
         targetRoot,
       );
       const found = references(project, held, targetRoot, {
-        testFiles: [],
+        testFile: () => false,
         consumer: { id: "@example/consumer", root: consumerRoot },
         directories: runDirectories(host, consumerRoot, (fileName, text) =>
           engine.parseSourceFile(fileName, text),

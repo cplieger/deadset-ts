@@ -2,7 +2,6 @@ import { rmSync } from "node:fs";
 import { afterAll, describe, expect, it } from "vitest";
 import { emitterInputOf, findingsOf } from "../__test-helpers__/emitter-input.ts";
 import { analyzeProject, writeProject } from "../__test-helpers__/projects.ts";
-import type { ReferenceCost } from "./references.ts";
 import { resolve } from "./resolve.ts";
 
 const roots: string[] = [];
@@ -48,37 +47,19 @@ function contextualUsesOf(text: string): string[] {
     );
 }
 
-/** Every request the reference pass accounts for. */
-function accounted(cost: ReferenceCost): number {
-  return (
-    cost.fileBatches +
-    cost.residueFallbacks +
-    cost.shorthandLookups +
-    cost.aliasSteps +
-    cost.platformLookups +
-    cost.patternBatches +
-    cost.patternLookups +
-    cost.contextualBatches +
-    cost.contextualLookups +
-    cost.typedLookups
-  );
-}
-
 /**
- * The contextual batches and per-type lookups one written module costs, once the client's
- * own count of the pass's requests is checked against what the pass accounts for.
+ * The requests the reference pass over one written module puts to the client, by accessor,
+ * counted at the client: what the contextual reads cost shows in the accessors they ask.
  */
-function contextualCost(text: string): readonly [number, number] {
+function contextualCost(text: string): Readonly<Record<string, number>> {
   const analyzed = analyzeProject({ "unit.ts": text }, { references: { testFiles: [] } });
-  const cost = analyzed.references[0]?.cost;
-  expect(cost, "one reference pass").toBeDefined();
-  if (cost === undefined) {
-    return [0, 0];
-  }
-  expect(analyzed.referenceRequests, "the client measured no request the pass left out").toBe(
-    accounted(cost),
+  expect(analyzed.referenceAsks.length, "one reference pass").toBe(1);
+  return Object.fromEntries(
+    [...(analyzed.referenceAsks[0] ?? new Map())].map(([accessor, asked]) => [
+      accessor,
+      asked.calls,
+    ]),
   );
-  return [cost.contextualBatches, cost.contextualLookups];
 }
 
 describe("the uses a contextual type makes", () => {
@@ -532,13 +513,11 @@ describe("what asking the contextual types costs", () => {
   const ROW = ["export interface Row {", "  label: string;", "  1: string;", "}"];
 
   it("asks the checker for a computed name's key only where the key is not literal text", () => {
-    expect(
-      contextualCost(lines(...ROW, 'export const row: Row = { label: "a", 1: "x" };')),
-    ).toEqual([2, 1]);
+    const plain = contextualCost(lines(...ROW, 'export const row: Row = { label: "a", 1: "x" };'));
     expect(
       contextualCost(lines(...ROW, 'export const row: Row = { ["label"]: "a", [1]: "x" };')),
       "a literal key costs what the plain name does",
-    ).toEqual([2, 1]);
+    ).toEqual(plain);
     expect(
       contextualCost(
         lines(
@@ -548,9 +527,9 @@ describe("what asking the contextual types costs", () => {
           "}",
           'export const keyed: Keyed = { [key]: "a" };',
         ),
-      ),
-      "and a unique symbol one batch more",
-    ).toEqual([3, 1]);
+      )["getSymbolAtLocation"],
+      "and a unique symbol one symbol batch more",
+    ).toBe((plain["getSymbolAtLocation"] ?? 0) + 1);
   });
 
   it("asks a union's constituents once, however many literals it types", () => {
@@ -562,19 +541,17 @@ describe("what asking the contextual types costs", () => {
       '  kind: "b";',
       "}",
     ];
-
-    expect(contextualCost(lines(...shapes, 'export const a: A | B = { kind: "a" };'))).toEqual([
-      2, 3,
-    ]);
-    expect(
-      contextualCost(
-        lines(
-          ...shapes,
-          'export const a: A | B = { kind: "a" };',
-          'export const b: A | B = { kind: "b" };',
-        ),
+    const one = contextualCost(lines(...shapes, 'export const a: A | B = { kind: "a" };'));
+    const two = contextualCost(
+      lines(
+        ...shapes,
+        'export const a: A | B = { kind: "a" };',
+        'export const b: A | B = { kind: "b" };',
       ),
-    ).toEqual([2, 3]);
+    );
+
+    expect([one["getTypes"], one["getPropertiesOfType"]]).toEqual([1, 2]);
+    expect([two["getTypes"], two["getPropertiesOfType"]]).toEqual([1, 2]);
   });
 
   const TAKE = [
@@ -589,28 +566,43 @@ describe("what asking the contextual types costs", () => {
     "  return target.id;",
     "}",
   ];
+  /** The per-type requests one tally holds. */
+  const perType = (cost: Readonly<Record<string, number>>): readonly (number | undefined)[] => [
+    cost["getPropertiesOfType"],
+    cost["isArrayType"],
+    cost["getSignaturesOfType"],
+    cost["getTypeArguments"],
+    cost["getTypes"],
+  ];
 
   it("asks a value type's members, elements and signatures once, however many values of it reach a position", () => {
+    const one = contextualCost(lines(...TAKE, "declare const source: Source;", "take(source);"));
+
+    expect(perType(one)).toEqual([2, 2, 2, undefined, undefined]);
     expect(
-      contextualCost(lines(...TAKE, "declare const source: Source;", "take(source);")),
-    ).toEqual([2, 6]);
-    expect(
-      contextualCost(
-        lines(...TAKE, "declare const source: Source;", "take(source);", "take(source);"),
+      perType(
+        contextualCost(
+          lines(...TAKE, "declare const source: Source;", "take(source);", "take(source);"),
+        ),
       ),
-    ).toEqual([2, 6]);
+    ).toEqual(perType(one));
   });
 
   it("asks no position for a value that carries no member a position reads", () => {
-    expect(contextualCost(lines(...TAKE)), "the result alone, a number").toEqual([1, 0]);
+    expect(contextualCost(lines(...TAKE)), "the result alone, a number").toEqual({
+      getTypeAtLocation: 1,
+      getSymbolAtLocation: 1,
+    });
     expect(
-      contextualCost(lines(...TAKE, "take({ id: 1 });")),
-      "an object literal, which writes its members instead",
-    ).toEqual([2, 1]);
+      contextualCost(lines(...TAKE, "take({ id: 1 });"))["getContextualType"],
+      "an object literal, which writes its members instead: its own contextual type alone",
+    ).toBe(1);
     expect(
-      contextualCost(lines(...TAKE, "export class Held {", "  id = 1;", "}", "take(new Held());")),
+      contextualCost(lines(...TAKE, "export class Held {", "  id = 1;", "}", "take(new Held());"))[
+        "getContextualType"
+      ],
       "a class instance, which the interface-satisfaction class reads",
-    ).toEqual([1, 5]);
+    ).toBeUndefined();
     expect(
       contextualCost(
         lines(
@@ -620,9 +612,9 @@ describe("what asking the contextual types costs", () => {
           "export function hold(_value: object): void {}",
           "hold(empty);",
         ),
-      ),
+      )["getContextualType"],
       "a type that declares no member",
-    ).toEqual([1, 4]);
+    ).toBeUndefined();
   });
 
   const KEYS = [
@@ -637,51 +629,51 @@ describe("what asking the contextual types costs", () => {
   ];
 
   it("asks an array type's element once, and a function type's signature once", () => {
-    expect(
+    const first = (calls: number): Readonly<Record<string, number>> =>
       contextualCost(
         lines(
           ...KEYS,
           "export function first(keys: readonly Key[]): number {",
           "  return keys[0]?.order ?? 0;",
           "}",
-          "first(tabs);",
-          "first(tabs);",
+          ...Array.from({ length: calls }, () => "first(tabs);"),
         ),
-      ),
-    ).toEqual([2, 13]);
-    expect(
+      );
+    const by = (calls: number): Readonly<Record<string, number>> =>
       contextualCost(
         lines(
           ...KEYS,
           "export function by(key: Key): number {",
           "  return key.order;",
           "}",
-          "tabs.map(by);",
-          "tabs.map(by);",
+          ...Array.from({ length: calls }, () => "tabs.map(by);"),
         ),
-      ),
-    ).toEqual([2, 17]);
+      );
+
+    expect(perType(first(2)), "an array's element").toEqual(perType(first(1)));
+    expect(perType(by(2)), "a function's signature").toEqual(perType(by(1)));
   });
 
   it("compares no type argument two instantiations share", () => {
-    expect(
-      contextualCost(
-        lines(
-          ...TAKE,
-          "export interface A {",
-          "  a?: number;",
-          "}",
-          "export interface B {",
-          "  b?: number;",
-          "}",
-          "export function keyed(map: Map<Target, A | B>): number {",
-          "  return map.size;",
-          "}",
-          "declare const map: Map<Source, A | B>;",
-          "keyed(map);",
-        ),
+    const cost = contextualCost(
+      lines(
+        ...TAKE,
+        "export interface A {",
+        "  a?: number;",
+        "}",
+        "export interface B {",
+        "  b?: number;",
+        "}",
+        "export function keyed(map: Map<Target, A | B>): number {",
+        "  return map.size;",
+        "}",
+        "declare const map: Map<Source, A | B>;",
+        "keyed(map);",
       ),
-    ).toEqual([2, 14]);
+    );
+
+    expect(cost["getTypeArguments"], "each instantiation's arguments once").toBe(2);
+    expect(cost["getTypes"], "and never the union both share").toBeUndefined();
   });
 
   it("ends the walk over a generic type that is its own type argument", () => {
@@ -698,7 +690,7 @@ describe("what asking the contextual types costs", () => {
           "}",
           "take(r);",
         ),
-      ),
-    ).toEqual([1, 5]);
+      )["getTypeArguments"],
+    ).toBe(1);
   });
 });

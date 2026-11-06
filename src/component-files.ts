@@ -6,6 +6,8 @@
  * attribute names are appended past the file's end.
  */
 
+import { isPathRelativeURL, startsRelativePath } from "./paths.ts";
+
 /** The language one block is written in, as the module's virtual extension spells it. */
 type BlockLanguage = "ts" | "tsx" | "js" | "jsx";
 
@@ -465,10 +467,10 @@ function actionOf(text: string): string {
 /** Whether a `src` value names a file: no scheme, no root-relative path, not empty. */
 function specifierOf(value: string): string | undefined {
   const trimmed = value.trim();
-  if (trimmed === "" || trimmed.startsWith("/") || /^[A-Za-z][A-Za-z0-9+.-]*:/u.test(trimmed)) {
+  if (!isPathRelativeURL(trimmed)) {
     return undefined;
   }
-  return trimmed.startsWith("./") || trimmed.startsWith("../") ? trimmed : `./${trimmed}`;
+  return startsRelativePath(trimmed) ? trimmed : `./${trimmed}`;
 }
 
 /** The line-start `<script` tags one block's content holds. */

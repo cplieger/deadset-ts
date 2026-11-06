@@ -292,6 +292,41 @@ describe("a thread Node's Worker starts", () => {
   );
 
   it(
+    "is the file a join or resolve of the calling file's own directory and literals names, against that directory",
+    () => {
+      expect(
+        started({
+          ...workers("pool/joined", "pool/resolved", "pool/meta", "pool/computed", "pool/web"),
+          "src/threads.d.ts": THREADS,
+          "src/node.d.ts": [
+            "declare const __dirname: string;",
+            "interface ImportMeta { readonly dirname: string; }",
+            'declare module "node:path" {',
+            "  export function join(...parts: string[]): string;",
+            "  export function resolve(...parts: string[]): string;",
+            "}",
+            "",
+          ].join("\n"),
+          "src/app.ts": [
+            'import { Worker } from "node:worker_threads";',
+            'import * as path from "node:path";',
+            'import { resolve } from "node:path";',
+            "declare const name: string;",
+            "",
+            'export const a = new Worker(path.join(__dirname, "pool", "joined.ts"));',
+            'export const b = new Worker(resolve(__dirname, "./pool/resolved.ts"));',
+            'export const c = new Worker(path.join(import.meta.dirname, "pool/meta.ts"));',
+            'export const d = new Worker(path.join(__dirname, "pool", name));',
+            'export const e = new globalThis.Worker(path.join(__dirname, "pool/web.ts"));',
+            "",
+          ].join("\n"),
+        }),
+      ).toEqual(["a src/pool/joined.ts", "b src/pool/resolved.ts", "c src/pool/meta.ts"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
     "reads the nearest package's directory, where its scripts run",
     () => {
       expect(

@@ -10,7 +10,10 @@ import {
   isCaseClause,
   isElementAccessExpression,
   isIdentifier,
+  isNoSubstitutionTemplateLiteral,
+  isNumericLiteral,
   isPropertyAccessExpression,
+  isStringLiteral,
   isSwitchStatement,
   isTypeOperatorNode,
   SyntaxKind,
@@ -20,12 +23,8 @@ import {
   type TypeNode,
 } from "@typescript/native/ast";
 import { SymbolFlags, type Type } from "@typescript/native/sync";
-import type { AliasChains } from "./alias-chain.ts";
-import { nodeKey, type Inventory } from "./inventory.ts";
-import { renderPosition } from "./position.ts";
 import { UNANSWERED } from "./query.ts";
-import type { Reference } from "./references.ts";
-import type { ProjectView } from "./session.ts";
+import type { Read, ReadRule } from "./references/read-rule.ts";
 import { parenthesesRemoved } from "./unwrap.ts";
 
 /** The operators that compare their operands for equality. */
@@ -83,125 +82,141 @@ function literalNames(parts: readonly Type[]): readonly string[] {
 }
 
 /**
- * The references the key comparisons of one project's own files make to the members their
- * literal side names, each made by the declaration holding the comparison.
+ * The reads the key comparisons of a side's files make of the members their literal side
+ * names, each made by the declaration holding the comparison. A question the checker leaves
+ * unanswered holds what its answer could have read.
  */
-export function keyofComparisonReferences<Brand>(
-  project: ProjectView<Brand>,
-  held: Inventory,
-  chains: AliasChains,
-  root: string,
-  testFiles: ReadonlySet<string>,
-): readonly Reference[] {
-  const queries = project.queries;
-  const comparisons: Comparison[] = [];
-  for (const file of project.ownSourceFiles()) {
-    const fileId = held.declarations.get(nodeKey(file, file));
-    if (fileId === undefined) {
-      continue;
-    }
-    const visit = (node: Node, from: string): void => {
-      const holder = held.declarations.get(nodeKey(file, node)) ?? from;
-      if (isBinaryExpression(node) && EQUALITIES.has(node.operatorToken.kind)) {
-        comparisons.push({ file, from: holder, keyed: node.left, other: node.right });
-        comparisons.push({ file, from: holder, keyed: node.right, other: node.left });
-      }
-      if (isSwitchStatement(node)) {
-        for (const clause of node.caseBlock.clauses) {
-          if (isCaseClause(clause)) {
-            comparisons.push({
-              file,
-              from: holder,
-              keyed: node.expression,
-              other: clause.expression,
-            });
+export const keyofComparisons: ReadRule = {
+  start() {
+    const comparisons: Comparison[] = [];
+    return {
+      visit(node, { file, from }) {
+        if (isBinaryExpression(node) && EQUALITIES.has(node.operatorToken.kind)) {
+          comparisons.push({ file, from, keyed: node.left, other: node.right });
+          comparisons.push({ file, from, keyed: node.right, other: node.left });
+        }
+        if (isSwitchStatement(node)) {
+          for (const clause of node.caseBlock.clauses) {
+            if (isCaseClause(clause)) {
+              comparisons.push({ file, from, keyed: node.expression, other: clause.expression });
+            }
           }
         }
-      }
-      node.forEachChild((child) => {
-        visit(child, holder);
-      });
-    };
-    file.forEachChild((child) => {
-      visit(child, fileId);
-    });
-  }
-  const named = comparisons.flatMap((one) => {
-    const name = nameOf(one.keyed);
-    return name === undefined || isElementAccessExpression(parenthesesRemoved(one.other))
-      ? []
-      : [{ ...one, name }];
-  });
-  if (named.length === 0) {
-    return [];
-  }
-
-  // The operand's own declaration states the key type, which the checker resolves to
-  // the literals it admits and so no longer names the type the key indexes.
-  const symbols = queries.symbolsAt(named.map((one) => one.name));
-  const keyed = named.flatMap((one, at) => {
-    const asked = symbols[at];
-    const symbol =
-      asked === UNANSWERED || asked === undefined || (asked.flags & SymbolFlags.Alias) === 0
-        ? asked
-        : queries.aliased(asked);
-    if (symbol === UNANSWERED || symbol === undefined) {
-      return [];
-    }
-    const operands = symbol.declarations.flatMap((handle) => {
-      const declared = (
-        project.declarationAt(handle)?.node as { readonly type?: TypeNode } | undefined
-      )?.type;
-      return declared === undefined ? [] : keyofOperands(declared);
-    });
-    return operands.length === 0 ? [] : [{ ...one, operands }];
-  });
-  if (keyed.length === 0) {
-    return [];
-  }
-  const nodes = keyed.flatMap((one) => [one.other, ...one.operands]);
-  const types = queries.typesAt(nodes);
-  const typeOf = new Map<Node, Type>();
-  nodes.forEach((node, at) => {
-    const type = types[at];
-    if (type !== UNANSWERED && type !== undefined) {
-      typeOf.set(node, type);
-    }
-  });
-  const partsOf = (type: Type): readonly Type[] => {
-    const parts = queries.constituents(type);
-    return parts === UNANSWERED ? [type] : parts;
-  };
-
-  const found: Reference[] = [];
-  for (const one of keyed) {
-    const literal = typeOf.get(one.other);
-    const names = literal === undefined ? [] : literalNames(partsOf(literal));
-    if (names.length === 0) {
-      continue;
-    }
-    const position = renderPosition(one.file, root, one.other.getStart());
-    for (const operand of one.operands) {
-      const object = typeOf.get(operand);
-      for (const part of object === undefined ? [] : partsOf(object)) {
-        const properties = queries.propertiesOf(part);
-        for (const property of properties === UNANSWERED ? [] : properties) {
-          if (!names.includes(property.name)) {
+      },
+      reads({ project, chains }) {
+        const queries = project.queries;
+        const found: Read[] = [];
+        const named = comparisons.flatMap((one) => {
+          const name = nameOf(one.keyed);
+          return name === undefined || isElementAccessExpression(parenthesesRemoved(one.other))
+            ? []
+            : [{ ...one, name }];
+        });
+        if (named.length === 0) {
+          return found;
+        }
+        // The operand's own declaration states the key type, which the checker resolves to
+        // the literals it admits and so no longer names the type the key indexes.
+        const symbols = queries.symbolsAt(named.map((one) => one.name));
+        const keyed = named.flatMap((one, at) => {
+          const asked = symbols[at];
+          const symbol =
+            asked === UNANSWERED || asked === undefined || (asked.flags & SymbolFlags.Alias) === 0
+              ? asked
+              : queries.aliased(asked);
+          if (symbol === UNANSWERED) {
+            const text = literalText(one.other);
+            found.push({
+              kind: "held",
+              from: one.from,
+              ...(text === undefined ? {} : { names: [text] }),
+            });
+            return [];
+          }
+          if (symbol === undefined) {
+            return [];
+          }
+          const operands = symbol.declarations.flatMap((handle) => {
+            const declared = (
+              project.declarationAt(handle)?.node as { readonly type?: TypeNode } | undefined
+            )?.type;
+            return declared === undefined ? [] : keyofOperands(declared);
+          });
+          return operands.length === 0 ? [] : [{ ...one, operands }];
+        });
+        if (keyed.length === 0) {
+          return found;
+        }
+        const nodes = keyed.flatMap((one) => [one.other, ...one.operands]);
+        const types = queries.typesAt(nodes);
+        const typeOf = new Map<Node, Type | typeof UNANSWERED>();
+        nodes.forEach((node, at) => {
+          const type = types[at];
+          if (type !== undefined) {
+            typeOf.set(node, type);
+          }
+        });
+        const partsOf = (type: Type): readonly Type[] => {
+          const parts = queries.constituents(type);
+          return parts === UNANSWERED ? [type] : parts;
+        };
+        for (const one of keyed) {
+          const literal = typeOf.get(one.other);
+          const objects = one.operands.map((operand) => typeOf.get(operand));
+          if (literal === UNANSWERED) {
+            const known = objects.filter((type) => type !== undefined && type !== UNANSWERED);
+            found.push({
+              kind: "held",
+              from: one.from,
+              types: known.flatMap(partsOf),
+              ...(known.length < objects.length ? { members: true as const } : {}),
+            });
             continue;
           }
-          for (const to of chains.declarationsOf(property)) {
-            found.push({
-              from: one.from,
-              to,
-              position,
-              use: "read",
-              resolution: "keyed",
-              test: testFiles.has(position.path),
-            });
+          const names = literal === undefined ? [] : literalNames(partsOf(literal));
+          if (names.length === 0) {
+            continue;
+          }
+          for (const object of objects) {
+            if (object === UNANSWERED) {
+              found.push({ kind: "held", from: one.from, names });
+              continue;
+            }
+            for (const part of object === undefined ? [] : partsOf(object)) {
+              const properties = queries.propertiesOf(part);
+              if (properties === UNANSWERED) {
+                found.push({ kind: "held", from: one.from, names });
+                continue;
+              }
+              for (const property of properties) {
+                if (!names.includes(property.name)) {
+                  continue;
+                }
+                for (const to of chains.declarationsOf(property)) {
+                  found.push({
+                    kind: "named",
+                    from: one.from,
+                    to,
+                    file: one.file,
+                    at: one.other,
+                    use: "read",
+                    via: "keyed",
+                  });
+                }
+              }
+            }
           }
         }
-      }
-    }
-  }
-  return found;
+        return found;
+      },
+    };
+  },
+};
+
+/** The text a string or number literal operand spells, where it is one. */
+function literalText(node: Expression): string | undefined {
+  const at = parenthesesRemoved(node);
+  return isStringLiteral(at) || isNumericLiteral(at) || isNoSubstitutionTemplateLiteral(at)
+    ? at.text
+    : undefined;
 }

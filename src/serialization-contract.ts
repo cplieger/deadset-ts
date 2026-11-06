@@ -1220,7 +1220,8 @@ export interface Decoded {
 
 /**
  * The data members the decodes and copies of `files` fill, as {@link Decoded} names them.
- * A generic declared outside the analysis, or only ambiently, fills the type that a type
+ * A generic declared outside the analysis, or only ambiently, or one that reads a value
+ * {@link readTypes} finds untyped as its own type parameter, fills the type that a type
  * parameter of its own no parameter names binds, where the awaited result carries that
  * type through its data members rather than only naming it, as a store's methods do: no
  * argument hands the value over, so it fills it where the analysis cannot see, and may
@@ -1282,6 +1283,10 @@ function decodedOf<Brand>(
   for (const file of files) {
     file.forEachChild(visit);
   }
+  const read = readTypes(project, untyped);
+  // A generic of the analysis that reads an untyped value as its own type parameter is a
+  // client of what made the value, and fills what that parameter binds as an outside one does.
+  const clients = new Set(read.made.flatMap((type) => (type.isTypeParameter() ? [type.id] : [])));
   const filled: { readonly carried: Type; readonly types: readonly Type[] }[] = [];
   const resolved = queries.resolvedSignatures(calls).map(must);
   for (const signature of resolved) {
@@ -1296,7 +1301,8 @@ function decodedOf<Brand>(
     if (
       declaration === undefined ||
       (inAnalysis(declaration.path) &&
-        (node === undefined || (node.flags & NodeFlags.Ambient) === 0))
+        (node === undefined || (node.flags & NodeFlags.Ambient) === 0) &&
+        !generic.some((id) => clients.has(id)))
     ) {
       continue;
     }
@@ -1318,7 +1324,6 @@ function decodedOf<Brand>(
       filled.push({ carried: awaited(project, given), types });
     }
   }
-  const read = readTypes(project, untyped);
   const copies = copiedNames(project, spreads, calls);
   if (
     filled.length === 0 &&

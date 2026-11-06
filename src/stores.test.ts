@@ -54,6 +54,7 @@ describe("the declarations a test file reads", () => {
             reference("written-in-test", "write", true),
             reference("read-in-production", "read", false),
           ],
+          support: new Set(),
           accessors: [],
         },
       ],

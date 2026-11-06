@@ -4,17 +4,20 @@
  */
 
 import {
+  isExportDeclaration,
   isExportSpecifier,
   isExternalModuleReference,
-  isIdentifier,
   isImportDeclaration,
   isImportEqualsDeclaration,
   isJsxElement,
   isJsxFragment,
   isJsxSelfClosingElement,
+  isNamedExports,
   isNamespaceImport,
   SyntaxKind,
   type Identifier,
+  type ImportDeclaration,
+  type ImportEqualsDeclaration,
   type Node,
   type SourceFile,
 } from "@typescript/native/ast";
@@ -41,40 +44,106 @@ export interface JsxOptions {
   readonly jsxFragmentFactory?: unknown;
 }
 
+/** One name a file's top-level import declaration binds. */
+interface ImportBinding {
+  readonly name: Identifier;
+  /** The export name it binds, `default` for a default import; absent where it binds a whole module. */
+  readonly imported?: string;
+  /** An `import x = …` declaration: whether it is exported, and whether it names an external module. */
+  readonly equals?: { readonly exported: boolean; readonly external: boolean };
+}
+
+const bindingsCache = new WeakMap<SourceFile, readonly ImportBinding[]>();
+
 /**
- * The names one file's import declarations bind: the default, named and namespace names of
- * an `import` declaration, and the name of an `import x = require()` declaration that is
- * not exported. None is judged in a declaration file or a component file.
+ * Every name one import declaration binds, in source order: the default, named and
+ * namespace names of an `import` declaration and the name of an `import x = …` declaration.
+ * A namespace import and an import assignment bind a whole module.
+ */
+export function declarationBindings(
+  declaration: ImportDeclaration | ImportEqualsDeclaration,
+): readonly ImportBinding[] {
+  if (isImportEqualsDeclaration(declaration)) {
+    return [
+      {
+        name: declaration.name,
+        equals: {
+          exported: (declaration.modifiers ?? []).some(
+            (modifier) => modifier.kind === SyntaxKind.ExportKeyword,
+          ),
+          external: isExternalModuleReference(declaration.moduleReference),
+        },
+      },
+    ];
+  }
+  const clause = declaration.importClause;
+  const found: ImportBinding[] = [];
+  if (clause?.name !== undefined) {
+    found.push({ name: clause.name, imported: "default" });
+  }
+  const named = clause?.namedBindings;
+  if (named !== undefined && isNamespaceImport(named)) {
+    found.push({ name: named.name });
+  } else if (named !== undefined) {
+    for (const element of named.elements) {
+      found.push({ name: element.name, imported: element.propertyName?.text ?? element.name.text });
+    }
+  }
+  return found;
+}
+
+/** Every name one file's top-level import declarations bind, in source order. */
+export function bindingsOf(file: SourceFile): readonly ImportBinding[] {
+  const known = bindingsCache.get(file);
+  if (known !== undefined) {
+    return known;
+  }
+  const found = file.statements.flatMap((statement) =>
+    isImportDeclaration(statement) || isImportEqualsDeclaration(statement)
+      ? declarationBindings(statement)
+      : [],
+  );
+  bindingsCache.set(file, found);
+  return found;
+}
+
+/**
+ * The export names an import or a re-export declaration reads from the module it names,
+ * `undefined` standing for the whole module where a namespace or a star reads it; none for
+ * any other node.
+ */
+export function importedNames(node: Node): readonly (string | undefined)[] {
+  if (isImportDeclaration(node)) {
+    return declarationBindings(node).map((binding) => binding.imported);
+  }
+  if (!isExportDeclaration(node)) {
+    return [];
+  }
+  const clause = node.exportClause;
+  return clause === undefined || !isNamedExports(clause)
+    ? [undefined]
+    : clause.elements.map((one) => (one.propertyName ?? one.name).text);
+}
+
+/** The export names {@link importedNames} gives one node, without the whole module. */
+export function namesImported(node: Node): readonly string[] {
+  return importedNames(node).flatMap((name) => name ?? []);
+}
+
+/**
+ * The bindings of one file that are judged as imports: those of {@link bindingsOf} but an
+ * `import x = …` that is exported or names no external module. None is judged in a
+ * declaration file or a component file.
  */
 export function importBindings(file: SourceFile): readonly Identifier[] {
   if (file.isDeclarationFile || !JUDGED.test(file.fileName)) {
     return [];
   }
-  const found: Identifier[] = [];
-  for (const statement of file.statements) {
-    if (isImportDeclaration(statement)) {
-      const clause = statement.importClause;
-      if (clause?.name !== undefined) {
-        found.push(clause.name);
-      }
-      const named = clause?.namedBindings;
-      if (named !== undefined && isNamespaceImport(named)) {
-        found.push(named.name);
-      } else if (named !== undefined) {
-        for (const element of named.elements) {
-          found.push(element.name);
-        }
-      }
-    } else if (
-      isImportEqualsDeclaration(statement) &&
-      isExternalModuleReference(statement.moduleReference) &&
-      isIdentifier(statement.name) &&
-      !(statement.modifiers ?? []).some((modifier) => modifier.kind === SyntaxKind.ExportKeyword)
-    ) {
-      found.push(statement.name);
-    }
-  }
-  return found;
+  return bindingsOf(file).flatMap((binding) =>
+    binding.equals !== undefined && (binding.equals.exported || !binding.equals.external)
+      ? []
+      : [binding.name],
+  );
 }
 
 /** Whether one identifier names a binding in a local export, which reads it whatever it resolves to. */

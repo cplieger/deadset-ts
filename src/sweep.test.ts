@@ -267,6 +267,29 @@ describe("the sweep over an in-memory graph", () => {
     ).toEqual([]);
   });
 
+  it("seeds from a consumer's test reference where the configuration counts its tests as production, and from no unheld test file's", () => {
+    const mode: Mode = { production: true, consumerTestsProduction: true };
+    const caller = declared("caller", 9, "test/outside.test.ts");
+    const unheld = graphOf(
+      symbols,
+      [...chain, { ...reference(caller, head, true), unheld: true }],
+      [],
+      [],
+    );
+    const consumer = graphOf(
+      symbols,
+      [...chain, { ...reference(caller, head, true), consumer: "@example/consumer" }],
+      [],
+      [],
+    );
+
+    expect(
+      candidates(sweep(unheld, { marked: [], mode }), symbols),
+      "an unheld test file is test code in every production mode",
+    ).toEqual(["head reference-counting", "middle reachability", "tail reachability"]);
+    expect(candidates(sweep(consumer, { marked: [], mode }), symbols)).toEqual([]);
+  });
+
   it("holds a marked file's top level and reaches none of what it exports", () => {
     const worker = file("src/worker.ts");
     const exported = { ...declared("exported", 2, "src/worker.ts"), exported: true };

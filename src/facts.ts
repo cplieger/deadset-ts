@@ -1,10 +1,11 @@
 /**
  * The facts document `--facts` writes, `bindings.1` and `bindings.2`: the run's generated
- * files under the one decision the generated-file class reads. It carries no binding
- * record, so it states `evaluated: false`.
+ * files under the one decision the generated-file class reads, and the binding identities
+ * they publish. No binding state is computed, so it states `evaluated: false` (`bindings.10`).
  */
 
 import { FACTS_VERSION } from "./contract/contract.generated.ts";
+import type { BindingRecord } from "./bindings.ts";
 import type { GeneratedFact } from "./generated-file.ts";
 import { LANGUAGE, PRODUCT } from "./product.ts";
 import { bytewise } from "./text/compare.ts";
@@ -13,6 +14,7 @@ import { bytewise } from "./text/compare.ts";
 export function factsDocument(
   version: string,
   generated: ReadonlyMap<string, GeneratedFact>,
+  bindings: readonly BindingRecord[],
 ): string {
   const document = {
     facts_version: FACTS_VERSION,
@@ -38,7 +40,7 @@ export function factsDocument(
               schema_files: fact.generator.schemaFiles,
             }),
       })),
-    bindings: [],
+    bindings,
   };
   return `${JSON.stringify(document, null, 2)}\n`;
 }

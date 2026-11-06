@@ -501,7 +501,10 @@ export const SETTINGS: readonly SettingRow[] = [
     key: "provenance",
     role: "ignored",
     read: true,
-    value: { type: "string", pattern: "^(default|(repository|central|flag): [^\\r\\n]+)$" },
+    value: {
+      type: "string",
+      pattern: "^(default|(repository|central|flag): ([^\\r\\n]|[\\r\\n])+)$",
+    },
     keyPattern: "^[a-z][a-z_]*(\\.[A-Za-z0-9_]+)*$",
   },
 ];

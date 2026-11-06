@@ -24,7 +24,7 @@ import {
 import { declarationOf, membersNamed, staticModule, type Value } from "./static-module.ts";
 import { filesNamedBy, type ParseFile } from "./configuration-files.ts";
 import type { Host } from "../host.ts";
-import { ancestors, dirnamePath, relativePath, resolvePath } from "../paths.ts";
+import { ancestors, dirnamePath, isExplicitPath, relativePath, resolvePath } from "../paths.ts";
 import type { SourceFiles } from "../source-files.ts";
 import { bytewise } from "../text/compare.ts";
 import { unwrapped } from "../unwrap.ts";
@@ -93,7 +93,7 @@ function lastMember(object: Value, key: string): Value | undefined {
 function pathOf(value: Value, dir: string, scriptDir: string): EntryPath | undefined {
   if (value.kind === "text") {
     const { text } = value;
-    const request = !text.startsWith("./") && !text.startsWith("../") && !text.startsWith("/");
+    const request = !isExplicitPath(text);
     return { path: resolvePath(dir, text), text, request };
   }
   if (value.kind === "directory") {

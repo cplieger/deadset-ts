@@ -56,16 +56,12 @@ interface ContextualUse {
   readonly ids: readonly string[];
 }
 
-/** What the contextual types of one project's literals and values use, and what asking cost. */
+/** What the contextual types of one project's literals and values use. */
 interface ContextualUses {
   /** Each literal property that writes a member, by the property's node. */
   readonly writes: readonly ContextualUse[];
   /** Each value whose members a position typed by another object type reads. */
   readonly reads: readonly ContextualUse[];
-  /** The batched lookups: contextual types and value types, one per capped run. */
-  readonly batches: number;
-  /** The per-type lookups: each distinct type's constituents, properties and declaring symbol. */
-  readonly lookups: number;
 }
 
 /**
@@ -169,9 +165,6 @@ export function contextualUses<Brand>(
       .filter((symbol) => symbol.visibility === "private-name")
       .map((symbol) => symbol.id),
   );
-  let batches = 0;
-  let lookups = 0;
-  const batchesOf = (count: number): number => Math.ceil(count / cap);
 
   const parts = new Map<number, readonly Type[]>();
   /** The object types one type is: itself, or its constituents at any depth. */
@@ -182,7 +175,6 @@ export function contextualUses<Brand>(
     }
     let found: readonly Type[] = [];
     if (type.isUnionType() || type.isIntersectionType()) {
-      lookups += 1;
       const constituents = queries.constituents(type);
       found = isAnswered(constituents) ? constituents.flatMap(partsOf) : [];
     } else if (type.isObjectType()) {
@@ -201,7 +193,6 @@ export function contextualUses<Brand>(
     }
     const table = new Map<string, Member>();
     const read = properties.of(type);
-    lookups += read.asked ? 1 : 0;
     for (const property of isAnswered(read.properties) ? read.properties : []) {
       table.set(property.name, {
         ids: chains
@@ -222,7 +213,6 @@ export function contextualUses<Brand>(
   };
 
   const writes: ContextualUse[] = [];
-  batches += batchesOf(literals.length);
   const contexts = queries.contextualTypes(
     literals.map((one) => one.literal),
     cap,
@@ -238,7 +228,6 @@ export function contextualUses<Brand>(
           return name !== undefined && name.text === undefined ? [name.node] : [];
         }),
   );
-  batches += batchesOf(computed.length);
   const keys = new Map<Node, string>();
   (computed.length === 0
     ? []
@@ -272,7 +261,6 @@ export function contextualUses<Brand>(
   });
 
   const carried = flows.filter((flow) => !isObjectLiteralExpression(flow.value));
-  batches += batchesOf(carried.length);
   const types = queries.typesAt(
     carried.map((flow) => flow.value),
     cap,
@@ -327,11 +315,9 @@ export function contextualUses<Brand>(
     if (elements.has(type.id)) {
       return elements.get(type.id);
     }
-    lookups += 1;
     const isArray = queries.isArray(type);
     let element: Type | undefined;
     if (isAnswered(isArray) && isArray) {
-      lookups += 1;
       const held = queries.typeArguments(type);
       element = isAnswered(held) ? held[0] : undefined;
     }
@@ -346,7 +332,6 @@ export function contextualUses<Brand>(
     if (known !== undefined) {
       return known;
     }
-    lookups += type.isTypeReference() ? 1 : 0;
     const held = queries.typeArguments(type);
     const found = isAnswered(held) ? held : [];
     argumentsOf.set(type.id, found);
@@ -363,11 +348,9 @@ export function contextualUses<Brand>(
     if (known !== undefined) {
       return known;
     }
-    lookups += 1;
     let kind = SignatureKind.Call;
     let signatures = queries.signaturesOf(type, kind);
     if (isAnswered(signatures) && signatures.length === 0) {
-      lookups += 1;
       kind = SignatureKind.Construct;
       signatures = queries.signaturesOf(type, kind);
     }
@@ -376,7 +359,6 @@ export function contextualUses<Brand>(
         queries.parameterType(signature, index),
       );
       const result = queries.returnTypeOf(signature);
-      lookups += parameters.length + 1;
       return {
         kind,
         parameters: parameters.map((one) => (isAnswered(one) ? one : undefined)),
@@ -474,7 +456,6 @@ export function contextualUses<Brand>(
     const type = types[index];
     return type === undefined || !isAnswered(type) || !mayCarry(type) ? [] : [{ flow, type }];
   });
-  batches += batchesOf(sourced.length);
   const positions = queries.contextualTypes(
     sourced.map((one) => one.flow.value),
     cap,
@@ -556,7 +537,6 @@ export function contextualUses<Brand>(
       isSpreadAssignment(property) ? [{ value: property.expression, from }] : [],
     ),
   );
-  batches += batchesOf(spreads.length);
   const spreadTypes = queries.typesAt(
     spreads.map((one) => one.value),
     cap,
@@ -583,5 +563,5 @@ export function contextualUses<Brand>(
       reads.push({ at: value, from, ids });
     }
   });
-  return { writes, reads, batches, lookups };
+  return { writes, reads };
 }

@@ -106,13 +106,60 @@ describe("explain's answer for a declaration no finding names", () => {
   );
 
   it(
+    "marks a reference a test-support file makes as a test file's",
+    () => {
+      const supported = {
+        ...APPLICATION,
+        "package.json":
+          '{ "name": "@example/app", "private": true, "type": "module", "devDependencies": { "vitest": "5.0.0" } }\n',
+        "node_modules/vitest/package.json":
+          '{ "name": "vitest", "version": "5.0.0", "types": "./index.d.ts" }\n',
+        "node_modules/vitest/index.d.ts": "export {};\n",
+        "src/helper.ts":
+          'import "vitest";\nimport { onlyTested } from "./chain.ts";\n\nexport function help(): number {\n  return onlyTested();\n}\n',
+        "src/chain.test.ts": 'import { help } from "./helper.ts";\n\nconsole.log(help());\n',
+      };
+
+      expect(explain(supported, "--target=.", "--why-not=onlyTested").out).toContain(
+        "  reference: src/helper.ts:5:10\tread\tsrc/helper.ts:4:17 -> src/chain.ts:13:17\tfrom a test file\n",
+      );
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "follows a reference a test file no project holds makes",
+    () => {
+      const outside = {
+        ...APPLICATION,
+        "scripts/outside.test.ts":
+          'import { onlyTested } from "../src/chain.ts";\n\nconsole.log(onlyTested());\n',
+        "src/chain.test.ts": "console.log(1);\n",
+        "deadset.json":
+          '{ "target": { "kind": "application" }, "severity": { "DS1001": "allow", "DS1002": "allow", "DS1102": "allow" }, "analysis": { "configurations": [{ "id": "app", "project": "tsconfig.json" }] }, "ts": { "entry_files": ["src/main.ts"] } }\n',
+      };
+
+      expect(explain(outside, "--target=.", "--why-not=onlyTested").out).toContain(
+        [
+          "answer: dead",
+          "  live under: none",
+          "  reached from: test file no project holds scripts/outside.test.ts",
+          "  reference: scripts/outside.test.ts:1:28\tread\tscripts/outside.test.ts# -> src/chain.ts:13:17\tfrom a test file",
+          "",
+        ].join("\n"),
+      );
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
     "finds no path to a declaration nothing references, whatever cycle the live code holds",
     () => {
       expect(explain(APPLICATION, "--target=.", "--why-not=untouched").out).toContain(
         [
           "answer: dead",
           "  live under: none",
-          "  unreachable: no path of references reaches it from a root or a loaded consumer",
+          "  unreachable: no path of references reaches it from a root, a loaded consumer or a test file no project holds",
           "  references: 0",
           "",
         ].join("\n"),

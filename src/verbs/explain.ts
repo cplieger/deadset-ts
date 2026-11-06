@@ -1,5 +1,5 @@
 import { EXIT_CLEAN, EXIT_USAGE } from "../contract/contract.generated.ts";
-import { runAnalysis, type RunAnalysis } from "../analysis.ts";
+import { productionMode, runAnalysis, type RunAnalysis } from "../analysis.ts";
 import { listing } from "../components.ts";
 import type { Cascade } from "../config.ts";
 import type { CompletedFinding } from "../finding.ts";
@@ -10,6 +10,8 @@ import { partialNotes } from "../partial.ts";
 import { resolvePath } from "../paths.ts";
 import { positionKey } from "../position.ts";
 import type { Reference } from "../references.ts";
+import type { Mode } from "../sweep.ts";
+import { madeByTestCode, withheldBy } from "../tests/file-class.ts";
 import { resolve } from "../resolve.ts";
 import type { Root } from "../roots/root-set.ts";
 import { type Verb, type VerbOptions } from "./verb.ts";
@@ -141,15 +143,20 @@ type Hop =
   | { readonly k: "reference"; readonly reference: Reference }
   | { readonly k: "export"; readonly reference: Reference; readonly to: string };
 
-/** Where a path starts: a root of the run, or a reference a loaded consumer makes. */
+/**
+ * Where a path starts: a root of the run, or a reference a loaded consumer or a test file no
+ * project holds makes.
+ */
 type Origin =
   | { readonly k: "root"; readonly root: Root }
-  | { readonly k: "consumer"; readonly consumer: string };
+  | { readonly k: "consumer"; readonly consumer: string }
+  | { readonly k: "unheld"; readonly file: string };
 
 /**
- * The shortest path from a root or a loaded consumer to one declaration, walked breadth first
- * from every root at once in the order the run names them, a consumer's reference being the
- * first hop of a path of its own, and following the references the sweep follows: a
+ * The shortest path from a root, a loaded consumer or a test file no project holds to one
+ * declaration, walked breadth first from every root at once in the order the run names them,
+ * a reference of a consumer or of such a file being the first hop of a path of its own, as
+ * the sweep seeds them, and following the references the sweep follows: a
  * reference that reads a module reaches what the module exports, and an evaluation or a root
  * reaches the module alone. Under `production` no reference a test file made is followed,
  * which is the set the report's sweep counts.
@@ -157,18 +164,26 @@ type Origin =
 function shortestPath(
   analysis: RunAnalysis,
   to: string,
-  production: boolean,
+  mode: Mode,
+  support: ReadonlySet<string>,
 ): { readonly origin: Origin; readonly path: readonly Hop[] } | undefined {
   const graph = analysis.swept.matrix.union;
   const out = new Map<string, Reference[]>();
-  const consumed: (Reference & { readonly consumer: string })[] = [];
+  const consumed: { readonly reference: Reference; readonly origin: Origin }[] = [];
   for (const reference of referencesOf(analysis.configured)) {
-    if (production && reference.test) {
+    if (withheldBy(mode, reference, support)) {
       continue;
     }
     const { consumer } = reference;
     if (consumer !== undefined) {
-      consumed.push({ ...reference, consumer });
+      consumed.push({ reference, origin: { k: "consumer", consumer } });
+      continue;
+    }
+    if (reference.unheld === true) {
+      consumed.push({
+        reference,
+        origin: { k: "unheld", file: reference.from.replace(/#$/u, "") },
+      });
       continue;
     }
     const held = out.get(reference.from);
@@ -210,13 +225,12 @@ function shortestPath(
   for (const root of rootsOf(analysis.configured)) {
     enter({ at: root.id, hop: undefined, previous: -1, origin: { k: "root", root } });
   }
-  // A consumer's reference is one hop long, so it joins the walk where the roots' first
-  // hops do.
+  // A consumed reference is one hop long, so it joins the walk where the roots' first hops do.
   const firstHops = steps.length;
   for (let head = 0; ; head += 1) {
     if (head === firstHops) {
-      for (const reference of consumed) {
-        follow(reference, -1, { k: "consumer", consumer: reference.consumer });
+      for (const { reference, origin } of consumed) {
+        follow(reference, -1, origin);
       }
     }
     const step = steps[head];
@@ -237,17 +251,35 @@ function shortestPath(
   return undefined;
 }
 
+/** Where a path starts, as a line names it. */
+function originText(origin: Origin): string {
+  switch (origin.k) {
+    case "root":
+      return `root ${origin.root.kind} ${origin.root.id}`;
+    case "consumer":
+      return `consumer ${origin.consumer}`;
+    case "unheld":
+      return `test file no project holds ${origin.file}`;
+  }
+}
+
 /** What made a reference: a declaration of the target, or a loaded consumer. */
 function madeBy(reference: Reference): string {
   return reference.consumer === undefined ? reference.from : `consumer ${reference.consumer}`;
 }
 
-function referenceLine(reference: Reference, tail: string): string {
-  return `  reference: ${positionKey(reference.position)}\t${reference.use}\t${tail}${reference.test ? "\tfrom a test file" : ""}\n`;
+/** One reference of an answer, marked where test code made it, a test-support file's included. */
+function referenceLine(reference: Reference, tail: string, support: ReadonlySet<string>): string {
+  return `  reference: ${positionKey(reference.position)}\t${reference.use}\t${tail}${madeByTestCode(reference, support) ? "\tfrom a test file" : ""}\n`;
 }
 
 /** Why a declaration no finding names and no exemption held back is live, or how it fell. */
-function liveness(analysis: RunAnalysis, subject: InventorySymbol, cascade: Cascade): string {
+function liveness(
+  analysis: RunAnalysis,
+  subject: InventorySymbol,
+  cascade: Cascade,
+  mode: Mode,
+): string {
   const { sweep } = analysis.swept;
   const candidate = sweep.candidates.find((one) => one.id === subject.id);
   if (candidate === undefined && !judged(subject.kind)) {
@@ -258,23 +290,30 @@ function liveness(analysis: RunAnalysis, subject: InventorySymbol, cascade: Casc
   for (const root of rootsOf(analysis.configured).filter((one) => one.id === subject.id)) {
     text += `  root: ${root.kind}${root.source === "" ? "" : `\tnamed by ${root.source}`}\n`;
   }
+  const support = new Set(analysis.configured.flatMap((one) => one.supportFiles ?? []));
   const found =
-    shortestPath(analysis, subject.id, true) ?? shortestPath(analysis, subject.id, false);
+    shortestPath(analysis, subject.id, mode, support) ??
+    shortestPath(analysis, subject.id, { production: false }, support);
   if (found !== undefined && found.path.length > 0) {
     const { origin } = found;
-    text += `  reached from: ${origin.k === "root" ? `root ${origin.root.kind} ${origin.root.id}` : `consumer ${origin.consumer}`}\n`;
+    text += `  reached from: ${originText(origin)}\n`;
     for (const hop of found.path) {
-      text += referenceLine(hop.reference, `${madeBy(hop.reference)} -> ${hop.reference.to}`);
+      text += referenceLine(
+        hop.reference,
+        `${madeBy(hop.reference)} -> ${hop.reference.to}`,
+        support,
+      );
       if (hop.k === "export") {
         text += `  export: ${hop.reference.to} -> ${hop.to}\n`;
       }
     }
   } else if (found === undefined) {
     const references = referencesOf(analysis.configured).filter((one) => one.to === subject.id);
-    text += "  unreachable: no path of references reaches it from a root or a loaded consumer\n";
+    text +=
+      "  unreachable: no path of references reaches it from a root, a loaded consumer or a test file no project holds\n";
     text += `  references: ${String(references.length)}\n`;
     for (const reference of references) {
-      text += referenceLine(reference, `from ${madeBy(reference)}`);
+      text += referenceLine(reference, `from ${madeBy(reference)}`, support);
     }
   }
   if (candidate !== undefined) {
@@ -332,7 +371,12 @@ function namedElsewhere(findings: readonly CompletedFinding[], subject: Inventor
 }
 
 /** The one explanation that applies to a declaration, built whole before it is written. */
-function explanation(analysis: RunAnalysis, subject: InventorySymbol, cascade: Cascade): string {
+function explanation(
+  analysis: RunAnalysis,
+  subject: InventorySymbol,
+  cascade: Cascade,
+  mode: Mode,
+): string {
   const graph = analysis.swept.matrix.union;
   const at = graph.at(subject.id);
   let text = `symbol: ${subject.ref}\n`;
@@ -352,7 +396,7 @@ function explanation(analysis: RunAnalysis, subject: InventorySymbol, cascade: C
     text +=
       "answer: held\n  held by: a question the checker did not answer, which could have kept it live, so no finding names it\n";
   } else {
-    text += liveness(analysis, subject, cascade);
+    text += liveness(analysis, subject, cascade, mode);
   }
   return text + namedElsewhere(analysis.result.findings, subject);
 }
@@ -361,17 +405,16 @@ function explanation(analysis: RunAnalysis, subject: InventorySymbol, cascade: C
  * Explains one symbol from the analysis the report is built from: why a reported symbol is
  * reported, which exemption classes held a retained one back, that an unanswered question held
  * a held one, and for any other declaration the relations that hold it live and the shortest
- * path from a root or a loaded consumer, or the references it has where no path reaches it. A
- * request naming no one declaration exits with the usage code and names what partially
- * matches it. Where the analysis was partial, the error stream says so.
+ * path from a root, a loaded consumer or a test file no project holds, or the references it
+ * has where no path reaches it. A request naming no one declaration exits with the usage
+ * code and names what partially matches it. Where the analysis was partial, the error stream says so.
  */
 export const explainVerb: Verb = ({ out, err, host, inputs, scope, openClient, option }) => {
   const named = namedSymbol(option);
   const { config, provenance } = resolve(inputs());
   const scoped = scope();
-  const analysis = runAnalysis(openClient(config), host, scoped, config, provenance, {
-    production: true,
-  });
+  const mode = productionMode(config);
+  const analysis = runAnalysis(openClient(config), host, scoped, config, provenance, mode);
   const { subject, candidates } = subjectOf(analysis.swept.matrix.union.symbols, named);
   const notes = partialNotes({
     notBuilt: analysis.run.notBuilt,
@@ -387,7 +430,7 @@ export const explainVerb: Verb = ({ out, err, host, inputs, scope, openClient, o
       err.write("  no symbol of the target partially matches it either\n");
     }
   } else {
-    out.write(explanation(analysis, subject, config.reporters.cascade));
+    out.write(explanation(analysis, subject, config.reporters.cascade, mode));
   }
   for (const note of notes) {
     diagnose(err, note);

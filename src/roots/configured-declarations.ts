@@ -204,6 +204,9 @@ function modulesNamed<Brand>(
   project: ProjectView<Brand>,
   specifiers: ReadonlySet<string>,
 ): ReadonlyMap<string, TSSymbol> {
+  if (specifiers.size === 0) {
+    return new Map();
+  }
   const written = new Map<string, Node>();
   for (const file of project.ownSourceFiles()) {
     const visit = (node: Node): void => {

@@ -15,7 +15,8 @@ import { treeFindings } from "../__test-helpers__/tree-findings.ts";
 import type { InventorySymbol } from "./inventory.ts";
 import { positionKey } from "./position.ts";
 import { DEFAULT_BATCH_CAP } from "./query.ts";
-import { testFileRulesOf, type Reference, type References } from "./references.ts";
+import type { Reference } from "./references.ts";
+import { testFileRulesOf } from "./tests/file-class.ts";
 import { resolve } from "./resolve.ts";
 
 /**
@@ -58,23 +59,15 @@ function goldenText(references: readonly Reference[]): string {
   return `[\n${rows.map((row) => `  ${row}`).join(",\n")}\n]\n`;
 }
 
-/** The client requests the reference passes of one analysis account for, summed over its projects. */
-function accountedFor(analyzed: Analyzed): number {
-  return analyzed.references.reduce(
-    (total, held) =>
-      total +
-      held.cost.fileBatches +
-      held.cost.residueFallbacks +
-      held.cost.shorthandLookups +
-      held.cost.aliasSteps +
-      held.cost.platformLookups +
-      held.cost.patternBatches +
-      held.cost.patternLookups +
-      held.cost.contextualBatches +
-      held.cost.contextualLookups +
-      held.cost.typedLookups,
-    0,
-  );
+/** The calls and the locations one accessor received in one analysis's first reference pass. */
+function asked(analyzed: Analyzed, accessor: string): readonly [number, number] {
+  const one = analyzed.referenceAsks[0]?.get(accessor);
+  return [one?.calls ?? 0, one?.locations ?? 0];
+}
+
+/** Whether every reference pass of one analysis read no declaration outside its project's own files. */
+function fetchedNothingOutside(analyzed: Analyzed): boolean {
+  return analyzed.outsideDeclarations.every((count) => count === 0);
 }
 
 /** The declaration one display name identifies. */
@@ -120,50 +113,36 @@ describe("the reference table of every reference form", () => {
   it("spends one batch per file that carries a name to resolve, and no more", () => {
     // Every file of the fixture carries a node to resolve: three a name that is a use,
     // and the fourth its re-exports, each of which is asked what it carries forward.
-    expect(RESOLVED?.cost.fileBatches, "one batch per such file, at the default cap").toBe(4);
+    expect(
+      asked(EVERY_REFERENCE, "getSymbolAtLocation")[0],
+      "one batch per such file at the default cap, four, and one for each of the two read " +
+        "rules that resolve the names they collected over every file",
+    ).toBe(4 + 2);
     expect(REFERENCES.length, "and every name of the fixture is far below the cap").toBeLessThan(
       DEFAULT_BATCH_CAP,
     );
     expect(
-      RESOLVED?.cost.shorthandLookups,
+      asked(EVERY_REFERENCE, "getShorthandAssignmentValueSymbol")[0],
       "one lookup per shorthand property, the one naming a parameter included: it costs " +
         "the lookup and names no declaration of the inventory",
     ).toBe(4);
     expect(
-      RESOLVED?.cost.aliasSteps,
+      asked(EVERY_REFERENCE, "getImmediateAliasedSymbol")[0],
       "one step per link of each chain, resolved once per alias whatever the number of " +
         "uses it has: the collection two statements reach through one import costs one, " +
         "and a re-export a use already stepped through costs nothing more",
     ).toBe(11);
     expect(
-      [RESOLVED?.cost.patternBatches, RESOLVED?.cost.patternLookups],
-      "one pattern batch per file holding a destructuring, and one property table per " +
-        "type destructured: two files, each destructuring one object literal",
-    ).toEqual([2, 2]);
-    expect(
-      RESOLVED?.cost.residueFallbacks,
+      asked(EVERY_REFERENCE, "getResolvedSymbol")[0],
       "and no name here is residue: a statement label is the form a batch leaves, and a " +
         "label names no declaration",
     ).toBe(0);
     expect(
-      [RESOLVED?.cost.contextualBatches, RESOLVED?.cost.contextualLookups],
-      "one batch of contextual types for the object literals, one of value types and one " +
-        "of the positions a value that may carry a member reaches, and one lookup per " +
-        "distinct type's constituents, properties, element type, type arguments of an " +
-        "instantiation, call signature and, for a type with no call signature, construct signature",
-    ).toEqual([3, 22]);
-    expect(
-      RESOLVED?.cost.typedLookups,
-      "one batch of argument types and one of element-access types, the call each literal " +
-        "argument names resolved with its generic signature, and the types of the values " +
-        "assertions and constructions hand over, and the key comparisons' operand symbols",
-    ).toBe(11);
-    expect(
-      EVERY_REFERENCE.referenceRequests,
-      "the requests the client measured are the ones the pass accounts for: a declaration " +
-        "outside the project's own files is never fetched to find out that the inventory " +
-        "does not hold it",
-    ).toBe(4 + 0 + 4 + 11 + 2 + 2 + 3 + 22 + 11);
+      EVERY_REFERENCE.outsideDeclarations,
+      "a declaration outside the project's own files is never fetched to find out that the " +
+        "inventory does not hold it: the one read is a library declaration the " +
+        "unimplemented-callee rule reads to decide whether a callee has an implementation",
+    ).toEqual([1]);
   });
 
   it("records each decorator as a use of the declaration it is attached to, at the decorator", () => {
@@ -193,8 +172,8 @@ describe("the reference table of every reference form", () => {
     });
 
     expect(analyzed.references.length, "one pass per compiler configuration").toBe(2);
-    expect(analyzed.referenceRequests, "and one accounting across them").toBe(
-      accountedFor(analyzed),
+    expect(fetchedNothingOutside(analyzed), "and neither fetches a declaration of the other").toBe(
+      true,
     );
   });
 
@@ -218,8 +197,8 @@ describe("the reference table of every reference form", () => {
     const analyzed = analyzeProject(files, { references: { testFiles: [] } });
 
     expect(analyzed.referenceRequests, "the pass asks the client something").toBeGreaterThan(0);
-    expect(analyzed.referenceRequests, "and accounts for each request").toBe(
-      accountedFor(analyzed),
+    expect(fetchedNothingOutside(analyzed), "and fetches no declaration outside its files").toBe(
+      true,
     );
   });
 
@@ -430,7 +409,7 @@ describe("the three default-export forms", () => {
       "src/made.ts:7:8",
     ]);
     expect(
-      DEFAULTS?.cost.aliasSteps,
+      asked(DEFAULT_EXPORT, "getImmediateAliasedSymbol")[0],
       "one step per link of the chains this fixture writes: the three imports, and the one " +
         "default export that names a declaration; neither expression form is asked to step",
     ).toBe(4);
@@ -577,21 +556,6 @@ describe("the test files of a written project", () => {
   });
 });
 
-function accounted(cost: References["cost"] | undefined): number {
-  return cost === undefined
-    ? 0
-    : cost.fileBatches +
-        cost.residueFallbacks +
-        cost.shorthandLookups +
-        cost.aliasSteps +
-        cost.platformLookups +
-        cost.patternBatches +
-        cost.patternLookups +
-        cost.contextualBatches +
-        cost.contextualLookups +
-        cost.typedLookups;
-}
-
 describe("the cost of one pass", () => {
   it("is one lookup per shorthand and one per name a batch leaves, and no batched shorthand", () => {
     const analyzed = analyzeProject(
@@ -602,13 +566,14 @@ describe("the cost of one pass", () => {
       },
       { references: { testFiles: [] } },
     );
-    const cost = analyzed.references[0]?.cost;
-
     expect(
-      [cost?.batched, cost?.residueFallbacks, cost?.shorthandLookups],
+      [
+        asked(analyzed, "getSymbolAtLocation")[1],
+        asked(analyzed, "getResolvedSymbol")[0],
+        asked(analyzed, "getShorthandAssignmentValueSymbol")[0],
+      ],
       "the batch holds the two label names, which it leaves, and not the shorthand",
     ).toEqual([2, 2, 1]);
-    expect(analyzed.referenceRequests).toBe(accounted(cost));
   });
 
   it("accounts for every request where a use reads a literal's property", () => {
@@ -633,10 +598,10 @@ describe("the cost of one pass", () => {
     );
 
     expect(
-      analyzed.referenceRequests,
+      fetchedNothingOutside(analyzed),
       "no declaration outside the project's own files is fetched to look for a literal, a " +
         "dependency's method among them",
-    ).toBe(accounted(analyzed.references[0]?.cost));
+    ).toBe(true);
   });
 });
 

@@ -306,6 +306,26 @@ describe("a consumer the scope declares", () => {
   );
 
   it(
+    "keeps its test file's reference a test reference where the configuration counts its tests as production",
+    () => {
+      const root = workspace({
+        "target/deadset.json":
+          '{ "target": { "kind": "library" }, "analysis": { "consumer_tests": "production" } }\n',
+        "target/lib.ts": "export const version = 1;\n",
+        "target/extra.ts": "export function onlyTested(): number {\n  return 1;\n}\n",
+        "consumer/extra.test.ts":
+          'import { onlyTested } from "../target/extra.js";\n\nonlyTested();\n',
+      });
+
+      const text = explain(root, ["consumer"], "--why-live=onlyTested");
+
+      expect(text).toContain("  reached from: consumer @example/consumer\n");
+      expect(text).toMatch(/\tfrom a test file\n/u);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
     "keeps a member it writes from the write-only kind, whose write positions a report names in the target alone",
     () => {
       const root = workspace({
@@ -502,6 +522,113 @@ describe("a consumer the run cannot load", () => {
 
       expect(analyzed.code).toBe(EXIT_CLEAN);
       expect(claims(analyzed.report)).toEqual([]);
+    },
+    LOAD_TIMEOUT,
+  );
+});
+
+/** A target library exporting `Box` and a function returning one, and a consumer whose `main.ts` is `main`. */
+function boxedWith(main: string): Readonly<Record<string, string>> {
+  return {
+    "target/lib.ts":
+      "export interface Box {\n  a: number;\n  b: number;\n}\n\nexport function box(): Box {\n  return { a: 1, b: 2 };\n}\n",
+    "consumer/main.ts": `import { box, type Box } from "../target/lib.js";\n\n${main}`,
+  };
+}
+
+describe("a consumer reading a target member no name node of its own names", () => {
+  it(
+    "reads the member its element access's literal-typed index names",
+    () => {
+      const root = workspace(
+        boxedWith('const key: "a" = "a";\nconst held: Box = box();\nconsole.log(held[key]);\n'),
+      );
+
+      expect(claims(analyze(root).report)).toEqual(["DS1301 Box.b certain"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "reads the member its indexed-access type names",
+    () => {
+      const root = workspace(boxedWith('const value: Box["a"] = 1;\nconsole.log(value, box());\n'));
+
+      expect(claims(analyze(root).report)).toEqual(["DS1301 Box.b certain"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "reads the member its key comparison's literal names",
+    () => {
+      const root = workspace(
+        boxedWith(
+          'function pick(key: keyof Box): boolean {\n  return key === "a";\n}\n\nconsole.log(pick, box());\n',
+        ),
+      );
+
+      expect(claims(analyze(root).report)).toEqual(["DS1301 Box.b certain"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "reads the member its read through a type parameter reaches on the type it passes",
+    () => {
+      const root = workspace(
+        boxedWith(
+          "function first<T extends { a: number }>(value: T): number {\n  return value.a;\n}\n\nconsole.log(first(box()));\n",
+        ),
+      );
+
+      expect(claims(analyze(root).report)).toEqual(["DS1301 Box.b certain"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "reads the iteration member of the target class it iterates",
+    () => {
+      const root = workspace({
+        "target/lib.ts":
+          "export class Bag {\n  *[Symbol.iterator](): Generator<number> {\n    yield 1;\n  }\n\n  spare(): number {\n    return 1;\n  }\n}\n",
+        "consumer/main.ts":
+          'import { Bag } from "../target/lib.js";\n\nfor (const one of new Bag()) {\n  console.log(one);\n}\n',
+      });
+
+      expect(claims(analyze(root).report)).toEqual(["DS1003 Bag.spare certain"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "reads every member of the target type it hands an outside value over as",
+    () => {
+      const root = workspace({
+        "target/lib.ts":
+          "export interface Scope {\n  onconnect: (() => void) | null;\n  spare: number;\n}\n",
+        "consumer/main.ts":
+          'import type { Scope } from "../target/lib.js";\n\n(globalThis as unknown as Scope).onconnect = () => {\n  console.log("connected");\n};\n',
+      });
+
+      expect(claims(analyze(root).report)).toEqual([]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "reads the member of a target ambient module its program holds and it imports by the module's name",
+    () => {
+      const root = workspace({
+        "target/lib.ts": "export const version = 1;\n",
+        "target/env.d.ts":
+          'declare module "virtual:settings" {\n  export const read: number;\n  export const unread: number;\n}\n',
+        "consumer/main.ts":
+          '/// <reference path="../target/env.d.ts" />\nimport { version } from "../target/lib.js";\nimport { read } from "virtual:settings";\n\nconsole.log(version, read);\n',
+      });
+
+      expect(claims(analyze(root).report)).toEqual(["DS1001 'virtual:settings'.unread certain"]);
     },
     LOAD_TIMEOUT,
   );

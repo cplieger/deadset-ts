@@ -23,10 +23,9 @@ import {
 import { parenthesesRemoved } from "./unwrap.ts";
 import type { Symbol as TSSymbol, Type } from "@typescript/native/sync";
 import type { AliasChains } from "./alias-chain.ts";
-import { nodeKey, type Inventory, type InventorySymbol } from "./inventory.ts";
-import { renderPosition } from "./position.ts";
-import { isAnswered, type PropertyTables } from "./query.ts";
-import type { Reference } from "./references.ts";
+import type { InventorySymbol } from "./inventory.ts";
+import { isAnswered, UNANSWERED, type PropertyTables } from "./query.ts";
+import type { Read, ReadRule } from "./references/read-rule.ts";
 import type { ProjectView } from "./session.ts";
 
 /** One element access whose key is a name, and how the access uses the member it selects. */
@@ -193,104 +192,105 @@ function wellKnownName(name: Node | undefined): string | undefined {
 }
 
 /**
- * The references the iterations of one project's own files make to the iteration members
- * of the values they iterate: a `for…of` statement and a spread element read
- * `[Symbol.iterator]`, and a `for await…of` statement reads `[Symbol.asyncIterator]` and,
- * which it falls back to, `[Symbol.iterator]`. Each is made by the declaration holding it.
+ * The reads the iterations of a side's files make of the iteration members of the values they
+ * iterate: a `for…of` statement and a spread element read `[Symbol.iterator]`, and a
+ * `for await…of` statement reads `[Symbol.asyncIterator]` and, which it falls back to,
+ * `[Symbol.iterator]`. Each is made by the declaration holding it. A value whose type or
+ * members the checker leaves unanswered holds the members those names could spell.
  */
-export function iterationReferences<Brand>(
-  project: ProjectView<Brand>,
-  held: Inventory,
-  chains: AliasChains,
-  root: string,
-  testFiles: ReadonlySet<string>,
-): readonly Reference[] {
-  const queries = project.queries;
-  const ownPaths = project.ownPaths();
-  const iterated: {
-    readonly file: SourceFile;
-    readonly from: string;
-    readonly operand: Expression;
-    readonly protocols: readonly Protocol[];
-  }[] = [];
-  for (const file of project.ownSourceFiles()) {
-    const fileId = held.declarations.get(nodeKey(file, file));
-    if (fileId === undefined) {
-      continue;
-    }
-    const visit = (node: Node, from: string): void => {
-      const holder = held.declarations.get(nodeKey(file, node)) ?? from;
-      if (isForOfStatement(node)) {
-        const protocols: readonly Protocol[] =
-          node.awaitModifier === undefined ? ["iterator"] : ["asyncIterator", "iterator"];
-        iterated.push({ file, from: holder, operand: node.expression, protocols });
-      } else if (isSpreadElement(node)) {
-        iterated.push({ file, from: holder, operand: node.expression, protocols: ["iterator"] });
-      }
-      node.forEachChild((child) => {
-        visit(child, holder);
-      });
+export const iteration: ReadRule = {
+  start() {
+    const iterated: {
+      readonly file: SourceFile;
+      readonly from: string;
+      readonly operand: Expression;
+      readonly protocols: readonly Protocol[];
+    }[] = [];
+    return {
+      visit(node, { file, from }) {
+        if (isForOfStatement(node)) {
+          const protocols: readonly Protocol[] =
+            node.awaitModifier === undefined ? ["iterator"] : ["asyncIterator", "iterator"];
+          iterated.push({ file, from, operand: node.expression, protocols });
+        } else if (isSpreadElement(node)) {
+          iterated.push({ file, from, operand: node.expression, protocols: ["iterator"] });
+        }
+      },
+      reads({ project, chains }) {
+        const found: Read[] = [];
+        if (iterated.length === 0) {
+          return found;
+        }
+        const queries = project.queries;
+        const ownPaths = project.ownPaths();
+        const types = queries.typesAt(iterated.map((one) => one.operand));
+        const members = new Map<
+          number,
+          readonly { readonly name: string; readonly ids: readonly string[] }[] | typeof UNANSWERED
+        >();
+        const membersOf = (type: Type) => {
+          const known = members.get(type.id);
+          if (known !== undefined) {
+            return known;
+          }
+          const properties = queries.propertiesOf(type);
+          const keyed: { name: string; ids: readonly string[] }[] = [];
+          for (const property of isAnswered(properties) ? properties : []) {
+            for (const handle of property.declarations) {
+              const node = ownPaths.has(handle.path)
+                ? project.declarationAt(handle)?.node
+                : undefined;
+              const name = wellKnownName((node as { readonly name?: Node } | undefined)?.name);
+              if (name !== undefined) {
+                keyed.push({ name, ids: chains.declarationsOf(property) });
+                break;
+              }
+            }
+          }
+          const result = isAnswered(properties) ? keyed : UNANSWERED;
+          members.set(type.id, result);
+          return result;
+        };
+        // A member a well-known symbol keys is named by the symbol's computed name.
+        const spelled = (protocols: readonly Protocol[]): readonly string[] =>
+          protocols.map((protocol) => `Symbol.${protocol}`);
+        iterated.forEach((one, index) => {
+          const type = types[index];
+          if (type === UNANSWERED) {
+            found.push({ kind: "held", from: one.from, names: spelled(one.protocols) });
+            return;
+          }
+          if (type === undefined) {
+            return;
+          }
+          const parts =
+            type.isUnionType() || type.isIntersectionType() ? queries.constituents(type) : [type];
+          for (const part of isAnswered(parts) ? parts : [type]) {
+            const keyed = membersOf(part);
+            if (keyed === UNANSWERED) {
+              found.push({ kind: "held", from: one.from, names: spelled(one.protocols) });
+              continue;
+            }
+            for (const member of keyed) {
+              if (!(one.protocols as readonly string[]).includes(member.name)) {
+                continue;
+              }
+              for (const to of member.ids) {
+                found.push({
+                  kind: "named",
+                  from: one.from,
+                  to,
+                  file: one.file,
+                  at: one.operand,
+                  use: "read",
+                  via: "keyed",
+                });
+              }
+            }
+          }
+        });
+        return found;
+      },
     };
-    file.forEachChild((child) => {
-      visit(child, fileId);
-    });
-  }
-  if (iterated.length === 0) {
-    return [];
-  }
-  const types = queries.typesAt(iterated.map((one) => one.operand));
-  const members = new Map<
-    number,
-    readonly { readonly name: string; readonly ids: readonly string[] }[]
-  >();
-  const membersOf = (
-    type: Type,
-  ): readonly { readonly name: string; readonly ids: readonly string[] }[] => {
-    const known = members.get(type.id);
-    if (known !== undefined) {
-      return known;
-    }
-    const keyed: { name: string; ids: readonly string[] }[] = [];
-    const properties = queries.propertiesOf(type);
-    for (const property of isAnswered(properties) ? properties : []) {
-      for (const handle of property.declarations) {
-        const node = ownPaths.has(handle.path) ? project.declarationAt(handle)?.node : undefined;
-        const name = wellKnownName((node as { readonly name?: Node } | undefined)?.name);
-        if (name !== undefined) {
-          keyed.push({ name, ids: chains.declarationsOf(property) });
-          break;
-        }
-      }
-    }
-    members.set(type.id, keyed);
-    return keyed;
-  };
-  const found: Reference[] = [];
-  iterated.forEach((one, index) => {
-    const type = types[index];
-    if (type === undefined || !isAnswered(type)) {
-      return;
-    }
-    const parts =
-      type.isUnionType() || type.isIntersectionType() ? queries.constituents(type) : [type];
-    const position = renderPosition(one.file, root, one.operand.getStart());
-    for (const part of isAnswered(parts) ? parts : []) {
-      for (const member of membersOf(part)) {
-        if (!(one.protocols as readonly string[]).includes(member.name)) {
-          continue;
-        }
-        for (const to of member.ids) {
-          found.push({
-            from: one.from,
-            to,
-            position,
-            use: "read",
-            resolution: "keyed",
-            test: testFiles.has(position.path),
-          });
-        }
-      }
-    }
-  });
-  return found;
-}
+  },
+};

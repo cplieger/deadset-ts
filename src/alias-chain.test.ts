@@ -64,12 +64,16 @@ function walkedFrom(
     const host = nodeHost();
     const opened = openEngine({ collectTiming: false });
     let walking = false;
+    let steps = 0;
     const engine: Engine = {
       ...opened,
       ask: (accessor, locations, question) => {
         const name = locations()[0]?.split(" ").at(-1) ?? "";
-        if (walking && accessor === "getImmediateAliasedSymbol" && unanswered.includes(name)) {
-          throw new Error(`panic: ${accessor}`);
+        if (walking && accessor === "getImmediateAliasedSymbol") {
+          steps += 1;
+          if (unanswered.includes(name)) {
+            throw new Error(`panic: ${accessor}`);
+          }
         }
         return opened.ask(accessor, locations, question);
       },
@@ -105,7 +109,7 @@ function walkedFrom(
             next: chains.nextDeclared(symbol).map(flagged),
           };
         });
-        return { heads, steps: chains.steps };
+        return { heads, steps };
       } finally {
         walking = false;
       }

@@ -108,7 +108,13 @@ describe("the graph of one project", () => {
       [],
     );
 
-    expect(graph.out).toEqual([[], [{ to: 2, test: false, evaluation: false }], [], [], []]);
+    expect(graph.out).toEqual([
+      [],
+      [{ to: 2, test: false, evaluation: false, consumer: false }],
+      [],
+      [],
+      [],
+    ]);
     expect(graph.made.map((counts) => counts.production)).toEqual([0, 0, 2, 0, 0]);
     expect(graph.consumed).toEqual([]);
   });
@@ -126,10 +132,31 @@ describe("the graph of one project", () => {
 
     expect(graph.out).toEqual([[], [], [], [], []]);
     expect(graph.consumed).toEqual([
-      { to: 2, test: false, evaluation: false },
-      { to: 4, test: true, evaluation: false },
+      { to: 2, test: false, evaluation: false, consumer: true },
+      { to: 4, test: true, evaluation: false, consumer: false },
     ]);
-    expect(graph.made[4]).toEqual({ production: 0, test: 1 });
+    expect(graph.made[4]).toEqual({ production: 0, test: 1, consumerTest: 0 });
+  });
+
+  it("counts a consumer's test reference as a test one, apart from the target's", () => {
+    const graph = graphOf(
+      SYMBOLS,
+      [
+        reference(USED.id, HELPER.id, { consumer: "@example/consumer", test: true }),
+        reference(USED.id, HELPER.id, { test: true }),
+      ],
+      [],
+      [],
+    );
+
+    expect(graph.made[2]).toEqual({ production: 0, test: 2, consumerTest: 1 });
+  });
+
+  it("counts a reference a test-support file makes as test code's", () => {
+    const graph = graphOf(SYMBOLS, [reference(USED.id, HELPER.id)], [], [], [USED.position.path]);
+
+    expect(graph.made[2]).toEqual({ production: 0, test: 1, consumerTest: 0 });
+    expect(graph.out[1]).toEqual([{ to: 2, test: true, evaluation: false, consumer: false }]);
   });
 
   it("lists under a file only the declarations its export table names, and under no other container", () => {

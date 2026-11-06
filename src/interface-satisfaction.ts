@@ -29,7 +29,7 @@ import {
 } from "@typescript/native/ast";
 import { SymbolFlags, type Type } from "@typescript/native/sync";
 import { aliasChains } from "./alias-chain.ts";
-import { emptyImplementation } from "./implementations.ts";
+import { emptyImplementation } from "./findings/implementations.ts";
 import type { DetectorInput, Evidence } from "./exempt.ts";
 import type { Reference } from "./references.ts";
 import type { Exemption } from "./sweep.ts";

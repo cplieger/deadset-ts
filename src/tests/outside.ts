@@ -19,19 +19,25 @@ import {
   type Node,
   type SourceFile,
 } from "@typescript/native/ast";
-import { RESOLVED_EXTENSIONS, type ParseFile } from "./entries/configuration-files.ts";
-import { emittedFrom } from "./load/emit-map.ts";
-import type { Host } from "./host.ts";
-import type { Inventory } from "./inventory.ts";
-import { namesImported } from "./module-declarations.ts";
-import { dirnamePath, joinPath, normalizePath, queriedModulePath } from "./paths.ts";
-import { renderPosition } from "./position.ts";
-import { nameComponent } from "./ref.ts";
-import type { Reference } from "./references.ts";
+import { RESOLVED_EXTENSIONS, type ParseFile } from "../entries/configuration-files.ts";
+import { emittedFrom } from "../load/emit-map.ts";
+import type { Host } from "../host.ts";
+import type { Inventory } from "../inventory.ts";
+import { namesImported } from "../import-bindings.ts";
+import {
+  dirnamePath,
+  joinPath,
+  normalizePath,
+  queriedModulePath,
+  startsRelativePath,
+} from "../paths.ts";
+import { renderPosition } from "../position.ts";
+import { nameComponent } from "../ref.ts";
+import type { Reference } from "../references.ts";
 
 /** The paths below the target root one relative specifier may name, written path first. */
 function candidates(dir: string, specifier: string): readonly string[] {
-  if (!specifier.startsWith("./") && !specifier.startsWith("../")) {
+  if (!startsRelativePath(specifier)) {
     return [];
   }
   const path = normalizePath(dir === "" ? specifier : `${dir}/${specifier}`);

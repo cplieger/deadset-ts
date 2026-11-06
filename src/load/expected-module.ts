@@ -8,7 +8,13 @@ import { packageOfSpecifier } from "../dependencies.ts";
 import { MANIFEST } from "../fs/manifest.ts";
 import { entriesOf } from "../fs/tree.ts";
 import type { Host } from "../host.ts";
-import { dirnamePath, isAbsolutePath, joinPath, relativePath, resolvePath } from "../paths.ts";
+import {
+  cannotStartPackageName,
+  dirnamePath,
+  joinPath,
+  relativePath,
+  resolvePath,
+} from "../paths.ts";
 import { dependencySpecifiers, installedPackage, manifestsAbove } from "./module-lookup.ts";
 import type { CompilerOptions } from "./plan.ts";
 
@@ -119,7 +125,7 @@ function expectedModule(
 ): string | undefined {
   const { host, targetRoot } = context;
   const fix = "run the generator or the build that writes it";
-  if (specifier.startsWith(".") || isAbsolutePath(specifier)) {
+  if (cannotStartPackageName(specifier)) {
     return provided(host, resolvePath(dirnamePath(importer), specifier), false)
       ? undefined
       : `which names no file of the target: ${fix}`;

@@ -2,7 +2,7 @@
   "corpus_version": "6.0.0",
   "product": { "name": "deadset-ts", "version": "0.1.0", "language": "ts" },
   "result": "pass",
-  "totals": { "fixtures": 360, "pass": 341, "gap": 0, "fail": 0, "pending": 19 },
+  "totals": { "fixtures": 363, "pass": 350, "gap": 0, "fail": 0, "pending": 13 },
   "fixtures": [
     {
       "fixture": "abstract-member-through-this",
@@ -38,6 +38,71 @@
             "confidence": "probable",
             "reachability_class": "certain",
             "component": { "root": true }
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "amd-define-and-require-load-their-files",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "AFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "BFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "LazyFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "probable",
+            "reachability_class": "certain"
+          }
+        },
+        { "symbol": "LeftPad", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "RunnerFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "SkippedFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        {
+          "symbol": "UnusedPkg",
+          "result": "pass",
+          "actual": {
+            "report": "DS1701",
+            "symbol_kind": "dependency",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "details": { "dependency_class": "dependency" }
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "later",
+          "result": "pass",
+          "actual": {
+            "report": "DS1002",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "never",
+          "result": "pass",
+          "actual": {
+            "report": "DS1002",
+            "symbol_kind": "variable",
+            "confidence": "certain",
+            "reachability_class": "certain"
           },
           "suppression": { "suppressed": true, "stale": false }
         }
@@ -1951,6 +2016,93 @@
       "unexpected": []
     },
     {
+      "fixture": "custom-element-reactions-are-platform-calls",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "Base.connectedCallback",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        },
+        {
+          "symbol": "Field.attributeChangedCallback",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        },
+        {
+          "symbol": "Field.formAssociated",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        },
+        {
+          "symbol": "Field.formStateRestoreCallback",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        },
+        {
+          "symbol": "Field.observedAttributes",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        },
+        {
+          "symbol": "Leaf.adoptedCallback",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        },
+        {
+          "symbol": "SizeBox.attributeChangedCallback",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        },
+        {
+          "symbol": "SizeBox.observedAttributes",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        },
+        {
+          "symbol": "SizeBox.unused",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "method",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "Sub.connectedCallback",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "method",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "TRACKED", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Unregistered.connectedCallback",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "method",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "WATCHED", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "probeAttr", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "stateOf", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "dead-store-closure-only-local",
       "result": "pass",
       "expectations": [
@@ -2190,20 +2342,19 @@
     },
     {
       "fixture": "decode-only-member-through-a-generic-client",
-      "result": "pending",
+      "result": "pass",
       "expectations": [
         { "symbol": "Job.id", "result": "pass", "actual": { "report": "none" } },
         {
           "symbol": "Job.state",
-          "result": "fail",
+          "result": "pass",
           "actual": {
             "report": "DS1003",
             "symbol_kind": "type-member",
-            "confidence": "certain",
-            "reachability_class": "certain"
+            "confidence": "possible",
+            "reachability_class": "possible"
           },
-          "suppression": { "suppressed": true, "stale": false },
-          "message": "confidence want \"possible\" got \"certain\"; reachability_class want \"possible\" got \"certain\""
+          "suppression": { "suppressed": true, "stale": false }
         }
       ],
       "unexpected": []
@@ -5690,7 +5841,7 @@
     },
     {
       "fixture": "package-only-commonjs",
-      "result": "pending",
+      "result": "pass",
       "expectations": [
         { "symbol": "CFile", "result": "pass", "actual": { "report": "none" } },
         { "symbol": "SetupFile", "result": "pass", "actual": { "report": "none" } },
@@ -5874,27 +6025,30 @@
     },
     {
       "fixture": "package-only-node-runtime",
-      "result": "pending",
+      "result": "pass",
       "expectations": [
         {
           "symbol": "UtilFile",
-          "result": "fail",
+          "result": "pass",
           "actual": {
             "report": "DS1602",
             "symbol_kind": "file",
-            "confidence": "certain",
-            "reachability_class": "certain"
-          },
-          "message": "confidence want \"possible\" got \"certain\"; reachability_class want \"possible\" got \"certain\""
+            "confidence": "possible",
+            "reachability_class": "possible"
+          }
         },
         {
           "symbol": "helper",
-          "result": "fail",
-          "actual": { "report": "DS1001", "confidence": "certain" },
-          "message": "want no finding at target/util.js:2, got DS1001"
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "confidence": "possible",
+            "reachability_class": "possible"
+          },
+          "suppression": { "suppressed": true, "stale": false }
         }
       ],
-      "unexpected": [{ "file": "target/util.js", "line": 2, "report": "DS1001" }]
+      "unexpected": []
     },
     {
       "fixture": "package-only-unread-node-command",
@@ -6353,101 +6507,98 @@
     },
     {
       "fixture": "proto-facts-unevaluated-before-serializers",
-      "result": "pending",
+      "result": "pass",
       "expectations": [],
-      "unexpected": [],
-      "message": "want exactly one consumer record of PingRequest.number, got 0; want exactly one consumer record of PingRequest.text, got 0"
+      "unexpected": []
     },
     {
       "fixture": "proto-field-read-in-one-language",
       "result": "pending",
       "expectations": [],
       "unexpected": [],
-      "message": "want exactly one consumer record of PingRequest.number, got 0; want exactly one consumer record of PingRequest.text, got 0"
+      "message": "consumer record of PingRequest.number state want \"unreferenced\" got \"\"; consumer record of PingRequest.text state want \"live\" got \"\""
     },
     {
       "fixture": "proto-field-written-only",
       "result": "pending",
       "expectations": [],
       "unexpected": [],
-      "message": "want exactly one consumer record of PingRequest.number, got 0; want exactly one consumer record of PingRequest.text, got 0; want exactly one consumer record of PingRequest, got 0"
+      "message": "consumer record of PingRequest.number state want \"unreferenced\" got \"\"; consumer record of PingRequest.text state want \"unreferenced\" got \"\"; consumer record of PingRequest state want \"live\" got \"\""
     },
     {
       "fixture": "proto-hand-serializer-reads",
       "result": "pending",
       "expectations": [],
       "unexpected": [],
-      "message": "want exactly one consumer record of Item.number, got 0; want exactly one consumer record of Item.text, got 0; want exactly one consumer record of Envelope.item, got 0; want exactly one consumer record of Envelope.label, got 0; want exactly one consumer record of Other.number, got 0"
+      "message": "consumer record of Item.number state want \"live\" got \"\"; consumer record of Item.text state want \"live\" got \"\"; consumer record of Envelope.item state want \"live\" got \"\"; consumer record of Envelope.label state want \"live\" got \"\"; consumer record of Other.number state want \"unreferenced\" got \"\""
     },
     {
       "fixture": "proto-oneof-protobuf-es",
       "result": "pending",
       "expectations": [],
       "unexpected": [],
-      "message": "want exactly one consumer record of Outcome.ok, got 0; want exactly one consumer record of Outcome.error, got 0; want exactly one consumer record of Outcome.pending, got 0; want exactly one consumer record of Outcome.skipped, got 0; want exactly one consumer record of Probe.a, got 0; want exactly one consumer record of Probe.b, got 0"
+      "message": "consumer record of Outcome.ok state want \"live\" got \"\"; consumer record of Outcome.error state want \"live\" got \"\"; consumer record of Outcome.pending state want \"live\" got \"\"; consumer record of Outcome.skipped state want \"unreferenced\" got \"\"; consumer record of Probe.a state want \"live\" got \"\"; consumer record of Probe.b state want \"live\" got \"\""
     },
     {
       "fixture": "proto-protobuf-es-v2-tags",
-      "result": "pending",
+      "result": "pass",
       "expectations": [],
-      "unexpected": [],
-      "message": "want exactly one consumer record of PingRequest, got 0; want exactly one consumer record of PingRequestSchema, got 0; want exactly one consumer record of PingRequest.text, got 0; want exactly one consumer record of PingService, got 0; want exactly one consumer record of PingService.ping, got 0"
+      "unexpected": []
     },
     {
       "fixture": "proto-protojson-unmarshal-caps",
       "result": "pending",
       "expectations": [],
       "unexpected": [],
-      "message": "want exactly one consumer record of PingRequest.number, got 0; want exactly one consumer record of PingRequest.text, got 0; want exactly one consumer record of PingResponse.number, got 0"
+      "message": "consumer record of PingRequest.number state want \"live\" got \"\"; consumer record of PingRequest.number cap want \"persistence\" got \"\"; consumer record of PingRequest.text state want \"unreferenced\" got \"\"; consumer record of PingRequest.text cap want \"persistence\" got \"\"; consumer record of PingResponse.number state want \"unreferenced\" got \"\""
     },
     {
       "fixture": "proto-rpc-called-from-ts",
       "result": "pending",
       "expectations": [],
       "unexpected": [],
-      "message": "want exactly one consumer record of PingService, got 0; want exactly one consumer record of PingService.ping, got 0; want exactly one consumer record of PingService.fail, got 0"
+      "message": "consumer record of PingService state want \"live\" got \"\"; consumer record of PingService.ping state want \"live\" got \"\"; consumer record of PingService.fail state want \"unreferenced\" got \"\""
     },
     {
       "fixture": "proto-transport-reads-nothing",
       "result": "pending",
       "expectations": [],
       "unexpected": [],
-      "message": "want exactly one consumer record of PingRequest.number, got 0; want exactly one consumer record of PingRequest.text, got 0; want exactly one consumer record of PingService.ping, got 0"
+      "message": "consumer record of PingRequest.number state want \"unreferenced\" got \"\"; consumer record of PingRequest.text state want \"unreferenced\" got \"\"; consumer record of PingService.ping state want \"live\" got \"\""
     },
     {
       "fixture": "proto-ts-create-literal-writes",
       "result": "pending",
       "expectations": [],
       "unexpected": [],
-      "message": "want exactly one consumer record of PingRequest.number, got 0; want exactly one consumer record of PingRequest.text, got 0; want exactly one consumer record of PingRequestSchema, got 0"
+      "message": "consumer record of PingRequest.number state want \"unreferenced\" got \"\"; consumer record of PingRequest.text state want \"unreferenced\" got \"\"; consumer record of PingRequestSchema state want \"live\" got \"\""
     },
     {
       "fixture": "proto-ts-equals-reads",
       "result": "pending",
       "expectations": [],
       "unexpected": [],
-      "message": "want exactly one consumer record of PingRequest.number, got 0; want exactly one consumer record of PingRequest.text, got 0; want exactly one consumer record of PingResponse.number, got 0"
+      "message": "consumer record of PingRequest.number state want \"live\" got \"\"; consumer record of PingRequest.text state want \"live\" got \"\"; consumer record of PingResponse.number state want \"unreferenced\" got \"\""
     },
     {
       "fixture": "proto-ts-proto-default-rpc-only",
-      "result": "pending",
+      "result": "pass",
       "expectations": [],
-      "unexpected": [],
-      "message": "want exactly one consumer record of PingService.Ping, got 0; want exactly one fallback record of ServiceFile, got 0; type-error skip at target/src/gen/v1/service.ts:211, which no name resolves to"
+      "unexpected": []
     },
     {
       "fixture": "proto-ts-proto-message-fns",
       "result": "pending",
       "expectations": [],
       "unexpected": [],
-      "message": "want exactly one consumer record of PingRequest.number, got 0; want exactly one consumer record of PingRequest.text, got 0; want exactly one consumer record of PingResponse.number, got 0; type-error skip at target/src/gen/v1/service.ts:354, which no name resolves to"
+      "message": "want exactly one consumer record of PingRequest.number, got 0; want exactly one consumer record of PingRequest.text, got 0; want exactly one consumer record of PingResponse.number, got 0"
     },
     {
       "fixture": "proto-ts-serialization-contract",
       "result": "pending",
       "expectations": [],
       "unexpected": [],
-      "message": "want exactly one consumer record of PingRequest.number, got 0; want exactly one consumer record of PingRequest.text, got 0"
+      "message": "consumer record of PingRequest.number state want \"live\" got \"\"; consumer record of PingRequest.text state want \"live\" got \"\""
     },
     {
       "fixture": "published-accessor-pair-types",
@@ -10290,6 +10441,37 @@
           "actual": {
             "report": "DS1001",
             "symbol_kind": "variable",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "worker-thread-path-of-its-own-directory",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "IdleFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "probable",
+            "reachability_class": "certain"
+          }
+        },
+        { "symbol": "JoinedFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "ResolvedFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "idle",
+          "result": "pass",
+          "actual": {
+            "report": "DS1002",
+            "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
             "liveness_relation": "reference-counting"

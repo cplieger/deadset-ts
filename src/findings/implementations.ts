@@ -15,10 +15,10 @@ import {
   type Node,
 } from "@typescript/native/ast";
 import { SymbolFlags, type Symbol as TSSymbol, type Type } from "@typescript/native/sync";
-import { aliasChains } from "./alias-chain.ts";
-import { nodeKey, type Inventory } from "./inventory.ts";
-import { must, Unanswerable } from "./query.ts";
-import type { ProjectView } from "./session.ts";
+import { aliasChains } from "../alias-chain.ts";
+import { nodeKey, type Inventory } from "../inventory.ts";
+import { must, Unanswerable } from "../query.ts";
+import type { ProjectView } from "../session.ts";
 
 /** What one run knows about how its interfaces are implemented. */
 export interface Implementations {

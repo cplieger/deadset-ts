@@ -196,11 +196,23 @@ describe("an object literal", () => {
       { references: { testFiles: [] } },
     );
 
+    const text = [
+      ...SHAPE,
+      "[{ a: x }] = [shape];",
+      "({ inner: { b: x } } = shape);",
+      "for ({ a: x } of [shape]) break;",
+      "",
+    ].join("\n");
+    const patterns = [...text.matchAll(/\{ (?:a|inner|b): /gu)].map((match) => match.index);
+    const contextual = (analyzed.referenceAsks[0]?.get("getContextualType")?.at ?? []).map(
+      (location) => Number(location.slice(location.lastIndexOf(":") + 1)),
+    );
+    expect(patterns.length, "the file writes four object patterns").toBe(4);
     expect(
-      analyzed.references[0]?.cost.contextualBatches,
-      "one batch for the type of each value the patterns destructure and one for the type " +
-        "its position expects; no literal is asked about, because the file writes none",
-    ).toBe(2);
+      // A node's offset is its full start, which a pattern after a space starts one before.
+      contextual.filter((offset) => patterns.some((at) => offset === at || offset === at - 1)),
+      "no pattern is asked a contextual type, because a pattern is no literal",
+    ).toEqual([]);
   });
 
   it("written where a type is expected writes the members of that type", () => {

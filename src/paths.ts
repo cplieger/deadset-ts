@@ -11,6 +11,58 @@ export function isAbsolutePath(path: string): boolean {
   return path.startsWith(SEPARATOR);
 }
 
+/** Whether a specifier starts a path relative to the file that writes it: `./` or `../`. */
+export function startsRelativePath(specifier: string): boolean {
+  return specifier.startsWith("./") || specifier.startsWith("../");
+}
+
+/** Whether a specifier names a path relative to the file that writes it: `.`, `..`, `./` or `../` first. */
+export function isRelativeSpecifier(specifier: string): boolean {
+  return specifier === "." || specifier === ".." || startsRelativePath(specifier);
+}
+
+/**
+ * Whether a module specifier names a path rather than a package, as the compiler reads one:
+ * a relative specifier or an absolute path.
+ */
+export function isPathSpecifier(specifier: string): boolean {
+  return isRelativeSpecifier(specifier) || isAbsolutePath(specifier);
+}
+
+/**
+ * Whether a string starts with `./`, `../` or `/`, the specifiers a browser reads as a URL
+ * rather than a bare name, so a bare `.` or `..` stays a request:
+ * https://html.spec.whatwg.org/multipage/webappapis.html#resolve-a-url-like-module-specifier
+ */
+export function isExplicitPath(text: string): boolean {
+  return startsRelativePath(text) || isAbsolutePath(text);
+}
+
+/**
+ * Whether a string starts with `.` or `/`, which no npm package name does, so a reader that
+ * takes any other string as a package's takes it as a path:
+ * https://docs.npmjs.com/cli/v11/configuring-npm/package-json#name
+ */
+export function cannotStartPackageName(text: string): boolean {
+  return text.startsWith(".") || isAbsolutePath(text);
+}
+
+/** A URL scheme, `file:` and `node:` among them: https://url.spec.whatwg.org/#url-scheme-string */
+const URL_SCHEME = /^[a-z][a-z\d+.-]*:/iu;
+
+/** Whether a string starts with a URL scheme. */
+export function hasURLScheme(text: string): boolean {
+  return URL_SCHEME.test(text);
+}
+
+/**
+ * Whether a URL reference is a relative one that does not start with a solidus, the bare
+ * name included: https://url.spec.whatwg.org/#relative-url-string
+ */
+export function isPathRelativeURL(reference: string): boolean {
+  return reference !== "" && !reference.startsWith(SEPARATOR) && !hasURLScheme(reference);
+}
+
 /**
  * One path with `.` removed, `..` applied to the segment before it, and repeated
  * separators collapsed. A `..` that walks past the root of an absolute path is
@@ -98,17 +150,11 @@ export function resolvePath(against: string, path: string): string {
 }
 
 /**
- * A URL reference's scheme. A reference with none that does not start with a solidus is
- * relative, the bare name included: https://url.spec.whatwg.org/#relative-url-string
- */
-const URL_SCHEME = /^[a-z][a-z\d+.-]*:/iu;
-
-/**
  * The path a relative URL reference names against `dir`, its query and its fragment
  * removed, which name no part of the file; undefined where the reference is not relative.
  */
 export function relativeURLPath(dir: string, reference: string): string | undefined {
-  if (reference === "" || reference.startsWith("/") || URL_SCHEME.test(reference)) {
+  if (!isPathRelativeURL(reference)) {
     return undefined;
   }
   const cut = reference.search(/[?#]/u);
@@ -123,7 +169,7 @@ export function relativeURLPath(dir: string, reference: string): string | undefi
  */
 export function queriedModulePath(specifier: string): string | undefined {
   const query = specifier.indexOf("?");
-  if (query < 0 || !(specifier.startsWith("./") || specifier.startsWith("../"))) {
+  if (query < 0 || !startsRelativePath(specifier)) {
     return undefined;
   }
   const raw = specifier

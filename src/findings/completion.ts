@@ -110,12 +110,13 @@ function testedByIn(input: EmitterInput): ReadonlySet<string> {
  * published API, a public member of a published type included, is `certain` where the
  * run loaded every consumer the scope declared and declared one, `probable` where one did
  * not load, and `possible` where it declared none, whatever the configuration says of the
- * consumer set. A member an `in` expression tests by name, and one a function outside the
- * analysis fills, is `possible`.
+ * consumer set. A member an `in` expression tests by name, one a function outside the
+ * analysis fills, and one {@link possiblyLoaded} names, is `possible`.
  */
 function reachabilityClasses(input: EmitterInput): (id: string) => Confidence {
   const tested = testedByIn(input);
   const filled = input.boundary.filledOutside ?? new Set<string>();
+  const possible = possiblyLoaded(input);
   const published = publishedIds(input.swept.matrix.union);
   const { declared } = input.boundary.consumers;
   const outside: Confidence =
@@ -125,7 +126,7 @@ function reachabilityClasses(input: EmitterInput): (id: string) => Confidence {
         ? "certain"
         : "probable";
   return (id) => {
-    if (tested.has(id) || filled.has(id)) {
+    if (tested.has(id) || filled.has(id) || possible.has(id)) {
       return "possible";
     }
     return published.has(id) ? outside : "certain";
@@ -180,6 +181,36 @@ function testCeilings(
           "certain",
         )
       : "certain";
+}
+
+/**
+ * What only a bundler's retry of an import Node leaves unresolved names (program.38), and each
+ * dead declaration that reaches through dead declarations, as confidence.20 reads what only
+ * tests reach: each is dead only while no loader the analysis does not see loads the file.
+ */
+function possiblyLoaded(input: EmitterInput): ReadonlySet<string> {
+  const seeds = input.boundary.possiblyLoaded ?? new Set<string>();
+  if (seeds.size === 0) {
+    return seeds;
+  }
+  const union = input.swept.matrix.union;
+  const dead = new Set(input.swept.sweep.candidates.map((one) => one.id));
+  const reached = new Set<string>();
+  const pending = union.symbols.flatMap((symbol, at) => (seeds.has(symbol.id) ? [at] : []));
+  for (let at = pending.pop(); at !== undefined; at = pending.pop()) {
+    const symbol = union.symbols[at];
+    if (symbol === undefined || reached.has(symbol.id)) {
+      continue;
+    }
+    reached.add(symbol.id);
+    for (const edge of union.out[at] ?? []) {
+      const to = union.symbols[edge.to];
+      if (to !== undefined && dead.has(to.id)) {
+        pending.push(edge.to);
+      }
+    }
+  }
+  return reached;
 }
 
 /**
@@ -373,6 +404,9 @@ export function completed(
     union.symbols.map((symbol, at) => [declarationKey(symbol.ref, symbol.position.path), at]),
   );
   const candidates = new Map(swept.sweep.candidates.map((candidate) => [candidate.id, candidate]));
+  const fileIds = new Map(
+    union.symbols.flatMap((one) => (one.kind === "file" ? [[one.position.path, one.id]] : [])),
+  );
   const classOf = reachabilityClasses(input);
   const ceilingOf = testCeilings(input, classOf);
   const testUsed = testUsedSubjects(input);
@@ -465,7 +499,12 @@ export function completed(
         ? union.made[at]
         : { production: candidate.productionRefs, test: candidate.testRefs };
     const ownClass =
-      judged === undefined ? (finding.reachabilityClass ?? "certain") : classOf(judged.id);
+      judged !== undefined
+        ? classOf(judged.id)
+        : (finding.reachabilityClass ??
+          (finding.code === CODE.fileNeverImported
+            ? classOf(fileIds.get(finding.position.path) ?? "")
+            : "certain"));
     const used =
       judged !== undefined
         ? candidate !== undefined && testUsed.declarations.has(judged.id)

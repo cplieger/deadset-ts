@@ -1,5 +1,5 @@
 import { EXIT_CLEAN } from "../contract/contract.generated.ts";
-import { runSweep } from "../analysis.ts";
+import { productionMode, runSweep } from "../analysis.ts";
 import { retainedLines } from "../exempt.ts";
 import { partialNotes } from "../partial.ts";
 import { resolvePath } from "../paths.ts";
@@ -19,7 +19,7 @@ export const printRetainedVerb: Verb = ({ out, err, host, inputs, scope, openCli
   const scoped = scope();
   const swept = runSweep(openClient(config), host, scoped, config, {
     marked: [],
-    mode: { production: true },
+    mode: productionMode(config),
   });
   for (const line of retainedLines(swept.matrix.union.symbols, swept.retained)) {
     out.write(`${line}\n`);

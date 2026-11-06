@@ -62,6 +62,7 @@ import {
 } from "@typescript/native/ast";
 import { commonJSModuleValue, type ModuleValue } from "../inventory/commonjs.ts";
 import { callsPlatformBy, lexicalBinding, writtenName, type BindingOf } from "../platform-calls.ts";
+import { startsRelativePath } from "../paths.ts";
 import { unwrapped } from "../unwrap.ts";
 
 /** Where a value's text starts in its file, or undefined in a document read with no positions. */
@@ -589,7 +590,7 @@ export function relativeSpecifiers(file: SourceFile): readonly string[] {
   }
   const found: string[] = [];
   const named = (specifier: string | undefined): void => {
-    if (specifier?.startsWith("./") === true || specifier?.startsWith("../") === true) {
+    if (specifier !== undefined && startsRelativePath(specifier)) {
       found.push(specifier);
     }
   };

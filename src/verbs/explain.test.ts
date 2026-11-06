@@ -174,7 +174,7 @@ describe("explain", () => {
         [
           "answer: dead",
           "  live under: reference-counting",
-          "  unreachable: no path of references reaches it from a root or a loaded consumer",
+          "  unreachable: no path of references reaches it from a root, a loaded consumer or a test file no project holds",
           "  references: 1",
           "  reference: src/lib.ts:6:10\tread\tfrom src/lib.ts:5:17",
           "  component: deadset-ts/c-0001, 2 symbols and 6 deletable lines fall with it, listed at cascade roots",

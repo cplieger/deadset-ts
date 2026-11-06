@@ -10,8 +10,10 @@ import type { InventorySymbol } from "./inventory.ts";
 import { byPosition } from "./position.ts";
 import type { Reference } from "./references.ts";
 import type { Root } from "./roots/root-set.ts";
+import { edgeWithheldBy } from "./tests/file-class.ts";
 import {
   reachedWithTheTests,
+  splitRefs,
   sweep,
   type Candidate,
   type Liveness,
@@ -270,13 +272,14 @@ export function sweepMatrix(matrix: Matrix, input: SweepInput): SweepResult {
     }
     const held = matrix.heldIn[at] ?? [];
     const admitted = admittedAt(at);
-    const testRefs = union.made[at]?.test ?? 0;
+    const split = splitRefs(union.made[at], input.mode);
+    const testRefs = split.test;
     const heldByTests =
       heldBy[union.parent[at] ?? OUTSIDE] ??
       (union.support[at] === true && testRefs > 0 && !admitted ? symbol.id : undefined);
     const unreferenced = union.test[at] === true && !admitted && testReached[at] !== true;
     heldBy[at] = heldByTests;
-    const productionRefs = union.made[at]?.production ?? 0;
+    const productionRefs = split.production;
     const counted = all.every((candidate) => candidate.relation === "reference-counting");
     candidates.push({
       id: symbol.id,
@@ -325,7 +328,7 @@ function compiledReferences(
         }
         for (const edge of edges) {
           const to = graph.symbols[edge.to]?.id ?? "";
-          if ((!mode.production || !edge.test) && dead.has(to) && !kept.has(to)) {
+          if (!edgeWithheldBy(mode, edge) && dead.has(to) && !kept.has(to)) {
             kept.add(to);
             changed = true;
           }

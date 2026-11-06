@@ -94,11 +94,15 @@ describe("framework-lifecycle", () => {
     ]);
   });
 
-  it("makes no class a component where the configuration declares no framework", () => {
+  it("makes only a class the platform's registry defines a component where the configuration declares no framework", () => {
     const swept = sweepFixture(withoutDecorator([]));
 
-    expect(called(swept)).toEqual([]);
-    expect(deadMembers(swept)).toContain("Counter.connectedCallback");
+    expect(called(swept)).toEqual([
+      "Counter.observedAttributes src/main.ts:7:36 registered by CustomElementRegistry.define",
+      "Counter.connectedCallback src/main.ts:7:36 registered by CustomElementRegistry.define",
+      "Counter.attributeChangedCallback src/main.ts:7:36 registered by CustomElementRegistry.define",
+    ]);
+    expect(deadMembers(swept)).toContain("Base.disconnectedCallback");
     expect(deadMembers(swept)).toContain("Panel.mount");
   });
 });
@@ -166,6 +170,109 @@ describe("a class a contract's base makes a component", () => {
     expect(called(swept)).toEqual([
       "Views.Inner.connectedCallback main.ts:2:30 extends HTMLElement",
     ]);
+  });
+});
+
+/** One project swept for production under a configuration that declares no framework. */
+function sweptUnconfigured(main: string): RunSweep {
+  const root = writeProject({
+    "package.json": '{ "name": "app", "private": true, "type": "module", "main": "./main.ts" }\n',
+    "main.ts": main,
+  });
+  try {
+    const { config } = resolve({
+      repository: { text: '{ "target": { "kind": "application" } }', label: "deadset.json" },
+    });
+    const host = nodeHost();
+    return runSweep(openEngine({ collectTiming: false }), host, scopeForDir(host, root), config, {
+      marked: [],
+      mode: { production: true },
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+/** Each declaration the sweep reports dead, by its display name. */
+function deadNames(swept: RunSweep): string[] {
+  return swept.sweep.candidates.map((candidate) => nameOf(swept, candidate.id));
+}
+
+describe("a class the platform's custom-element registry defines", () => {
+  it("has the members the registry reads and calls retained, and what they reference live", () => {
+    const swept = sweptUnconfigured(
+      [
+        'const WATCHED = ["size"] as const;',
+        'const TRACKED = ["mode"];',
+        "function probeAttr(name: string): string { return name; }",
+        "function probeMove(): void {}",
+        "function stateOf(state: unknown): string { return String(state); }",
+        "class SizeBox extends HTMLElement {",
+        "  static get observedAttributes(): readonly string[] { return WATCHED; }",
+        "  attributeChangedCallback(name: string): void { console.log(probeAttr(name)); }",
+        "  connectedMoveCallback(): void { probeMove(); }",
+        "  unused(): void {}",
+        "}",
+        "class Field extends HTMLElement {",
+        "  static readonly observedAttributes = TRACKED;",
+        "  static formAssociated = true;",
+        '  static disabledFeatures = ["shadow"];',
+        "  attributeChangedCallback(): void {}",
+        "  formStateRestoreCallback(state: unknown): void { console.log(stateOf(state)); }",
+        "  formResetCallback(): void {}",
+        "}",
+        "class Base extends HTMLElement {",
+        "  connectedCallback(): void {}",
+        "  disconnectedCallback(): void {}",
+        "}",
+        "class Leaf extends Base {",
+        "  adoptedCallback(): void {}",
+        "}",
+        "class Unregistered extends HTMLElement {",
+        "  connectedCallback(): void {}",
+        "}",
+        "const Reached = Field;",
+        'customElements.define("size-box", SizeBox);',
+        'customElements.define("x-field", Reached);',
+        'window.customElements.define("x-leaf", Leaf);',
+        "export const all = [Unregistered];",
+        "",
+      ].join("\n"),
+    );
+
+    expect(deadNames(swept)).toEqual(["SizeBox.unused", "Unregistered.connectedCallback"]);
+    expect(called(swept)).toEqual([
+      "SizeBox.observedAttributes main.ts:31:35 registered by CustomElementRegistry.define",
+      "SizeBox.attributeChangedCallback main.ts:31:35 registered by CustomElementRegistry.define",
+      "SizeBox.connectedMoveCallback main.ts:31:35 registered by CustomElementRegistry.define",
+      "Field.observedAttributes main.ts:32:34 registered by CustomElementRegistry.define",
+      "Field.formAssociated main.ts:32:34 registered by CustomElementRegistry.define",
+      "Field.disabledFeatures main.ts:32:34 registered by CustomElementRegistry.define",
+      "Field.attributeChangedCallback main.ts:32:34 registered by CustomElementRegistry.define",
+      "Field.formStateRestoreCallback main.ts:32:34 registered by CustomElementRegistry.define",
+      "Field.formResetCallback main.ts:32:34 registered by CustomElementRegistry.define",
+      "Base.connectedCallback main.ts:33:40 registered by CustomElementRegistry.define",
+      "Base.disconnectedCallback main.ts:33:40 registered by CustomElementRegistry.define",
+      "Leaf.adoptedCallback main.ts:33:40 registered by CustomElementRegistry.define",
+    ]);
+  });
+  it("is one a function defines as a customized built-in element", () => {
+    const swept = sweptUnconfigured(
+      [
+        'const OBSERVED = ["open"] as const;',
+        "function probeAttr(name: string): string { return name; }",
+        "class ProbeDialog extends HTMLDialogElement {",
+        "  static readonly observedAttributes = OBSERVED;",
+        "  attributeChangedCallback(name: string): void { probeAttr(name); }",
+        "}",
+        "export function install(): void {",
+        '  customElements.define("x-probe-dialog", ProbeDialog, { extends: "dialog" });',
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    expect(deadNames(swept)).toEqual([]);
   });
 });
 

@@ -408,6 +408,11 @@ export const REPORT_SCHEMAS = {
         },
         else: { properties: { configurations: { minItems: 1 }, target: { required: ["kind"] } } },
       },
+      {
+        if: { required: ["merged_from"], properties: { merged_from: { maxItems: 0 } } },
+        then: { properties: { analyzer: { properties: { languages: { maxItems: 0 } } } } },
+        else: { properties: { analyzer: { properties: { languages: { minItems: 1 } } } } },
+      },
     ],
     properties: {
       schema_version: { type: "string", pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
@@ -424,7 +429,6 @@ export const REPORT_SCHEMAS = {
           },
           languages: {
             type: "array",
-            minItems: 1,
             uniqueItems: true,
             items: { type: "string", enum: ["go", "ts", "proto"] },
           },
@@ -460,7 +464,7 @@ export const REPORT_SCHEMAS = {
               pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$",
             },
             digest: { type: "string", pattern: "^sha256:[0-9a-f]{64}$" },
-            languages: { $ref: "#/properties/analyzer/properties/languages" },
+            languages: { $ref: "#/properties/analyzer/properties/languages", minItems: 1 },
             totals: { $ref: "#/properties/totals" },
           },
         },

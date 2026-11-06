@@ -15,7 +15,15 @@ import {
 } from "@typescript/native/ast";
 import { relativeSpecifiers } from "./static-module.ts";
 import type { Host } from "../host.ts";
-import { ancestors, dirnamePath, joinPath, relativePath, resolvePath } from "../paths.ts";
+import {
+  ancestors,
+  dirnamePath,
+  isAbsolutePath,
+  joinPath,
+  relativePath,
+  resolvePath,
+  startsRelativePath,
+} from "../paths.ts";
 import type { SourceFiles } from "../source-files.ts";
 import { bytewise } from "../text/compare.ts";
 import { isRecord } from "../json-document.ts";
@@ -49,9 +57,6 @@ const MODULE_FORMS: readonly { readonly name: RegExp; readonly form: string }[] 
 
 /** A JSON configuration file's name. */
 const DOCUMENT_NAME = /^(?:[\w-]+(?:\.[\w-]+)?\.config\.json|\.[\w-]+rc(?:\.json)?)$/u;
-
-/** The prefixes a string names a file with, relative to the file that writes it. */
-const RELATIVE_PREFIXES = ["./", "../"] as const;
 
 /** The JavaScript extensions a relative specifier from a configuration file stands for TypeScript under. */
 const COUNTERPARTS: readonly (readonly [string, readonly string[]])[] = [
@@ -270,9 +275,7 @@ export function configurationFiles(
     }
     document.manifestDirs.push(next.manifestDir);
     for (const text of document.strings) {
-      const path = RELATIVE_PREFIXES.some((prefix) => text.startsWith(prefix))
-        ? resolvePath(dirnamePath(next.path), text)
-        : undefined;
+      const path = startsRelativePath(text) ? resolvePath(dirnamePath(next.path), text) : undefined;
       if (
         path?.endsWith(".json") === true &&
         isProjectPath(root, path) &&
@@ -425,7 +428,7 @@ export function dependenciesNamed(text: string, declared: readonly string[]): re
  * none.
  */
 export function filesNamedBy(files: SourceFiles, dir: string, text: string): readonly SourceFile[] {
-  if (text === "" || text.startsWith("/") || /[*?[{]/u.test(text)) {
+  if (text === "" || isAbsolutePath(text) || /[*?[{]/u.test(text)) {
     return [];
   }
   const path = resolvePath(dir, text);
