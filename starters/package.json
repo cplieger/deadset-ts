@@ -24,7 +24,7 @@
     "next": "16.4.5",
     "nuxt": "4.6.4",
     "storybook": "10.6.5",
-    "sv": "1.2.0",
+    "sv": "1.3.0",
     "sv-sveltekit-2": "npm:sv@0.17.1",
     "sveltekit-2": "npm:@sveltejs/kit@2.70.3"
   }
