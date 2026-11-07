@@ -1,14 +1,14 @@
 import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
-import { nodeHost } from "../bin/node-host.ts";
-import { fixture } from "../__test-helpers__/fixtures.ts";
-import { writeProject } from "../__test-helpers__/projects.ts";
-import { runRoots, runSweep, type RunSweep } from "./analysis.ts";
-import { resolve } from "./resolve.ts";
-import { run, type Writer } from "./run.ts";
-import { scopeForDir } from "./scope.ts";
-import { openEngine } from "./session.ts";
+import { nodeHost } from "../../bin/node-host.ts";
+import { fixture } from "../../__test-helpers__/fixtures.ts";
+import { writeProject } from "../../__test-helpers__/projects.ts";
+import { runRoots, runSweep, type RunSweep } from "../analysis.ts";
+import { resolve } from "../resolve.ts";
+import { run, type Writer } from "../run.ts";
+import { scopeForDir } from "../scope.ts";
+import { openEngine } from "../session.ts";
 
 const TARGET = fixture("projects", "two-configurations");
 
@@ -394,7 +394,7 @@ describe("a test of dead code across configurations", () => {
   );
 
   it(
-    "is no test of dead code where a configuration holding it holds none of its subjects",
+    "is a test of dead code where its subject is dead in the run, whichever configuration compiles the reference",
     () => {
       const [checks] = explained(
         application(
@@ -421,7 +421,7 @@ describe("a test of dead code across configurations", () => {
         "checks",
       );
 
-      expect(checks).toContain("answer: reported\n  code: DS1002 unused-unexported\n");
+      expect(checks).toContain("answer: reported\n  code: DS1103 test-of-dead-code\n");
     },
     LOAD_TIMEOUT,
   );

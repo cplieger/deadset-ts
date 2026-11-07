@@ -50,6 +50,25 @@ export type SymbolKind =
   | "enum-member"
   | "type-parameter";
 
+/** The reader's word for each kind of declaration, as a finding names it. */
+export const WORDS: Readonly<Record<SymbolKind, string>> = {
+  file: "file",
+  function: "function",
+  class: "class",
+  interface: "interface",
+  type: "type alias",
+  enum: "enum",
+  namespace: "namespace",
+  variable: "variable",
+  "export-alias": "re-export",
+  method: "method",
+  "class-member": "class member",
+  "interface-method": "interface method",
+  "type-member": "type member",
+  "enum-member": "enum member",
+  "type-parameter": "type parameter",
+};
+
 /**
  * How a member may be named from outside its container. A `private` member is still
  * reachable at run time by its name; a private name does not exist outside the class body.

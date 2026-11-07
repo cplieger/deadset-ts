@@ -8,13 +8,30 @@
  */
 
 import type { SourceFile } from "@typescript/native/ast";
-import type { Edge } from "../graph.ts";
+import type { Edge } from "../liveness/graph.ts";
 import { renderPosition } from "../position.ts";
 import type { Reference } from "../references.ts";
 import type { ProjectView } from "../session.ts";
-import type { Mode } from "../sweep.ts";
 import { bytewise } from "../text/compare.ts";
 import { globExpression } from "../text/glob.ts";
+
+/**
+ * The run's reference mode, decided once by the composition and read by every stage
+ * that counts references.
+ */
+export interface Mode {
+  /**
+   * Counts no reference a test file made, under either relation. Every reference a root
+   * in a test file makes is such a reference, so nothing only a test reaches is live.
+   */
+  readonly production: boolean;
+  /**
+   * Classes a reference a loaded consumer's test file made as a production one rather than a
+   * test one, `analysis.consumer_tests` at `production`: a classification, not a filter, so it
+   * decides the split a candidate reports as well as what a production sweep counts.
+   */
+  readonly consumerTestsProduction?: boolean;
+}
 
 /** One rule that classified files as test files, and how many files it matched. */
 export interface TestFileRule {

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { contractDocument } from "../__test-helpers__/fixtures.ts";
+import { contractDocument } from "../../__test-helpers__/fixtures.ts";
 import { graphOf, OUTSIDE, swept } from "./graph.ts";
-import type { InventorySymbol, SymbolKind } from "./inventory.ts";
-import type { Reference } from "./references.ts";
-import type { Root } from "./roots/root-set.ts";
+import type { InventorySymbol, SymbolKind } from "../inventory.ts";
+import type { Reference } from "../references.ts";
+import type { Root } from "../roots/root-set.ts";
 
 /**
  * Every kind of declaration the inventory enumerates. The record's type makes the list
@@ -99,7 +99,7 @@ function reference(from: string, to: string, extra: Partial<Reference> = {}): Re
   };
 }
 
-describe("the graph of one project", () => {
+describe("the graph of a run", () => {
   it("drops a reference to a declaration it does not hold, and counts one made from such a declaration", () => {
     const graph = graphOf(
       SYMBOLS,
@@ -110,7 +110,7 @@ describe("the graph of one project", () => {
 
     expect(graph.out).toEqual([
       [],
-      [{ to: 2, test: false, evaluation: false, consumer: false }],
+      [{ to: 2, reference: 2, test: false, guessed: false, evaluation: false, consumer: false }],
       [],
       [],
       [],
@@ -132,8 +132,8 @@ describe("the graph of one project", () => {
 
     expect(graph.out).toEqual([[], [], [], [], []]);
     expect(graph.consumed).toEqual([
-      { to: 2, test: false, evaluation: false, consumer: true },
-      { to: 4, test: true, evaluation: false, consumer: false },
+      { to: 2, reference: 0, test: false, guessed: false, evaluation: false, consumer: true },
+      { to: 4, reference: 1, test: true, guessed: false, evaluation: false, consumer: false },
     ]);
     expect(graph.made[4]).toEqual({ production: 0, test: 1, consumerTest: 0 });
   });
@@ -156,7 +156,9 @@ describe("the graph of one project", () => {
     const graph = graphOf(SYMBOLS, [reference(USED.id, HELPER.id)], [], [], [USED.position.path]);
 
     expect(graph.made[2]).toEqual({ production: 0, test: 1, consumerTest: 0 });
-    expect(graph.out[1]).toEqual([{ to: 2, test: true, evaluation: false, consumer: false }]);
+    expect(graph.out[1]).toEqual([
+      { to: 2, reference: 0, test: true, guessed: false, evaluation: false, consumer: false },
+    ]);
   });
 
   it("lists under a file only the declarations its export table names, and under no other container", () => {
@@ -172,6 +174,8 @@ describe("the graph of one project", () => {
       { id: USED.id, kind: "published-api", source: "" },
     ];
 
-    expect(graphOf(SYMBOLS, [], roots, []).rooted).toEqual([{ at: 1, kind: "published-api" }]);
+    expect(graphOf(SYMBOLS, [], roots, []).rooted).toEqual([
+      { at: 1, kind: "published-api", source: "" },
+    ]);
   });
 });

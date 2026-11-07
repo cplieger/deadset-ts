@@ -1,10 +1,12 @@
 import { CODE } from "../contract/contract.generated.ts";
 import type { Finding, FindingDetails, FindingPosition } from "../finding.ts";
-import type { InventorySymbol } from "../inventory.ts";
-import type { MatrixCandidate } from "../matrix.ts";
+import { WORDS, type InventorySymbol } from "../inventory.ts";
+import type { Candidate } from "../liveness/sweep.ts";
 import { positionKey } from "../position.ts";
 import { declarationKey } from "../ref.ts";
+import { reachabilityClasses } from "./completion.ts";
 import type { Emitter, EmitterInput } from "./emitter.ts";
+
 import { bytewise } from "../text/compare.ts";
 
 /** The codes this emitter reports. */
@@ -18,7 +20,7 @@ const SIGNATURES: ReadonlySet<string> = new Set(["function", "method", "type"]);
 interface Run {
   readonly input: EmitterInput;
   readonly symbols: ReadonlyMap<string, InventorySymbol>;
-  readonly candidates: ReadonlyMap<string, MatrixCandidate>;
+  readonly candidates: ReadonlyMap<string, Candidate>;
 }
 
 function indexed(input: EmitterInput): Run {
@@ -112,19 +114,16 @@ function parametersOnlyNamedBy(
 }
 
 /** What one write-only finding says, the declarations its deletion takes with it included. */
-function writeOnlyMessage(
-  run: Run,
-  namedBy: ReadonlyMap<string, ReadonlySet<string>>,
-  symbol: InventorySymbol,
-  held: Uses,
-): string {
+function writeOnlyMessage(run: Run, written: Written, subject: Subject): string {
+  const { symbol, held } = subject;
   const writes = held.writes.length === 1 ? "once" : `at ${String(held.writes.length)} positions`;
   const read = run.input.stores.readInTests.has(symbol.id)
     ? "read only from test files"
     : "never read";
   const cascade = [
-    ...parametersOnlyNamedBy(run, namedBy, symbol).map((name) => `type parameter ${name}`),
+    ...parametersOnlyNamedBy(run, written.namedBy, symbol).map((name) => `type parameter ${name}`),
     ...[...held.alone].sort(bytewise).map((name) => `import ${name}`),
+    ...(written.named.get(symbol.id) ?? []),
   ];
   const word = SUBJECT_WORDS[symbol.kind] ?? "member";
   const message = `${word} ${symbol.name} is written ${writes} and ${read}`;
@@ -133,17 +132,55 @@ function writeOnlyMessage(
     : `${message}, and deleting it with its writes deletes ${cascade.join(" and ")} too`;
 }
 
+/** One declaration the write-only kind reports, with its uses. */
+interface Subject {
+  readonly symbol: InventorySymbol;
+  readonly held: Uses;
+}
+
 /**
- * `DS1301`: a module-level variable, a type member or a class member the counted
- * references store into and never read, named with every position written.
+ * What the write-only kind answers of one run: its subjects in site order, and the
+ * declarations that fall with them, each named under the innermost subject of every chain
+ * of carriers its references hold.
+ */
+interface Written {
+  readonly subjects: readonly Subject[];
+  readonly namedBy: ReadonlyMap<string, ReadonlySet<string>>;
+  readonly named: ReadonlyMap<string, readonly string[]>;
+  readonly falls: ReadonlySet<string>;
+}
+
+/**
+ * The kinds of declaration that fall with a write-only subject: a declaration of its own.
+ * A member falls with its container, and a type parameter is the type-parameter clause's.
+ */
+const FALLING: ReadonlySet<InventorySymbol["kind"]> = new Set([
+  "function",
+  "class",
+  "interface",
+  "type",
+  "enum",
+  "namespace",
+  "variable",
+]);
+
+const WRITTEN = new WeakMap<EmitterInput, Written>();
+
+/**
+ * `DS1301`'s subjects: a module-level variable, a type member or a class member the
+ * counted references store into and never read.
  *
  * The subject is a live declaration: a store is a reference, so the sweep holds a
  * written one live and its candidates are never this kind's. Every reference that is
  * not a store reads, and so does an exemption record naming the declaration.
  */
-function writeOnlySymbols(run: Run): readonly Finding[] {
+function writtenOf(run: Run): Written {
+  const known = WRITTEN.get(run.input);
+  if (known !== undefined) {
+    return known;
+  }
   const { stores } = run.input;
-  const { matrix } = run.input.swept;
+  const { matrix, sweep } = run.input.swept;
   const uses = new Map<string, Uses>();
   for (const reference of stores.references) {
     let held = uses.get(reference.to);
@@ -174,26 +211,54 @@ function writeOnlySymbols(run: Run): readonly Finding[] {
     }
   }
 
-  const found: Finding[] = [];
-  for (const symbol of matrix.union.symbols) {
+  const subjects = matrix.union.symbols.flatMap((symbol): Subject[] => {
     const held = uses.get(symbol.id);
-    if (
-      held === undefined ||
+    return held === undefined ||
       held.writes.length === 0 ||
       held.reads > 0 ||
       !writable(run, symbol) ||
       stores.exempt.has(symbol.id) ||
       run.candidates.has(symbol.id)
+      ? []
+      : [{ symbol, held }];
+  });
+  const subjectIds = new Set(subjects.map((subject) => subject.symbol.id));
+  const classOf = reachabilityClasses(run.input);
+  const named = new Map<string, string[]>();
+  const falls = new Set<string>();
+  for (const symbol of matrix.union.symbols) {
+    const chains = sweep.carried.get(symbol.id);
+    if (
+      chains === undefined ||
+      subjectIds.has(symbol.id) ||
+      !FALLING.has(symbol.kind) ||
+      classOf(symbol.id) !== "certain"
     ) {
       continue;
     }
-    found.push(
-      findingAbout(symbol, CODE.writeOnlySymbol, writeOnlyMessage(run, namedBy, symbol, held), {
-        writePositions: held.writes,
-      }),
-    );
+    const innermost = chains.map((chain) => chain.find((id) => subjectIds.has(id)));
+    if (innermost.includes(undefined)) {
+      continue;
+    }
+    falls.add(symbol.id);
+    for (const subject of new Set(innermost)) {
+      const name = `${WORDS[symbol.kind]} ${symbol.name}`;
+      named.set(subject ?? "", [...(named.get(subject ?? "") ?? []), name]);
+    }
   }
-  return found;
+  const written = { subjects, namedBy, named, falls };
+  WRITTEN.set(run.input, written);
+  return written;
+}
+
+/** `DS1301`: each subject, named with every position written and what falls with it. */
+function writeOnlySymbols(run: Run): readonly Finding[] {
+  const written = writtenOf(run);
+  return written.subjects.map((subject) =>
+    findingAbout(subject.symbol, CODE.writeOnlySymbol, writeOnlyMessage(run, written, subject), {
+      writePositions: subject.held.writes,
+    }),
+  );
 }
 
 /**
@@ -253,10 +318,18 @@ function unusedTypeParameters(run: Run): readonly Finding[] {
  */
 export function writeOnlyDeclarations(input: EmitterInput): ReadonlySet<string> {
   return new Set(
-    writeOnlySymbols(indexed(input)).map((finding) =>
-      declarationKey(finding.symbol.ref, finding.position.path),
+    writtenOf(indexed(input)).subjects.map(({ symbol }) =>
+      declarationKey(symbol.ref, symbol.position.path),
     ),
   );
+}
+
+/**
+ * The declarations that fall with a write-only subject, whatever the severity: a finding
+ * about one would name code its subject's deletion already deletes.
+ */
+export function fallingWithWrites(input: EmitterInput): ReadonlySet<string> {
+  return writtenOf(indexed(input)).falls;
 }
 
 /**

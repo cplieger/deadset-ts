@@ -1,3 +1,5 @@
+import type { Carriers } from "../exposure.ts";
+
 /** Which side of a declared cross-language edge, as the edges document spells it. */
 export type EdgeSideName = "provides" | "used_by";
 
@@ -29,4 +31,9 @@ export interface Boundary {
   readonly filledOutside?: ReadonlySet<string>;
   /** The files and declarations only a bundler's retry of an import Node leaves unresolved names. */
   readonly possiblyLoaded?: ReadonlySet<string>;
+  /**
+   * The types of the target each declaration hands to code that holds its values, which a
+   * reference from outside the package reaches through it.
+   */
+  readonly carriers?: Carriers;
 }

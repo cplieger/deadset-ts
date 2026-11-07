@@ -94,6 +94,13 @@ export interface Reference {
    * declaration with its writes deletes too.
    */
   readonly alone?: readonly string[];
+  /**
+   * The declarations whose deletion with their writes deletes the referencing name,
+   * innermost first: `from` where the name is in its own annotation, then each declaration
+   * a write of the same file stores into whose stored value holds the name. Absent where
+   * there is none, and on a consumer's reference.
+   */
+  readonly carriers?: readonly string[];
 }
 
 /** The consumer one reference pass reads the files of, beside the target it names. */
@@ -185,13 +192,13 @@ export function references<Brand>(
               relativePath(consumer.root, file.fileName) !== undefined &&
               relativePath(targetRoot, file.fileName) === undefined,
           );
-  const sink = new Sink(consumer?.root ?? targetRoot, options.testFile, consumer);
   const ownPaths = project.ownPaths();
   const fileIds = new Set(
     held.symbols.filter((symbol) => symbol.kind === "file").map((symbol) => symbol.id),
   );
   const declaredAt = (node: Node): string | undefined =>
     declarations.get(nodeKey(node.getSourceFile(), node));
+  const sink = new Sink(consumer?.root ?? targetRoot, options.testFile, consumer, declaredAt);
 
   let moduleBodies: ReadonlyMap<string, readonly InventorySymbol[]> | undefined;
   /**

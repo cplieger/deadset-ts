@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { componentFilesOf } from "../../__test-helpers__/sweep.ts";
 import { nodeHost } from "../../bin/node-host.ts";
 import { runAnalysis, type RunAnalysis } from "../analysis.ts";
 import type { Host } from "../host.ts";
@@ -533,7 +534,9 @@ describe("a component file of a workspace package", () => {
     const analysis = analyze(root, {}, engine);
 
     expect(found(analysis)).toEqual(["DS1001 packages/a/src/index.ts usedByNobody"]);
-    expect(analysis.swept.componentFiles).toEqual(["packages/b/src/Widget.vue"]);
+    expect(componentFilesOf(analysis.configured.flatMap((one) => one.symbols))).toEqual([
+      "packages/b/src/Widget.vue",
+    ]);
     expect(analysis.run.typeErrorSkips).toEqual([]);
     expect(opened).toEqual({ written: 1, built: 0 });
   });
@@ -564,7 +567,9 @@ describe("a component file of a workspace package", () => {
     const analysis = analyze(root);
 
     expect(found(analysis)).toEqual([]);
-    expect(analysis.swept.componentFiles).toEqual(["packages/b/src/Widget.vue"]);
+    expect(componentFilesOf(analysis.configured.flatMap((one) => one.symbols))).toEqual([
+      "packages/b/src/Widget.vue",
+    ]);
   });
 
   it("leaves the configuration's file list as it was when its output directory sits under its files", () => {
@@ -578,7 +583,9 @@ describe("a component file of a workspace package", () => {
 
     expect(files.filter((file) => file.includes("/packages/b/dist/"))).toEqual([]);
     expect(found(analysis)).toEqual(["DS1001 packages/a/src/index.ts usedByNobody"]);
-    expect(analysis.swept.componentFiles).toEqual(["packages/b/src/Widget.vue"]);
+    expect(componentFilesOf(analysis.configured.flatMap((one) => one.symbols))).toEqual([
+      "packages/b/src/Widget.vue",
+    ]);
     expect(opened).toEqual({ written: 1, built: 0 });
   });
 
@@ -598,7 +605,9 @@ describe("a component file of a workspace package", () => {
     const analysis = analyze(root);
 
     expect(analysis.run.componentsUnread).toEqual([]);
-    expect(analysis.swept.componentFiles).toEqual(["packages/b/src/Widget.vue"]);
+    expect(componentFilesOf(analysis.configured.flatMap((one) => one.symbols))).toEqual([
+      "packages/b/src/Widget.vue",
+    ]);
   });
 
   /**
@@ -633,7 +642,7 @@ describe("a component file of a workspace package", () => {
       },
     ]);
     expect(opened).toEqual({ written: 0, built: 1 });
-    expect(analysis.swept.componentFiles).toEqual([]);
+    expect(componentFilesOf(analysis.configured.flatMap((one) => one.symbols))).toEqual([]);
   });
 
   it("names on standard error the configuration whose component files are not read", () => {

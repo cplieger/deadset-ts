@@ -94,7 +94,7 @@ function answer(name: string): Answered {
       if (found.length > 0) {
         return `${label}: reported ${found.map((one) => one.code).join(" ")}`;
       }
-      const held = input.swept.retained
+      const held = input.swept.sweep.retained
         .filter((record) => {
           const symbol = union.symbols[union.at(record.id)];
           return (

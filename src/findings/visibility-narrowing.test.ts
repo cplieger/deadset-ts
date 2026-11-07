@@ -7,7 +7,9 @@ import { fixture } from "../../__test-helpers__/fixtures.ts";
 import { writeProject } from "../../__test-helpers__/projects.ts";
 import type { Finding } from "../finding.ts";
 import type { InventorySymbol } from "../inventory.ts";
-import { matrixOf, sweepMatrix } from "../matrix.ts";
+import { matrixOf } from "../liveness/matrix.ts";
+import { sweep as sweepOf } from "../liveness/sweep.ts";
+import { policyOf } from "../../__test-helpers__/sweep.ts";
 import type { Reference } from "../references.ts";
 import { resolve } from "../resolve.ts";
 import { evaluateEdges, readEdgeSides, type EdgeEvaluation } from "../edges.ts";
@@ -47,6 +49,7 @@ function inputOf(root: string, given: Case = {}): EmitterInput {
   return {
     ...input,
     boundary: {
+      ...input.boundary,
       consumers: given.consumerSet ?? input.boundary.consumers,
       encapsulated: (given.encapsulation ?? true) && input.boundary.encapsulated,
       edges: (given.edges ?? true) ? edgeSidesAt(root) : [],
@@ -242,7 +245,7 @@ describe("the references a narrowing reads", () => {
         testFiles: [],
       },
     ]);
-    const sweep = sweepMatrix(matrix, { marked, mode: { production: true } });
+    const sweep = sweepOf(matrix, policyOf({ marked, mode: { production: true } }));
     const { config } = resolve({
       repository: {
         text: JSON.stringify({ target: { kind: "application" } }),
@@ -254,13 +257,9 @@ describe("the references a narrowing reads", () => {
         sweepOnly(config, {
           matrix,
           sweep,
-          exempt: [],
-          retained: [],
           notBuilt: [],
           unanswered: [],
-          heldByUnanswered: [],
           skipped: [],
-          componentFiles: [],
         }),
       ),
     );
@@ -444,6 +443,439 @@ describe("an export of a project written for the case", () => {
         { target: { kind: "library" } },
       ),
     ).toEqual(["DS1101 retired", "DS1101 deadCaller"]);
+  });
+});
+
+describe("a published type a re-export the manifest reaches hands on", () => {
+  const files = {
+    "package.json":
+      '{ "name": "@example/lib", "type": "module", "exports": { ".": "./src/index.ts" } }\n',
+    "src/index.ts": [
+      'export { fetch } from "./api.js";',
+      "",
+      "export class Handed {}",
+      "",
+      "export class Kept {}",
+      "",
+    ].join("\n"),
+    "src/api.ts": [
+      'import { Handed, Kept } from "./index.js";',
+      "",
+      "export function fetch(): Handed {",
+      "  return new Handed();",
+      "}",
+      "",
+      "export function check(): boolean {",
+      "  return new Kept() instanceof Kept;",
+      "}",
+      "",
+    ].join("\n"),
+    "src/main.ts": 'import { check } from "./api.js";\n\nconsole.log(check());\n',
+  };
+  const closed = JSON.stringify({ target: { kind: "library" }, consumers: { complete: true } });
+
+  it("is not narrowed, while a type only the package names is", () => {
+    const root = writeProject(files);
+    try {
+      expect(
+        named(emitted(inputOf(root, { document: closed }))).filter((one) =>
+          one.startsWith("DS1501"),
+        ),
+      ).toEqual(["DS1501 Kept"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("leaves every type unnarrowed where the checker left the re-exported function's surface unread", () => {
+    const root = writeProject(files);
+    try {
+      const input = inputOf(root, { document: closed });
+      const fetch = input.swept.matrix.union.symbols.find(
+        (symbol) => symbol.kind === "function" && symbol.name === "fetch",
+      );
+      const unread: EmitterInput = {
+        ...input,
+        boundary: {
+          ...input.boundary,
+          carriers: { named: new Map(), unread: new Set([fetch?.id ?? ""]) },
+        },
+      };
+
+      expect(named(emitted(unread)).filter((one) => one.startsWith("DS1501"))).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("passes on through an unexported type's definition, an index signature and a namespace's members", () => {
+    const root = writeProject({
+      "package.json": files["package.json"],
+      "src/index.ts": [
+        'export { bucket, dict, make, Ns, pair, statics, wide } from "./api.js";',
+        "",
+        "export class Kept {}",
+        "",
+      ].join("\n"),
+      "src/types.ts": [
+        "export class Base {}",
+        "export class Elem {}",
+        "export interface Shape {",
+        "  s: number;",
+        "}",
+        "export class Indexed {}",
+        "export class StaticValue {}",
+        "export class Mapped {}",
+        "export class NsTop {}",
+        "",
+      ].join("\n"),
+      "src/api.ts": [
+        'import { Kept } from "./index.js";',
+        'import { Base, Elem, Indexed, Mapped, NsTop, StaticValue, type Shape } from "./types.js";',
+        "",
+        "class Impl extends Base {}",
+        "type Pair = readonly Elem[];",
+        "interface Wide extends Shape {",
+        "  w: number;",
+        "}",
+        "export interface Bucket {",
+        "  [key: string]: Indexed;",
+        "}",
+        "class Statics {",
+        "  static [key: string]: StaticValue;",
+        "}",
+        'type Dict = { [K in "a" | "b"]: Mapped };',
+        "",
+        "export function make(): Impl {",
+        "  return new Impl();",
+        "}",
+        "export function pair(): Pair {",
+        "  return [new Elem()];",
+        "}",
+        "export function wide(): Wide {",
+        "  return { s: 1, w: 2 };",
+        "}",
+        "export function bucket(): Bucket {",
+        "  return { a: new Indexed() };",
+        "}",
+        "export function statics(): typeof Statics {",
+        "  return new StaticValue() instanceof StaticValue ? Statics : Statics;",
+        "}",
+        "export function dict(): Dict {",
+        "  return { a: new Mapped(), b: new Mapped() };",
+        "}",
+        "export namespace Ns {",
+        "  export function top(): NsTop {",
+        "    return new NsTop();",
+        "  }",
+        "}",
+        "export function check(): boolean {",
+        "  return new Kept() instanceof Kept;",
+        "}",
+        "",
+      ].join("\n"),
+      "src/main.ts": 'import { check } from "./api.js";\n\nconsole.log(check());\n',
+    });
+    try {
+      expect(
+        named(emitted(inputOf(root, { document: closed }))).filter((one) =>
+          one.startsWith("DS1501"),
+        ),
+      ).toEqual(["DS1501 Kept"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("passes on through a predicate, a type parameter, a conditional's and a mapped type's parts and a written name the checker erases", () => {
+    const names = [
+      "Pred",
+      "AssertT",
+      "ThisPred",
+      "Constraint",
+      "Dflt",
+      "CondTrue",
+      "CondFalse",
+      "Branch",
+      "Other",
+      "CheckExt",
+      "HConstraint",
+      "HDefault",
+      "BoxConstraint",
+      "AliasConstraint",
+      "Template",
+      "KeySrc",
+      "Ctx",
+      "Picked",
+      "Implemented",
+      "Elem",
+      "Remapped",
+    ];
+    const root = writeProject({
+      "package.json": files["package.json"],
+      "src/index.ts": [
+        "export {",
+        "  aliased,",
+        "  assertIt,",
+        "  bounded,",
+        "  Box,",
+        "  Checks,",
+        "  cond,",
+        "  defaulted,",
+        "  guard,",
+        "  type Holder,",
+        "  id,",
+        "  Implementing,",
+        "  inline,",
+        "  keyed,",
+        "  keys,",
+        "  listed,",
+        "  mapped,",
+        "  pick,",
+        "  renamed,",
+        "  tag,",
+        "  withThis,",
+        '} from "./api.js";',
+        "",
+        "export class Kept {}",
+        "",
+      ].join("\n"),
+      "src/types.ts": [
+        ...names.map((name) => `export class ${name} {\n  readonly ${name.toLowerCase()} = 1;\n}`),
+        "export type Id = string;",
+        "export type Listed<T> = T[];",
+        'export type Tag = "a" | "b";',
+        "export interface KeyOf {",
+        "  k: number;",
+        "}",
+        "",
+      ].join("\n"),
+      "src/api.ts": [
+        'import { Kept } from "./index.js";',
+        "import {",
+        `  ${names.join(",\n  ")},`,
+        "  type Id,",
+        "  type KeyOf,",
+        "  type Listed,",
+        "  type Tag,",
+        '} from "./types.js";',
+        "",
+        "type Cond<T> = T extends string ? CondTrue : CondFalse;",
+        "type Mapped<T> = { [K in keyof T]: Template };",
+        "type Keys<T> = { [K in keyof KeySrc]: T };",
+        "type Renamed<T> = { [K in keyof T as `x${string & K}`]: Remapped };",
+        "type Aliased<T extends AliasConstraint> = { readonly v: T };",
+        "",
+        "export function guard(v: unknown): v is Pred {",
+        "  return v instanceof Pred;",
+        "}",
+        "export function assertIt(v: unknown): asserts v is AssertT {",
+        "  if (!(v instanceof AssertT)) {",
+        '    throw new Error("not one");',
+        "  }",
+        "}",
+        "export class Checks {",
+        "  isThis(): this is ThisPred {",
+        "    return this instanceof ThisPred;",
+        "  }",
+        "}",
+        "export function bounded<T extends Constraint>(v: T): T {",
+        "  return v;",
+        "}",
+        "export function defaulted<T = Dflt>(v?: T): T | undefined {",
+        "  return v;",
+        "}",
+        "export function cond<T>(v: T): Cond<T> {",
+        "  return v as unknown as Cond<T>;",
+        "}",
+        "export function inline<T>(v: T): T extends CheckExt ? Branch : Other {",
+        "  return v as unknown as T extends CheckExt ? Branch : Other;",
+        "}",
+        "export interface Holder<T extends HConstraint = HDefault> {",
+        "  v: T;",
+        "}",
+        "export class Box<T extends BoxConstraint> {",
+        "  constructor(readonly v: T) {}",
+        "}",
+        "export function aliased(): Aliased<AliasConstraint> {",
+        "  return { v: new AliasConstraint() };",
+        "}",
+        "export function mapped(): Mapped<{ a: number }> {",
+        "  return { a: new Template() };",
+        "}",
+        "export function keyed(): Keys<number> {",
+        "  return {} as Keys<number>;",
+        "}",
+        "export function renamed(): Renamed<{ a: number }> {",
+        "  return { xa: new Remapped() };",
+        "}",
+        "export function withThis(this: Ctx): number {",
+        "  return this.ctx;",
+        "}",
+        "export function pick<K extends keyof Picked>(p: Picked, k: K): Picked[K] {",
+        "  return p[k];",
+        "}",
+        "export class Implementing implements Implemented {",
+        "  readonly implemented = 1;",
+        "}",
+        "export function id(): Id {",
+        '  return "id";',
+        "}",
+        "export function listed(): Listed<Elem> {",
+        "  return [new Elem()];",
+        "}",
+        "export function tag(): `x-${Tag}` {",
+        '  return "x-a";',
+        "}",
+        "export function keys(): keyof KeyOf {",
+        '  return "k";',
+        "}",
+        "export function check(): boolean {",
+        "  return new Kept() instanceof Kept;",
+        "}",
+        "",
+      ].join("\n"),
+      "src/main.ts": 'import { check } from "./api.js";\n\nconsole.log(check());\n',
+    });
+    try {
+      expect(
+        named(emitted(inputOf(root, { document: closed }))).filter((one) =>
+          one.startsWith("DS1501"),
+        ),
+      ).toEqual(["DS1501 Kept"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("passes on a name an initializer writes only where the declaration output prints it", () => {
+    // Each kept name is an alias of a primitive, which the checker's type erases, so only
+    // the written reading of a declaration or of an anonymous type it meets can find it.
+    const kept = [
+      "Asserted",
+      "ArrowParam",
+      "InObject",
+      "ParamDefault",
+      "Spread",
+      "Satisfied",
+      "InFunction",
+      "InBody",
+      "Copied",
+      "FromCall",
+      "InLiteral",
+    ];
+    const dropped = [
+      "Route",
+      "Generic",
+      "InArray",
+      "InBranch",
+      "Annotated",
+      "Commaed",
+      "InMapped",
+      "InIndex",
+    ];
+    const root = writeProject({
+      "package.json": files["package.json"],
+      "src/index.ts": [
+        "export {",
+        "  angle,",
+        "  annotated,",
+        "  arrow,",
+        "  asserted,",
+        "  bag,",
+        "  chosen,",
+        "  commaed,",
+        "  config,",
+        "  copied,",
+        "  fn,",
+        "  fromCall,",
+        "  generic,",
+        "  inferredFn,",
+        "  inferredIndex,",
+        "  inferredMapped,",
+        "  literal,",
+        "  listed,",
+        "  param,",
+        "  satisfied,",
+        "  size,",
+        "  spread,",
+        "  Statics,",
+        "  withDefault,",
+        '} from "./api.js";',
+        "",
+        "export class Kept {}",
+        ...[...kept, ...dropped, "Angle", "Static"].map((name) => `export type ${name} = string;`),
+        "export class Sized {\n  readonly sized = 1;\n}",
+        "export class Dflt {\n  readonly dflt = 1;\n}",
+        "",
+      ].join("\n"),
+      "src/api.ts": [
+        "import {",
+        "  Dflt,",
+        "  Kept,",
+        "  Sized,",
+        `  ${[...kept, ...dropped, "Angle", "Static"].map((name) => `type ${name}`).join(",\n  ")},`,
+        '} from "./index.js";',
+        "",
+        "declare const flag: boolean;",
+        "export const config = { home: { path: '/' } } satisfies Record<string, Route>;",
+        "export const size = (new Sized() as Sized).sized;",
+        "export function withDefault(n: number = (new Dflt() as Dflt).dflt): number {",
+        "  return n;",
+        "}",
+        "export const generic = Array.of<Generic>();",
+        'export const listed = ["x" as InArray];',
+        'export const chosen = flag ? ("x" as InBranch) : "y";',
+        'export const annotated: string = "x" as Annotated;',
+        'export const commaed = (0, "x" as Commaed);',
+        'export const asserted = "x" as Asserted;',
+        "export const arrow = (v: ArrowParam): number => v.length;",
+        'export const bag = { v: "x" as InObject };',
+        'export function param(v = "x" as ParamDefault): string {',
+        "  return v;",
+        "}",
+        'export const spread = { ...{ v: "x" as Spread } };',
+        'export const satisfied = { v: "x" as Satisfied } satisfies object;',
+        'export const angle = <Angle>"x";',
+        "export class Statics {",
+        '  static s = "x" as Static;',
+        "}",
+        "export const fn = flag ? (undefined as unknown as (value: InFunction) => void) : undefined;",
+        "export function inferredFn() {",
+        "  const held: (value: InBody) => void = () => undefined;",
+        "  return held;",
+        "}",
+        'const base = { v: "x" as Copied };',
+        "export const copied = { ...base };",
+        "function helper(): { w: FromCall } {",
+        '  return { w: "x" };',
+        "}",
+        "export const fromCall = helper();",
+        "export function inferredIndex() {",
+        "  const held: { readonly [key: string]: InIndex } = {};",
+        "  return held;",
+        "}",
+        "export const literal = flag ? (undefined as unknown as { readonly v: InLiteral }) : undefined;",
+        "export function inferredMapped() {",
+        '  const held: { readonly [K in "a" | "b"]: InMapped } = { a: "x", b: "y" };',
+        "  return held;",
+        "}",
+        "export function check(): boolean {",
+        "  return new Kept() instanceof Kept;",
+        "}",
+        "",
+      ].join("\n"),
+      "src/main.ts": 'import { check } from "./api.js";\n\nconsole.log(check());\n',
+    });
+    try {
+      expect(
+        named(emitted(inputOf(root, { document: closed })))
+          .filter((one) => one.startsWith("DS1501"))
+          .sort(),
+      ).toEqual(["Kept", "Sized", "Dflt", ...dropped].map((name) => `DS1501 ${name}`).sort());
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

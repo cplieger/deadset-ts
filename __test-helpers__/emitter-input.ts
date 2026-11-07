@@ -7,7 +7,7 @@ import { decidedFindings } from "../src/findings/emitters.ts";
 import type { SelfCheckFacts } from "../src/findings/self-check.ts";
 import { scopeForDir } from "../src/scope.ts";
 import { openEngine, type Engine } from "../src/session.ts";
-import type { Mode } from "../src/sweep.ts";
+import type { Mode } from "../src/tests/file-class.ts";
 
 /** A run with nothing for the self-check family to report. */
 const NO_SELF_CHECK: SelfCheckFacts = {

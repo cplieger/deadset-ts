@@ -1,9 +1,8 @@
 import { CODE } from "../contract/contract.generated.ts";
 import type { Finding } from "../finding.ts";
-import type { InventorySymbol, SymbolKind } from "../inventory.ts";
-import type { MatrixCandidate } from "../matrix.ts";
+import { WORDS, type InventorySymbol, type SymbolKind } from "../inventory.ts";
+import type { Candidate } from "../liveness/sweep.ts";
 import type { Emitter, EmitterInput } from "./emitter.ts";
-import { testsUnseenAPI } from "./completion.ts";
 import { unreachableExports } from "./visibility-narrowing.ts";
 
 /** The kinds of declaration that are members of a class, an interface, a type or an enum. */
@@ -26,39 +25,18 @@ const NOT_REPORTED_HERE: ReadonlySet<SymbolKind> = new Set([
   "type-parameter",
 ]);
 
-/** The reader's word for each kind of declaration a finding of this emitter names. */
-const WORDS: Readonly<Record<SymbolKind, string>> = {
-  file: "file",
-  function: "function",
-  class: "class",
-  interface: "interface",
-  type: "type alias",
-  enum: "enum",
-  namespace: "namespace",
-  variable: "variable",
-  "export-alias": "re-export",
-  method: "method",
-  "class-member": "class member",
-  "interface-method": "interface method",
-  "type-member": "type member",
-  "enum-member": "enum member",
-  "type-parameter": "type parameter",
-};
-
 /** What the test-of-dead-code kind says, which states the rule it applies. */
 const TEST_OF_DEAD_CODE = "every target symbol this test references is reported dead";
 
 /** What the run holds about one candidate that decides its code. */
 interface Judged {
-  readonly candidate: MatrixCandidate;
+  readonly candidate: Candidate;
   readonly symbol: InventorySymbol;
   /** Whether a test file declares it. */
   readonly test: boolean;
   readonly deprecated: boolean;
   /** Whether the unreachable-export kind reports it. */
   readonly unreachable: boolean;
-  /** Whether it is a test with a target that is published API no declared consumer judges. */
-  readonly testsUnseenAPI: boolean;
 }
 
 /**
@@ -72,7 +50,7 @@ interface Judged {
 function codeOf(judged: Judged): string | undefined {
   const { candidate, symbol } = judged;
   if (candidate.testOfDeadCode) {
-    return judged.testsUnseenAPI ? undefined : CODE.testOfDeadCode;
+    return CODE.testOfDeadCode;
   }
   if ((judged.test && !candidate.unreferencedTest) || NOT_REPORTED_HERE.has(symbol.kind)) {
     return undefined;
@@ -245,7 +223,6 @@ function emitterFindings(input: EmitterInput, fallen: boolean): Finding[] {
   const union = input.swept.matrix.union;
   const dead = new Set(input.swept.sweep.candidates.map((candidate) => candidate.id));
   const unreachable = unreachableExports(input);
-  const unseenAPI = testsUnseenAPI(input);
   let brands: ReadonlySet<string> | undefined;
 
   const found: Finding[] = [];
@@ -265,7 +242,6 @@ function emitterFindings(input: EmitterInput, fallen: boolean): Finding[] {
       test: union.test[at] === true,
       deprecated: input.deprecated.has(symbol.id),
       unreachable: unreachable.has(symbol.id),
-      testsUnseenAPI: candidate.testOfDeadCode && unseenAPI(candidate.id),
     };
     const code = codeOf(judged);
     if (

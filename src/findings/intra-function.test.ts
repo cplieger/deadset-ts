@@ -4,7 +4,7 @@ import { emitterInputOf, findingsOf } from "../../__test-helpers__/emitter-input
 import { writeProject } from "../../__test-helpers__/projects.ts";
 import type { CompletedFinding } from "../finding.ts";
 import { resolve } from "../resolve.ts";
-import type { Mode } from "../sweep.ts";
+import type { Mode } from "../tests/file-class.ts";
 import type { Boundary } from "./boundary.ts";
 
 /** The bound on one case, each of which loads a whole target. */

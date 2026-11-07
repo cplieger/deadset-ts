@@ -283,6 +283,70 @@ describe("explain's answer for a declaration no finding names", () => {
     },
     LOAD_TIMEOUT,
   );
+
+  it(
+    "starts the path at the exemption that holds its caller live where no root reaches it",
+    () => {
+      const got = explain(
+        {
+          "tsconfig.json": APP_TSCONFIG,
+          "package.json": '{ "name": "@example/app", "private": true, "type": "module" }\n',
+          "deadset.json":
+            '{ "target": { "kind": "application" }, "ts": { "entry_files": ["src/main.ts"] } }\n',
+          "src/register.ts":
+            "export function register<T>(value: T, _context: ClassMethodDecoratorContext): T {\n  return value;\n}\n",
+          "src/main.ts":
+            'import { register } from "./register.ts";\n\nclass Handlers {\n  @register\n  onStart(): number {\n    return helper();\n  }\n}\n\nfunction helper(): number {\n  return 1;\n}\n\nconsole.log(new Handlers());\n',
+        },
+        "--target=.",
+        "--why-live=helper",
+      );
+
+      expect(got.out).toContain(
+        [
+          "answer: live",
+          "  live under: reference-counting reachability",
+          "  reached from: exemption decorator src/main.ts:4:3",
+          "  reference: src/main.ts:6:12\tread\tsrc/main.ts:5:3 -> src/main.ts:10:10",
+          "",
+        ].join("\n"),
+      );
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "names the configurations that make a reference of the path where they are not every one",
+    () => {
+      const project = (file: string): string =>
+        `{ "compilerOptions": { "strict": true, "module": "NodeNext", "noEmit": true, "allowImportingTsExtensions": true }, "files": ["src/${file}", "src/lib.ts"] }\n`;
+      const got = explain(
+        {
+          "tsconfig.app.json": project("main.ts"),
+          "tsconfig.tool.json": project("tool.ts"),
+          "package.json": '{ "name": "@example/app", "private": true, "type": "module" }\n',
+          "deadset.json":
+            '{ "target": { "kind": "application" }, "analysis": { "configurations": [{ "id": "app", "project": "tsconfig.app.json" }, { "id": "tool", "project": "tsconfig.tool.json" }] }, "ts": { "entry_files": ["src/main.ts", "src/tool.ts"] } }\n',
+          "src/lib.ts":
+            "export function shared(): number {\n  return 1;\n}\n\nexport function toolOnly(): number {\n  return 2;\n}\n",
+          "src/main.ts": 'import { shared } from "./lib.ts";\n\nconsole.log(shared());\n',
+          "src/tool.ts":
+            'import { shared, toolOnly } from "./lib.ts";\n\nconsole.log(shared(), toolOnly());\n',
+        },
+        "--target=.",
+        "--why-live=toolOnly",
+      );
+
+      expect(got.out).toContain(
+        [
+          "  reached from: root entry-file src/tool.ts:1:1",
+          "  reference: src/tool.ts:3:23\tread\tsrc/tool.ts:1:1 -> src/lib.ts:5:17\tmade in tool",
+          "",
+        ].join("\n"),
+      );
+    },
+    LOAD_TIMEOUT,
+  );
 });
 
 describe("explain's answer for a reported declaration", () => {

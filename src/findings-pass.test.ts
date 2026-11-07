@@ -751,3 +751,44 @@ describe("a suppression of an unused import binding", () => {
     expect(stale(result)).toEqual([]);
   });
 });
+
+describe("a suppression of a declaration no finding is reported about", () => {
+  /** A written application whose entry is `src/main.ts`, with the files given. */
+  const written = (files: Readonly<Record<string, string>>): string => {
+    const root = writeProject({
+      "package.json": JSON.stringify({
+        name: "@example/unreported",
+        private: true,
+        type: "module",
+        main: "./src/main.ts",
+      }),
+      ...files,
+    });
+    scratch.push(root);
+    return root;
+  };
+  const APPLICATION = JSON.stringify({ target: { kind: "application" } });
+
+  it("is stale where the declaration falls with a write-only subject, whose finding names it", () => {
+    const root = written({
+      "src/main.ts": 'import { set } from "./settings.js";\n\nset();\n',
+      "src/settings.ts": [
+        "// deadset:ignore DS1503 -- Read by the next release.",
+        'export type Mode = "fast" | "slow";',
+        "",
+        "let mode: Mode | undefined;",
+        "",
+        "export function set(): void {",
+        '  mode = "fast";',
+        "}",
+        "",
+      ].join("\n"),
+    });
+    const { result } = passOver(root, APPLICATION);
+
+    expect(named(result)).toEqual(["DS1301 mode"]);
+    expect(stale(result)).toEqual([
+      "src/settings.ts:1:1 inline: inline directive for DS1503 matches no current finding",
+    ]);
+  });
+});

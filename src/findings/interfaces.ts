@@ -2,7 +2,7 @@ import { CODE } from "../contract/contract.generated.ts";
 import type { Finding, FindingPosition, PositionedSymbol } from "../finding.ts";
 import type { InventorySymbol } from "../inventory.ts";
 import { byPosition } from "../position.ts";
-import type { MatrixCandidate } from "../matrix.ts";
+import type { Candidate } from "../liveness/sweep.ts";
 import type { Emitter, EmitterInput } from "./emitter.ts";
 
 /** What each finding says, by what the sweep found about the subject's references. */
@@ -21,7 +21,7 @@ function positionOf(symbol: InventorySymbol): FindingPosition {
 function indexed(input: EmitterInput): {
   readonly symbolOf: (id: string) => InventorySymbol | undefined;
   readonly inTest: (id: string) => boolean;
-  readonly candidateOf: (id: string) => MatrixCandidate | undefined;
+  readonly candidateOf: (id: string) => Candidate | undefined;
   readonly implementationsOf: (id: string) => readonly PositionedSymbol[];
 } {
   const union = input.swept.matrix.union;
@@ -113,7 +113,7 @@ export const interfaces: Emitter = (input) => {
 };
 
 /** What one unused interface's finding says, by the references the sweep counted. */
-function unusedMessage(candidate: MatrixCandidate): string {
+function unusedMessage(candidate: Candidate): string {
   if (candidate.relation === "reachability") {
     return UNUSED_DEAD_MESSAGE;
   }

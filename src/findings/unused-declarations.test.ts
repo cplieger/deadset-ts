@@ -7,7 +7,7 @@ import { writeProject } from "../../__test-helpers__/projects.ts";
 import type { ResolvedConfig } from "../config.ts";
 import type { CompletedFinding } from "../finding.ts";
 import { resolve } from "../resolve.ts";
-import type { Mode } from "../sweep.ts";
+import type { Mode } from "../tests/file-class.ts";
 import type { EmitterInput } from "./emitter.ts";
 import { EMITTERS } from "./emitters.ts";
 
@@ -377,7 +377,7 @@ function answer(name: string): Answered {
         return `${label}: reported ${found.code}`;
       }
       const { path, line: atLine } = at(row);
-      const held = swept.retained
+      const held = swept.sweep.retained
         .filter((record) => {
           const symbol = swept.matrix.union.symbols[swept.matrix.union.at(record.id)];
           return symbol?.position.path === path && symbol.position.line === atLine;

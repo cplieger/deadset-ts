@@ -21,7 +21,7 @@ export const printRetainedVerb: Verb = ({ out, err, host, inputs, scope, openCli
     marked: [],
     mode: productionMode(config),
   });
-  for (const line of retainedLines(swept.matrix.union.symbols, swept.retained)) {
+  for (const line of retainedLines(swept.matrix.union.symbols, swept.sweep.retained)) {
     out.write(`${line}\n`);
   }
   for (const note of partialNotes({

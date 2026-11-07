@@ -1,7 +1,6 @@
 import type { Confidence } from "../contract/contract.generated.ts";
 import { evaluateEdges, type EdgeEvaluation } from "../edges.ts";
 import type { CompletedFinding } from "../finding.ts";
-import { liveFilesAt } from "../matrix.ts";
 import { declarationKey } from "../ref.ts";
 import { ledgerOf, type Dials, type Ledger, type SuppressionRecord } from "../suppress.ts";
 import { insideSkipped } from "../type-errors.ts";
@@ -11,7 +10,7 @@ import type { Emitter, EmitterInput, Emitters } from "./emitter.ts";
 import { interfaces } from "./interfaces.ts";
 import { intraFunction } from "./intra-function.ts";
 import { nonCodeArtifacts } from "./non-code-artifacts.ts";
-import { readsAndWrites } from "./reads-and-writes.ts";
+import { fallingWithWrites, readsAndWrites } from "./reads-and-writes.ts";
 import { selfCheck } from "./self-check.ts";
 import { fallenMembers, unusedDeclarations } from "./unused-declarations.ts";
 import { visibilityNarrowing } from "./visibility-narrowing.ts";
@@ -28,42 +27,19 @@ export const EMITTERS: Emitters = new Map<string, Emitter>([
   ["intra-function", intraFunction],
 ]);
 
-/**
- * The keys of every declaration an unanswered question could have kept live, which the run
- * reports nothing about: a finding about one would be computed from the gap.
- */
-function heldKeys(input: EmitterInput): ReadonlySet<string> {
-  const held = new Set(input.swept.heldByUnanswered);
-  if (held.size === 0) {
-    return held;
-  }
+/** The keys of the declarations the identifiers name, as {@link findingKey} keys a finding. */
+function keysOf(input: EmitterInput, ids: Iterable<string>): ReadonlySet<string> {
+  const named = new Set(ids);
   return new Set(
     input.swept.matrix.union.symbols
-      .filter((symbol) => held.has(symbol.id))
+      .filter((symbol) => named.has(symbol.id))
       .map((symbol) => declarationKey(symbol.ref, symbol.position.path)),
   );
 }
 
-/**
- * The keys of every top-level declaration of a live component file. The file's
- * markup may use each of them, which no analysis of the markup can rule out, so the run
- * reports nothing about one while the file is live.
- */
-function markupKeys(input: EmitterInput): ReadonlySet<string> {
-  const { swept } = input;
-  if (swept.componentFiles.length === 0) {
-    return new Set();
-  }
-  const live = new Set(
-    liveFilesAt(swept.matrix, swept.sweep, new Set(swept.componentFiles)).map(
-      (symbol) => symbol.id,
-    ),
-  );
-  return new Set(
-    swept.matrix.union.symbols
-      .filter((symbol) => live.has(symbol.parent))
-      .map((symbol) => declarationKey(symbol.ref, symbol.position.path)),
-  );
+/** The key of the declaration a finding is about, or of the one holding the part it is about. */
+function findingKey(finding: CompletedFinding): string {
+  return declarationKey(finding.symbol.holder ?? finding.symbol.ref, finding.position.path);
 }
 
 /** What the suppressions of a run swept under their marks are decided against. */
@@ -91,15 +67,20 @@ interface DecidedFindings {
 /** How many findings the minimum confidence withheld at each confidence. */
 export type Withheld = Readonly<Record<Confidence, number>>;
 
-/** Every emitter's findings over one sweep, and those of any further emitter, completed by one step. */
+/**
+ * Every emitter's findings over one sweep, and those of any further emitter, completed by
+ * one step, but none about a declaration that falls with a write-only subject: that
+ * subject's finding names it, so no finding about it exists for a record to match.
+ */
 function completedOver(
   input: EmitterInput,
   ...more: readonly Emitter[]
 ): readonly CompletedFinding[] {
+  const falls = keysOf(input, fallingWithWrites(input));
   return completed(
     input,
     [...EMITTERS.values(), ...more].flatMap((emit) => emit(input)),
-  );
+  ).filter((finding) => !falls.has(findingKey(finding)));
 }
 
 /**
@@ -161,21 +142,22 @@ function dialledOver(
   unmarked: readonly CompletedFinding[],
 ): Omit<DecidedFindings, "would"> {
   const would = [...unmarked, ...found];
-  const unanswered = heldKeys(input);
-  const heldIds = new Set(input.swept.heldByUnanswered);
-  const keyOf = (finding: CompletedFinding): string =>
-    declarationKey(finding.symbol.holder ?? finding.symbol.ref, finding.position.path);
+  const { sweep } = input.swept;
+  // A hold is a gap of the analysis, which leaves a record it touches dormant; a live
+  // component file's markup is no gap, so a record on one of its bindings stays in effect.
+  const unanswered = keysOf(input, sweep.held);
+  const markup = keysOf(input, sweep.bindings);
+  const heldIds = new Set(sweep.held);
   const held = (finding: CompletedFinding): boolean =>
-    unanswered.has(keyOf(finding)) || insideSkipped(input.swept.skipped, finding.position);
+    unanswered.has(findingKey(finding)) || insideSkipped(input.swept.skipped, finding.position);
   const ledger = ledgerOf(
     suppressed.records,
     would,
     dialsOver(input, found, suppressed, unmarked),
     { withholds: held, holdsRecord: (record) => heldIds.has(record.bound) },
   );
-  const markup = markupKeys(input);
   const candidates = found.filter(
-    (finding) => !ledger.withheld(finding) && !held(finding) && !markup.has(keyOf(finding)),
+    (finding) => !ledger.withheld(finding) && !held(finding) && !markup.has(findingKey(finding)),
   );
   const kept = reportable(input, candidates);
   const evaluated = evaluateEdges(kept, input.boundary.edges, input.swept.matrix.union.symbols);
