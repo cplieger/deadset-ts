@@ -164,8 +164,19 @@ function fileNeverImported(input: EmitterInput): readonly Finding[] {
     });
 }
 
-/** The findings of the files family, `DS1600` to `DS1699`. */
-export const nonCodeArtifacts: Emitter = (input) => [
-  ...fileNeverBuilt(input),
-  ...fileNeverImported(input),
-];
+/**
+ * The findings of the files family, `DS1600` to `DS1699`, each at the class `possible` in a
+ * package a command of which may run a file whose path no word of it writes, since that
+ * command may run the file (confidence.35).
+ */
+export const nonCodeArtifacts: Emitter = (input) => {
+  const unwritten = [...(input.files.unwrittenRuns ?? [])];
+  return [...fileNeverBuilt(input), ...fileNeverImported(input)].map((finding) =>
+    unwritten.some(
+      (dir) =>
+        dir === "." || finding.position.path === dir || finding.position.path.startsWith(`${dir}/`),
+    )
+      ? { ...finding, reachabilityClass: "possible" as const }
+      : finding,
+  );
+};

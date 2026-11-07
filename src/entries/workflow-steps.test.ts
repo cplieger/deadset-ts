@@ -1,6 +1,6 @@
 import type { SourceFile } from "@typescript/native/ast";
 import { describe, expect, it } from "vitest";
-import { readCommands } from "../commands/read.ts";
+import { heldWords } from "../commands/held.ts";
 import type { Host } from "../host.ts";
 import type { SourceFiles } from "../source-files.ts";
 import { spelledFiles } from "../text/named-files.ts";
@@ -77,9 +77,7 @@ describe("workflowEntries", () => {
     ["  - run: node\n      pkg/esc.js"],
   ])("roots and holds the file the step %j names once YAML decodes it", (workflow) => {
     const host = hostWith(workflow);
-    const held = workflowCommands(host, "/repo")
-      .map(({ text, dir }) => readCommands(text, dir).held)
-      .join("\n");
+    const held = heldWords(readWorkflows(host, "/repo").held);
 
     expect(
       workflowEntries(readWorkflows(host, "/repo"), filesAt(["pkg/esc.js"])).map(
@@ -87,7 +85,9 @@ describe("workflowEntries", () => {
       ),
     ).toEqual(["/repo/pkg/esc.js"]);
     expect(
-      spelledFiles(held, "/repo", [{ file: "/repo/pkg/esc.js", paths: ["/repo/pkg/esc.js"] }]),
+      spelledFiles(held, "/repo", "/repo", [
+        { file: "/repo/pkg/esc.js", paths: ["/repo/pkg/esc.js"] },
+      ]).files,
     ).toEqual(["/repo/pkg/esc.js"]);
   });
 });
@@ -208,9 +208,9 @@ describe("workflowCommands, the workflow run steps", () => {
   });
 
   it.each([
-    ["        working-directory: packages/${{ matrix.pkg }}", "packages/${{ matrix.pkg }}"],
-    ['        working-directory: "${{ inputs.dir }}"', "${{ inputs.dir }}"],
-  ])("states no directory for a step whose directory is %j", (line, written) => {
+    ["        working-directory: packages/${{ matrix.pkg }}"],
+    ['        working-directory: "${{ inputs.dir }}"'],
+  ])("states no directory for a step whose directory is %j", (line) => {
     const [command] = workflowCommands(
       hostWith(["    steps:", "      - run: node build.js", line].join("\n")),
       "/repo",
@@ -219,7 +219,6 @@ describe("workflowCommands, the workflow run steps", () => {
     expect(command).toEqual({
       text: "node build.js",
       dir: undefined,
-      writtenDirectory: written,
     });
   });
 
@@ -284,7 +283,6 @@ describe("workflowCommands, the workflow run steps", () => {
     expect(command).toEqual({
       text: "make",
       dir: "/repo/tools",
-      writtenDirectory: "./tools",
     });
   });
 });
@@ -373,10 +371,43 @@ describe("workflowCommands, the YAML structures a workflow file writes", () => {
 
       expect(workflowCommands(host, "/repo")).toEqual([]);
       expect(
-        spelledFiles(commandFileTexts(host, "/repo").join("\n"), "/repo", [
+        spelledFiles(heldWords(readWorkflows(host, "/repo").held), "/repo", "/repo", [
           { file: "/repo/pkg/esc.js", paths: ["/repo/pkg/esc.js"] },
-        ]),
+        ]).files,
       ).toEqual(["/repo/pkg/esc.js"]);
     },
   );
+});
+
+describe("the values of a workflow file", () => {
+  /** The files of `/repo/pkg` the held text of `/repo`'s workflow file `workflow` names. */
+  function heldBy(workflow: string): readonly string[] {
+    return spelledFiles(
+      heldWords(readWorkflows(hostWith(workflow), "/repo").held),
+      "/repo",
+      "/repo",
+      ["/repo/pkg/esc.js", "/repo/src/a.ts"].map((file) => ({ file, paths: [file] })),
+    ).files;
+  }
+
+  it.each([
+    ["on:\n  push:\n    paths: [pkg/esc.js, 'src/**']\n"],
+    ["on:\n  pull_request:\n    paths-ignore:\n      - pkg/*.js\n      - src/a.ts\n"],
+    [
+      "on:\n  push:\n    branches: [src/**]\n    tags: ['pkg/*']\n    branches-ignore: [pkg/**]\n    tags-ignore: [src/*]\n",
+    ],
+  ])("holds no file a trigger filter of %j matches, as it runs none", (workflow) => {
+    expect(heldBy(workflow)).toEqual([]);
+  });
+
+  it.each([
+    [
+      "on:\n  workflow_dispatch:\n    inputs:\n      entry:\n        default: pkg/esc.js\n",
+      ["/repo/pkg/esc.js"],
+    ],
+    ["jobs:\n  a:\n    steps:\n      - with:\n          paths: src/a.ts\n", ["/repo/src/a.ts"]],
+    ["env:\n  paths: pkg/esc.js\n", ["/repo/pkg/esc.js"]],
+  ])("holds what any other value of %j names: %j", (workflow, held) => {
+    expect(heldBy(workflow)).toEqual(held);
+  });
 });

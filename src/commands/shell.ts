@@ -1,22 +1,49 @@
 /**
  * Layer 1 of the command reader: one command line, parsed by the vendored shell parser, as
- * its and-or lists, their pipelines and the words of each simple command. Nothing here
- * tokenizes, unquotes or splits text.
+ * its and-or lists, their pipelines and the words of each simple command, and the one place
+ * that decides which parts of a word the shell computes and which words a brace expansion
+ * stands for, for layer 3 too.
  */
 
 import {
   parse,
   type CommandNode,
+  type ParsedScript,
   type PipelineNode,
   type Word as ShellWord,
   type WordPart,
 } from "../vendor/unbash/parser.ts";
+
+/**
+ * The character that stands, in a word's text as layer 3 reads it, for a part only the run
+ * knows. It is a private-use character, so no path holds it, and the parser reads it as
+ * literal text.
+ */
+export const PART = "\uE000";
+
+/** A GitHub Actions expression, which the runner substitutes before any shell reads the line. */
+const EXPRESSION = /\$\{\{[\s\S]*?\}\}/gu;
+
+/** `text` with each `${{ }}` expression in it read as a part only the run knows. */
+export function expressionsAsParts(text: string): string {
+  return text.replace(EXPRESSION, PART);
+}
+
+/** One command line parsed, each `${{ }}` expression in it read as a part only the run knows. */
+export function parseLine(source: string): ParsedScript {
+  return parse(expressionsAsParts(source));
+}
+
+/** The words a word's brace expansions stand for, at most this many. */
+const ALTERNATIVES = 64;
 
 /** One word of a simple command: its value, or `undefined` where the shell computes it. */
 export interface Word {
   readonly value: string | undefined;
   /** The word as the line writes it. */
   readonly text: string;
+  /** Where the shell expands it to one text, that text with each part it computes as {@link PART}. */
+  readonly written?: string;
 }
 
 /** One pipeline of an and-or list. */
@@ -45,29 +72,104 @@ interface List {
   readonly pipelines: readonly Pipeline[];
 }
 
-/** Whether one part of a word has a value the line states: a literal, quoted or escaped text. */
-function isStatic(part: WordPart): boolean {
+/**
+ * The text one part of a word stands for: a literal's, a quoted text's or an escape's value,
+ * and {@link PART} for every part the shell computes, a glob among them.
+ */
+function partText(part: WordPart): string {
   switch (part.type) {
     case "Literal":
     case "SingleQuoted":
     case "AnsiCQuoted":
-      return true;
+      return part.value;
     case "DoubleQuoted":
-      return part.parts.every((child) => child.type === "Literal");
+      return part.parts.map((child) => (child.type === "Literal" ? child.value : PART)).join("");
     default:
-      return false;
+      return PART;
   }
 }
 
+/** The texts the word `piece` of a brace expansion stands for, or a part where it is no one word. */
+function alternativeTexts(piece: string): readonly string[] {
+  if (piece === "") {
+    return [""];
+  }
+  const script = parse(piece);
+  const [statement, ...more] = script.commands;
+  const command = statement?.command;
+  return (script.errors ?? []).length === 0 &&
+    more.length === 0 &&
+    command?.type === "Command" &&
+    command.name !== undefined &&
+    command.prefix.length === 0 &&
+    command.suffix.length === 0
+    ? heldTextsOf(command.name)
+    : [PART];
+}
+
 /**
- * One word as layer 1 reads it. A tilde that starts the word unquoted is the parser's literal
- * text but the shell's home directory, so it makes the word dynamic too.
+ * The texts a brace expansion stands for, its comma-separated alternatives, or a part where it
+ * has none, a sequence such as `{1..3}` among them.
  */
-function wordOf(word: ShellWord): Word {
-  const [first] = word.parts ?? [];
-  const lead = word.parts === undefined ? word.text : first?.type === "Literal" ? first.text : "";
-  const known = (word.parts ?? []).every(isStatic) && !lead.startsWith("~");
-  return { value: known ? word.value : undefined, text: word.text };
+function braceTexts(text: string): readonly string[] {
+  const inner = text.slice(1, -1);
+  const pieces: string[] = [];
+  let depth = 0;
+  let from = 0;
+  let quote = "";
+  for (let at = 0; at < inner.length; at += 1) {
+    const char = inner.charAt(at);
+    if (char === "\\") {
+      at += 1;
+    } else if (quote !== "") {
+      quote = char === quote ? "" : quote;
+    } else if (char === "'" || char === '"') {
+      quote = char;
+    } else if (char === "{" || char === "}") {
+      depth += char === "{" ? 1 : -1;
+    } else if (char === "," && depth === 0) {
+      pieces.push(inner.slice(from, at));
+      from = at + 1;
+    }
+  }
+  if (pieces.length === 0) {
+    return [PART];
+  }
+  pieces.push(inner.slice(from));
+  return pieces.flatMap(alternativeTexts);
+}
+
+/**
+ * Each word the shell may expand `word` to, as layer 3 reads it: its quotes removed, each brace
+ * expansion read as its alternatives, past {@link ALTERNATIVES} words as a part, and each part
+ * it computes, a tilde that starts it unquoted among them, as {@link PART}.
+ */
+export function heldTextsOf(word: ShellWord): readonly string[] {
+  const { parts } = word;
+  const [first] = parts ?? [];
+  const tilde =
+    parts === undefined
+      ? word.text.startsWith("~")
+      : first?.type === "Literal" && first.text.startsWith("~");
+  let texts: readonly string[] = [parts === undefined ? word.value : ""];
+  for (const part of parts ?? []) {
+    const options = part.type === "BraceExpansion" ? braceTexts(part.text) : [partText(part)];
+    const next = texts.flatMap((text) => options.map((option) => `${text}${option}`));
+    texts = next.length > ALTERNATIVES ? texts.map((text) => `${text}${PART}`) : next;
+  }
+  return tilde ? texts.map((text) => `${PART}${text.slice(1)}`) : texts;
+}
+
+/** One word as layer 1 reads it: static only where the shell expands it to one text with no part. */
+export function wordOf(word: ShellWord): Word {
+  const [only, ...more] = heldTextsOf(word);
+  const one = more.length === 0 ? only : undefined;
+  const known = one !== undefined && !one.includes(PART);
+  return {
+    value: known ? word.value : undefined,
+    text: word.text,
+    ...(one === undefined ? {} : { written: one }),
+  };
 }
 
 /**
@@ -109,7 +211,7 @@ function pipelineOf(node: PipelineNode, operator: Pipeline["operator"]): Pipelin
  * gives no words, and marks its pipeline where it may change the line's directory.
  */
 export function shellLine(source: string): readonly List[] {
-  const script = parse(source);
+  const script = parseLine(source);
   if ((script.errors ?? []).length > 0) {
     return [];
   }

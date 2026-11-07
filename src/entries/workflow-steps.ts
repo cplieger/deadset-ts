@@ -1,12 +1,14 @@
 /**
  * The command strings beside a target root's packages: a CI workflow's `run:` steps, the git
- * hooks, the hook managers' commands and the makefile's recipe lines, each with the directory
- * it runs in. A workflow or hook manager file is read by `text/yaml.ts`, and one it does not
+ * hooks, the hook managers' commands and scripts and the makefile's recipe lines, each with the
+ * directory it runs in. A workflow or hook manager file is read by `text/yaml.ts`, and one it does not
  * read gives no command; each command is read by `commands/read.ts`.
  */
 
 import type { SourceFile } from "@typescript/native/ast";
+import type { HeldText } from "../commands/held.ts";
 import { pathsNamed, readCommands, type CommandReading } from "../commands/read.ts";
+import { PART } from "../commands/shell.ts";
 import type { Host } from "../host.ts";
 import { isRecord } from "../json-document.ts";
 import { joinPath, resolvePath } from "../paths.ts";
@@ -29,8 +31,6 @@ interface CommandString {
    * where: a directory holding a `${{ }}` expression, which GitHub Actions evaluates.
    */
   readonly dir: string | undefined;
-  /** The directory the file writes for it, as YAML decodes it, which layer 3 holds beside the text. */
-  readonly writtenDirectory: string | undefined;
 }
 
 const WORKFLOWS = ".github/workflows";
@@ -41,16 +41,32 @@ const HOOK_DIRS = [".husky", ".githooks"] as const;
 /** The key setting the directory a workflow step, or each step a `defaults.run` covers, runs in. */
 const WORKING_DIRECTORY = "working-directory";
 
-/**
- * The hook manager files, each with the key its commands are written under and the key of their
- * directory: lefthook's `root`, https://lefthook.dev/configuration/root/
- */
-const HOOK_MANAGERS: readonly (readonly [string, string, string | undefined])[] = [
-  [".pre-commit-config.yaml", "entry", undefined],
-  ...["lefthook.yml", "lefthook.yaml", ".lefthook.yml"].map(
-    (name) => [name, "run", "root"] as const,
-  ),
+/** One hook manager's file. */
+interface HookManager {
+  readonly name: string;
+  /** The key its commands are written under. */
+  readonly key: string;
+  /** The key of a command's directory: lefthook's `root`, https://lefthook.dev/configuration/root/ */
+  readonly dirKey?: string;
+  /** Whether its hooks name script files it runs, as lefthook's do. */
+  readonly scripts?: true;
+}
+
+const HOOK_MANAGERS: readonly HookManager[] = [
+  { name: ".pre-commit-config.yaml", key: "entry" },
+  ...["lefthook.yml", "lefthook.yaml", ".lefthook.yml"].map((name): HookManager => ({
+    name,
+    key: "run",
+    dirKey: "root",
+    scripts: true,
+  })),
 ];
+
+/**
+ * The directories lefthook searches for a hook's scripts after the file's `source_dir` and
+ * `source_dir_local`: https://github.com/evilmartians/lefthook/blob/master/internal/command/run.go
+ */
+const LEFTHOOK_DIRS = [".config/lefthook", ".config/lefthook-local"] as const;
 
 /** The names GNU make reads a makefile under, in the order it tries them. */
 const MAKEFILES = ["GNUmakefile", "makefile", "Makefile"] as const;
@@ -112,7 +128,6 @@ function keyedCommands(
             : written.includes("${{")
               ? undefined
               : resolvePath(root, written),
-        writtenDirectory: written,
       });
     }
     for (const value of Object.values(node)) {
@@ -120,6 +135,52 @@ function keyedCommands(
     }
   };
   visit(yamlDocument(text), undefined);
+  return found;
+}
+
+/**
+ * The command lefthook runs for each script a lefthook file's hooks name, each key of a hook's
+ * `scripts` and each `script` of a job in its `jobs`, a group's among them, from each directory
+ * it searches: its `runner`, then the path `<dir>/<hook>/<name>` quoted as lefthook quotes it,
+ * run in the target root: https://lefthook.dev/configuration/Scripts/
+ */
+function lefthookScripts(text: string, root: string): readonly CommandString[] {
+  const document = yamlDocument(text);
+  if (!isRecord(document)) {
+    return [];
+  }
+  const dirs = [
+    scalarText(document["source_dir"]) ?? ".lefthook/",
+    scalarText(document["source_dir_local"]) ?? ".lefthook-local/",
+    ...LEFTHOOK_DIRS,
+  ];
+  const found: CommandString[] = [];
+  const add = (hook: string, name: string, runner: string | undefined): void => {
+    for (const dir of dirs) {
+      const path = `'${joinPath(dir, hook, name).replaceAll("'", "'\\''")}'`;
+      found.push({
+        text: runner === undefined || runner.trim() === "" ? path : `${runner} ${path}`,
+        dir: root,
+      });
+    }
+  };
+  const jobs = (hook: string, list: unknown): void => {
+    for (const job of Array.isArray(list) ? list : []) {
+      const script = isRecord(job) ? scalarText(job["script"]) : undefined;
+      if (isRecord(job) && script !== undefined) {
+        add(hook, script, scalarText(job["runner"]));
+      }
+      const group = isRecord(job) ? job["group"] : undefined;
+      jobs(hook, isRecord(group) ? group["jobs"] : undefined);
+    }
+  };
+  for (const [hook, value] of Object.entries(document)) {
+    const scripts = isRecord(value) ? value["scripts"] : undefined;
+    for (const [name, options] of Object.entries(isRecord(scripts) ? scripts : {})) {
+      add(hook, name, isRecord(options) ? scalarText(options["runner"]) : undefined);
+    }
+    jobs(hook, isRecord(value) ? value["jobs"] : undefined);
+  }
   return found;
 }
 
@@ -138,9 +199,42 @@ function makefileAt(host: Host, root: string): string | undefined {
 }
 
 /**
+ * One recipe line as make hands it to the shell: each `$$` a `$`, and each reference to a
+ * variable or a function, which make expands first, a part only the run knows:
+ * https://www.gnu.org/software/make/manual/html_node/Reference.html
+ */
+function expandedByMake(line: string): string {
+  let expanded = "";
+  for (let at = 0; at < line.length; at += 1) {
+    const char = line.charAt(at);
+    const next = line.charAt(at + 1);
+    if (char !== "$") {
+      expanded += char;
+    } else if (next === "$") {
+      expanded += "$";
+      at += 1;
+    } else {
+      let end = at + 1;
+      if (next === "(" || next === "{") {
+        const close = next === "(" ? ")" : "}";
+        for (let depth = 0; end < line.length; end += 1) {
+          depth += line.charAt(end) === next ? 1 : line.charAt(end) === close ? -1 : 0;
+          if (depth === 0) {
+            break;
+          }
+        }
+      }
+      expanded += PART;
+      at = Math.min(end, line.length);
+    }
+  }
+  return expanded;
+}
+
+/**
  * Each recipe line of the target root's makefile: a line that starts with a tab, joined with
- * the lines a trailing `\` continues it onto, less the `@`, `-` and `+` make reads before it.
- * Make runs each line in a shell of its own.
+ * the lines a trailing `\` continues it onto, less the `@`, `-` and `+` make reads before it,
+ * as make expands it. Make runs each line in a shell of its own.
  */
 function recipeLines(host: Host, root: string): readonly CommandString[] {
   const path = makefileAt(host, root);
@@ -150,9 +244,8 @@ function recipeLines(host: Host, root: string): readonly CommandString[] {
     .split(/\r?\n/u)
     .filter((line) => line.startsWith("\t"))
     .map((line) => ({
-      text: line.slice(1).replace(/^[@+-]+/u, ""),
+      text: expandedByMake(line.slice(1).replace(/^[@+-]+/u, "")),
       dir: root,
-      writtenDirectory: undefined,
     }));
 }
 
@@ -160,7 +253,7 @@ function recipeLines(host: Host, root: string): readonly CommandString[] {
  * Every command the target root's workflow steps, git hooks, hook managers and makefile run:
  * the `run:` steps of the workflow files in `.github/workflows`, each file in `.husky` and
  * `.githooks` as one shell script, the `entry:` commands of `.pre-commit-config.yaml`, the
- * `run:` commands of a lefthook file and the makefile's recipe lines.
+ * `run:` commands and the scripts of a lefthook file and the makefile's recipe lines.
  */
 export function workflowCommands(host: Host, targetRoot: string): readonly CommandString[] {
   const root = resolvePath(host.workingDirectory(), targetRoot);
@@ -177,49 +270,145 @@ export function workflowCommands(host: Host, targetRoot: string): readonly Comma
     ...hookScripts(host, root).map((path): CommandString => ({
       text: readText(host, path) ?? "",
       dir: root,
-      writtenDirectory: undefined,
     })),
-    ...HOOK_MANAGERS.flatMap(([name, key, dirKey]) =>
-      keyedCommands(readText(host, joinPath(root, name)) ?? "", root, key, dirKey),
-    ),
+    ...HOOK_MANAGERS.flatMap(({ name, key, dirKey, scripts }) => {
+      const text = readText(host, joinPath(root, name)) ?? "";
+      return [
+        ...keyedCommands(text, root, key, dirKey),
+        ...(scripts === true ? lefthookScripts(text, root) : []),
+      ];
+    }),
     ...recipeLines(host, root),
   ];
 }
 
 /**
  * The whole text of each file {@link workflowCommands} reads a command from, each workflow file,
- * git hook, hook manager file and makefile at the target root. Layer 3 holds it whole, so a part
- * no command is read from, a comment included, or one the reading of the structure misses, still
- * holds every file it names.
+ * git hook, hook manager file and makefile at the target root, which the dependency rule reads.
  */
 export function commandFileTexts(host: Host, targetRoot: string): readonly string[] {
+  return commandFiles(host, targetRoot).flatMap(({ path }) => readText(host, path) ?? []);
+}
+
+/** Each file {@link workflowCommands} reads a command from, with the key a YAML file writes its commands under. */
+function commandFiles(
+  host: Host,
+  targetRoot: string,
+): readonly { readonly path: string; readonly key: string | undefined }[] {
   const root = resolvePath(host.workingDirectory(), targetRoot);
   return [
-    ...filesIn(host, joinPath(root, WORKFLOWS), (name) => /\.ya?ml$/u.test(name)).map((name) =>
-      joinPath(root, WORKFLOWS, name),
-    ),
-    ...hookScripts(host, root),
-    ...HOOK_MANAGERS.map(([name]) => joinPath(root, name)),
-    ...[makefileAt(host, root) ?? []].flat(),
-  ].flatMap((path) => readText(host, path) ?? []);
+    ...filesIn(host, joinPath(root, WORKFLOWS), (name) => /\.ya?ml$/u.test(name)).map((name) => ({
+      path: joinPath(root, WORKFLOWS, name),
+      key: "run",
+    })),
+    ...hookScripts(host, root).map((path) => ({ path, key: undefined })),
+    ...HOOK_MANAGERS.map(({ name, key }) => ({ path: joinPath(root, name), key })),
+    ...[makefileAt(host, root) ?? []].flat().map((path) => ({ path, key: undefined })),
+  ];
+}
+
+/**
+ * The filters of a workflow's `on` key, which name the files and refs whose change triggers it
+ * and run none: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#onpushpull_requestpull_request_targetpathspaths-ignore
+ */
+const TRIGGER_FILTERS = new Set([
+  "paths",
+  "paths-ignore",
+  "branches",
+  "branches-ignore",
+  "tags",
+  "tags-ignore",
+]);
+
+/**
+ * The values of one YAML file that are no command, each with its key: every scalar but one
+ * written under `key`, which is read as a command string, and one of a trigger filter. A file
+ * `yamlDocument` does not read is one value, its whole text. No key and no comment is a value.
+ */
+function yamlValues(text: string, key: string): readonly HeldText[] {
+  const document = yamlDocument(text);
+  if (document === undefined) {
+    return [{ text, shell: false }];
+  }
+  const found: HeldText[] = [];
+  // `trigger` is 1 for the value of the top-level `on`, a map of events, and 2 for an event's.
+  const visit = (node: unknown, under: string | undefined, trigger = 0): void => {
+    if (Array.isArray(node)) {
+      for (const item of node) {
+        visit(item, under);
+      }
+    } else if (isRecord(node)) {
+      for (const [name, value] of Object.entries(node)) {
+        const on = node === document && (name === "on" || name === "true");
+        if (
+          (name !== key || scalarText(value) === undefined) &&
+          !(trigger === 2 && TRIGGER_FILTERS.has(name))
+        ) {
+          visit(value, name, on ? 1 : trigger === 1 ? 2 : 0);
+        }
+      }
+    } else {
+      const value = scalarText(node);
+      if (value !== undefined) {
+        found.push({ text: value, shell: false, ...(under === undefined ? {} : { key: under }) });
+      }
+    }
+  };
+  visit(document, undefined);
+  return found;
+}
+
+/**
+ * The lines of a makefile that are no recipe line, joined with the lines a trailing `\`
+ * continues them onto, each without the comment a `#` make does not read as escaped starts.
+ */
+function makefileValues(text: string): readonly HeldText[] {
+  return text
+    .replace(/\\\r?\n/gu, " ")
+    .split(/\r?\n/u)
+    .filter((line) => !line.startsWith("\t"))
+    .map((line) => line.replace(/(?<!\\)#.*$/u, ""))
+    .filter((line) => line.trim() !== "")
+    .map((line) => ({ text: line, shell: false }));
+}
+
+/**
+ * The texts layer 3 reads of the target root's command files: each command string, and each
+ * value of a workflow file, a hook manager file and the makefile that is no command.
+ */
+function heldTexts(host: Host, targetRoot: string): readonly HeldText[] {
+  const makefile = makefileAt(host, resolvePath(host.workingDirectory(), targetRoot));
+  return [
+    ...workflowCommands(host, targetRoot).map(({ text }) => ({ text, shell: true })),
+    ...commandFiles(host, targetRoot).flatMap(({ path, key }) => {
+      const text = readText(host, path);
+      return text === undefined
+        ? []
+        : key !== undefined
+          ? yamlValues(text, key)
+          : path === makefile
+            ? makefileValues(text)
+            : [];
+    }),
+  ];
 }
 
 /** What the target root's workflow steps, git hooks, hook managers and makefile run, read once per run. */
 export interface Workflows {
-  /** Each command read, its held text followed by the directory the file writes for it. */
+  /** Each command read. */
   readonly readings: readonly CommandReading[];
-  /** The whole text of each file a command is read from. */
+  /** The whole text of each file a command is read from, which the dependency rule reads. */
   readonly texts: readonly string[];
+  /** What layer 3 reads of them: each command string, and each value that is no command. */
+  readonly held: readonly HeldText[];
 }
 
 /** Reads the target root's workflow steps, git hooks, hook managers and makefile. */
 export function readWorkflows(host: Host, targetRoot: string): Workflows {
   return {
-    readings: workflowCommands(host, targetRoot).map(({ text, dir, writtenDirectory }) => {
-      const reading = readCommands(text, dir);
-      return { ...reading, held: [reading.held, writtenDirectory ?? ""].join("\n") };
-    }),
+    readings: workflowCommands(host, targetRoot).map(({ text, dir }) => readCommands(text, dir)),
     texts: commandFileTexts(host, targetRoot),
+    held: heldTexts(host, targetRoot),
   };
 }
 

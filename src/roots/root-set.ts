@@ -22,6 +22,7 @@ import { typeQueryAliases } from "../type-query-alias.ts";
 import { bytewise } from "../text/compare.ts";
 import { holdsManifest } from "../fs/manifest.ts";
 import { globExpression } from "../text/glob.ts";
+import { heldWords, type HeldText } from "../commands/held.ts";
 import { spelledFiles } from "../text/named-files.ts";
 import type { Workflows } from "../entries/workflow-steps.ts";
 import { extensionOf, OUTPUT_EXTENSIONS } from "../extensions.ts";
@@ -104,6 +105,8 @@ export interface HeldScripts {
   readonly dir: string;
   /** Each file, by its path below the target root. */
   readonly files: readonly string[];
+  /** Whether a word that may write the file a command runs writes no path text (`roots.13`). */
+  readonly unwritten: boolean;
 }
 
 /** What decides the roots beside the declarations themselves. */
@@ -304,11 +307,12 @@ export function matchRef(pattern: string, ref: string): boolean {
 }
 
 /**
- * Per package, the own files its held texts name, as `spelledFiles` reads them, but those a
- * root enters with all they export: a command can use no more of such a file than the root
- * keeps live. A manifest's are its entries' held texts, and the target root's package has the
- * workflow steps, git hooks and makefile recipes beside its own, with the whole text of each
- * file they are read from.
+ * Per package, the own files the words of its held texts name, as `spelledFiles` reads them,
+ * but those a root enters with all they export: a command can use no more of such a file than
+ * the root keeps live. A manifest's are its entries' held texts, and the target root's package
+ * has the workflow steps, git hooks and makefile recipes beside its own, with the values of
+ * each file they are read from. A package is listed too where a word that may write the file
+ * a command runs writes no path text.
  */
 function scriptHolds(
   entries: readonly ManifestEntry[],
@@ -325,24 +329,22 @@ function scriptHolds(
     .filter((file) => !rooted.has(file.fileName))
     .map((file) => ({ file, paths: [file.fileName, ...files.writtenAs(file)] }));
   const cwd = host.workingDirectory();
-  const commands = new Map<string, string[]>([
-    [
-      resolvePath(cwd, targetRoot),
-      [...workflows.readings.map((reading) => reading.held), ...workflows.texts],
-    ],
-  ]);
+  const root = resolvePath(cwd, targetRoot);
+  const commands = new Map<string, HeldText[]>([[root, [...workflows.held]]]);
   for (const entry of entries) {
     if (entry.held !== undefined) {
       const dir = resolvePath(cwd, entry.dir);
-      commands.set(dir, [...(commands.get(dir) ?? []), entry.held]);
+      commands.set(dir, [...(commands.get(dir) ?? []), ...entry.held]);
     }
   }
   const held: HeldScripts[] = [];
   for (const [dir, texts] of commands) {
-    const named = spelledFiles(texts.join("\n"), dir, spelled);
-    if (named.length > 0) {
-      const paths = named.map((file) => relativePath(targetRoot, file.fileName) ?? file.fileName);
-      held.push({ dir, files: paths });
+    const named = spelledFiles(heldWords(texts), dir, root, spelled);
+    if (named.files.length > 0 || named.unwritten) {
+      const paths = named.files.map(
+        (file) => relativePath(targetRoot, file.fileName) ?? file.fileName,
+      );
+      held.push({ dir, files: paths, unwritten: named.unwritten });
     }
   }
   return held;

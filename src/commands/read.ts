@@ -1,8 +1,9 @@
 /**
  * The one reader of every command string the analysis reads. Layer 3, the holding rule
- * `roots/root-set.ts` applies through `text/named-files.ts`, reads all of the string's text
- * whatever the other two layers make of it; layer 1 parses the string and layer 2 reads each
- * simple command a tool's reader understands, and they only add the files and modules it runs.
+ * `roots/root-set.ts` applies through `commands/held.ts` and `text/named-files.ts`, reads every
+ * word of the string whatever the other two layers make of it; layer 1 parses the string and
+ * layer 2 reads each simple command a tool's reader understands, and they only add the files
+ * and modules it runs.
  */
 
 import { joinPath, resolvePath } from "../paths.ts";
@@ -11,10 +12,11 @@ import {
   configurationsOf,
   preloadTarget,
   readBuiltin,
-  readTool,
+  handedOn,
+  testRun,
   type Outcome,
   type Preload,
-  type Reading,
+  type TestRun,
 } from "./tools.ts";
 import { APPENDED_EXTENSIONS } from "../extensions.ts";
 
@@ -41,6 +43,11 @@ interface NamedConfiguration {
   readonly written: string;
 }
 
+/** One test run a command string writes, with the directory it runs in. */
+export interface CommandTests extends TestRun {
+  readonly dir: string;
+}
+
 /** What one command string runs. */
 export interface CommandReading {
   readonly runs: readonly Run[];
@@ -50,7 +57,9 @@ export interface CommandReading {
    */
   readonly commands: readonly CommandWords[];
   readonly configurations: readonly NamedConfiguration[];
-  /** The text layer 3 reads: all of the string. */
+  /** Each test run of {@link commands}, as `testRun` reads the command a launcher hands on. */
+  readonly tests: readonly CommandTests[];
+  /** The string's whole text, which the dependency rule reads. */
   readonly held: string;
 }
 
@@ -90,14 +99,17 @@ export function readCommands(text: string, dir: string | undefined): CommandRead
   const runs: Run[] = [];
   const commands: CommandWords[] = [];
   const configurations: NamedConfiguration[] = [];
+  const tests: CommandTests[] = [];
+  const readTests = (words: readonly Word[], at: string): void => {
+    const run = testRun(words);
+    if (run !== undefined) {
+      tests.push({ dir: at, ...run });
+    }
+  };
   const readCommand = (words: readonly Word[], at: string): void => {
     commands.push({ dir: at, words: words.map((word) => word.value) });
-    let handed = words;
-    let reading: Reading | undefined = readTool(handed);
-    while (reading?.kind === "command") {
-      handed = reading.words;
-      reading = readTool(handed);
-    }
+    const [handed, reading] = handedOn(words);
+    readTests(handed, at);
     if (reading?.kind === "line") {
       readLine(reading.text, at);
       return;
@@ -147,6 +159,7 @@ export function readCommands(text: string, dir: string | undefined): CommandRead
     )) {
       commands.push({ dir, words: words.map((word) => word.value) });
       configurations.push(...configurationsOf(words).map((written) => ({ dir, written })));
+      readTests(handedOn(words)[0], dir);
     }
   }
   const unique = <T>(all: readonly T[]): T[] => [
@@ -156,6 +169,7 @@ export function readCommands(text: string, dir: string | undefined): CommandRead
     runs,
     commands: unique(commands),
     configurations: unique(configurations),
+    tests: unique(tests),
     held: text,
   };
 }

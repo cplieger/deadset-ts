@@ -5,6 +5,7 @@
  * source reads them. A value a reader needs that the text does not write out names no file.
  */
 
+import type { CommandTests } from "../commands/read.ts";
 import { readJSON, readJSONFile } from "../fs/manifest.ts";
 import type { Host } from "../host.ts";
 import { ancestors, dirnamePath, joinPath, relativePath, resolvePath } from "../paths.ts";
@@ -27,7 +28,7 @@ export interface TestGlob {
 }
 
 /** One simple command of a manifest's scripts, a dynamic word `undefined`, in the directory it runs in. */
-export interface ScriptCommand {
+interface ScriptCommand {
   readonly dir: string;
   readonly words: readonly (string | undefined)[];
 }
@@ -140,8 +141,6 @@ interface OptionTable {
   /** The options that take the next word, or the text after `=`, as their value. */
   readonly valued: ReadonlySet<string>;
   readonly flags: ReadonlySet<string>;
-  /** Whether a long option the table does not name is read where its value follows `=`. */
-  readonly assigned?: boolean;
 }
 
 /** One command's options and operands. */
@@ -182,7 +181,7 @@ function parsed(words: readonly (string | undefined)[], table: OptionTable): Par
       keep(name, value);
     } else if (table.flags.has(name)) {
       keep(name, equals < 0 ? "true" : word.slice(equals + 1));
-    } else if (!(table.assigned === true && equals > 0)) {
+    } else {
       return undefined;
     }
   }
@@ -813,32 +812,6 @@ export const AVA_6 = avaRunner(AVA_CONFIG, ["cjs", "mjs", "js"]);
 /** AVA 8, which reads no `ava.config.cjs` and defaults to no `.cjs` test. */
 export const AVA_8 = avaRunner(["ava.config.js", "ava.config.mjs"], ["mjs", "js"]);
 
-/**
- * The options of `node` (https://nodejs.org/api/cli.html) a test run writes: the ones that take
- * a value, the flags, and any long option whose value follows `=`.
- */
-const NODE_OPTIONS: OptionTable = {
-  valued: new Set([
-    ...["-r", "--require", "--import", "--loader", "--experimental-loader", "--env-file"],
-    ...["--env-file-if-exists", "--conditions", "-C", "--input-type", "--watch-path"],
-    ...["--test-reporter", "--test-reporter-destination", "--test-concurrency"],
-    ...["--test-name-pattern", "--test-skip-pattern", "--test-timeout", "--test-shard"],
-    ...["--test-coverage-include", "--test-coverage-exclude", "--test-coverage-branches"],
-    ...["--test-coverage-functions", "--test-coverage-lines", "--test-isolation"],
-    ...["--test-global-setup"],
-  ]),
-  flags: new Set([
-    ...["--test", "--test-only", "--watch", "--test-force-exit", "--test-update-snapshots"],
-    ...["--test-randomize", "--experimental-test-coverage", "--experimental-test-module-mocks"],
-    ...["--experimental-test-snapshots", "--experimental-strip-types", "--no-strip-types"],
-    ...["--no-experimental-strip-types", "--experimental-transform-types", "--enable-source-maps"],
-    ...["--experimental-vm-modules", "--experimental-detect-module", "--no-warnings"],
-    ...["--no-experimental-detect-module", "--experimental-require-module", "--trace-warnings"],
-    ...["--no-experimental-require-module", "--expose-gc", "--inspect", "--inspect-brk"],
-  ]),
-  assigned: true,
-};
-
 /** The patterns `node --test` runs with no operand (`doc/api/test.md`), the TypeScript ones where types are stripped. */
 function nodeTestDefaults(stripped: boolean): readonly string[] {
   const forms = ["**/*.test", "**/*-test", "**/*_test", "**/test-*", "**/test", "**/test/**/*"];
@@ -849,20 +822,14 @@ function nodeTestDefaults(stripped: boolean): readonly string[] {
 }
 
 /**
- * The files each `node --test` command of a manifest's scripts runs: its operands, each a glob
- * read in the command's directory, or the default patterns where it writes none. A command
- * holding a dynamic word or an option {@link NODE_OPTIONS} does not name runs no file here.
+ * The files each `node --test` run of a manifest's scripts runs, as the command reader reads
+ * it: its operands, each a glob read in the command's directory, or the default patterns where
+ * it writes none.
  */
-export function nodeTestGlobs(scripts: readonly ScriptCommand[]): readonly TestGlob[] {
-  return scripts.flatMap((command) => {
-    const words = afterProgram(command, ["node"]);
-    const read = words === undefined ? undefined : parsed(words, NODE_OPTIONS);
-    if (!read?.values.has("--test")) {
-      return [];
-    }
-    const stripped =
-      !read.values.has("--no-strip-types") && !read.values.has("--no-experimental-strip-types");
-    const patterns = read.operands.length > 0 ? read.operands : nodeTestDefaults(stripped);
-    return patterns.map((one) => belowGlob(command.dir, one));
-  });
+export function nodeTestGlobs(runs: readonly CommandTests[]): readonly TestGlob[] {
+  return runs.flatMap((run) =>
+    (run.patterns.length > 0 ? run.patterns : nodeTestDefaults(run.stripped)).map((one) =>
+      belowGlob(run.dir, one),
+    ),
+  );
 }

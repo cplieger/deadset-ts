@@ -441,7 +441,8 @@ describe("a file a command names", () => {
         {
           kind: "unread-command",
           path: ".",
-          message: `commands the analysis does not read name ${path}, so no finding is reported about that file itself or the names it exports`,
+          // `node -r./x` is no option node reads, so the package's file findings are possible at most.
+          message: `commands the analysis does not read name ${path}, so no finding is reported about that file itself or the names it exports; a command runs a file whose path no word of it writes, so a finding that a file of the package is never built or never imported is possible at most`,
         },
       ]);
     },
@@ -515,6 +516,7 @@ describe("the command strings beside a package's scripts", () => {
         ".github/workflows/ci.yml":
           'on: push\njobs:\n  verify:\n    runs-on: ubuntu-latest\n    env:\n      SCRIPT: tools/check.ts\n    steps:\n      - run: node "$SCRIPT"\n',
       },
+      true,
     ],
     [
       "a pre-commit configuration, in a hook's args",
@@ -522,6 +524,7 @@ describe("the command strings beside a package's scripts", () => {
         ".pre-commit-config.yaml":
           "repos:\n  - repo: local\n    hooks:\n      - id: verify\n        name: verify\n        entry: node\n        language: system\n        args: [tools/check.ts]\n",
       },
+      false,
     ],
     [
       "a lefthook file, in a command's env",
@@ -529,26 +532,21 @@ describe("the command strings beside a package's scripts", () => {
         "lefthook.yml":
           'pre-commit:\n  commands:\n    verify:\n      env:\n        SCRIPT: tools/check.ts\n      run: node "$SCRIPT"\n',
       },
+      true,
     ],
     [
       "a makefile, in a variable",
       { Makefile: "SCRIPT = tools/check.ts\nverify:\n\tnode $(SCRIPT)\n" },
-    ],
-    [
-      "a husky hook, in a comment",
-      { ".husky/pre-commit": "#!/bin/sh\n# node tools/check.ts\nnpm test\n" },
-    ],
-    [
-      "a git hook in .githooks, in a comment",
-      { ".githooks/pre-push": "# run tools/check.ts first\nexit 0\n" },
+      true,
     ],
     [
       "nodemon's configuration, in an event command",
       { "nodemon.json": '{ "exec": "node", "events": { "start": "node tools/check.ts" } }\n' },
+      false,
     ],
   ])(
     "hold the exports of a file %s names where no command reads it",
-    (_source, written) => {
+    (_source, written, unwritten) => {
       const got = analyze(
         project({ ...COMMANDED, ...toolFile("check"), ...written }),
         ["--exit-code=off"],
@@ -570,10 +568,52 @@ describe("the command strings beside a package's scripts", () => {
         {
           kind: "unread-command",
           path: ".",
-          message:
+          message: [
             "commands the analysis does not read name tools/check.ts, so no finding is reported about that file itself or the names it exports",
+            ...(unwritten
+              ? [
+                  "a command runs a file whose path no word of it writes, so a finding that a file of the package is never built or never imported is possible at most",
+                ]
+              : []),
+          ].join("; "),
         },
       ]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it.each([
+    ["a husky hook", { ".husky/pre-commit": "#!/bin/sh\n# node tools/check.ts\nnpm test\n" }],
+    ["a git hook in .githooks", { ".githooks/pre-push": "# run tools/check.ts first\nexit 0\n" }],
+    [
+      "a workflow file",
+      {
+        ".github/workflows/ci.yml":
+          "on: push\njobs:\n  verify:\n    runs-on: ubuntu-latest\n    steps:\n      # node tools/check.ts\n      - run: npm test\n",
+      },
+    ],
+  ])(
+    "hold nothing a comment of %s names, since a comment is no word",
+    (_source, written) => {
+      const got = analyze(
+        project({ ...COMMANDED, ...toolFile("check"), ...written }),
+        ["--exit-code=off"],
+        tmpdir(),
+      );
+
+      expect(got.code, got.err).toBe(0);
+      expect(
+        findingsOf(got)
+          .filter(
+            (one) => (one["position"] as Record<string, unknown>)["path"] === "tools/check.ts",
+          )
+          .map((one) => one["code"]),
+      ).toContain("DS1602");
+      expect(
+        (reportOf(got)["notes"] as Record<string, unknown>[]).filter(
+          (one) => one["kind"] === "unread-command",
+        ),
+      ).toEqual([]);
     },
     LOAD_TIMEOUT,
   );
