@@ -1909,7 +1909,7 @@ export function handedOn(
 }
 
 /** What one simple command writes to its standard output, by the places of its words, the program word's 0. */
-export interface Output {
+interface Output {
   /** The places of the words each written as one line, as `cat`'s operands name files. */
   readonly at: readonly number[];
   /** The places, from one word up to before another, whose words joined by blanks are one line. */
