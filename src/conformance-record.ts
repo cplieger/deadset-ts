@@ -4,7 +4,7 @@ export const RECORD = {
   conformance: {
     corpusVersion: "6.0.0",
     result: "pass",
-    digest: "sha256:140f095d52fa8140de070f46d13a132b723c634ecf24a8b96e6a92c410c4b848",
+    digest: "sha256:e4af2b9bcd07fd745101bf3215cd21e9df1448bdc332a791f25d5676cf15c794",
   },
   gaps: [],
 } as const;
