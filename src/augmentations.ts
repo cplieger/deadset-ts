@@ -14,7 +14,7 @@ import {
   type Node,
 } from "@typescript/native/ast";
 import { nodeKey, type Inventory, type InventorySymbol } from "./inventory.ts";
-import { referenceKey } from "./matrix.ts";
+import { referenceKey } from "./liveness/matrix.ts";
 import type { Reference } from "./references.ts";
 import type { ProjectView } from "./session.ts";
 import type { SourceFiles } from "./source-files.ts";

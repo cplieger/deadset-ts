@@ -1,8 +1,10 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import type { InventorySymbol } from "./inventory.ts";
-import { matrixOf, sweepMatrix, type Configured } from "./matrix.ts";
-import type { Reference } from "./references.ts";
+import type { InventorySymbol } from "../inventory.ts";
+import { matrixOf, type Configured } from "./matrix.ts";
+import { sweep } from "./sweep.ts";
+import { policyOf } from "../../__test-helpers__/sweep.ts";
+import type { Reference } from "../references.ts";
 
 const PATH = "src/a.ts";
 
@@ -154,10 +156,13 @@ describe("the matrix intersection", () => {
   it("reports only what is dead in every configuration that holds it", () => {
     fc.assert(
       fc.property(matrix, (drawn) => {
-        const swept = sweepMatrix(matrixOf(drawn.map(configured)), {
-          marked: [],
-          mode: { production: true },
-        });
+        const swept = sweep(
+          matrixOf(drawn.map(configured)),
+          policyOf({
+            marked: [],
+            mode: { production: true },
+          }),
+        );
         const dead = drawn.map(deadIn);
         const reportable = new Set(
           FUNCTIONS.flatMap((_symbol, at) =>

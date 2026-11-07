@@ -1,18 +1,18 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { nodeHost } from "../bin/node-host.ts";
-import { fixture } from "../__test-helpers__/fixtures.ts";
-import { runSweep, type RunSweep } from "./analysis.ts";
-import { graphOf } from "./graph.ts";
-import type { InventorySymbol } from "./inventory.ts";
-import type { Reference } from "./references.ts";
-import { resolve } from "./resolve.ts";
-import type { Root } from "./roots/root-set.ts";
-import { scopeForDir } from "./scope.ts";
-import { openEngine } from "./session.ts";
-import type { SweepResult } from "./matrix.ts";
-import { reachedWithTheTests, sweep, type Liveness, type Mode } from "./sweep.ts";
+import { matrixFor, policyOf } from "../../__test-helpers__/sweep.ts";
+import { nodeHost } from "../../bin/node-host.ts";
+import { fixture } from "../../__test-helpers__/fixtures.ts";
+import { runSweep, type RunSweep } from "../analysis.ts";
+import type { InventorySymbol } from "../inventory.ts";
+import type { Reference } from "../references.ts";
+import { resolve } from "../resolve.ts";
+import type { Root } from "../roots/root-set.ts";
+import { scopeForDir } from "../scope.ts";
+import { openEngine } from "../session.ts";
+import { reachedWithTheTests, sweep, type Sweep } from "./sweep.ts";
+import type { Mode } from "../tests/file-class.ts";
 
 const PRODUCTION: Mode = { production: true };
 const PLAIN: Mode = { production: false };
@@ -48,7 +48,10 @@ function verdict(ref: string): string {
   return verdictOf(RELATIONS.sweep, symbol);
 }
 
-function verdictOf(result: SweepResult, symbol: InventorySymbol): string {
+function verdictOf(
+  result: Pick<Sweep, "liveUnder" | "candidates">,
+  symbol: InventorySymbol,
+): string {
   const live = (result.liveUnder.get(symbol.id) ?? []).join(",") || "-";
   const candidate = result.candidates.find((held) => held.id === symbol.id);
   const dead =
@@ -224,7 +227,10 @@ function reference(from: InventorySymbol, to: InventorySymbol, test = false): Re
 }
 
 /** The candidates of one sweep, by name, each with the relation that found it. */
-function candidates(result: Liveness, symbols: readonly InventorySymbol[]): string[] {
+function candidates(
+  result: Pick<Sweep, "candidates">,
+  symbols: readonly InventorySymbol[],
+): string[] {
   return result.candidates.map(
     (candidate) =>
       `${symbols.find((symbol) => symbol.id === candidate.id)?.name ?? candidate.id} ${candidate.relation}`,
@@ -240,15 +246,14 @@ describe("the sweep over an in-memory graph", () => {
   const chain = [reference(head, middle), reference(middle, tail)];
 
   it("holds a marked declaration and everything only it references live under both relations", () => {
-    const graph = graphOf(symbols, chain, [], []);
+    const graph = matrixFor(symbols, chain, [], []);
 
-    expect(candidates(sweep(graph, { marked: [], mode: PLAIN }), symbols), "unmarked").toEqual([
-      "head reference-counting",
-      "middle reachability",
-      "tail reachability",
-    ]);
     expect(
-      candidates(sweep(graph, { marked: [head.id], mode: PLAIN }), symbols),
+      candidates(sweep(graph, policyOf({ marked: [], mode: PLAIN })), symbols),
+      "unmarked",
+    ).toEqual(["head reference-counting", "middle reachability", "tail reachability"]);
+    expect(
+      candidates(sweep(graph, policyOf({ marked: [head.id], mode: PLAIN })), symbols),
       "the mark is live, and seeds what it references",
     ).toEqual([]);
   });
@@ -258,11 +263,17 @@ describe("the sweep over an in-memory graph", () => {
     const called: Root[] = [{ id: head.id, kind: "configured", source: "head" }];
 
     expect(
-      candidates(sweep(graphOf(symbols, chain, rooted, []), { marked: [], mode: PLAIN }), symbols),
+      candidates(
+        sweep(matrixFor(symbols, chain, rooted, []), policyOf({ marked: [], mode: PLAIN })),
+        symbols,
+      ),
       "a published root keeps its closure reachable and is a candidate itself",
     ).toEqual(["head reference-counting"]);
     expect(
-      candidates(sweep(graphOf(symbols, chain, called, []), { marked: [], mode: PLAIN }), symbols),
+      candidates(
+        sweep(matrixFor(symbols, chain, called, []), policyOf({ marked: [], mode: PLAIN })),
+        symbols,
+      ),
       "a configured root names a caller, so it is live under both",
     ).toEqual([]);
   });
@@ -270,13 +281,13 @@ describe("the sweep over an in-memory graph", () => {
   it("seeds from a consumer's test reference where the configuration counts its tests as production, and from no unheld test file's", () => {
     const mode: Mode = { production: true, consumerTestsProduction: true };
     const caller = declared("caller", 9, "test/outside.test.ts");
-    const unheld = graphOf(
+    const unheld = matrixFor(
       symbols,
       [...chain, { ...reference(caller, head, true), unheld: true }],
       [],
       [],
     );
-    const consumer = graphOf(
+    const consumer = matrixFor(
       symbols,
       [...chain, { ...reference(caller, head, true), consumer: "@example/consumer" }],
       [],
@@ -284,10 +295,10 @@ describe("the sweep over an in-memory graph", () => {
     );
 
     expect(
-      candidates(sweep(unheld, { marked: [], mode }), symbols),
+      candidates(sweep(unheld, policyOf({ marked: [], mode })), symbols),
       "an unheld test file is test code in every production mode",
     ).toEqual(["head reference-counting", "middle reachability", "tail reachability"]);
-    expect(candidates(sweep(consumer, { marked: [], mode }), symbols)).toEqual([]);
+    expect(candidates(sweep(consumer, policyOf({ marked: [], mode })), symbols)).toEqual([]);
   });
 
   it("holds a marked file's top level and reaches none of what it exports", () => {
@@ -295,9 +306,9 @@ describe("the sweep over an in-memory graph", () => {
     const exported = { ...declared("exported", 2, "src/worker.ts"), exported: true };
     const helper = declared("helper", 3, "src/worker.ts");
     const own = [worker, exported, helper];
-    const graph = graphOf(own, [reference(exported, helper)], [], []);
+    const graph = matrixFor(own, [reference(exported, helper)], [], []);
 
-    expect(candidates(sweep(graph, { marked: [worker.id], mode: PLAIN }), own)).toEqual([
+    expect(candidates(sweep(graph, policyOf({ marked: [worker.id], mode: PLAIN })), own)).toEqual([
       "exported reference-counting",
       "helper reachability",
     ]);
@@ -311,9 +322,9 @@ describe("the sweep over an in-memory graph", () => {
     const own = [worker, exported, helper];
     const all = [source, user, ...own];
     const rooted: Root[] = [{ id: worker.id, kind: "test-runner", source: "**/*.test.ts" }];
-    const byItself = graphOf(own, [reference(exported, helper)], rooted, []);
+    const byItself = matrixFor(own, [reference(exported, helper)], rooted, []);
     const namespace: Root[] = [{ id: user.id, kind: "configured", source: "user" }];
-    const throughNamespace = graphOf(
+    const throughNamespace = matrixFor(
       all,
       [reference(exported, helper), reference(user, worker)],
       namespace,
@@ -321,11 +332,11 @@ describe("the sweep over an in-memory graph", () => {
     );
 
     expect(
-      candidates(sweep(byItself, { marked: [], mode: PLAIN }), own),
+      candidates(sweep(byItself, policyOf({ marked: [], mode: PLAIN })), own),
       "a file a runtime runs without reading its exports roots its top level alone",
     ).toEqual(["exported reference-counting", "helper reachability"]);
     expect(
-      candidates(sweep(throughNamespace, { marked: [], mode: PLAIN }), all),
+      candidates(sweep(throughNamespace, policyOf({ marked: [], mode: PLAIN })), all),
       "a reference to the file names the module's namespace, which holds its exports",
     ).toEqual(["exported reference-counting"]);
   });
@@ -334,10 +345,10 @@ describe("the sweep over an in-memory graph", () => {
     const testFile = file("src/a.test.ts");
     const check = declared("check", 2, "src/a.test.ts");
     const all = [testFile, check, ...symbols];
-    const graph = graphOf(all, [reference(check, head, true), ...chain], [], ["src/a.test.ts"]);
+    const graph = matrixFor(all, [reference(check, head, true), ...chain], [], ["src/a.test.ts"]);
 
     expect(
-      candidates(sweep(graph, { marked: [check.id], mode: PRODUCTION }), all),
+      candidates(sweep(graph, policyOf({ marked: [check.id], mode: PRODUCTION })), all),
       "what the mark reaches is live, while a declaration only it references is counted " +
         "on its production references alone",
     ).toEqual(["head reference-counting"]);
@@ -349,14 +360,14 @@ describe("the sweep over an in-memory graph", () => {
     const all = [testFile, check, ...symbols];
     const references = [reference(testFile, head, true), reference(check, middle, true), ...chain];
     const rooted: Root[] = [{ id: testFile.id, kind: "test-runner", source: "**/*.test.ts" }];
-    const graph = graphOf(all, references, rooted, ["src/a.test.ts"]);
+    const graph = matrixFor(all, references, rooted, ["src/a.test.ts"]);
 
     expect(
-      candidates(sweep(graph, { marked: [], mode: PLAIN }), all),
+      candidates(sweep(graph, policyOf({ marked: [], mode: PLAIN })), all),
       "the test file's top level reaches the chain, and nothing references the test",
     ).toEqual(["check reference-counting"]);
     expect(
-      candidates(sweep(graph, { marked: [], mode: PRODUCTION }), all),
+      candidates(sweep(graph, policyOf({ marked: [], mode: PRODUCTION })), all),
       "a production sweep counts none of the test file's references, under either relation",
     ).toEqual([
       "check reference-counting",
@@ -371,14 +382,14 @@ describe("the relations an in-memory graph holds live", () => {
   it("hold no entry for a declaration neither relation holds live", () => {
     const source = file();
     const [head, middle, tail] = [declared("head", 2), declared("middle", 3), declared("tail", 4)];
-    const graph = graphOf(
+    const graph = matrixFor(
       [source, head, middle, tail],
       [reference(head, middle), reference(middle, tail)],
       [],
       [],
     );
 
-    expect([...sweep(graph, { marked: [], mode: PLAIN }).liveUnder.keys()]).toEqual([
+    expect([...sweep(graph, policyOf({ marked: [], mode: PLAIN })).liveUnder.keys()]).toEqual([
       middle.id,
       tail.id,
     ]);
@@ -411,21 +422,18 @@ describe("what a run counting test references reaches", () => {
       suite,
       inner,
     ];
-    const graph = graphOf(
+    const graph = matrixFor(
       all,
       [reference(testFile, usedByTopLevel, true), reference(check, usedByCheck, true)],
       [],
       ["src/a.test.ts"],
     );
 
-    const reached = reachedWithTheTests(graph, []);
+    const reached = reachedWithTheTests(graph.union, []);
 
-    expect(all.filter((_symbol, at) => reached[at] === true).map((one) => one.name)).toEqual([
-      "usedByTopLevel",
-      "usedByCheck",
-      "src/a.test.ts",
-      "check",
-    ]);
+    expect(
+      graph.union.symbols.filter((_symbol, at) => reached[at] === true).map((one) => one.name),
+    ).toEqual(["src/a.test.ts", "check", "usedByTopLevel", "usedByCheck"]);
   });
 });
 
@@ -459,7 +467,7 @@ describe("the tests of dead code", () => {
       supportOfDead,
       shared,
     ];
-    const graph = graphOf(
+    const graph = matrixFor(
       all,
       [
         reference(onlyDead, dead, true),
@@ -478,7 +486,7 @@ describe("the tests of dead code", () => {
       ["src/support.ts"],
     );
 
-    const admitted = sweep(graph, { marked: [], mode: PRODUCTION }).candidates.filter(
+    const admitted = sweep(graph, policyOf({ marked: [], mode: PRODUCTION })).candidates.filter(
       (candidate) => candidate.testOfDeadCode,
     );
 

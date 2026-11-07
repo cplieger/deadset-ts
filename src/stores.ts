@@ -12,7 +12,8 @@ import {
 import { nodeKey, type Inventory } from "./inventory.ts";
 import type { Reference } from "./references.ts";
 import type { ProjectView } from "./session.ts";
-import type { Exemption, Mode } from "./sweep.ts";
+import type { Exemption } from "./exempt.ts";
+import type { Mode } from "./tests/file-class.ts";
 import { classedAsTest, madeByTestCode, withheldBy } from "./tests/file-class.ts";
 
 /** One run's stores and reads, over every configuration. */

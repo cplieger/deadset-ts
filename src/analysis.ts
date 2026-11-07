@@ -17,6 +17,7 @@ import {
 } from "./roots/configured-declarations.ts";
 import { decorator } from "./decorator.ts";
 import { configurationNeeds, dependenciesOf, projectNeeds } from "./dependencies.ts";
+import { carriersOf, NO_CARRIERS, type Carriers } from "./exposure.ts";
 import { deprecatedDeclarations, type Deprecation } from "./deprecation.ts";
 import { moduleIdentity, type LoadedConsumer, type NotBuilt } from "./load/discover.ts";
 import type { LibraryUnfound } from "./load/classify.ts";
@@ -35,9 +36,7 @@ import {
   heldRecords,
   disabledClasses,
   exemptionsOf,
-  holdingWhile,
   isUnansweredRecord,
-  retainedIn,
   writtenRecords,
   type Detector,
   type Detectors,
@@ -57,15 +56,7 @@ import { intraFunctionFacts, projectParts, type ProjectParts } from "./intra-fun
 import { type Inventory, type InventorySymbol } from "./inventory.ts";
 import { inventory } from "./inventory/enumerate.ts";
 import { readManifest, type ManifestEntry } from "./roots/manifest.ts";
-import {
-  liveFilesAt,
-  matrixOf,
-  referenceKey,
-  sweepMatrix,
-  type Configured,
-  type Matrix,
-  type SweepResult,
-} from "./matrix.ts";
+import { matrixOf, referenceKey, type Configured, type Matrix } from "./liveness/matrix.ts";
 import {
   ancestors,
   dirnamePath,
@@ -108,7 +99,9 @@ import { accessorsOf, storesOf } from "./stores.ts";
 import { isPartKind, type SuppressionRecord, type Suppressions, type Verdict } from "./suppress.ts";
 import { bindRows, readBaseline, readIgnoreFile, type Recorded } from "./suppress-file.ts";
 import { inlineDirectives, inlineSuppressions, type InlineDirective } from "./suppress-inline.ts";
-import type { Exemption, Mode, SweepInput } from "./sweep.ts";
+import { sweep, type Sweep, type SweepPolicy } from "./liveness/sweep.ts";
+import type { Exemption } from "./exempt.ts";
+import type { Mode } from "./tests/file-class.ts";
 import { readTemplates, templateField } from "./template-field.ts";
 import { bytewise } from "./text/compare.ts";
 import { holdsManifest, manifestAt } from "./fs/manifest.ts";
@@ -434,27 +427,13 @@ export function productionMode(config: PartialConfig): Mode {
 /** The run's sweep, beside the matrix it judged. */
 export interface RunSweep {
   readonly matrix: Matrix;
-  readonly sweep: SweepResult;
-  /** The exemption records that hold under the sweep. */
-  readonly exempt: readonly Exemption[];
-  /**
-   * The exemption records that held back a declaration some configuration of the run
-   * would otherwise judge dead, in the declarations' site order.
-   */
-  readonly retained: readonly Exemption[];
+  readonly sweep: Sweep;
   /** The derived configurations the run dropped. */
   readonly notBuilt: readonly NotBuilt[];
   /** Every question the checker could not answer, each once. */
   readonly unanswered: readonly UnansweredQuestion[];
-  /**
-   * Every declaration an unanswered question could have kept live, and every one only
-   * such a declaration keeps live. The run reports none of them.
-   */
-  readonly heldByUnanswered: readonly string[];
   /** The lines of the units type errors skipped, on which the run reports nothing. */
   readonly skipped: readonly SkippedUnit[];
-  /** The component files the run read, by path below the target root, each once. */
-  readonly componentFiles: readonly string[];
 }
 
 /** One `<script` start tag of a component file the run read no block for. */
@@ -527,6 +506,8 @@ interface ReadRun<Extra> {
   readonly projects: readonly SweptProject<Extra>[];
   /** Every declared consumer, each loaded, in the scope's order. */
   readonly consumers: readonly LoadedConsumer[];
+  /** Whether the scope declares a consumer, loaded or not. */
+  readonly declaresConsumers: boolean;
   /** The derived configurations the run dropped. */
   readonly notBuilt: readonly NotBuilt[];
   /** Every question the checker could not answer, each once. */
@@ -826,6 +807,7 @@ function readRun<Extra>(
     ],
     projects,
     consumers: read.plan.discovery.consumers,
+    declaresConsumers: scope.consumers.length > 0,
     notBuilt: read.classified.notBuilt,
     unanswered: read.unanswered,
     componentsUnread: read.plan.workspace?.componentsUnread ?? [],
@@ -838,33 +820,6 @@ function readRun<Extra>(
     nestedDirs: read.plan.packages.nested,
     workflows: read.result.workflows,
   };
-}
-
-/**
- * The run swept under one set of marks with the records that hold. A record a component
- * file's markup holds counts only while the file is live, and what it holds may be what
- * keeps the file live, so each file's markup joins only once a sweep without it finds the
- * file live, until a sweep finds no further file live.
- */
-function holdingSweep<Extra>(
-  read: ReadRun<Extra>,
-  input: Pick<SweepInput, "marked" | "mode">,
-): { readonly swept: SweepInput; readonly result: SweepResult } {
-  const paths = new Set(read.exempt.flatMap((record) => record.whileLive ?? []));
-  let live = new Set<string>();
-  for (;;) {
-    const swept: SweepInput = {
-      ...input,
-      exempt: holdingWhile(read.exempt, live),
-      unanswered: read.unansweredHeld,
-    };
-    const result = sweepMatrix(read.matrix, swept);
-    const next = new Set(liveFilesAt(read.matrix, result, paths).map((one) => one.position.path));
-    if (next.size === live.size) {
-      return { swept, result };
-    }
-    live = next;
-  }
 }
 
 /**
@@ -939,62 +894,27 @@ function writtenOnly<Extra>(read: ReadRun<Extra>, mode: Mode): ReadonlySet<strin
   return new Set([...written].filter((id) => !readSome.has(id)));
 }
 
-/**
- * The sweep of a run read once, under one set of marks. Where a question went unanswered,
- * the run is swept once more without what that question could have kept live and without
- * the references that stood in for its answer, and every declaration that sweep judges
- * dead and this one judges live, or dead by another rule, is held by the gap too, as is
- * every declaration that makes such a reference.
- */
+/** The sweep of a run read once, under one set of marks. */
 function sweptOf<Extra>(
   read: ReadRun<Extra>,
-  input: Pick<SweepInput, "marked" | "mode">,
+  input: Pick<SweepPolicy, "marked" | "mode">,
 ): RunSweep {
-  const { swept, result } = holdingSweep(read, input);
-  const exempt = swept.exempt ?? [];
-  const held = new Set(read.unansweredHeld);
-  if (held.size > 0) {
-    // What a declaration reads where the checker did not answer is unknown, so a rule
-    // over what it reads, the test of dead code among them, cannot judge it.
-    for (const { configured } of read.projects) {
-      for (const reference of configured.references) {
-        if (reference.guessed === true) {
-          held.add(reference.from);
-        }
-      }
-    }
-    const dead = new Map(result.candidates.map((candidate) => [candidate.id, candidate]));
-    const answered = matrixOf(
-      read.projects.map(({ configured }) => ({
-        ...configured,
-        references: configured.references.filter((one) => one.guessed !== true),
-      })),
-    );
-    const bare: SweepInput = {
-      ...swept,
-      exempt: exempt.filter((record) => !isUnansweredRecord(record)),
-      unanswered: [],
-    };
-    for (const candidate of sweepMatrix(answered, bare).candidates) {
-      const kept = dead.get(candidate.id);
-      if (
-        kept?.testOfDeadCode !== candidate.testOfDeadCode ||
-        kept.relation !== candidate.relation
-      ) {
-        held.add(candidate.id);
-      }
-    }
-  }
+  const componentFiles = [...new Set(read.projects.flatMap((one) => one.componentFiles))].sort(
+    bytewise,
+  );
   return {
     matrix: read.matrix,
-    sweep: result,
-    exempt,
-    retained: retainedIn(read.matrix, swept, writtenOnly(read, input.mode)),
+    sweep: sweep(read.matrix, {
+      ...input,
+      exempt: read.exempt,
+      unanswered: read.unansweredHeld,
+      componentFiles,
+      unseenCallers: !read.declaresConsumers,
+      writeOnly: writtenOnly(read, input.mode),
+    }),
     notBuilt: read.notBuilt,
     unanswered: read.unanswered,
-    heldByUnanswered: [...held],
     skipped: read.projects.flatMap((one) => one.skipped),
-    componentFiles: [...new Set(read.projects.flatMap((one) => one.componentFiles))].sort(bytewise),
   };
 }
 
@@ -1011,7 +931,7 @@ export function runSweep(
   host: Host,
   scope: Scope,
   config: ResolvedConfig,
-  input: Pick<SweepInput, "marked" | "mode">,
+  input: Pick<SweepPolicy, "marked" | "mode">,
   detectors: Detectors = DETECTORS,
 ): RunSweep {
   return sweptOf(
@@ -1035,6 +955,7 @@ interface EmitterExtra {
   readonly declarationsNamed: readonly boolean[];
   readonly parts: ProjectParts;
   readonly unseenLoads: readonly UnseenLoad[];
+  readonly carriers: Carriers;
 }
 
 /** The project's own files below the target root that are no test file. */
@@ -1090,6 +1011,8 @@ export function readEmitterRun(
       declarationsNamed: declarationsNamed(project, read.held, configuredDeclarations(config)),
       parts: projectParts(project, read.held, references, targetRoot),
       unseenLoads,
+      // Only a closed world reports an unnecessary export, which is all the carriers decide.
+      carriers: config.consumers.complete ? carriersOf(project, read.held) : NO_CARRIERS,
     }),
   );
   // Whether a declaration carries the marker decides its code, so one whose answer went
@@ -1156,7 +1079,7 @@ export function emitterInputOver(
   scope: Scope,
   config: ResolvedConfig,
   read: ReadRun<EmitterExtra>,
-  input: Pick<SweepInput, "marked" | "mode">,
+  input: Pick<SweepPolicy, "marked" | "mode">,
   selfCheck: SelfCheckFacts,
 ): EmitterInput {
   const targetRoot = scope.target.path;
@@ -1173,7 +1096,7 @@ export function emitterInputOver(
         support: new Set(one.configured.supportFiles ?? []),
         accessors: one.extra.accessors,
       })),
-      swept.exempt,
+      swept.sweep.exempt,
       input.mode,
     ),
     dependencies: dependenciesOf(
@@ -1203,12 +1126,23 @@ export function emitterInputOver(
       edges: readEdgeSides(host, targetRoot),
       filledOutside: new Set(projects.flatMap((one) => one.filledOutside)),
       possiblyLoaded: new Set(projects.flatMap((one) => one.possiblyLoaded)),
+      carriers: {
+        named: new Map(
+          [
+            ...Map.groupBy(
+              projects.flatMap((one) => [...one.extra.carriers.named]),
+              ([id]) => id,
+            ),
+          ].map(([id, entries]) => [id, [...new Set(entries.flatMap(([, named]) => named))]]),
+        ),
+        unread: new Set(projects.flatMap((one) => [...one.extra.carriers.unread])),
+      },
     },
     selfCheck,
     intraFunction: intraFunctionFacts(
       projects.map((one) => one.extra.parts),
       projects.flatMap((one) => one.configured.references),
-      new Set([...swept.exempt.map((one) => one.id), ...swept.heldByUnanswered]),
+      new Set([...swept.sweep.exempt.map((one) => one.id), ...swept.sweep.held]),
     ),
   };
 }
@@ -1448,7 +1382,7 @@ export function runAnalysis(
  * declarations of its own the run holds for them.
  */
 export function unansweredCounts(analysis: RunAnalysis): readonly UnansweredCount[] {
-  const held = new Set(analysis.swept.heldByUnanswered);
+  const held = new Set(analysis.swept.sweep.held);
   return analysis.run.projects.flatMap((project) => {
     const questions =
       analysis.run.unanswered.filter((one) => one.configFile === project.configFile).length +

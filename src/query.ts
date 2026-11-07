@@ -207,8 +207,22 @@ export interface Queries {
   constraintOf(type: Type): Answer<Type | undefined>;
   /** The object and the index of an indexed-access type; none for another type. */
   indexedAccessOf(type: Type): Answer<{ readonly object: Type; readonly index: Type } | undefined>;
+  /**
+   * The types one type is spelled from besides its constituents, type arguments and members:
+   * a type parameter's constraint and default, a conditional's check, extends, true
+   * and false types, a mapped type's constraint, name and template, an indexed access's
+   * object and index, the operand of `keyof` or of a string mapping, a template literal's
+   * spans and a substitution's base and constraint. None for another type.
+   */
+  partsOf(type: Type): Answer<readonly Type[]>;
+  /** The type parameters of a signature, its `this` parameter's type and its predicate's type. */
+  signaturePartsOf(signature: Signature): Answer<readonly Type[]>;
   /** The symbol a type is declared by. */
   symbolOfType(type: Type): Answer<TSSymbol | undefined>;
+  /** The type alias a type was instantiated from, where it was. */
+  aliasSymbolOf(type: Type): Answer<TSSymbol | undefined>;
+  /** The type arguments the alias a type was instantiated from was given. */
+  aliasArgumentsOf(type: Type): Answer<readonly Type[]>;
   signaturesOf(type: Type, kind: SignatureKind): Answer<readonly Signature[]>;
   resolvedSignature(node: Node): Answer<Signature | undefined>;
   /** The signature each call-like node resolves to. */
@@ -221,6 +235,37 @@ export interface Queries {
   signatureOf(declaration: Node): Answer<Signature | undefined>;
   returnTypeOf(signature: Signature): Answer<Type | undefined>;
   typeToString(type: Type): Answer<string>;
+}
+
+/** How to read the types one type is spelled from, as {@link Queries.partsOf} names them. */
+function partQuestion(type: Type): (() => readonly (Type | undefined)[]) | undefined {
+  if (type.isTypeParameter()) {
+    return () => [type.getConstraint(), type.getDefault()];
+  }
+  if (type.isConditionalType()) {
+    return () => [
+      type.getCheckType(),
+      type.getExtendsType(),
+      type.getTrueType(),
+      type.getFalseType(),
+    ];
+  }
+  if (type.isMappedType()) {
+    return () => [type.getConstraintType(), type.getNameType(), type.getTemplateType()];
+  }
+  if (type.isIndexedAccessType()) {
+    return () => [type.getObjectType(), type.getIndexType()];
+  }
+  if (type.isIndexType() || type.isStringMappingType()) {
+    return () => [type.getTarget()];
+  }
+  if (type.isTemplateLiteralType()) {
+    return () => type.getTypes();
+  }
+  if (type.isSubstitutionType()) {
+    return () => [type.getBaseType(), type.getConstraint()];
+  }
+  return undefined;
 }
 
 /**
@@ -528,11 +573,47 @@ export function queriesOf(
             () => ({ object: type.getObjectType(), index: type.getIndexType() }),
           )
         : undefined,
+    partsOf: (type) => {
+      const parts = partQuestion(type);
+      return parts === undefined
+        ? []
+        : one(
+            "getParts",
+            () => typeLocation(type),
+            () => parts().filter((part) => part !== undefined),
+          );
+    },
+    signaturePartsOf: (signature) =>
+      one(
+        "getSignatureParts",
+        () => `signature ${String(signature.id)}`,
+        () => {
+          const self =
+            signature.thisParameter === undefined ? undefined : signature.getThisParameter();
+          return [
+            ...((signature.typeParameters ?? []).length === 0 ? [] : signature.getTypeParameters()),
+            self === undefined ? undefined : checker.getTypeOfSymbol(self),
+            checker.getTypePredicateOfSignature(signature)?.type,
+          ].filter((part) => part !== undefined);
+        },
+      ),
     symbolOfType: (type) =>
       one(
         "getSymbol",
         () => typeLocation(type),
         () => type.getSymbol(),
+      ),
+    aliasSymbolOf: (type) =>
+      one(
+        "getAliasSymbol",
+        () => typeLocation(type),
+        () => type.getAliasSymbol(),
+      ),
+    aliasArgumentsOf: (type) =>
+      one(
+        "getAliasTypeArguments",
+        () => typeLocation(type),
+        () => type.getAliasTypeArguments(),
       ),
     signaturesOf: (type, kind) =>
       one(

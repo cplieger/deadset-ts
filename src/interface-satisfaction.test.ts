@@ -67,7 +67,7 @@ function sweepWritten(files: Readonly<Record<string, string>>): Swept {
     );
     const names = retainedNames(swept);
     return {
-      retained: swept.retained.flatMap((held, index) =>
+      retained: swept.sweep.retained.flatMap((held, index) =>
         held.class === "interface-satisfaction"
           ? [`${names[index] ?? held.id} ${held.detail} ${String(held.site.line)}`]
           : [],
@@ -81,7 +81,7 @@ function sweepWritten(files: Readonly<Record<string, string>>): Swept {
 
 /** The display name of each retained record's declaration. */
 function retainedNames(swept: RunSweep): string[] {
-  return swept.retained.map(
+  return swept.sweep.retained.map(
     (held) => swept.matrix.union.symbols.find((symbol) => symbol.id === held.id)?.name ?? held.id,
   );
 }
@@ -167,7 +167,7 @@ describe("interface satisfaction", () => {
   });
 
   it("records each member at the place the value flows, the clause for a declared one", () => {
-    const sites = sweepFixture().retained.map(
+    const sites = sweepFixture().sweep.retained.map(
       (held) => `${held.detail} ${held.site.path}:${String(held.site.line)}`,
     );
 

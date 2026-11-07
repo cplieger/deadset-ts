@@ -32,7 +32,7 @@ function nameOf(swept: RunSweep, id: string): string {
 
 /** Each record of the class, with its declaration, site and detail. */
 function injected(swept: RunSweep): string[] {
-  return swept.retained
+  return swept.sweep.retained
     .filter((held) => held.class === "injection-container")
     .map(
       (held) =>
@@ -212,6 +212,23 @@ describe("the members a container populates", () => {
         [...REGISTRATIONS, { module: "@example/container", name: "Missing" }],
       ),
     ).toEqual(["Service.a src/main.ts:5:22 registered by Container.bind"]);
+  });
+
+  it("are read from a class a call hands to a wrapper whose parameter reaches a registration", () => {
+    expect(
+      injectedIn({
+        "src/main.ts": lines(
+          'import { Container, inject } from "@example/container";',
+          "export class Service {",
+          '  @inject("a") a: unknown;',
+          "}",
+          "function provide(target: unknown): void {",
+          "  new Container().bind(target);",
+          "}",
+          "provide(Service);",
+        ),
+      }),
+    ).toEqual(["Service.a src/main.ts:6:24 registered by Container.bind"]);
   });
 });
 

@@ -197,7 +197,7 @@ describe("the uses a contextual type makes", () => {
           'import { seed } from "./seed.ts";\n\ninterface Row {\n  label: string;\n  note: string;\n}\nconst row: Row = { label: "a", note: seed };\nconsole.log(row.label);\n',
       }),
     ).toEqual([
-      "DS1301 Row.note 5: type member Row.note is written once and never read, and deleting it with its writes deletes import seed too",
+      "DS1301 Row.note 5: type member Row.note is written once and never read, and deleting it with its writes deletes import seed and variable seed too",
     ]);
   });
 });

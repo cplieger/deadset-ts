@@ -1,6 +1,7 @@
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
+import { componentFilesOf } from "../__test-helpers__/sweep.ts";
 import type { Snapshot } from "@typescript/native/sync";
 import { nodeHost } from "../bin/node-host.ts";
 import { TSCONFIG, writeProject } from "../__test-helpers__/projects.ts";
@@ -551,7 +552,7 @@ describe("the gap an unanswered question leaves", () => {
       mode: PRODUCTION,
     });
 
-    expect(refsOf(swept, swept.heldByUnanswered)).toEqual([
+    expect(refsOf(swept, swept.sweep.held)).toEqual([
       "ts://./src/work.ts#helper",
       "ts://./src/work.ts#zed",
       "ts://./src/work.ts#run",
@@ -563,7 +564,11 @@ describe("the gap an unanswered question leaves", () => {
         swept,
         swept.sweep.candidates.map((one) => one.id),
       ),
-    ).toEqual(["ts://./src/work.ts#deadCaller", "ts://./src/work.ts#unused"]);
+      "a held declaration is no candidate, so it joins no component",
+    ).toEqual(["ts://./src/work.ts#unused"]);
+    expect(swept.sweep.components.map((one) => refsOf(swept, one.members))).toEqual([
+      ["ts://./src/work.ts#unused"],
+    ]);
   });
 
   it("holds every declaration whose deprecation marker went unread", () => {
@@ -644,7 +649,7 @@ describe("the gap a detector that could not finish leaves", () => {
       detectors,
     );
 
-    expect(refsOf(swept, swept.heldByUnanswered)).toEqual([
+    expect(refsOf(swept, swept.sweep.held)).toEqual([
       "ts://./src/held.ts#Widget.render",
       "ts://./src/held.ts#paint",
     ]);
@@ -654,9 +659,12 @@ describe("the gap a detector that could not finish leaves", () => {
         swept.sweep.candidates.map((one) => one.id),
       ),
     ).toEqual(["ts://./src/held.ts#Widget"]);
-    expect(swept.retained.map((one) => `${refsOf(swept, [one.id]).join("")} ${one.class}`)).toEqual(
-      ["ts://./src/held.ts#kept decorator", "ts://./src/held.ts#Widget.render framework-lifecycle"],
-    );
+    expect(
+      swept.sweep.retained.map((one) => `${refsOf(swept, [one.id]).join("")} ${one.class}`),
+    ).toEqual([
+      "ts://./src/held.ts#kept decorator",
+      "ts://./src/held.ts#Widget.render framework-lifecycle",
+    ]);
   });
 });
 
@@ -705,7 +713,7 @@ describe("the records a run retains", () => {
     expect(
       refsOf(
         swept,
-        swept.retained.map((one) => one.id),
+        swept.sweep.retained.map((one) => one.id),
       ),
     ).toEqual([
       "ts://./src/settings.ts#Settings.level",
@@ -1069,7 +1077,7 @@ describe("the consumers of a run", () => {
       { marked: [], mode: PRODUCTION },
     );
 
-    expect(refsOf(swept, swept.heldByUnanswered)).toContain("ts://@example/target/lib.ts#used");
+    expect(refsOf(swept, swept.sweep.held)).toContain("ts://@example/target/lib.ts#used");
     expect(
       refsOf(
         swept,
@@ -1108,7 +1116,7 @@ describe("the consumers of a run", () => {
     expect(
       refsOf(
         swept,
-        swept.retained.map((one) => one.id),
+        swept.sweep.retained.map((one) => one.id),
       ),
     ).toEqual([]);
     expect(
@@ -1195,7 +1203,10 @@ describe("the component files of a run", () => {
       PRODUCTION,
     );
 
-    expect(analysis.swept.componentFiles).toEqual(["src/a/Alpha.vue", "src/z/Zed.vue"]);
+    expect(componentFilesOf(analysis.configured.flatMap((one) => one.symbols))).toEqual([
+      "src/a/Alpha.vue",
+      "src/z/Zed.vue",
+    ]);
     expect(analysis.run.componentWarnings).toEqual([
       { path: "src/z/Zed.vue", line: 3, reason: "it is inside an element" },
     ]);
@@ -1285,7 +1296,7 @@ describe("the unanswered-question counts of a run", () => {
           { configFile: "/t/tsconfig.json", accessor: "symbolAt", location: "a.ts:9" },
         ],
       },
-      swept: { heldByUnanswered: ["a#held", "a#also", "tools#held"] },
+      swept: { sweep: { held: ["a#held", "a#also", "tools#held"] } },
       configured: [
         { configuration: "app", symbols: [symbol("a#held"), symbol("a#also"), symbol("a#free")] },
         { configuration: "tools", symbols: [symbol("tools#held")] },
@@ -1311,7 +1322,7 @@ describe("the unanswered-question counts of a run", () => {
           { configFile: "/t/tools/tsconfig.json", accessor: "typeAt", location: "b.ts:1" },
         ],
       },
-      swept: { heldByUnanswered: ["a#held", "a#also", "tools#held"] },
+      swept: { sweep: { held: ["a#held", "a#also", "tools#held"] } },
       configured: [
         { configuration: "app", symbols: [symbol("a#held"), symbol("a#also")] },
         { configuration: "tools", symbols: [symbol("tools#held"), symbol("tools#free")] },
@@ -1341,7 +1352,7 @@ describe("the unanswered-question counts of a run", () => {
         heldScripts: [],
         unanswered: [],
       },
-      swept: { heldByUnanswered: [] },
+      swept: { sweep: { held: [] } },
       configured: [],
     } as unknown as RunAnalysis;
 
@@ -1362,7 +1373,7 @@ describe("the unanswered-question counts of a run", () => {
         heldScripts: [{ dir: "/t", files: ["setup.ts"], configFile: "/t/tsconfig.json" }],
         unanswered: [],
       },
-      swept: { heldByUnanswered: ["a#setup"] },
+      swept: { sweep: { held: ["a#setup"] } },
       configured: [
         { configuration: "app", symbols: [symbol("a#setup"), symbol("a#free")] },
         { configuration: "tools", symbols: [symbol("tools#free")] },
@@ -1372,5 +1383,177 @@ describe("the unanswered-question counts of a run", () => {
     expect(unansweredCounts(analysis)).toEqual([
       { configuration: "app", questions: 1, declarations: 1 },
     ]);
+  });
+});
+
+/** The compiler options every configuration of a written two-configuration case shares. */
+const OPTIONS = {
+  strict: true,
+  target: "ESNext",
+  lib: ["ESNext"],
+  types: [],
+  module: "NodeNext",
+  moduleResolution: "nodenext",
+  noEmit: true,
+  allowImportingTsExtensions: true,
+};
+
+/** A compiler configuration over `include`, with `paths` where given. */
+function configurationOf(include: readonly string[], paths?: Record<string, string[]>): string {
+  return `${JSON.stringify({ compilerOptions: { ...OPTIONS, ...(paths === undefined ? {} : { paths }) }, include })}\n`;
+}
+
+/** The run's sweep over a written tree under a repository document, production mode. */
+function sweptOver(
+  files: Readonly<Record<string, string>>,
+  repository: unknown,
+  detectors: Detectors = DETECTORS,
+): RunSweep {
+  const root = written(files);
+  const host = nodeHost();
+  return runSweep(
+    openEngine({ collectTiming: false, components: { extensions: [".vue"], host } }),
+    host,
+    scopeForDir(host, root),
+    configured(repository).config,
+    { marked: [], mode: PRODUCTION },
+    detectors,
+  );
+}
+
+/** The candidates of one sweep by reference. */
+function candidateRefs(swept: RunSweep): readonly string[] {
+  return refsOf(
+    swept,
+    swept.sweep.candidates.map((one) => one.id),
+  );
+}
+
+describe("the run's configurations swept as one graph", () => {
+  const two = (a: string, b: string): unknown => ({
+    target: { kind: "application" },
+    ts: { entry_files: ["src/a-entry.ts"] },
+    analysis: {
+      configurations: [
+        { id: "a", project: a },
+        { id: "b", project: b },
+      ],
+    },
+  });
+
+  it("keeps what a file's top level names where one configuration compiles the reference and another runs the file", () => {
+    const swept = sweptOver(
+      {
+        "package.json": '{ "name": "@example/app", "type": "module" }\n',
+        "tsconfig.a.json": configurationOf(["src/a-entry.ts", "src/main.ts"], {
+          "@impl": ["./src/impl-a.ts"],
+        }),
+        "tsconfig.b.json": configurationOf(["src/main.ts"], { "@impl": ["./src/impl-b.ts"] }),
+        "src/a-entry.ts": 'import "./main.ts";\n',
+        "src/main.ts": 'import { run } from "@impl";\n\nrun();\n',
+        "src/impl-a.ts": "export function run(): void {}\n",
+        "src/impl-b.ts": "export function run(): void {}\n",
+      },
+      two("tsconfig.a.json", "tsconfig.b.json"),
+    );
+
+    expect(candidateRefs(swept)).toEqual([]);
+    const impl = swept.matrix.union.symbols.find(
+      (symbol) => symbol.position.path === "src/impl-b.ts" && symbol.name === "run",
+    );
+    expect(swept.sweep.liveUnder.get(impl?.id ?? "")).toEqual([
+      "reference-counting",
+      "reachability",
+    ]);
+  });
+
+  it("holds live a published declaration one configuration's root reaches and another's code references", () => {
+    const swept = sweptOver(
+      {
+        "package.json":
+          '{ "name": "@example/lib", "type": "module", "exports": { ".": "./src/index.ts" } }\n',
+        "tsconfig.lib.json": configurationOf(["src/**/*.ts"]),
+        "tsconfig.scripts.json": configurationOf(["scripts/**/*.ts"]),
+        "src/index.ts": 'export * from "./lib.ts";\n',
+        "src/lib.ts": "export function shared(): number {\n  return 1;\n}\n",
+        "scripts/run.ts":
+          'import { shared } from "../src/lib.ts";\n\nexport function unusedScript(): number {\n  return shared();\n}\n',
+      },
+      {
+        target: { kind: "library" },
+        analysis: {
+          configurations: [
+            { id: "lib", project: "tsconfig.lib.json" },
+            { id: "scripts", project: "tsconfig.scripts.json" },
+          ],
+        },
+      },
+    );
+
+    expect(candidateRefs(swept)).toEqual(["ts://@example/lib/scripts/run.ts#unusedScript"]);
+  });
+
+  it("retains by a record only what the run without records judges dead", () => {
+    const swept = sweptOver(
+      {
+        "package.json": '{ "name": "@example/app", "type": "module" }\n',
+        "tsconfig.a.json": configurationOf(["src/a-entry.ts", "src/lib.ts"]),
+        "tsconfig.b.json": configurationOf(["src/lib.ts"]),
+        "src/a-entry.ts": 'import { kept } from "./lib.ts";\n\nconsole.log(kept());\n',
+        "src/lib.ts": "export function kept(): number {\n  return 1;\n}\n",
+      },
+      two("tsconfig.a.json", "tsconfig.b.json"),
+      new Map<TSExemptionClass, Detector>([["decorator", holding("named by @register", "kept")]]),
+    );
+
+    expect(swept.sweep.retained).toEqual([]);
+  });
+});
+
+describe("a test of a declaration programs outside the analysis may call", () => {
+  it("is no test of dead code, so it stays out of the declaration's component", () => {
+    const swept = sweptOver(
+      {
+        "package.json":
+          '{ "name": "@example/lib", "type": "module", "exports": { ".": "./src/index.ts" } }\n',
+        "src/index.ts": "export function api(): number {\n  return 1;\n}\n",
+        "src/index.test.ts":
+          'import { api } from "./index.ts";\n\nexport function testApi(): boolean {\n  return api() === 1;\n}\n',
+      },
+      { target: { kind: "library" } },
+    );
+
+    expect(swept.sweep.candidates.filter((one) => one.testOfDeadCode)).toEqual([]);
+    expect(swept.sweep.components.map((one) => refsOf(swept, one.members))).toEqual([
+      ["ts://@example/lib/src/index.ts#api"],
+    ]);
+  });
+});
+
+describe("the top-level bindings of a live component file", () => {
+  it("are live, so what only they reference is live and none is a candidate", () => {
+    const swept = sweptOver(
+      {
+        "package.json": '{ "name": "@example/app", "type": "module" }\n',
+        "tsconfig.json": configurationOf(["src/**/*.ts", "src/**/*.vue"]),
+        "src/main.ts": 'import View from "./View.vue";\n\nconsole.log(View);\n',
+        "src/View.vue": [
+          '<script lang="ts">',
+          'import { deep } from "./deep.ts";',
+          "function helper(): number {",
+          "  return deep();",
+          "}",
+          "</script>",
+          "<template><p>{{ 1 }}</p></template>",
+          "",
+        ].join("\n"),
+        "src/deep.ts": "export function deep(): number {\n  return 1;\n}\n",
+      },
+      APPLICATION,
+    );
+
+    expect(componentFilesOf(swept.matrix.union.symbols)).toEqual(["src/View.vue"]);
+    expect(candidateRefs(swept)).toEqual([]);
+    expect(swept.sweep.components).toEqual([]);
   });
 });

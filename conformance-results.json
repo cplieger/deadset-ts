@@ -2,7 +2,7 @@
   "corpus_version": "6.0.0",
   "product": { "name": "deadset-ts", "version": "0.1.0", "language": "ts" },
   "result": "pass",
-  "totals": { "fixtures": 363, "pass": 350, "gap": 0, "fail": 0, "pending": 13 },
+  "totals": { "fixtures": 365, "pass": 352, "gap": 0, "fail": 0, "pending": 13 },
   "fixtures": [
     {
       "fixture": "abstract-member-through-this",
@@ -2099,6 +2099,150 @@
         { "symbol": "WATCHED", "result": "pass", "actual": { "report": "none" } },
         { "symbol": "probeAttr", "result": "pass", "actual": { "report": "none" } },
         { "symbol": "stateOf", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "custom-element-registered-through-a-wrapper",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "ByAlias.connectedCallback",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        },
+        {
+          "symbol": "ByAnonymous.connectedCallback",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        },
+        {
+          "symbol": "ByArray.connectedCallback",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        },
+        {
+          "symbol": "ByArrayBranch.connectedCallback",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        },
+        {
+          "symbol": "ByArrayCopy.connectedCallback",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        },
+        {
+          "symbol": "ByArrow.connectedCallback",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        },
+        {
+          "symbol": "ByBag.connectedCallback",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        },
+        {
+          "symbol": "ByCondA.connectedCallback",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        },
+        {
+          "symbol": "ByCondB.connectedCallback",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        },
+        {
+          "symbol": "ByDestructure.connectedCallback",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        },
+        {
+          "symbol": "ByDirectCond.connectedCallback",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        },
+        {
+          "symbol": "ByExpression.connectedCallback",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        },
+        {
+          "symbol": "ByField.connectedCallback",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        },
+        {
+          "symbol": "ByFunction.connectedCallback",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        },
+        {
+          "symbol": "ByLater.connectedCallback",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        },
+        {
+          "symbol": "ByMethod.connectedCallback",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        },
+        {
+          "symbol": "ByNullish.connectedCallback",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        },
+        {
+          "symbol": "ByObjectBranch.connectedCallback",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        },
+        {
+          "symbol": "ByParam.connectedCallback",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        },
+        {
+          "symbol": "ByPropCopy.connectedCallback",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        },
+        {
+          "symbol": "ByProperty.connectedCallback",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        },
+        {
+          "symbol": "ByRest.connectedCallback",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        },
+        {
+          "symbol": "ByReturned.connectedCallback",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        },
+        {
+          "symbol": "ByThis.connectedCallback",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        },
+        {
+          "symbol": "ByTwoWrappers.connectedCallback",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        },
+        {
+          "symbol": "Described.connectedCallback",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "method",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
       ],
       "unexpected": []
     },
@@ -5224,6 +5368,64 @@
           "suppression": { "suppressed": true, "stale": false }
         },
         { "symbol": "used", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "narrowing-through-a-published-declaration",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "Asserted", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Badge", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Base", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Bound", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Bucket", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Card", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Config", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Contract", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Elem", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Fallback", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Held", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Hint", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Id", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Indexed", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Inner",
+          "result": "pass",
+          "actual": {
+            "report": "DS1501",
+            "symbol_kind": "class",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "details": { "narrower_visibility": "package" }
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "Job", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Limit", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Local",
+          "result": "pass",
+          "actual": {
+            "report": "DS1501",
+            "symbol_kind": "class",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "details": { "narrower_visibility": "package" }
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "Made", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Me", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "No", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Note", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Pred", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Queue", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Request", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Shape", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Tag", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Template", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Yes", "result": "pass", "actual": { "report": "none" } }
       ],
       "unexpected": []
     },

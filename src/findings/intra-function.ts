@@ -3,7 +3,7 @@ import type { Finding } from "../finding.ts";
 import { KINDS } from "../kinds.ts";
 import { parameterRef } from "../ref.ts";
 import { type PartFact } from "../intra-function-parts.ts";
-import { reachedWithTheTests } from "../sweep.ts";
+import { reachedWithTheTests } from "../liveness/sweep.ts";
 import type { Emitter, EmitterInput } from "./emitter.ts";
 
 /** A list of rules as a sentence names them. */
@@ -109,8 +109,8 @@ export const intraFunction: Emitter = (input) => {
   const union = input.swept.matrix.union;
   const byId = new Map(union.symbols.map((symbol) => [symbol.id, symbol]));
   const reached = reachedWithTheTests(union, [
-    ...input.swept.exempt.map((record) => record.id),
-    ...input.swept.heldByUnanswered,
+    ...input.swept.sweep.exempt.map((record) => record.id),
+    ...input.swept.sweep.held,
   ]);
   const testsOfDeadCode = new Set(
     input.swept.sweep.candidates.filter((one) => one.testOfDeadCode).map((one) => one.id),

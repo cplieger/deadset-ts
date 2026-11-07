@@ -286,7 +286,7 @@ describe("a question the checker does not answer", () => {
         locations.length === 1 &&
         locations[0]?.endsWith(at) === true,
     );
-    const held = new Set(analysis.swept.heldByUnanswered);
+    const held = new Set(analysis.swept.sweep.held);
     expect(
       analysis.configured
         .flatMap((one) => one.symbols)

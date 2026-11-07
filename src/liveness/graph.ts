@@ -1,14 +1,14 @@
 /**
- * One project's declarations, the references between them and the roots that seed
- * reachability, indexed for the sweep. The graph reads no file and asks the compiler
- * nothing, so a sweep over it is a function of the values it was built from, and the
- * inventory's order is the order every set a sweep answers reads in.
+ * The run's declarations, the references every configuration makes between them and the
+ * roots that seed reachability, indexed for the sweep. The graph reads no file and asks the
+ * compiler nothing, so a sweep over it is a function of the values it was built from, and
+ * the inventory's order is the order every set a sweep answers reads in.
  */
 
-import type { InventorySymbol, SymbolKind } from "./inventory.ts";
-import type { Reference } from "./references.ts";
-import { madeByTestCode } from "./tests/file-class.ts";
-import type { Root, RootKind } from "./roots/root-set.ts";
+import type { InventorySymbol, SymbolKind } from "../inventory.ts";
+import type { Reference } from "../references.ts";
+import { madeByTestCode } from "../tests/file-class.ts";
+import type { Root, RootKind } from "../roots/root-set.ts";
 
 /** The position of a declaration the inventory does not hold. */
 export const OUTSIDE = -1;
@@ -80,7 +80,11 @@ export function namesACaller(kind: RootKind): boolean {
 /** One reference as the sweep reads it: the declaration named, and whether a test file made it. */
 export interface Edge {
   readonly to: number;
+  /** The reference's place in {@link Graph.references}. */
+  readonly reference: number;
   readonly test: boolean;
+  /** Whether only the name answered, which counts at the sweep's guessed tier alone. */
+  readonly guessed: boolean;
   /**
    * Whether the reference evaluates the module whose file it names, which reaches the
    * module's top level and none of what it exports.
@@ -105,9 +109,11 @@ export interface Counts {
 }
 
 /** One root the inventory holds, at the position of the declaration it names. */
-interface Rooted {
+export interface Rooted {
   readonly at: number;
   readonly kind: RootKind;
+  /** What names the root, as the root set spells it. */
+  readonly source: string;
 }
 
 /** The index the sweep and the component pass read. */
@@ -118,6 +124,12 @@ export interface Graph {
   readonly out: readonly (readonly Edge[])[];
   /** Per declaration, the references made to it, whoever made them. */
   readonly made: readonly Counts[];
+  /** Per declaration, those of {@link Graph.made} only a name answered. */
+  readonly guessedMade: readonly Counts[];
+  /** The references the graph was built from, in the order given. */
+  readonly references: readonly Reference[];
+  /** Per reference, the configurations that make it, in the run's order. */
+  readonly configurations: readonly (readonly string[])[];
   /** Per declaration, the position of its container, or {@link OUTSIDE} for a file. */
   readonly parent: readonly number[];
   /** Per declaration, whether a test file holds it. */
@@ -137,17 +149,44 @@ export interface Graph {
   /** Every root naming a declaration the inventory holds, in the order the root set gives them. */
   readonly rooted: readonly Rooted[];
   /**
-   * Every reference a loaded consumer or an unheld file makes to a declaration the
-   * inventory holds, in the order given. Such a file is a caller the analysis read, so the
-   * sweep holds what it names live under both relations and reaches on from there.
+   * Every reference a loaded consumer, an unheld file or a declaration no configuration
+   * judges makes to a declaration the inventory holds, in the order given. Such code is a
+   * caller the analysis read, so the sweep holds what it names live under both relations
+   * and reaches on from there.
    */
   readonly consumed: readonly Edge[];
   /** The position of the declaration one identifier names, or {@link OUTSIDE}. */
   at(id: string): number;
 }
 
+/** What the run says of a graph's references beyond the references themselves. */
+interface Sources {
+  /**
+   * The declarations a configuration holds only for their references, judged by none: each
+   * reference one makes enters as a consumer's does, since deleting what it names breaks
+   * that configuration's compile (matrix.5).
+   */
+  readonly unjudged?: ReadonlySet<string>;
+  /** Per reference, in the order given, the configurations that make it. */
+  readonly configurations?: readonly (readonly string[])[];
+}
+
+/** Adds one reference's count to the counts of the declaration it names. */
+function count(
+  counts: { production: number; test: number; consumerTest: number },
+  test: boolean,
+  consumer: boolean,
+): void {
+  if (test) {
+    counts.test += 1;
+    counts.consumerTest += consumer ? 1 : 0;
+  } else {
+    counts.production += 1;
+  }
+}
+
 /**
- * Indexes one project's inventory, references and roots. `testFiles` are the paths the
+ * Indexes the run's inventory, references and roots. `testFiles` are the paths the
  * reference pass classified as test files, so a declaration one holds is a test
  * declaration. A reference to a declaration the inventory does not hold is dropped; one
  * from such a declaration still counts toward its target, because reference counting
@@ -160,42 +199,48 @@ export function graphOf(
   testFiles: readonly string[],
   supportFiles: readonly string[] = [],
   ambient: ReadonlySet<string> = new Set(),
+  sources: Sources = {},
 ): Graph {
   const supports = new Set(supportFiles);
   const index = new Map(symbols.map((symbol, at) => [symbol.id, at]));
   const at = (id: string): number => index.get(id) ?? OUTSIDE;
   const tests = new Set(testFiles);
+  const unjudged = sources.unjudged ?? new Set<string>();
 
   const out: Edge[][] = symbols.map(() => []);
   const made = symbols.map(() => ({ production: 0, test: 0, consumerTest: 0 }));
+  const guessedMade = symbols.map(() => ({ production: 0, test: 0, consumerTest: 0 }));
   const consumed: Edge[] = [];
-  for (const reference of references) {
+  references.forEach((reference, place) => {
     const to = at(reference.to);
     if (to === OUTSIDE) {
-      continue;
+      return;
     }
     const test = madeByTestCode(reference, supports);
+    const consumer = reference.consumer !== undefined;
+    const guessed = reference.guessed === true;
     const counts = made[to];
     if (counts !== undefined) {
-      if (test) {
-        counts.test += 1;
-        counts.consumerTest += reference.consumer === undefined ? 0 : 1;
-      } else {
-        counts.production += 1;
-      }
+      count(counts, test, consumer);
+    }
+    const guesses = guessedMade[to];
+    if (guessed && guesses !== undefined) {
+      count(guesses, test, consumer);
     }
     const edge = {
       to,
+      reference: place,
       test,
+      guessed,
       evaluation: reference.use === "evaluation",
-      consumer: reference.consumer !== undefined,
+      consumer,
     };
-    if (edge.consumer || reference.unheld === true) {
+    if (consumer || reference.unheld === true || unjudged.has(reference.from)) {
       consumed.push(edge);
-      continue;
+      return;
     }
     out[at(reference.from)]?.push(edge);
-  }
+  });
 
   const parent = symbols.map((symbol) => at(symbol.parent));
   const exportsOf: number[][] = symbols.map(() => []);
@@ -210,7 +255,7 @@ export function graphOf(
   for (const root of roots) {
     const position = at(root.id);
     if (position !== OUTSIDE) {
-      rooted.push({ at: position, kind: root.kind });
+      rooted.push({ at: position, kind: root.kind, source: root.source });
     }
   }
 
@@ -218,6 +263,9 @@ export function graphOf(
     symbols,
     out,
     made,
+    guessedMade,
+    references,
+    configurations: sources.configurations ?? references.map(() => []),
     parent,
     test: symbols.map((symbol) => tests.has(symbol.position.path)),
     support: symbols.map((symbol) => supports.has(symbol.position.path)),

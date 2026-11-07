@@ -1,7 +1,7 @@
 import type { Fixability, Confidence, Severity } from "./contract/contract.generated.ts";
 import type { DependencySection } from "./ref.ts";
 import type { Mechanism } from "./suppress.ts";
-import type { Relation } from "./sweep.ts";
+import type { Relation } from "./liveness/sweep.ts";
 import type { FindingSymbol } from "./contract/report.generated.ts";
 
 /**

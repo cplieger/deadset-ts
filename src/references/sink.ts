@@ -25,6 +25,13 @@ interface Valued {
   readonly value: Node;
 }
 
+/** One record by its file, with the node that names its target and whether `from`'s own annotation holds it. */
+interface Named {
+  readonly index: number;
+  readonly at: Node;
+  readonly annotated: boolean;
+}
+
 /**
  * Where every reference of one pass is made: it renders the position against the side's
  * root, takes the writing file's test class from the file classes, marks a use only a
@@ -36,17 +43,21 @@ export class Sink {
   readonly #testFile: (file: SourceFile) => boolean;
   readonly #consumer: ConsumerSide | undefined;
   readonly #found: Reference[] = [];
+  readonly #declaredAt: (node: Node) => string | undefined;
   readonly #valued = new Map<SourceFile, Valued[]>();
+  readonly #named = new Map<SourceFile, Named[]>();
   readonly #held = new Set<string>();
 
   constructor(
     root: string,
     testFile: (file: SourceFile) => boolean,
     consumer: ConsumerSide | undefined,
+    declaredAt: (node: Node) => string | undefined,
   ) {
     this.#root = root;
     this.#testFile = testFile;
     this.#consumer = consumer;
+    this.#declaredAt = declaredAt;
   }
 
   /** Whether a test file wrote one walked file's uses. */
@@ -87,12 +98,38 @@ export class Sink {
         test,
         ...(target.guessed === true ? { guessed: true as const } : {}),
       });
+      if (this.#consumer === undefined && !("column" in at)) {
+        const named = this.#named.get(file) ?? [];
+        named.push({ index: this.#found.length - 1, at, annotated: this.#annotates(at, from) });
+        this.#named.set(file, named);
+      }
       if (use === "write" && value !== undefined) {
         const valued = this.#valued.get(file) ?? [];
         valued.push({ index: this.#found.length - 1, value });
         this.#valued.set(file, valued);
       }
     }
+  }
+
+  /**
+   * Whether a name sits in the annotation of `from`'s own declaration. An annotation holds
+   * no block, so the walk stops at the first declaration or block above the name.
+   */
+  #annotates(name: Node, from: string): boolean {
+    if (name.kind === SyntaxKind.SourceFile) {
+      return false;
+    }
+    let child = name;
+    let parent = name.parent;
+    while (parent.kind !== SyntaxKind.Block && parent.kind !== SyntaxKind.SourceFile) {
+      const id = this.#declaredAt(parent);
+      if (id !== undefined) {
+        return id === from && (parent as { readonly type?: Node }).type === child;
+      }
+      child = parent;
+      parent = parent.parent;
+    }
+    return false;
   }
 
   /** Holds declarations an unanswered question could have made live, and the one whose read asked it. */
@@ -127,6 +164,14 @@ export class Sink {
         const reference = found[index];
         if (reference !== undefined) {
           found[index] = { ...reference, alone: names };
+        }
+      }
+    }
+    for (const [file, named] of this.#named) {
+      for (const { index, carriers } of carriersIn(named, this.#valued.get(file) ?? [], found)) {
+        const reference = found[index];
+        if (reference !== undefined) {
+          found[index] = { ...reference, carriers };
         }
       }
     }
@@ -207,6 +252,62 @@ function aloneIn(
       .sort(bytewise);
     if (names.length > 0) {
       result.push({ index: write.index, names });
+    }
+  }
+  return result;
+}
+
+/**
+ * The carriers of each named record of one file: `from` where its own annotation holds the
+ * name, then the target of each write whose stored value holds it and that names another
+ * declaration, the innermost value first. Values nest or are disjoint.
+ */
+function carriersIn(
+  named: readonly Named[],
+  writes: readonly Valued[],
+  found: readonly Reference[],
+): readonly { index: number; carriers: readonly string[] }[] {
+  const byStart = [...named].sort((a, b) => a.at.pos - b.at.pos);
+  const holding = new Map<number, Valued[]>();
+  for (const write of writes) {
+    let low = 0;
+    let high = byStart.length;
+    while (low < high) {
+      const middle = (low + high) >>> 1;
+      if ((byStart[middle]?.at.pos ?? 0) < write.value.pos) {
+        low = middle + 1;
+      } else {
+        high = middle;
+      }
+    }
+    for (let at = low; at < byStart.length; at += 1) {
+      const one = byStart[at];
+      if (one === undefined || one.at.pos >= write.value.end) {
+        break;
+      }
+      if (one.at.end <= write.value.end) {
+        holding.set(one.index, [...(holding.get(one.index) ?? []), write]);
+      }
+    }
+  }
+  const result: { index: number; carriers: readonly string[] }[] = [];
+  for (const one of named) {
+    const reference = found[one.index];
+    if (reference === undefined) {
+      continue;
+    }
+    const carriers = one.annotated ? [reference.from] : [];
+    const values = [...(holding.get(one.index) ?? [])].sort(
+      (a, b) => a.value.end - a.value.pos - (b.value.end - b.value.pos),
+    );
+    for (const write of values) {
+      const to = found[write.index]?.to;
+      if (to !== undefined && to !== reference.to && !carriers.includes(to)) {
+        carriers.push(to);
+      }
+    }
+    if (carriers.length > 0) {
+      result.push({ index: one.index, carriers });
     }
   }
   return result;

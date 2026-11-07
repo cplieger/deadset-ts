@@ -32,7 +32,7 @@ function nameOf(swept: RunSweep, id: string): string {
 
 /** Each record of the class, with its declaration, site and detail. */
 function called(swept: RunSweep): string[] {
-  return swept.retained
+  return swept.sweep.retained
     .filter((held) => held.class === "framework-lifecycle")
     .map(
       (held) =>
@@ -273,6 +273,208 @@ describe("a class the platform's custom-element registry defines", () => {
     );
 
     expect(deadNames(swept)).toEqual([]);
+  });
+  it("is one a call passes to a wrapper whose parameter reaches define", () => {
+    const swept = sweptUnconfigured(
+      [
+        "class ByFunction extends HTMLElement {",
+        "  connectedCallback(): void {}",
+        "}",
+        "class ByArrow extends HTMLElement {",
+        "  connectedCallback(): void {}",
+        "}",
+        "class ByMethod extends HTMLElement {",
+        "  connectedCallback(): void {}",
+        "}",
+        "class ByTwoWrappers extends HTMLElement {",
+        "  connectedCallback(): void {}",
+        "}",
+        "class Elsewhere extends HTMLElement {",
+        "  connectedCallback(): void {}",
+        "}",
+        "class ByProperty extends HTMLElement {",
+        "  connectedCallback(): void {}",
+        "}",
+        "class ByExpression extends HTMLElement {",
+        "  connectedCallback(): void {}",
+        "}",
+        "class ByField extends HTMLElement {",
+        "  connectedCallback(): void {}",
+        "}",
+        "class ByThis extends HTMLElement {",
+        "  connectedCallback(): void {}",
+        "}",
+        "class ByTuple extends HTMLElement {",
+        "  connectedCallback(): void {}",
+        "}",
+        "class ByCopy extends HTMLElement {",
+        "  connectedCallback(): void {}",
+        "}",
+        "function register(name: string, element: CustomElementConstructor): void {",
+        "  customElements.define(name, element);",
+        "}",
+        "const registerArrow = (name: string, element: CustomElementConstructor): void =>",
+        "  customElements.define(name, element);",
+        "class Registry {",
+        "  add(name: string, element: CustomElementConstructor): void {",
+        "    customElements.define(name, element);",
+        "  }",
+        "}",
+        "function outer(element: CustomElementConstructor): void {",
+        '  register("x-two", element);',
+        "}",
+        "function keep(element: CustomElementConstructor): string {",
+        "  return element.name;",
+        "}",
+        "const table = {",
+        "  add: (name: string, element: CustomElementConstructor): void =>",
+        "    customElements.define(name, element),",
+        "};",
+        "const viaExpression = function (element: CustomElementConstructor): void {",
+        '  customElements.define("x-expression", element);',
+        "};",
+        "class Fields {",
+        "  add = (element: CustomElementConstructor): void =>",
+        '    customElements.define("x-field", element);',
+        "}",
+        "class Hosted {",
+        "  add(this: Hosted, element: CustomElementConstructor): void {",
+        '    customElements.define("x-this", element);',
+        "  }",
+        "}",
+        "const copy = register;",
+        "const tuple: [CustomElementConstructor] = [ByTuple];",
+        'register("x-function", ByFunction);',
+        'registerArrow("x-arrow", ByArrow);',
+        'new Registry().add("x-method", ByMethod);',
+        "outer(ByTwoWrappers);",
+        'table.add("x-property", ByProperty);',
+        "viaExpression(ByExpression);",
+        "new Fields().add(ByField);",
+        "new Hosted().add(ByThis);",
+        "outer(...tuple);",
+        'copy("x-copy", ByCopy);',
+        "export const kept = keep(Elsewhere);",
+        "",
+      ].join("\n"),
+    );
+
+    expect(deadNames(swept)).toEqual(["Elsewhere.connectedCallback"]);
+    expect(called(swept)).toEqual([
+      "ByFunction.connectedCallback main.ts:35:31 registered by CustomElementRegistry.define",
+      "ByArrow.connectedCallback main.ts:38:31 registered by CustomElementRegistry.define",
+      "ByMethod.connectedCallback main.ts:41:33 registered by CustomElementRegistry.define",
+      "ByTwoWrappers.connectedCallback main.ts:35:31 registered by CustomElementRegistry.define",
+      "ByProperty.connectedCallback main.ts:52:33 registered by CustomElementRegistry.define",
+      "ByExpression.connectedCallback main.ts:55:41 registered by CustomElementRegistry.define",
+      "ByField.connectedCallback main.ts:59:38 registered by CustomElementRegistry.define",
+      "ByThis.connectedCallback main.ts:63:37 registered by CustomElementRegistry.define",
+      "ByTuple.connectedCallback main.ts:35:31 registered by CustomElementRegistry.define",
+      "ByCopy.connectedCallback main.ts:35:31 registered by CustomElementRegistry.define",
+    ]);
+  });
+
+  it("is one any value an argument can be holds, passed to define or to a wrapper held by any binding", () => {
+    const names = [
+      "ByCondA",
+      "ByCondB",
+      "ByNullish",
+      "ByPropCopy",
+      "ByDirectCond",
+      "ByField",
+      "ByBag",
+      "ByDestructure",
+      "ByMade",
+    ];
+    const swept = sweptUnconfigured(
+      [
+        ...names.flatMap((name) => [
+          `class ${name} extends HTMLElement {`,
+          "  connectedCallback(): void {}",
+          "}",
+        ]),
+        "class Unregistered extends HTMLElement {",
+        "  connectedCallback(): void {}",
+        "}",
+        "declare const flag: boolean;",
+        "declare const maybe: CustomElementConstructor | undefined;",
+        "function register(name: string, element: CustomElementConstructor): void {",
+        "  customElements.define(name, element);",
+        "}",
+        "function made(): typeof ByMade {",
+        "  return ByMade;",
+        "}",
+        'register("x-cond", flag ? ByCondA : ByCondB);',
+        'register("x-nullish", maybe ?? ByNullish);',
+        "const regs = { reg: register };",
+        'regs.reg("x-prop-copy", ByPropCopy);',
+        'customElements.define("x-direct", flag ? ByDirectCond : ByDirectCond);',
+        "class Box {",
+        "  reg = register;",
+        "}",
+        'new Box().reg("x-field", ByField);',
+        "const bag = { register };",
+        'bag.register("x-bag", ByBag);',
+        "const wrapped = { register };",
+        "const { register: renamed } = wrapped;",
+        'renamed("x-destructure", ByDestructure);',
+        'customElements.define("x-made", made());',
+        "export const kept = Unregistered.name;",
+        "",
+      ].join("\n"),
+    );
+
+    expect(deadNames(swept)).toEqual(["Unregistered.connectedCallback"]);
+  });
+
+  it("is one passed to a wrapper wherever the checker's type at the callee holds it, or by a branch inside an array or object literal", () => {
+    const names = [
+      "ByParam",
+      "ByArray",
+      "ByReturned",
+      "ByLater",
+      "ByAnonymous",
+      "ByArrayBranch",
+      "ByObjectBranch",
+    ];
+    const swept = sweptUnconfigured(
+      [
+        ...[...names, "ByDecoy"].flatMap((name) => [
+          `class ${name} extends HTMLElement {`,
+          "  connectedCallback(): void {}",
+          "}",
+        ]),
+        "declare const flag: boolean;",
+        "function register(name: string, element: unknown): void {",
+        "  customElements.define(name, element as CustomElementConstructor);",
+        "}",
+        "function decoy(_name: string, _element: unknown): void {}",
+        "function use(r: typeof register): void {",
+        '  r("x-param", ByParam);',
+        "}",
+        "use(register);",
+        "const [arr] = [register];",
+        'arr("x-array", ByArray);',
+        "function getReg(): typeof register {",
+        "  return register;",
+        "}",
+        'getReg()("x-returned", ByReturned);',
+        "let later: typeof register | undefined;",
+        "later = register;",
+        'later("x-later", ByLater);',
+        "const anonymous = [",
+        "  (name: string, element: unknown): void =>",
+        "    customElements.define(name, element as CustomElementConstructor),",
+        "];",
+        'anonymous[0]?.("x-anonymous", ByAnonymous);',
+        'register("x-array-branch", [flag ? ByArrayBranch : ByArrayBranch]);',
+        'register("x-object-branch", { element: flag ? ByObjectBranch : ByObjectBranch });',
+        'decoy("x-decoy", ByDecoy);',
+        "",
+      ].join("\n"),
+    );
+
+    expect(deadNames(swept)).toEqual(["ByDecoy.connectedCallback"]);
   });
 });
 

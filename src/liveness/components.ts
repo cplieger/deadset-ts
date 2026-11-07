@@ -4,10 +4,10 @@
  * and every dead declaration that falls with them, being dead only through them.
  */
 
-import type { Cascade } from "./config.ts";
+import type { Cascade } from "../config.ts";
 import { OUTSIDE, type Graph } from "./graph.ts";
-import type { InventorySymbol } from "./inventory.ts";
-import { PRODUCT } from "./product.ts";
+import type { InventorySymbol } from "../inventory.ts";
+import { PRODUCT } from "../product.ts";
 
 /** The fewest digits a component identifier's number is written with. */
 const ID_DIGITS = 4;

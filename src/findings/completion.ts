@@ -13,17 +13,17 @@ import {
   type KindRow,
 } from "../contract/contract.generated.ts";
 import type { RunSweep } from "../analysis.ts";
-import { componentId, type Component } from "../components.ts";
-import { deadComponents } from "../matrix.ts";
+import { componentId, type Component } from "../liveness/components.ts";
+import { deadComponents } from "../liveness/sweep.ts";
 import type { Cascade } from "../config.ts";
 import type { CompletedFinding, Finding, FindingComponent, PositionedSymbol } from "../finding.ts";
-import { OUTSIDE, type Graph } from "../graph.ts";
+import { OUTSIDE, type Graph } from "../liveness/graph.ts";
 import type { SymbolKind } from "../inventory.ts";
 import { KINDS } from "../kinds.ts";
 import { byPosition, positionKey } from "../position.ts";
 import { declarationKey } from "../ref.ts";
 import { isPartSubject, isRowSubject, type Dials } from "../suppress.ts";
-import type { Candidate } from "../sweep.ts";
+import type { Candidate } from "../liveness/sweep.ts";
 import type { Boundary } from "./boundary.ts";
 import type { EmitterInput } from "./emitter.ts";
 
@@ -113,7 +113,7 @@ function testedByIn(input: EmitterInput): ReadonlySet<string> {
  * consumer set. A member an `in` expression tests by name, one a function outside the
  * analysis fills, and one {@link possiblyLoaded} names, is `possible`.
  */
-function reachabilityClasses(input: EmitterInput): (id: string) => Confidence {
+export function reachabilityClasses(input: EmitterInput): (id: string) => Confidence {
   const tested = testedByIn(input);
   const filled = input.boundary.filledOutside ?? new Set<string>();
   const possible = possiblyLoaded(input);
@@ -131,20 +131,6 @@ function reachabilityClasses(input: EmitterInput): (id: string) => Confidence {
     }
     return published.has(id) ? outside : "certain";
   };
-}
-
-/**
- * Whether one test of dead code references a target symbol that is published API of a run
- * that declares no consumer, which outside programs the run cannot see may use, so the
- * target counts as live for the test and the test is no test of dead code.
- */
-export function testsUnseenAPI(input: EmitterInput): (id: string) => boolean {
-  if (input.boundary.consumers.declared.length > 0) {
-    return () => false;
-  }
-  const union = input.swept.matrix.union;
-  const published = publishedIds(union);
-  return (id) => testTargets(union, id).some((target) => published.has(target));
 }
 
 /** The target symbols one test of dead code references, by id: production declarations the sweep judges. */

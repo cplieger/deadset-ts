@@ -38,7 +38,7 @@ describe("reflective lookup", () => {
 
   it("retains each member a literal key of an element access or a global Reflect call spells, at the key, unless a typed key reads it", () => {
     expect(
-      swept.retained
+      swept.sweep.retained
         .filter((held) => held.class === "reflective-lookup")
         .map((held) => {
           const name = swept.matrix.union.symbols.find((symbol) => symbol.id === held.id)?.name;
@@ -94,7 +94,7 @@ function lookedUp(
       marked: [],
       mode: { production: true },
     });
-    return swept.retained
+    return swept.sweep.retained
       .filter((held) => held.class === "reflective-lookup")
       .map((held) => {
         const name = swept.matrix.union.symbols.find((symbol) => symbol.id === held.id)?.name;

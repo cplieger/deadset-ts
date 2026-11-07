@@ -1,11 +1,12 @@
 import { CODE } from "../contract/contract.generated.ts";
 import type { Finding } from "../finding.ts";
-import { OUTSIDE, type Graph } from "../graph.ts";
-import type { InventorySymbol, SymbolKind } from "../inventory.ts";
-import type { MatrixCandidate } from "../matrix.ts";
+import { OUTSIDE, type Graph } from "../liveness/graph.ts";
+import { WORDS, type InventorySymbol } from "../inventory.ts";
+import type { Candidate } from "../liveness/sweep.ts";
 import { declarationKey } from "../ref.ts";
 import type { RootKind } from "../roots/root-set.ts";
-import { runnerCalls } from "../sweep.ts";
+import { runnerCalls } from "../liveness/sweep.ts";
+import { exposedTypes, exposes } from "../exposure.ts";
 import type { Emitter, EmitterInput } from "./emitter.ts";
 import { writeOnlyDeclarations } from "./reads-and-writes.ts";
 
@@ -18,18 +19,6 @@ type Reach = "file" | "package" | "outside";
  * from outside the reference graph: a runtime, a tool, a framework or the configuration.
  */
 const PUBLISHING: ReadonlySet<RootKind> = new Set<RootKind>(["manifest-entry", "published-api"]);
-
-/** The reader's word for each kind of declaration this emitter reports. */
-const WORDS: Partial<Readonly<Record<SymbolKind, string>>> = {
-  function: "function",
-  class: "class",
-  interface: "interface",
-  type: "type alias",
-  enum: "enum",
-  namespace: "namespace",
-  variable: "variable",
-  "export-alias": "re-export",
-};
 
 /** Per declaration of the run, the facts both rules read. */
 interface Facts {
@@ -142,10 +131,6 @@ function topLevelExport(facts: Facts, at: number, symbol: InventorySymbol): bool
   return symbol.exported && parent !== OUTSIDE && facts.graph.symbols[parent]?.kind === "file";
 }
 
-function wordOf(symbol: InventorySymbol): string {
-  return WORDS[symbol.kind] ?? symbol.kind;
-}
-
 /** The visibility each narrowing code names, which only the narrowing codes carry. */
 const NARROWER: Readonly<Record<string, "file" | "package">> = {
   [CODE.redundantExportKeyword]: "file",
@@ -181,7 +166,11 @@ function narrowing(
   facts: Facts,
   at: number,
   symbol: InventorySymbol,
-  world: { readonly closed: boolean; readonly writeOnly: ReadonlySet<string> },
+  world: {
+    readonly closed: boolean;
+    readonly writeOnly: ReadonlySet<string>;
+    readonly exposed: ReadonlySet<string> | "every";
+  },
 ): Finding | undefined {
   const { closed } = world;
   const file = facts.fileOf[at] ?? OUTSIDE;
@@ -195,7 +184,7 @@ function narrowing(
   ) {
     return undefined;
   }
-  const word = wordOf(symbol);
+  const word = WORDS[symbol.kind];
   switch (facts.reach[at]) {
     case "file":
       if (facts.published[file] === true && !closed) {
@@ -207,7 +196,7 @@ function narrowing(
         `exported ${word} is referenced only inside the file that declares it`,
       );
     case "package":
-      if (!closed || !publishes(facts.rootedBy[at])) {
+      if (!closed || !publishes(facts.rootedBy[at]) || exposes(world.exposed, symbol)) {
         return undefined;
       }
       return findingOf(
@@ -231,7 +220,7 @@ function unreachable(
   facts: Facts,
   at: number,
   symbol: InventorySymbol,
-  candidate: MatrixCandidate,
+  candidate: Candidate,
   input: EmitterInput,
 ): Finding | undefined {
   if (
@@ -252,7 +241,7 @@ function unreachable(
   return findingOf(
     symbol,
     CODE.unreachableExport,
-    `exported ${wordOf(symbol)} ${found}, and nothing outside can import the file that declares it`,
+    `exported ${WORDS[symbol.kind]} ${found}, and nothing outside can import the file that declares it`,
   );
 }
 
@@ -267,7 +256,17 @@ export function narrowings(input: EmitterInput): readonly Finding[] {
   const facts = factsOf(input.swept.matrix.union);
   const { declared, loaded } = input.boundary.consumers;
   const closed = input.config.consumers.complete && declared.every((id) => loaded.includes(id));
-  const world = { closed, writeOnly: writeOnlyDeclarations(input) };
+  const world = {
+    closed,
+    writeOnly: writeOnlyDeclarations(input),
+    exposed: closed
+      ? exposedTypes(
+          facts.graph,
+          facts.reach.map((reach) => reach === "outside"),
+          input.boundary.carriers,
+        )
+      : new Set<string>(),
+  };
   const candidates = new Map(
     input.swept.sweep.candidates.map((candidate) => [candidate.id, candidate]),
   );

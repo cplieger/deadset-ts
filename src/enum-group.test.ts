@@ -64,7 +64,7 @@ function recorded(
   });
   try {
     const swept = sweepRoot(root, panicsOn);
-    return swept.exempt
+    return swept.sweep.exempt
       .filter((record) => record.class === "enum-group")
       .map(
         (record) =>
@@ -80,7 +80,7 @@ describe("enum-group", () => {
     const swept = sweepRoot(TARGET);
 
     expect(
-      swept.retained
+      swept.sweep.retained
         .filter((record) => record.class === "enum-group")
         .map((record) => `${nameOf(swept, record.id)} ${record.detail}`),
     ).toEqual([

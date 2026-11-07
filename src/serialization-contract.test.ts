@@ -37,7 +37,7 @@ function nameOf(swept: RunSweep, id: string): string {
 
 /** Each record of the class on a member of the named classes, with its site and detail. */
 function serialized(swept: RunSweep, ...classes: readonly string[]): string[] {
-  return swept.retained
+  return swept.sweep.retained
     .filter((held) => held.class === "serialization-contract")
     .map(
       (held) =>
@@ -482,7 +482,7 @@ function retainedIn(main: readonly string[]): string[] {
       config,
       { marked: [], mode: { production: true } },
     );
-    return swept.retained
+    return swept.sweep.retained
       .filter((held) => held.class === "serialization-contract")
       .map(
         (held) =>
@@ -818,9 +818,9 @@ describe("serialization-contract over a target and a consumer it imports", () =>
           { marked: [], mode: { production: true } },
         );
 
-        expect(swept.retained.filter((held) => held.class === "serialization-contract")).toEqual(
-          [],
-        );
+        expect(
+          swept.sweep.retained.filter((held) => held.class === "serialization-contract"),
+        ).toEqual([]);
         expect(deadMembers(swept)).toEqual(["Signal.id"]);
       } finally {
         rmSync(top, { recursive: true, force: true });

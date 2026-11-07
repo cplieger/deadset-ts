@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { emitterInputOf } from "../../__test-helpers__/emitter-input.ts";
 import { fixture } from "../../__test-helpers__/fixtures.ts";
+import { positionKey } from "../position.ts";
 import { resolve } from "../resolve.ts";
+import type { SuppressionRecord } from "../suppress.ts";
 import type { EmitterInput } from "./emitter.ts";
 import { decidedFindings } from "./emitters.ts";
 
@@ -70,23 +72,67 @@ describe("the findings a gap or a component file's markup withholds", () => {
 
     expect(other).toBeDefined();
     expect(
-      onlyTested({ ...input, swept: { ...input.swept, heldByUnanswered: [other?.id ?? ""] } }),
+      onlyTested({
+        ...input,
+        swept: { ...input.swept, sweep: { ...input.swept.sweep, held: [other?.id ?? ""] } },
+      }),
     ).toEqual(["DS1102 a/catalog.ts"]);
+  });
+
+  /** The input with the top-level declarations of one file held as a live component file's bindings. */
+  const bound = (input: EmitterInput, path: string): EmitterInput => ({
+    ...input,
+    swept: {
+      ...input.swept,
+      sweep: {
+        ...input.swept.sweep,
+        bindings: input.swept.matrix.union.symbols
+          .filter((symbol) => symbol.position.path === path && symbol.kind !== "file")
+          .map((symbol) => symbol.id),
+      },
+    },
   });
 
   it("are the live component file's own, not those of a file another package of one name spells alike", () => {
-    const input = twin();
-
-    expect(
-      onlyTested({ ...input, swept: { ...input.swept, componentFiles: ["b/catalog.ts"] } }),
-    ).toEqual(["DS1102 a/catalog.ts"]);
+    expect(onlyTested(bound(twin(), "b/catalog.ts"))).toEqual(["DS1102 a/catalog.ts"]);
   });
 
   it("include every one about a top-level declaration of a live component file", () => {
+    expect(onlyTested(bound(twin(), "a/catalog.ts"))).toEqual([]);
+  });
+
+  /** What one record of `onlyTested`'s finding in `a/catalog.ts` did over the input. */
+  const verdictOver = (input: EmitterInput): readonly string[] => {
+    const symbol = input.swept.matrix.union.symbols.find(
+      (one) => one.name === "onlyTested" && one.position.path === "a/catalog.ts",
+    );
+    const record: SuppressionRecord = {
+      code: "DS1102",
+      symbol: symbol?.ref ?? "",
+      path: "a/catalog.ts",
+      reason: "Kept for the next release.",
+      bound: symbol === undefined ? "" : positionKey(symbol.position),
+      site: { path: "a/catalog.ts", line: 1, column: 1 },
+      mechanism: "inline",
+    };
+    return decidedFindings(input, { unmarked: input, records: [record] }).ledger.verdicts;
+  };
+
+  it("leave a record of a live component file's top-level declaration in effect, the markup being no gap", () => {
+    expect(verdictOver(bound(twin(), "a/catalog.ts"))).toEqual(["in-effect"]);
+  });
+
+  it("leave a record of a declaration a gap holds dormant", () => {
     const input = twin();
+    const held = input.swept.matrix.union.symbols
+      .filter((one) => one.name === "onlyTested" && one.position.path === "a/catalog.ts")
+      .map((one) => one.id);
 
     expect(
-      onlyTested({ ...input, swept: { ...input.swept, componentFiles: ["a/catalog.ts"] } }),
-    ).toEqual([]);
+      verdictOver({
+        ...input,
+        swept: { ...input.swept, sweep: { ...input.swept.sweep, held } },
+      }),
+    ).toEqual(["dormant"]);
   });
 });

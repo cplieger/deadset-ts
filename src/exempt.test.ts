@@ -2,6 +2,7 @@ import { EXEMPTION_CLASSES } from "./contract/contract.generated.ts";
 import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, expectTypeOf, it } from "vitest";
+import { matrixFor, policyOf } from "../__test-helpers__/sweep.ts";
 import { nodeHost } from "../bin/node-host.ts";
 import { contractDocument, fixture } from "../__test-helpers__/fixtures.ts";
 import { writeProject } from "../__test-helpers__/projects.ts";
@@ -16,16 +17,14 @@ import {
   evidenceRecords,
   exemptionsOf,
   heldRecords,
-  retainedIn,
   retainedLines,
   type Detector,
   type DetectorInput,
   type Detectors,
   type Evidence,
 } from "./exempt.ts";
-import { graphOf } from "./graph.ts";
 import type { Inventory, InventorySymbol } from "./inventory.ts";
-import { matrixOf, sweepMatrix, type Configured } from "./matrix.ts";
+import { matrixOf, type Configured } from "./liveness/matrix.ts";
 import type { Position } from "./position.ts";
 import type { Reference } from "./references.ts";
 import { Unanswerable } from "./query.ts";
@@ -34,7 +33,9 @@ import type { Root } from "./roots/root-set.ts";
 import { run, type Writer } from "./run.ts";
 import { scopeForDir } from "./scope.ts";
 import { openEngine } from "./session.ts";
-import { sweep, type Exemption, type Liveness, type Mode } from "./sweep.ts";
+import { sweep, type Sweep } from "./liveness/sweep.ts";
+import type { Exemption } from "./exempt.ts";
+import type { Mode } from "./tests/file-class.ts";
 
 const PRODUCTION: Mode = { production: true };
 const PLAIN: Mode = { production: false };
@@ -244,7 +245,10 @@ function exemptionOf(symbol: InventorySymbol): Exemption {
 }
 
 /** The candidates of one sweep, by name, each with the relation that found it. */
-function candidates(result: Liveness, symbols: readonly InventorySymbol[]): string[] {
+function candidates(
+  result: Pick<Sweep, "candidates">,
+  symbols: readonly InventorySymbol[],
+): string[] {
   return result.candidates.map(
     (candidate) =>
       `${symbols.find((symbol) => symbol.id === candidate.id)?.name ?? candidate.id} ${candidate.relation}`,
@@ -257,15 +261,14 @@ describe("an exemption entering the sweep", () => {
   const middle = declared("middle", 3);
   const tail = declared("tail", 4);
   const symbols = [source, head, middle, tail];
-  const graph = graphOf(symbols, [reference(head, middle), reference(middle, tail)], [], []);
+  const graph = matrixFor(symbols, [reference(head, middle), reference(middle, tail)], [], []);
 
   it("is never a candidate, and holds live what it references", () => {
-    expect(candidates(sweep(graph, { marked: [], mode: PLAIN }), symbols), "no exemption").toEqual([
-      "head reference-counting",
-      "middle reachability",
-      "tail reachability",
-    ]);
-    const held = sweep(graph, { marked: [], exempt: [exemptionOf(head)], mode: PLAIN });
+    expect(
+      candidates(sweep(graph, policyOf({ marked: [], mode: PLAIN })), symbols),
+      "no exemption",
+    ).toEqual(["head reference-counting", "middle reachability", "tail reachability"]);
+    const held = sweep(graph, policyOf({ marked: [], exempt: [exemptionOf(head)], mode: PLAIN }));
 
     expect(candidates(held, symbols), "the head exempt").toEqual([]);
     expect(held.liveUnder.get(head.id), "nothing references the head").toEqual(["reachability"]);
@@ -274,7 +277,7 @@ describe("an exemption entering the sweep", () => {
   it("seeds a production sweep from a test declaration, through the references it makes", () => {
     const test = declared("check", 2, "src/a.test.ts");
     const all = [source, middle, tail, file("src/a.test.ts"), test];
-    const tested = graphOf(
+    const tested = matrixFor(
       all,
       [reference(test, middle, true), reference(middle, tail)],
       [],
@@ -282,7 +285,10 @@ describe("an exemption entering the sweep", () => {
     );
 
     expect(
-      candidates(sweep(tested, { marked: [], exempt: [exemptionOf(test)], mode: PRODUCTION }), all),
+      candidates(
+        sweep(tested, policyOf({ marked: [], exempt: [exemptionOf(test)], mode: PRODUCTION })),
+        all,
+      ),
       "the test is held and admitted as nothing; what only it references is counted on " +
         "its production references alone, and what that references is live",
     ).toEqual(["middle reference-counting"]);
@@ -313,15 +319,16 @@ describe("an exemption across the configurations of a run", () => {
     const input = { marked: [], exempt: [exemptionOf(held)], mode: PLAIN };
 
     expect(
-      candidates(sweepMatrix(matrix, { marked: [], mode: PLAIN }), matrix.union.symbols),
+      candidates(sweep(matrix, policyOf({ marked: [], mode: PLAIN })), matrix.union.symbols),
     ).toEqual(["helper reachability", "held reference-counting"]);
-    expect(candidates(sweepMatrix(matrix, input), matrix.union.symbols)).toEqual([]);
-    expect(retainedIn(matrix, input), "the run reports it without the record").toEqual([
-      exemptionOf(held),
-    ]);
+    expect(candidates(sweep(matrix, policyOf(input)), matrix.union.symbols)).toEqual([]);
+    expect(
+      sweep(matrix, policyOf(input)).retained,
+      "the run reports it without the record",
+    ).toEqual([exemptionOf(held)]);
   });
 
-  it("holds back in the configuration that would report the declaration, whatever another answers", () => {
+  it("holds nothing back where one configuration holds the declaration live, whatever another answers", () => {
     const rooted: Root = { id: held.id, kind: "configured", source: "held" };
     const matrix = matrixOf([
       configured("app", [shared, held], [], [rooted]),
@@ -329,13 +336,13 @@ describe("an exemption across the configurations of a run", () => {
     ]);
 
     expect(
-      candidates(sweepMatrix(matrix, { marked: [], mode: PLAIN }), matrix.union.symbols),
+      candidates(sweep(matrix, policyOf({ marked: [], mode: PLAIN })), matrix.union.symbols),
       "the app holds it live, so the run reports nothing without the record",
     ).toEqual([]);
     expect(
-      retainedIn(matrix, { marked: [], exempt: [exemptionOf(held)], mode: PLAIN }),
-      "the scripts project alone reports it without the record",
-    ).toEqual([exemptionOf(held)]);
+      sweep(matrix, policyOf({ marked: [], exempt: [exemptionOf(held)], mode: PLAIN })).retained,
+      "the run holds it live without the record, so the record holds nothing back",
+    ).toEqual([]);
   });
 
   it("holds nothing back where every configuration holds the declaration live anyway", () => {
@@ -345,9 +352,9 @@ describe("an exemption across the configurations of a run", () => {
       configured("scripts", [shared, held], [], [rooted]),
     ]);
 
-    expect(retainedIn(matrix, { marked: [], exempt: [exemptionOf(held)], mode: PLAIN })).toEqual(
-      [],
-    );
+    expect(
+      sweep(matrix, policyOf({ marked: [], exempt: [exemptionOf(held)], mode: PLAIN })).retained,
+    ).toEqual([]);
   });
 
   it("holds nothing back where a mark holds the declaration, or where the run holds no such declaration", () => {
@@ -355,12 +362,14 @@ describe("an exemption across the configurations of a run", () => {
     const elsewhere = exemptionOf(declared("gone", 9, "src/gone.ts"));
 
     expect(
-      retainedIn(matrix, { marked: [held.id], exempt: [exemptionOf(held)], mode: PLAIN }),
+      sweep(matrix, policyOf({ marked: [held.id], exempt: [exemptionOf(held)], mode: PLAIN }))
+        .retained,
       "marked",
     ).toEqual([]);
-    expect(retainedIn(matrix, { marked: [], exempt: [elsewhere], mode: PLAIN }), "absent").toEqual(
-      [],
-    );
+    expect(
+      sweep(matrix, policyOf({ marked: [], exempt: [elsewhere], mode: PLAIN })).retained,
+      "absent",
+    ).toEqual([]);
   });
 });
 
@@ -452,7 +461,7 @@ function deadNames(run: RunSweep): string[] {
 
 /** The display name and class of each retained record of one run. */
 function retainedNames(run: RunSweep): string[] {
-  return run.retained.map(
+  return run.sweep.retained.map(
     (held) =>
       `${run.matrix.union.symbols.find((symbol) => symbol.id === held.id)?.name ?? ""} ${held.class}`,
   );
@@ -467,7 +476,7 @@ describe("the framework over a project", () => {
       "heldTwice serialization-contract",
     ]);
     await expect(
-      `${retainedLines(production.matrix.union.symbols, production.retained).join("\n")}\n`,
+      `${retainedLines(production.matrix.union.symbols, production.sweep.retained).join("\n")}\n`,
       "regenerate with `npx vitest --run -u src/exempt.test.ts` and review the diff",
     ).toMatchFileSnapshot(fixture("golden", "exemptions.retained.txt"));
   });
@@ -475,9 +484,9 @@ describe("the framework over a project", () => {
   it("reports no candidate an exemption holds back, so no finding is built with a retained_by", () => {
     const production = sweepFixture(PRODUCTION);
     const retainedBy = (id: string): string[] =>
-      production.retained.filter((held) => held.id === id).map((held) => held.class);
+      production.sweep.retained.filter((held) => held.id === id).map((held) => held.class);
 
-    expect(production.retained.length, "the run holds something back").toBeGreaterThan(0);
+    expect(production.sweep.retained.length, "the run holds something back").toBeGreaterThan(0);
     expect(production.sweep.candidates.flatMap((candidate) => retainedBy(candidate.id))).toEqual(
       [],
     );
@@ -522,7 +531,7 @@ describe("the framework over a project", () => {
   });
 
   it("holds by the gap nothing a detector found evidence for", () => {
-    expect(sweepFixture(PRODUCTION).heldByUnanswered).toEqual([]);
+    expect(sweepFixture(PRODUCTION).sweep.held).toEqual([]);
   });
 
   it("holds by the gap every production declaration a detector that could not finish holds back", () => {
@@ -538,7 +547,7 @@ describe("the framework over a project", () => {
     const nameOf = (id: string): string =>
       swept.matrix.union.symbols.find((symbol) => symbol.id === id)?.name ?? id;
 
-    expect(swept.heldByUnanswered.map(nameOf)).toEqual([
+    expect(swept.sweep.held.map(nameOf)).toEqual([
       "heldTwice",
       "keptByHeld",
       "liveAnyway",

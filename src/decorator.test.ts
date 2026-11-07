@@ -50,7 +50,7 @@ describe("decorator", () => {
 
   it("retains each decorated member and every member of a decorated class, at the decorator", () => {
     expect(
-      swept.retained.map(
+      swept.sweep.retained.map(
         (held) =>
           `${nameOf(swept, held.id)} ${held.site.path}:${String(held.site.line)}:${String(held.site.column)} ${held.detail}`,
       ),

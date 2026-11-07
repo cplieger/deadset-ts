@@ -9,7 +9,7 @@ import type { ResolvedConfig } from "../config.ts";
 import type { CompletedFinding } from "../finding.ts";
 import { resolve } from "../resolve.ts";
 import { run, type Writer } from "../run.ts";
-import type { Mode } from "../sweep.ts";
+import type { Mode } from "../tests/file-class.ts";
 
 /** The codes of the reads-and-writes kinds. */
 const FAMILY: ReadonlySet<string> = new Set(["DS1301", "DS1005", "DS1006"]);
@@ -298,7 +298,7 @@ describe.each(["enum-group-conversion", "private-member-unread"])(
       (row) => {
         const { input, findingAt, idAt } = corpusRun(name);
         const id = idAt(row.symbol);
-        const classes = input.swept.retained
+        const classes = input.swept.sweep.retained
           .filter((record) => record.id === id)
           .map((record) => record.class);
 
@@ -498,7 +498,69 @@ describe("what deleting a write-only declaration with its writes takes with it",
     });
 
     expect(found.map((finding) => `${finding.code} ${finding.message}`)).toEqual([
-      "DS1301 variable held is written at 2 positions and never read, and deleting it with its writes deletes import alpha and import zeta too",
+      "DS1301 variable held is written at 2 positions and never read, and deleting it with its writes deletes import alpha and import zeta and variable zeta and variable alpha too",
+    ]);
+  });
+
+  it("names a declaration its annotation alone names, and no finding about it", () => {
+    const found = applicationFindings({
+      "package.json": COMMAND,
+      "src/settings.ts": [
+        'export type Mode = "fast" | "slow";',
+        "",
+        "let mode: Mode | undefined;",
+        "",
+        "export function set(): void {",
+        '  mode = "fast";',
+        "}",
+        "",
+      ].join("\n"),
+      "src/main.ts": 'import { set } from "./settings.js";\n\nset();\n',
+    });
+
+    expect(found.map((finding) => `${finding.code} ${finding.message}`)).toEqual([
+      "DS1301 variable mode is written once and never read, and deleting it with its writes deletes type alias Mode too",
+    ]);
+  });
+
+  it("names a declaration its writes alone name, under the innermost subject whose write holds it", () => {
+    const found = applicationFindings({
+      "package.json": COMMAND,
+      "src/main.ts": [
+        "interface Task {",
+        "  run: () => void;",
+        "}",
+        "",
+        "function helper(): void {}",
+        "",
+        "let task: Task | undefined;",
+        "task = { run: helper };",
+        "",
+      ].join("\n"),
+    });
+
+    expect(found.map((finding) => `${finding.code} ${finding.message}`)).toEqual([
+      "DS1301 type member Task.run is written once and never read, and deleting it with its writes deletes function helper too",
+      "DS1301 variable task is written once and never read, and deleting it with its writes deletes interface Task too",
+    ]);
+  });
+
+  it("names nothing a live declaration also uses", () => {
+    const found = applicationFindings({
+      "package.json": COMMAND,
+      "src/main.ts": [
+        "type Box = { n: number };",
+        "",
+        "let x: Box | undefined;",
+        "const y: Box = { n: 1 };",
+        "x = { n: 2 };",
+        "console.log(y.n);",
+        "",
+      ].join("\n"),
+    });
+
+    expect(found.map((finding) => `${finding.code} ${finding.message}`)).toEqual([
+      "DS1301 variable x is written once and never read",
     ]);
   });
 });

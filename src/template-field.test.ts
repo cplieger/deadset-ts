@@ -27,7 +27,7 @@ function sweepFixture(): RunSweep {
 
 /** One line per record of one class: the declaration's name, the site and the detail. */
 function records(swept: RunSweep, exemptionClass: string): string[] {
-  return swept.retained
+  return swept.sweep.retained
     .filter((held) => held.class === exemptionClass)
     .map((held) => {
       const name = swept.matrix.union.symbols.find((symbol) => symbol.id === held.id)?.name;

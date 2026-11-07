@@ -32,7 +32,7 @@ import { aliasChains } from "./alias-chain.ts";
 import { emptyImplementation } from "./findings/implementations.ts";
 import type { DetectorInput, Evidence } from "./exempt.ts";
 import type { Reference } from "./references.ts";
-import type { Exemption } from "./sweep.ts";
+import type { Exemption } from "./exempt.ts";
 import { nodeKey, type Inventory } from "./inventory.ts";
 import { renderPosition } from "./position.ts";
 import { must } from "./query.ts";

@@ -1,17 +1,19 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { nodeHost } from "../bin/node-host.ts";
-import { contractDocument, fixture } from "../__test-helpers__/fixtures.ts";
-import { runSweep, type RunSweep } from "./analysis.ts";
+import { nodeHost } from "../../bin/node-host.ts";
+import { contractDocument, fixture } from "../../__test-helpers__/fixtures.ts";
+import { runSweep, type RunSweep } from "../analysis.ts";
 import { componentsOf, listing, type Component } from "./components.ts";
 import { graphOf } from "./graph.ts";
-import type { InventorySymbol } from "./inventory.ts";
-import { matrixOf, sweepMatrix } from "./matrix.ts";
-import type { Reference } from "./references.ts";
-import { resolve } from "./resolve.ts";
-import { scopeForDir } from "./scope.ts";
-import { openEngine } from "./session.ts";
+import type { InventorySymbol } from "../inventory.ts";
+import { matrixOf } from "./matrix.ts";
+import { sweep } from "./sweep.ts";
+import { policyOf } from "../../__test-helpers__/sweep.ts";
+import type { Reference } from "../references.ts";
+import { resolve } from "../resolve.ts";
+import { scopeForDir } from "../scope.ts";
+import { openEngine } from "../session.ts";
 
 /**
  * The fixture holding one instance of each component shape, swept once in the mode a
@@ -239,9 +241,9 @@ describe("a chain of dead declarations far longer than any call stack", () => {
       resolution: "batch",
       test: false,
     }));
-    const result = sweepMatrix(
+    const result = sweep(
       matrixOf([{ configuration: "memory", symbols, references, roots: [], testFiles: [] }]),
-      { marked: [], mode: { production: true } },
+      policyOf({ marked: [], mode: { production: true } }),
     );
 
     expect(result.components.length, "every link falls with the head").toBe(1);
@@ -290,7 +292,7 @@ describe("the held declarations of an enum", () => {
     const symbols = [main, tier, base, next, alias, top, paused, closed].filter(
       (one): one is InventorySymbol => one !== undefined,
     );
-    const result = sweepMatrix(
+    const result = sweep(
       matrixOf([
         {
           configuration: "memory",
@@ -309,7 +311,7 @@ describe("the held declarations of an enum", () => {
             : {}),
         },
       ]),
-      { marked: [], mode: { production: true } },
+      policyOf({ marked: [], mode: { production: true } }),
     );
     const names = new Map(symbols.map((one) => [one.id, one.name]));
     return result.components.map(

@@ -235,7 +235,9 @@ function declarationNodes(
   return {
     typeNamesOf: (symbol) => {
       const { byId, nodes } = nodesIn(symbol.position.path);
-      return (byId.get(symbol.id) ?? []).flatMap((declaration) => typeNamesOf(declaration, nodes));
+      return (byId.get(symbol.id) ?? []).flatMap((declaration) =>
+        typeNamesOf(declaration, (nested) => nodes.has(nested)),
+      );
     },
     nodesOf: (symbol) => nodesIn(symbol.position.path).byId.get(symbol.id) ?? [],
   };
@@ -438,12 +440,15 @@ function inferredTypeSymbols<Brand>(
 /**
  * The names of types one declaration's own syntax writes: in a type reference, a
  * heritage clause or a type query. A function body is not read, and neither is a
- * declaration nested in this one, which `nested` holds and which is read on its own.
+ * declaration nested in this one that `readAlone` says is read on its own.
  */
-function typeNamesOf(declaration: Node, nested: ReadonlySet<Node>): readonly Node[] {
+export function typeNamesOf(
+  declaration: Node,
+  readAlone: (nested: Node) => boolean,
+): readonly Node[] {
   const found: Node[] = [];
   const visit = (node: Node): void => {
-    if (node !== declaration && nested.has(node)) {
+    if (node !== declaration && readAlone(node)) {
       return;
     }
     if (isTypeReferenceNode(node)) {

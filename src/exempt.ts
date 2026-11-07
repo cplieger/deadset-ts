@@ -18,13 +18,42 @@ import {
   type TypeScriptVisibility,
 } from "./exempt-classes.ts";
 import type { Inventory, InventorySymbol, Visibility } from "./inventory.ts";
-import type { Matrix } from "./matrix.ts";
 import { byPosition, positionKey, type Position } from "./position.ts";
 import { Unanswerable } from "./query.ts";
 import type { ProjectView } from "./session.ts";
 import type { Templates } from "./template-field.ts";
-import { sweep, type Exemption, type Implementing, type Mode, type SweepInput } from "./sweep.ts";
+import type { Mode } from "./tests/file-class.ts";
 import { bytewise } from "./text/compare.ts";
+
+/** One declaration an exemption class holds back, and the evidence it was found by. */
+export interface Exemption {
+  /** The identifier of the declaration held back. */
+  readonly id: string;
+  readonly class: TSExemptionClass;
+  /** One clause naming the relation, then the thing it relates to: `passed to JSON.stringify`. */
+  readonly detail: string;
+  /** Where the evidence is written. */
+  readonly site: Position;
+  /**
+   * The component file, below the target root, whose markup holds the evidence. The
+   * record holds only while that file is live.
+   */
+  readonly whileLive?: string;
+  /**
+   * The interface methods the retained member implements, and whether its body is empty.
+   * The record holds only while one of them is called through its interface.
+   */
+  readonly implementing?: Implementing;
+  /** Whether the record holds only where a write the mode counts stores into the declaration. */
+  readonly whileWritten?: true;
+}
+
+/** The interface methods one retained class member implements, and whether its body is empty. */
+interface Implementing {
+  /** The declarations of the interface's methods the member answers, by identifier. */
+  readonly methods: readonly string[];
+  readonly empty: boolean;
+}
 
 /** One declaration a detector holds back, and where and why. */
 export interface Evidence {
@@ -228,21 +257,6 @@ export function exemptionsOf(found: readonly Exemption[]): readonly Exemption[] 
   });
 }
 
-/**
- * The records that hold while the component files at `live` are live: every record that
- * holds whatever is live, and each one a live file's markup holds, as a record of the run.
- */
-export function holdingWhile(
-  records: readonly Exemption[],
-  live: ReadonlySet<string>,
-): readonly Exemption[] {
-  return exemptionsOf(
-    records.flatMap(({ whileLive, ...record }) =>
-      whileLive === undefined || live.has(whileLive) ? [record] : [],
-    ),
-  );
-}
-
 /** The records per declaration, each declaration's in the order given. */
 function byDeclaration(records: readonly Exemption[]): ReadonlyMap<string, readonly Exemption[]> {
   const grouped = new Map<string, Exemption[]>();
@@ -255,35 +269,6 @@ function byDeclaration(records: readonly Exemption[]): ReadonlyMap<string, reado
     }
   }
   return grouped;
-}
-
-/**
- * The records that held back a declaration: one some configuration's graph, swept
- * again with no exemption and its marks, judges a candidate, whatever another
- * configuration answers, or one in `writeOnly`, which the run would report as written
- * and never read without the record's read. A declaration a relation or a mark holds
- * live in every configuration is held back by no record. The order is the
- * declarations' site order, and for one declaration the input's.
- */
-export function retainedIn(
-  matrix: Matrix,
-  input: SweepInput,
-  writeOnly: ReadonlySet<string> = new Set(),
-): readonly Exemption[] {
-  const exempt = input.exempt ?? [];
-  if (exempt.length === 0) {
-    return [];
-  }
-  const bare: SweepInput = { marked: input.marked, mode: input.mode };
-  const dead = new Set(
-    matrix.graphs.flatMap((graph) =>
-      sweep(graph, bare).candidates.map((candidate) => candidate.id),
-    ),
-  );
-  const held = byDeclaration(
-    exempt.filter((record) => dead.has(record.id) || writeOnly.has(record.id)),
-  );
-  return matrix.union.symbols.flatMap((symbol) => held.get(symbol.id) ?? []);
 }
 
 /**
