@@ -54,6 +54,11 @@ export interface FileFacts {
   readonly inOperands?: ReadonlySet<string>;
   /** The loads of production files whose target the analysis cannot resolve. */
   readonly unseenLoads?: readonly UnseenLoad[];
+  /**
+   * The directories below the target root, `.` for the root, of the packages a command of
+   * which may run a file whose path no word of it writes (`roots.13`).
+   */
+  readonly unwrittenRuns?: ReadonlySet<string>;
 }
 
 /** The line of the last character of one text, counted from one; an empty text is one line. */

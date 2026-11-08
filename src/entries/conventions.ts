@@ -23,13 +23,8 @@ import {
   type TestFileReading,
 } from "./convention-rows.ts";
 import { documentStrings } from "./configuration-files.ts";
-import { readCommands } from "../commands/read.ts";
-import {
-  nodeTestGlobs,
-  type RunnerInput,
-  type ScriptCommand,
-  type TestGlob,
-} from "./test-runners.ts";
+import { readCommands, type CommandReading } from "../commands/read.ts";
+import { nodeTestGlobs, type RunnerInput, type TestGlob } from "./test-runners.ts";
 import {
   documentModule,
   membersNamed,
@@ -814,12 +809,12 @@ function packageKeyUses(
   );
 }
 
-/** Every simple command of a manifest's `scripts`, as the command reader reads it in the manifest's directory. */
-function scriptCommands(manifest: unknown, dir: string): readonly ScriptCommand[] {
+/** What the command reader reads each of a manifest's `scripts` as, in the manifest's directory. */
+function scriptReadings(manifest: unknown, dir: string): readonly CommandReading[] {
   const scripts = isRecord(manifest) ? manifest["scripts"] : undefined;
   return isRecord(scripts)
     ? Object.values(scripts).flatMap((text) =>
-        typeof text === "string" ? readCommands(text, dir).commands : [],
+        typeof text === "string" ? [readCommands(text, dir)] : [],
       )
     : [];
 }
@@ -846,6 +841,7 @@ export function readConventions(
   const read = readFilesOnce(host, parse);
   for (const manifest of manifests) {
     const declared = readJSON(host, joinPath(manifest.dir, MANIFEST));
+    const scripts = scriptReadings(declared, manifest.dir);
     let input: RunnerInput | undefined;
     const runnerInput = (): RunnerInput => {
       input ??= {
@@ -861,7 +857,7 @@ export function readConventions(
           }
           return undefined;
         },
-        scripts: scriptCommands(declared, manifest.dir),
+        scripts: scripts.flatMap((one) => one.commands),
       };
       return input;
     };
@@ -965,7 +961,7 @@ export function readConventions(
         });
       }
     }
-    testGlobs.push(...nodeTestGlobs(runnerInput().scripts));
+    testGlobs.push(...nodeTestGlobs(scripts.flatMap((one) => one.tests)));
   }
   const unique = [...new Map(applied.map((one) => [JSON.stringify(one), one])).values()];
   unique.sort(

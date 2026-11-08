@@ -519,7 +519,7 @@ interface CommandUses {
   readonly words: ReadonlySet<string>;
   /** The package each module a read command preloads by name is in. */
   readonly preloads: ReadonlySet<string>;
-  /** The text layer 3 reads, all of every string, whose every package or command name is a use. */
+  /** The whole text of every string, which the dependency rule reads: each package or command name in it is a use. */
   readonly held: string;
 }
 

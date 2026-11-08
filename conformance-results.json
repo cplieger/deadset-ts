@@ -2,7 +2,7 @@
   "corpus_version": "6.0.0",
   "product": { "name": "deadset-ts", "version": "0.1.0", "language": "ts" },
   "result": "pass",
-  "totals": { "fixtures": 365, "pass": 352, "gap": 0, "fail": 0, "pending": 13 },
+  "totals": { "fixtures": 377, "pass": 364, "gap": 0, "fail": 0, "pending": 13 },
   "fixtures": [
     {
       "fixture": "abstract-member-through-this",
@@ -3892,6 +3892,184 @@
       "unexpected": []
     },
     {
+      "fixture": "held-text-names-at-directories-and-local-actions",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "App", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "AppFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "MainFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Notify", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "NotifyFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Unacted",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "UnactedFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "held-text-names-files-as-paths",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "Hide",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "ResetForTest", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "ResetHeldForTest", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Unacted",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "Unsent",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "held-text-reads-a-line-a-launcher-hands-on",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "Lint", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "LintFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "MainFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Stray",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "possible",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "StrayFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "possible",
+            "reachability_class": "possible"
+          }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "held-text-reads-a-replacement-string",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "Lint", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "LintFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "MainFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Stray",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "StrayFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "held-text-reads-the-shell-words",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "Check", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "CheckFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Lint", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "LintFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "MainFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Out", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "OutFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Stray",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "StrayFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        { "symbol": "Web", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "WebFile", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "held-text-record-is-dormant",
       "result": "pass",
       "expectations": [
@@ -4537,6 +4715,37 @@
       "unexpected": []
     },
     {
+      "fixture": "lefthook-script-named-by-its-key",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "CheckFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "MainFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "PushFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Stray",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "StrayFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "load-in-dead-function",
       "result": "pass",
       "expectations": [
@@ -4675,9 +4884,30 @@
       "result": "pass",
       "expectations": [
         { "symbol": "AppFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "CheckFile", "result": "pass", "actual": { "report": "none" } },
         { "symbol": "GenFile", "result": "pass", "actual": { "report": "none" } },
-        { "symbol": "UnusedFile", "result": "pass", "actual": { "report": "none" } },
-        { "symbol": "unused", "result": "pass", "actual": { "report": "none" } }
+        {
+          "symbol": "UnusedFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        { "symbol": "check", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "unused",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "variable",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
       ],
       "unexpected": []
     },
@@ -5062,8 +5292,28 @@
         { "symbol": "Generate", "result": "pass", "actual": { "report": "none" } },
         { "symbol": "HookCheck", "result": "pass", "actual": { "report": "none" } },
         { "symbol": "HookFile", "result": "pass", "actual": { "report": "none" } },
-        { "symbol": "NodeWord", "result": "pass", "actual": { "report": "none" } },
-        { "symbol": "NodeWordFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "NodeWord",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "NodeWordFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
         { "symbol": "SetUp", "result": "pass", "actual": { "report": "none" } },
         { "symbol": "SetUpFile", "result": "pass", "actual": { "report": "none" } },
         {
@@ -5221,7 +5471,7 @@
           "actual": {
             "report": "DS1001",
             "symbol_kind": "function",
-            "confidence": "certain",
+            "confidence": "possible",
             "reachability_class": "certain"
           },
           "suppression": { "suppressed": true, "stale": false }
@@ -5232,8 +5482,8 @@
           "actual": {
             "report": "DS1602",
             "symbol_kind": "file",
-            "confidence": "certain",
-            "reachability_class": "certain"
+            "confidence": "possible",
+            "reachability_class": "possible"
           }
         },
         {
@@ -10831,7 +11081,7 @@
           "actual": {
             "report": "DS1001",
             "symbol_kind": "function",
-            "confidence": "certain",
+            "confidence": "possible",
             "reachability_class": "certain"
           },
           "suppression": { "suppressed": true, "stale": false }
@@ -10842,10 +11092,220 @@
           "actual": {
             "report": "DS1602",
             "symbol_kind": "file",
+            "confidence": "possible",
+            "reachability_class": "possible"
+          }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "workflow-run-entry-after-an-unread-option",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "Lint", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "LintFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "MainFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Stray",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "possible",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "StrayFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "possible",
+            "reachability_class": "possible"
+          }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "workflow-run-of-a-path-no-word-writes",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "Lint",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "possible",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "LintFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "possible",
+            "reachability_class": "possible"
+          }
+        },
+        { "symbol": "MainFile", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "workflow-run-path-ending-in-a-run-part",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "Check", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "CheckFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Deep",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "DeepFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
             "confidence": "certain",
             "reachability_class": "certain"
           }
-        }
+        },
+        { "symbol": "Lint", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "LintFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "MainFile", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Web", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "WebFile", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "workflow-run-path-of-only-a-run-part",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "Check",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "possible",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "CheckFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "possible",
+            "reachability_class": "possible"
+          }
+        },
+        {
+          "symbol": "Helper",
+          "result": "pass",
+          "actual": {
+            "report": "DS1002",
+            "symbol_kind": "function",
+            "confidence": "possible",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "Lint",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "possible",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "LintFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "possible",
+            "reachability_class": "possible"
+          }
+        },
+        { "symbol": "MainFile", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "workflow-run-path-with-a-run-part-at-its-edges",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "Build", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "BuildFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Lint",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "LintFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        { "symbol": "MainFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Other",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "OtherFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          }
+        },
+        { "symbol": "Sub", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "SubFile", "result": "pass", "actual": { "report": "none" } }
       ],
       "unexpected": []
     },
@@ -10858,6 +11318,35 @@
         { "symbol": "Release", "result": "pass", "actual": { "report": "none" } },
         { "symbol": "Report", "result": "pass", "actual": { "report": "none" } },
         { "symbol": "Upload", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "workflow-value-runs-an-unwritten-entry",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "MainFile", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Serve",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "possible",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "ServerFile",
+          "result": "pass",
+          "actual": {
+            "report": "DS1602",
+            "symbol_kind": "file",
+            "confidence": "possible",
+            "reachability_class": "possible"
+          }
+        }
       ],
       "unexpected": []
     },

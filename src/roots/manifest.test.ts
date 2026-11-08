@@ -145,7 +145,7 @@ describe("the scripts of a manifest", () => {
   it("name each token of a script, and carry the script's whole value on one entry at the manifest's directory", () => {
     const named = (command: string): string[] =>
       readManifest(hostWith(JSON.stringify({ scripts: { start: command } })), "/pkg").entries.map(
-        (entry) => `${entry.path} ${entry.held ?? "token"}`,
+        (entry) => `${entry.path} ${entry.held?.map((one) => one.text).join("\n") ?? "token"}`,
       );
 
     expect(named("env --frobnicate node --require=./setup.ts main.ts")).toEqual([
@@ -171,7 +171,8 @@ describe("nodemon's command of a manifest", () => {
     "names the files the command %j or the files %j beside it run, at %j, as a script does",
     (manifest, beside, member) => {
       const named = readManifest(hostWith(JSON.stringify(manifest), beside), "/pkg").entries.map(
-        (entry) => `${entry.member} ${entry.path} ${entry.held ?? "path"}`,
+        (entry) =>
+          `${entry.member} ${entry.path} ${entry.held?.map((one) => one.text).join("\n") ?? "path"}`,
       );
 
       expect(named).toEqual(

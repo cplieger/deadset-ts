@@ -120,13 +120,51 @@ describe("workflowCommands, the git hooks read", () => {
     );
 
     expect(commands).toEqual([
-      {
-        text: "node .",
-        dir: "/repo/tools/publish",
-        writtenDirectory: "tools/publish/",
-      },
-      { text: "eslint .", dir: "/repo", writtenDirectory: undefined },
+      { text: "node .", dir: "/repo/tools/publish" },
+      { text: "eslint .", dir: "/repo" },
     ]);
+  });
+
+  it("runs each script a lefthook hook names, from each directory lefthook searches, with its runner", () => {
+    const commands = workflowCommands(
+      hostWith({
+        "lefthook.yml": [
+          "source_dir: scripts/hooks/",
+          "pre-commit:",
+          "  scripts:",
+          '    "check.js":',
+          "      runner: node",
+          "    plain.sh:",
+          "pre-push:",
+          "  jobs:",
+          "    - script: push.mjs",
+          "      runner: node --import tsx",
+          "    - group:",
+          "        jobs:",
+          '          - script: "it\'s.js"',
+          "",
+        ].join("\n"),
+      }),
+      "/repo",
+    );
+
+    expect(commands.filter((one) => one.text.includes("scripts/hooks/"))).toEqual([
+      { text: "node 'scripts/hooks/pre-commit/check.js'", dir: "/repo" },
+      { text: "'scripts/hooks/pre-commit/plain.sh'", dir: "/repo" },
+      { text: "node --import tsx 'scripts/hooks/pre-push/push.mjs'", dir: "/repo" },
+      { text: "'scripts/hooks/pre-push/it'\\''s.js'", dir: "/repo" },
+    ]);
+    expect(
+      commands.filter((one) => one.text.endsWith("/check.js'")).map((one) => one.text),
+    ).toEqual([
+      "node 'scripts/hooks/pre-commit/check.js'",
+      "node '.lefthook-local/pre-commit/check.js'",
+      "node '.config/lefthook/pre-commit/check.js'",
+      "node '.config/lefthook-local/pre-commit/check.js'",
+    ]);
+    expect(
+      readCommands(commands[0]?.text ?? "", commands[0]?.dir).runs.map((run) => run.entry),
+    ).toEqual(["scripts/hooks/pre-commit/check.js"]);
   });
 
   it("holds the whole text of a git hook file, its comments included, and of a hook manager's file", () => {

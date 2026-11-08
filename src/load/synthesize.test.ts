@@ -424,7 +424,8 @@ describe("the programs a run forms for JavaScript files", () => {
     ["env -- node srv/index.js", NODE],
     ["npx -c 'node srv/index.js'", NODE],
     ["env --frobnicate node srv/index.js", BUNDLER],
-    ["node --enable-source-maps srv/index.js", BUNDLER],
+    ["node --enable-source-maps srv/index.js", NODE],
+    ["node --frobnicate srv/index.js", BUNDLER],
     ["tsx srv/index.js", BUNDLER],
     ["node", BUNDLER],
   ])(

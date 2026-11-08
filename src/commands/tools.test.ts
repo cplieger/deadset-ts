@@ -3,9 +3,11 @@ import { shellLine } from "./shell.ts";
 import type { Word } from "./shell.ts";
 import {
   configurationsOf,
+  outputOf,
   preloadTarget,
   readBuiltin,
   readTool,
+  testRun,
   type Preload,
   type Reading,
 } from "./tools.ts";
@@ -45,9 +47,13 @@ const ELSEWHERE = [
   { dir: undefined, ok: false },
 ];
 
-/** A reading that hands the command `words` on. */
+/** A reading that hands the command `words` on, its program word one of the command read. */
 function hands(words: readonly string[]): unknown {
-  return { kind: "command", words: words.map((value) => expect.objectContaining({ value })) };
+  return {
+    kind: "command",
+    words: words.map((value) => expect.objectContaining({ value })),
+    at: expect.any(Number),
+  };
 }
 
 describe("readTool", () => {
@@ -82,6 +88,43 @@ describe("readTool", () => {
     ],
     ["ts-node --require ./a.ts x.ts", run("x.ts", [required("./a.ts")])],
     ["./node_modules/.bin/ts-node x.ts", run("x.ts")],
+    ["/usr/bin/node a.js", run("a.js", [], "node")],
+    ["./bin/tsx a.ts", run("a.ts")],
+    ["node.exe a.js", run("a.js", [], "node")],
+    ['"$(npm root)/.bin/tsx" a.ts', run("a.ts")],
+    ["bun scripts/a.ts", run("scripts/a.ts")],
+    ["bun run --watch -r ./setup.ts a.ts", run("a.ts", [required("./setup.ts")])],
+    ["bun --preload=./setup.ts run a.ts", run("a.ts", [required("./setup.ts")])],
+    ["bun install", run(undefined)],
+    ["bun test a.test.ts", run(undefined)],
+    ["deno run main.ts --port 3", run("main.ts")],
+    ["deno run --allow-net --watch main.ts", run("main.ts")],
+    ["deno main.ts", run("main.ts")],
+    ["deno serve server.ts", run("server.ts")],
+    ["deno task build", run(undefined)],
+    ["deno -A lint", run("lint")],
+    ["deno --watch test.ts", run("test.ts")],
+    ["deno -q lint", run(undefined)],
+    ["bun --watch test", run(undefined)],
+    ["deno run lint", run("lint")],
+    ["bun run test", run("test")],
+    ["node --run lint", run(undefined)],
+    ["node -e 1 lint.js", run(undefined)],
+    ["node --eval=1", run(undefined)],
+    ["node -r ./setup.cjs -p 1", run(undefined, [required("./setup.cjs")])],
+    ["node -e \"require('./setup(1).cjs')\"", run(undefined)],
+    ["ts-node --print 1", run(undefined)],
+    ["bun -e 1 lint.js", run(undefined)],
+    ["node --enable-source-maps main.js", run("main.js", [], "node")],
+    ["node --watch main.js", run("main.js", [], "node")],
+    ["node --no-warnings --input-type=module a.mjs", run("a.mjs", [], "node")],
+    ["node --max-old-space-size=4096 --inspect=9229 a.js", run("a.js", [], "node")],
+    ["node --env-file .env -C development a.js", run("a.js", [], "node")],
+    ["node --input-type=module -e \"import('./x.mjs')\"", run(undefined)],
+    ["node --version", run(undefined)],
+    ["node --test", run(undefined)],
+    ['node --test --test-reporter=spec "smoke/*.check.js"', run(undefined)],
+    ["tsx --tsconfig t.json --no-warnings a.ts", run("a.ts")],
   ])("reads the runtime command %j", (text, reading) => {
     expect(read(text)).toEqual(reading);
   });
@@ -93,6 +136,20 @@ describe("readTool", () => {
       hands(["node", "a.js"]),
     ],
     ["env -u MY-VAR --unset=OTHER-VAR node a.js", hands(["node", "a.js"])],
+    ["env -iv node a.js", hands(["node", "a.js"])],
+    ["env -iuHOME -vu PATH node a.js", hands(["node", "a.js"])],
+    ["c8 node a.js", hands(["node", "a.js"])],
+    ["c8 --reporter=lcov -r text --all node a.js", hands(["node", "a.js"])],
+    ["nyc --silent -r lcov tsx a.ts", hands(["tsx", "a.ts"])],
+    ["dotenv -- node a.js", hands(["node", "a.js"])],
+    ["dotenv -e .env.test -o -- node a.js", hands(["node", "a.js"])],
+    ["dotenv -e .env node a.js", hands(["node", "a.js"])],
+    ["env-cmd node a.js", hands(["node", "a.js"])],
+    ["env-cmd -f .env.test -x node a.js", hands(["node", "a.js"])],
+    ["env-cmd -e dev,test -- node a.js", hands(["node", "a.js"])],
+    ["dotenvx run -f .env -- node a.js", hands(["node", "a.js"])],
+    ["dotenvx run node a.js", hands(["node", "a.js"])],
+    ["env -0 node a.js", hands(["node", "a.js"])],
     ["env --ignore-environment FOO-BAR=1 node a.js", hands(["node", "a.js"])],
     ["env cd srv", hands(["cd", "srv"])],
     ["env", run(undefined)],
@@ -111,15 +168,34 @@ describe("readTool", () => {
     ["yarn dlx -p tsx -q tsx a.ts", hands(["tsx", "a.ts"])],
     ["yarn node a.js", hands(["node", "a.js"])],
     ["bunx -p tsx tsx a.ts", hands(["tsx", "a.ts"])],
+    ["pnpx tsx@4 a.ts", hands(["tsx", "a.ts"])],
+    ["pnpx --package=tsx tsx a.ts", hands(["tsx", "a.ts"])],
     ["bunx tsx@4 a.ts", hands(["tsx", "a.ts"])],
+    ["bun x tsx@4 a.ts", hands(["tsx", "a.ts"])],
+    ["npx.cmd tsx a.ts", hands(["tsx", "a.ts"])],
+    ["cross-env A=$(x) node a.js", hands(["node", "a.js"])],
+    ["cross-env NODE_ENV=$X node a.js", hands(["node", "a.js"])],
+    ['env "FOO=$BAR" node a.js', hands(["node", "a.js"])],
+    ["env -u HOME A=${X}y node a.js", hands(["node", "a.js"])],
+    ["/usr/bin/env node a.js", hands(["node", "a.js"])],
   ])("reads the launcher %j as handing on a command", (text, reading) => {
-    expect(read(text)).toEqual(reading);
+    const words = wordsOf(text);
+    const got = read(text);
+
+    expect(got).toEqual(reading);
+    // The command handed on stands at `at` of the command read, its program word as the reader reads it.
+    expect(got?.kind === "command" && words.slice(got.at + 1)).toEqual(
+      got?.kind === "command" && got.words.slice(1),
+    );
   });
 
   it.each([
     ["npx -c 'node a.js && node b.js'", "node a.js && node b.js"],
     ["npx --call='node a.js'", "node a.js"],
     ["npm exec --call 'tsx a.ts'", "tsx a.ts"],
+    ["env -S 'node a.js'", "env 'node' 'a.js'"],
+    ["env -iS'node --no-warnings' a.js $X", "env 'node' '--no-warnings' a.js $X"],
+    ["env -u HOME --split-string='-i node' \"a.js\"", "env '-i' 'node' \"a.js\""],
   ])("reads %j as running the command line %j", (text, line) => {
     expect(read(text)).toEqual({ kind: "line", text: line });
   });
@@ -226,23 +302,30 @@ describe("readTool", () => {
 
   it.each([
     // an option no reader handles
-    ["node --enable-source-maps main.js"],
-    ["node --test"],
-    ["node --watch main.js"],
-    ["node --input-type=module -e \"import('./x.mjs')\""],
-    ["node -e \"require('./setup(1).cjs')\""],
-    ["node -p 1"],
+    ["tsx --test"],
+    ["node --check a.js"],
+    ["node --frobnicate a.js"],
+    ["tsx watch --include src a.ts"],
+    ["env -S 'node $1'"],
+    ['env -S"$X" a.js'],
+    ["env -C dir -S'node a.js'"],
+    ["env -S'node \\c' a.js"],
+    ["pnpm --frobnicate exec tsx a.ts"],
+    ["pnpm exec --frobnicate tsx a.ts"],
+    ["pnpx -s tsx a.ts"],
     ["node - < a.js"],
+    ["node -e"],
+    ["bun --hot=x a.ts"],
+    ["deno run --allow-read=. main.ts"],
     ["node -rx main.js"],
-    ["tsx --tsconfig t.json a.ts"],
     ["tsx watch --clear-screen=false a.ts"],
     ["ts-node -T a.ts"],
-    ["ts-node -e 1"],
-    ["env -S 'node a.js'"],
+    ["c8 --frobnicate node a.js"],
+    ["dotenv -o node a.js"],
+    ["env-cmd -e dev node a.js"],
     ["env -C dir node a.js"],
     ["env --unse HOME node a.js"],
     ["env --frobnicate node a.js"],
-    ["env -iv node a.js"],
     ["env =x node a.js"],
     ["cross-env a.b=1 node a.js"],
     ["cross-env"],
@@ -266,9 +349,6 @@ describe("readTool", () => {
     ["yarn run build"],
     ["bunx --bun tsx a.ts"],
     ["vite build"],
-    ["/usr/bin/node a.js"],
-    ["./bin/node a.js"],
-    ["/usr/bin/env node a.js"],
     // a dynamic word where the reader needs one
     ["node $ENTRY"],
     ['node "$PWD/a.js"'],
@@ -298,7 +378,6 @@ describe("readTool", () => {
     // a shell builtin, which no tool reader reads
     ["cd srv"],
     ["./node_modules/.bin/cd srv"],
-    ["cross-env A=$(x) node a.js"],
     ["npx $TOOL a.js"],
     ["npx -p $PKG node a.js"],
     ["npm exec -- $TOOL a.js"],
@@ -310,4 +389,68 @@ describe("readTool", () => {
   ])("reads %j as not understood", (text) => {
     expect(read(text)).toBeUndefined();
   });
+});
+
+describe("testRun", () => {
+  it.each([
+    ["node --test", { patterns: [], stripped: true }],
+    ["node --title app --preserve-symlinks --test", { patterns: [], stripped: true }],
+    ["node --no-strip-types --test a.test.js", { patterns: ["a.test.js"], stripped: false }],
+    [
+      'node --test --test-reporter=spec "smoke/*.check.js"',
+      { patterns: ["smoke/*.check.js"], stripped: true },
+    ],
+    ["node --test-only --test", { patterns: [], stripped: true }],
+    ["node --test $X", undefined],
+    ["node --frobnicate --test", undefined],
+    ["node a.js", undefined],
+    ["tsx --test", undefined],
+    ["c8 node --test", undefined],
+  ])("reads %j as the test run %j", (text, want) => {
+    expect(testRun(wordsOf(text))).toEqual(want);
+  });
+});
+
+describe("outputOf", () => {
+  const none = { at: [], joined: [], texts: [], input: false };
+  it.each([
+    ["echo node lint", { ...none, joined: [[1, 3]] }],
+    ["echo -n -E node lint", { ...none, joined: [[3, 5]] }],
+    ["echo -x node", { ...none, joined: [[1, 3]] }],
+    ["echo", { ...none, joined: [[1, 1]] }],
+    ["echo -e node", undefined],
+    ["echo -ne node", undefined],
+    ["echo 'a\\nb'", undefined],
+    ["printf 'node lint\\n'", { ...none, texts: ["node lint\n"] }],
+    ["printf -- '100%% \\t\\\\'", { ...none, texts: ["100% \t\\"] }],
+    ["printf 'node %s' lint", undefined],
+    ["printf 'node lint' x", undefined],
+    ["printf 'a\\101'", undefined],
+    ["printf 'a\\'", undefined],
+    ["printf 'a%'", undefined],
+    ['printf "$X"', undefined],
+    ["printf -v x 'node lint'", none],
+    ["printf -x 'node lint'", undefined],
+    ["cat a.sh -u b.sh", { ...none, at: [1, 3] }],
+    ["cat", { ...none, input: true }],
+    ["cat a.sh -", { ...none, at: [1], input: true }],
+    ["tee log", undefined],
+    ["node lint", undefined],
+  ])("reads what %j writes as %j", (text, want) => {
+    expect(outputOf(wordsOf(text))).toEqual(want);
+  });
+});
+
+describe("readTool of a runtime given its standard input as a path", () => {
+  it.each(["node /dev/stdin", "node /dev/fd/0 a", "node --no-warnings /dev/stdin"])(
+    "reads %j as running no entry",
+    (text) => {
+      expect(read(text)).toEqual({
+        kind: "run",
+        entry: undefined,
+        preloads: [],
+        runtime: undefined,
+      });
+    },
+  );
 });

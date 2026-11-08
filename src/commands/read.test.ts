@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFixture } from "../../__test-helpers__/fixtures.ts";
 import { resolvePath } from "../paths.ts";
 import { heldNames, spelledFiles } from "../text/named-files.ts";
+import { heldWords } from "./held.ts";
 import { loadsOf, pathsNamed, preloadedPackages, readCommands } from "./read.ts";
 
 const INPUTS = JSON.parse(readFixture("commands", "inputs.json")) as readonly {
@@ -26,14 +27,22 @@ const OBSERVED_BEFORE = JSON.parse(readFixture("commands", "observed.json")) as 
 }[];
 
 /**
- * What the reading of `input` in `/pkg` misses of what was observed before. A path a token
- * rooted counts where a word or a run names it, or the held text holds it; a token or a preload
- * counts where a word or a run uses it, or the held text names it.
+ * What the reading of `input` in `/pkg` misses of what was observed before. A file held or a
+ * path a token rooted before counts only where the input writes it as a path, since a bare word
+ * holds no file (roots.13): a held file where the held text holds it, a rooted path where a
+ * word or a run names it or the held text holds it. A token or a preload counts where a word
+ * or a run uses it, or the held text names it.
  */
 function missed(before: (typeof OBSERVED_BEFORE)[number]): Record<string, readonly string[]> {
   const reading = readCommands(before.input, "/pkg");
   const holds = (file: string): boolean =>
-    spelledFiles(reading.held, "/pkg", [{ file, paths: [file] }]).length > 0;
+    spelledFiles(heldWords([{ text: reading.held, shell: true }]), "/pkg", "/pkg", [
+      { file, paths: [file] },
+    ]).files.length > 0;
+  const writtenAsPath = (file: string): boolean =>
+    spelledFiles(heldWords([{ text: before.input, shell: true }]), "/pkg", "/pkg", [
+      { file, paths: [file] },
+    ]).files.length > 0;
   const named = new Set(pathsNamed(reading).map((one) => one.path));
   const configurations = new Set(
     reading.configurations.map((one) => resolvePath(one.dir, one.written)),
@@ -44,8 +53,8 @@ function missed(before: (typeof OBSERVED_BEFORE)[number]): Record<string, readon
   const preloads = new Set(reading.runs.flatMap(preloadedPackages));
   const spelled = (name: string): boolean => heldNames(reading.held, [name]).size > 0;
   return {
-    held: before.held.filter((file) => !holds(file)),
-    roots: before.roots.filter((path) => !named.has(path) && !holds(path)),
+    held: before.held.filter((file) => writtenAsPath(file) && !holds(file)),
+    roots: before.roots.filter((path) => !named.has(path) && writtenAsPath(path) && !holds(path)),
     configurations: before.configurations.filter((path) => !configurations.has(path)),
     commands: before.commands.filter((token) => !words.has(token) && !spelled(token)),
     preloads: before.preloads.filter((name) => !preloads.has(name) && !spelled(name)),
@@ -76,7 +85,9 @@ function reach(text: string, file: string): "word" | "run" | "held" | undefined 
   if (reading.runs.some((run) => loadsOf(run).some((load) => load.paths.includes(file)))) {
     return "run";
   }
-  const held = spelledFiles(reading.held, "/pkg", [{ file, paths: [file] }]);
+  const held = spelledFiles(heldWords([{ text: reading.held, shell: true }]), "/pkg", "/pkg", [
+    { file, paths: [file] },
+  ]).files;
   return held.length > 0 ? "held" : undefined;
 }
 
@@ -167,6 +178,8 @@ describe("readCommands", () => {
     ],
     ["cd srv | node a.js; cd lib & node b.js", [nodeRun("", "a.js"), nodeRun("", "b.js")]],
     ["npx -c 'cd srv && node a.js' && node b.js", [nodeRun("/srv", "a.js"), nodeRun("", "b.js")]],
+    ["env -S'node --enable-source-maps' a.js", [nodeRun("", "a.js")]],
+    ["cd srv && env -iS'-u HOME node' a.js", [nodeRun("/srv", "a.js")]],
     [
       "npx cross-env A=1 npx tsx --import ./env.ts a.ts",
       [{ dir: "/pkg", entry: "a.ts", preloads: ["./env.ts"], runtime: undefined }],
@@ -227,12 +240,15 @@ describe("readCommands", () => {
     ["pushd /absent || node fallback.js; node after.js", "/pkg/after.js"],
     ["if [ -d x ]; then cd x; fi; node b.js", "/pkg/x/b.js"],
     ["pushd tools && node gen.js && popd && node b.js", "/pkg/b.js"],
+    ["cd $DIR && node x", "/pkg/x.js"],
   ])("holds from %j the file %j a run it does not read may load", (text, file) => {
     const reading = readCommands(text, "/pkg");
 
     expect([
       reading.runs.some((run) => loadsOf(run).some((load) => load.paths.includes(file))),
-      spelledFiles(reading.held, "/pkg", [{ file, paths: [file] }]),
+      spelledFiles(heldWords([{ text: reading.held, shell: true }]), "/pkg", "/pkg", [
+        { file, paths: [file] },
+      ]).files,
     ]).toEqual([false, [file]]);
   });
 
@@ -254,30 +270,48 @@ describe("readCommands", () => {
     ["node --require=./setup.js main.js", "require.js"],
     ["npm run build", "build.ts"],
     ["vite build", "vite.ts"],
+    ["node main.js task", "task.js"],
+    ["vite build", "build.js"],
   ])(
-    "reads %j to run no file %j, a program, an option or a script name, and holds it",
+    "reads %j to reach no file %j: a program, an option, a script name or another bare word names none (roots.13)",
     (text, file) => {
-      expect(reach(text, `/pkg/${file}`)).toBe("held");
+      expect(reach(text, `/pkg/${file}`)).toBeUndefined();
     },
   );
 
   it.each([
     ["node main.js extra.js", "/pkg/extra.js", "word"],
-    ["node main.js task", "/pkg/task.js", "held"],
     ["npm run build -- tools/gen", "/pkg/tools/gen.ts", "held"],
     ["NODE_OPTIONS='-r ./hook.cjs' node main.js", "/pkg/hook.cjs", "held"],
     ["node main.js > out/report.js", "/pkg/out/report.js", "held"],
     ["cd $DIR && node main.js", "/pkg/main.js", "word"],
-    ["cd $DIR && node x", "/pkg/x.js", "held"],
     ["vite build --config tools/vite.ts", "/pkg/tools/vite.ts", "word"],
     ["node $(pwd)/server.js", "/pkg/server.js", "held"],
     ["if true; then node a.js; fi", "/pkg/a.js", "held"],
     ["node 'unterminated b.js", "/pkg/b.js", "held"],
     ["./bin/node a.js", "/pkg/bin/node.js", "held"],
-    ["vite build", "/pkg/build.js", "held"],
     ["node --import ./setup%20x.mjs main.mjs", "/pkg/setup x.mjs", "run"],
   ])("reads %j to reach %j as a %s", (text, file, how) => {
     expect(reach(text, file)).toBe(how);
+  });
+
+  it.each([
+    ["node --title app --test", [["/pkg", []]]],
+    [
+      "cd sub && node --test a.test.js",
+      [
+        ["/pkg/sub", ["a.test.js"]],
+        ["/pkg", ["a.test.js"]],
+      ],
+    ],
+    ["npx -c 'node --test'", [["/pkg", []]]],
+    ["env -S'node --test'", [["/pkg", []]]],
+    ["c8 node --test", [["/pkg", []]]],
+    ["sh -c 'node --test'", []],
+    ["node --test $X", []],
+    ["node a.js", []],
+  ])("reads %j as the test runs %j, by the runtime's one table", (text, want) => {
+    expect(readCommands(text, "/pkg").tests.map((one) => [one.dir, one.patterns])).toEqual(want);
   });
 
   it("reads each preload as a path or a package's name", () => {

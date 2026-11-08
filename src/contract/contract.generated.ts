@@ -1281,6 +1281,13 @@ export const EVIDENCE = [
     ],
   },
   {
+    evidence: "unwritten-run-path",
+    rule: "confidence.35",
+    class: "possible",
+    languages: ["ts"],
+    codes: ["DS1601", "DS1602"],
+  },
+  {
     evidence: "schema-operation-default",
     rule: "schemas.10",
     class: "possible",

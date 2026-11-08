@@ -1116,6 +1116,16 @@ export function emitterInputOver(
       generated: new Set(projects.flatMap((one) => [...one.extra.generated.keys()])),
       inOperands: new Set(projects.flatMap((one) => one.extra.inOperands)),
       unseenLoads: projects.flatMap((one) => one.extra.unseenLoads),
+      unwrittenRuns: new Set(
+        projects.flatMap((one) =>
+          one.heldScripts
+            .filter((held) => held.unwritten)
+            .map(
+              (held) =>
+                relativePath(resolvePath(host.workingDirectory(), targetRoot), held.dir) ?? ".",
+            ),
+        ),
+      ),
     },
     boundary: {
       consumers: {
@@ -1389,7 +1399,9 @@ export function unansweredCounts(analysis: RunAnalysis): readonly UnansweredCoun
       analysis.run.unread.filter(
         (one) => one.kind === "manifest" && one.configFile === project.configFile,
       ).length +
-      analysis.run.heldScripts.filter((one) => one.configFile === project.configFile).length;
+      analysis.run.heldScripts.filter(
+        (one) => one.configFile === project.configFile && one.files.length > 0,
+      ).length;
 
     if (questions === 0) {
       return [];

@@ -452,6 +452,24 @@ describe("the files node --test runs", () => {
       },
       ["a.test.js"],
     ],
+    ...["--title app", "--preserve-symlinks", "--no-deprecation", "--title=app"].map(
+      (option): [string, Record<string, string>, string[]] => [
+        `its defaults after ${option}, an option Node's table reads`,
+        {
+          ...declaring(undefined, "", { scripts: { test: `node ${option} --test` } }),
+          "a.test.js": TEST,
+        },
+        ["a.test.js"],
+      ],
+    ),
+    [
+      "its defaults behind c8, in the directory a cd moves to",
+      {
+        ...declaring(undefined, "", { scripts: { test: "cd sub && c8 node --test" } }),
+        "sub/a.test.js": TEST,
+      },
+      ["sub/a.test.js"],
+    ],
     [
       "none for a command holding an option the reader does not name",
       {

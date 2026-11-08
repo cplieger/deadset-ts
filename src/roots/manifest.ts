@@ -9,6 +9,7 @@ import type { Host } from "../host.ts";
 import { isAbsolutePath, joinPath, relativePath, resolvePath } from "../paths.ts";
 import { isRecord } from "../json-document.ts";
 import { MANIFEST, manifestAt, readJSON } from "../fs/manifest.ts";
+import type { HeldText } from "../commands/held.ts";
 import { pathsNamed, readCommands } from "../commands/read.ts";
 
 /** The three members that name an entry point beside `exports` and `bin`. */
@@ -41,12 +42,12 @@ export interface ManifestEntry {
   /** The directory of the manifest that names it, which `path` was resolved against. */
   readonly dir: string;
   /**
-   * On an entry that names no entry point, whose path is the manifest's directory, the text
-   * layer 3 holds: a whole command string the package runs, or the whole text of nodemon's
+   * On an entry that names no entry point, whose path is the manifest's directory, the texts
+   * layer 3 reads: a whole command string the package runs, or the values of nodemon's
    * configuration one is read from. Rooting enters no file for it and holds each file
-   * `spelledFiles` reads the text to name.
+   * `spelledFiles` reads their words to name.
    */
-  readonly held?: string;
+  readonly held?: readonly HeldText[];
 }
 
 /**
@@ -68,8 +69,9 @@ function below(member: string, key: string): string {
 
 /**
  * The whole text of nodemon's configuration, the manifest's `nodemonConfig` member and the
- * `nodemon.json` beside it, by the member each is. Layer 3 holds it whole, because nodemon runs
- * commands from keys besides `exec`, `events` among them: https://github.com/remy/nodemon#config-files
+ * `nodemon.json` beside it, by the member each is. The dependency rule reads it whole, and
+ * layer 3 each of its values, because nodemon runs commands from keys besides `exec`, `events`
+ * among them: https://github.com/remy/nodemon#config-files
  */
 export function nodemonTexts(
   host: Host,
@@ -87,6 +89,40 @@ export function nodemonTexts(
     ...(member === undefined ? [] : [{ member: "nodemonConfig", text: JSON.stringify(member) }]),
     ...(file === undefined ? [] : [{ member: "nodemon.json", text: file }]),
   ];
+}
+
+/**
+ * The texts layer 3 reads of one text of nodemon's configuration: each value of it but its
+ * `exec` command, which is read as a command string of its own, those under `events` read as
+ * command strings too, and the whole text where it does not parse. Its keys are never read.
+ */
+function nodemonValues(text: string): readonly HeldText[] {
+  let config: unknown;
+  try {
+    config = JSON.parse(text);
+  } catch {
+    return [{ text, shell: false }];
+  }
+  const found: HeldText[] = [];
+  const visit = (value: unknown, shell: boolean): void => {
+    if (Array.isArray(value) || isRecord(value)) {
+      for (const one of Object.values(value)) {
+        visit(one, shell);
+      }
+    } else if (
+      typeof value === "string" ||
+      typeof value === "number" ||
+      typeof value === "boolean"
+    ) {
+      found.push({ text: String(value), shell });
+    }
+  };
+  for (const [key, value] of Object.entries(isRecord(config) ? config : { "": config })) {
+    if (key !== "exec" || typeof value !== "string") {
+      visit(value, key === "events");
+    }
+  }
+  return found;
 }
 
 /**
@@ -219,10 +255,19 @@ export function readManifest(host: Host, targetRoot: string): Manifest {
     for (const path of new Set(pathsNamed(readCommands(command, ".")).map((one) => one.path))) {
       found.push({ member, path, role: "script", published: false });
     }
-    found.push({ member, path: ".", role: "script", published: false, held: command });
+    found.push({
+      member,
+      path: ".",
+      role: "script",
+      published: false,
+      held: [{ text: command, shell: true, tested: member.startsWith("scripts[") }],
+    });
   }
   for (const { member, text } of nodemonTexts(host, targetRoot, manifest)) {
-    found.push({ member, path: ".", role: "script", published: false, held: text });
+    const held = nodemonValues(text);
+    if (held.length > 0) {
+      found.push({ member, path: ".", role: "script", published: false, held });
+    }
   }
 
   return {

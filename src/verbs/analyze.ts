@@ -137,13 +137,28 @@ function unseenLoadNotes(loads: readonly UnseenLoad[]): readonly ReportNote[] {
 /** One note per package whose command strings name files a configuration holds, naming every such file. */
 function heldScriptNotes(held: readonly HeldScripts[], targetRoot: string): readonly ReportNote[] {
   const files = new Map<string, Set<string>>();
+  const unwritten = new Set<string>();
   for (const one of held) {
     files.set(one.dir, new Set([...(files.get(one.dir) ?? []), ...one.files]));
+    if (one.unwritten) {
+      unwritten.add(one.dir);
+    }
   }
   return [...files].map(([dir, paths]) => ({
     kind: "unread-command",
     path: relativePath(targetRoot, dir) ?? ".",
-    message: `commands the analysis does not read name ${[...paths].sort(bytewise).join(", ")}, so no finding is reported about ${paths.size === 1 ? "that file itself or the names it exports" : "those files themselves or the names they export"}`,
+    message: [
+      ...(paths.size === 0
+        ? []
+        : [
+            `commands the analysis does not read name ${[...paths].sort(bytewise).join(", ")}, so no finding is reported about ${paths.size === 1 ? "that file itself or the names it exports" : "those files themselves or the names they export"}`,
+          ]),
+      ...(unwritten.has(dir)
+        ? [
+            "a command runs a file whose path no word of it writes, so a finding that a file of the package is never built or never imported is possible at most",
+          ]
+        : []),
+    ].join("; "),
   }));
 }
 
