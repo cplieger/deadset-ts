@@ -12,7 +12,7 @@ import {
 import { nodeKey, type Inventory } from "./inventory.ts";
 import type { Reference } from "./references.ts";
 import type { ProjectView } from "./session.ts";
-import type { Exemption } from "./exempt.ts";
+import type { Exemption } from "./exemptions/lifecycle.ts";
 import type { Mode } from "./tests/file-class.ts";
 import { classedAsTest, madeByTestCode, withheldBy } from "./tests/file-class.ts";
 

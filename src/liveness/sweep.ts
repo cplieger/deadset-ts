@@ -7,7 +7,7 @@
  * unanswered checker question; each Contract rule "live only through" one is a view up to it.
  */
 
-import { exemptionsOf, isUnansweredRecord, type Exemption } from "../exempt.ts";
+import { exemptionsOf, type Exemption } from "../exemptions/lifecycle.ts";
 import type { InventorySymbol } from "../inventory.ts";
 import { edgeWithheldBy, type Mode } from "../tests/file-class.ts";
 import { componentsOf, type Component, type Positional } from "./components.ts";
@@ -644,7 +644,7 @@ function seedsOf(
     const seed = { at, origin: { k: "exemption", record } as const };
     if (record.whileLive !== undefined) {
       gate(record.whileLive, seed);
-    } else if (isUnansweredRecord(record)) {
+    } else if (record.unanswered === true) {
       unanswered.push(seed);
     } else {
       records.push(seed);

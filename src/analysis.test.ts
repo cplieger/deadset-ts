@@ -13,13 +13,13 @@ import {
   runRoots,
   runSweep,
   unansweredCounts,
-  DETECTORS,
   type RunAnalysis,
   type RunSweep,
 } from "./analysis.ts";
 import type { Inputs } from "./config.ts";
-import type { Detector, Detectors } from "./exempt.ts";
-import type { TSExemptionClass } from "./exempt-classes.ts";
+import { DETECTORS } from "./exemptions/detectors.ts";
+import type { Detector, Detectors } from "./exemptions/lifecycle.ts";
+import type { TSExemptionClass } from "./exemptions/classes.ts";
 import type { Host } from "./host.ts";
 import { Unanswerable } from "./query.ts";
 import { resolve } from "./resolve.ts";

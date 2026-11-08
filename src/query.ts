@@ -8,16 +8,17 @@
  */
 
 import { isIdentifier, type Expression, type Node } from "@typescript/native/ast";
-import type {
-  APIRequestGenerator,
-  Checker,
-  IndexInfo,
-  JSDocTagInfo,
-  Signature,
-  SignatureKind,
-  SymbolFlags,
-  Symbol as TSSymbol,
-  Type,
+import {
+  IndexKind,
+  type APIRequestGenerator,
+  type Checker,
+  type IndexInfo,
+  type JSDocTagInfo,
+  type Signature,
+  type SignatureKind,
+  type SymbolFlags,
+  type Symbol as TSSymbol,
+  type Type,
 } from "@typescript/native/sync";
 
 /**
@@ -205,6 +206,12 @@ export interface Queries {
   targetOf(type: Type): Answer<Type>;
   /** The constraint of a type parameter, where it declares one; none for another type. */
   constraintOf(type: Type): Answer<Type | undefined>;
+  /**
+   * The type a type the checker leaves generic is at most, its constraints resolved, such
+   * as a type parameter, an indexed access, a generic tuple or a union of them; none for
+   * an object type that is not generic.
+   */
+  baseConstraintOf(type: Type): Answer<Type | undefined>;
   /** The object and the index of an indexed-access type; none for another type. */
   indexedAccessOf(type: Type): Answer<{ readonly object: Type; readonly index: Type } | undefined>;
   /**
@@ -232,6 +239,24 @@ export interface Queries {
   genericOf(signature: Signature): Answer<Signature | undefined>;
   /** The type of the parameter an argument at one position binds, a rest element's included. */
   typeAtPosition(signature: Signature, index: number): Answer<Type>;
+  /**
+   * The type of a signature's rest parameter: an array, a tuple, or another type such as
+   * a type parameter or a union of tuples; none where it has none.
+   */
+  restTypeOf(signature: Signature): Answer<Type | undefined>;
+  /**
+   * The type a number index of a type reads, which holds every element type of an array,
+   * a tuple or an array-like interface; none where the type has no number index.
+   */
+  numberIndexOf(type: Type): Answer<Type | undefined>;
+  /**
+   * The type parameters a mapped type is over: every one its alias's arguments, its key
+   * set, its `as` clause or its template names, through the types they are spelled from,
+   * each mapped type's own key parameter aside; none for another type.
+   */
+  mappedParametersOf(type: Type): Answer<readonly Type[]>;
+  /** The type of one named property of a type, its apparent members included; none where it has none. */
+  propertyTypeOf(type: Type, name: string): Answer<Type | undefined>;
   signatureOf(declaration: Node): Answer<Signature | undefined>;
   returnTypeOf(signature: Signature): Answer<Type | undefined>;
   typeToString(type: Type): Answer<string>;
@@ -266,6 +291,43 @@ function partQuestion(type: Type): (() => readonly (Type | undefined)[]) | undef
     return () => [type.getBaseType(), type.getConstraint()];
   }
   return undefined;
+}
+
+/** How deep {@link mappedParameters} reads, as a recursive mapped type makes a new one at each level. */
+const MAPPED_DEPTH = 4;
+
+/** The type parameters a mapped type is over, as {@link Queries.mappedParametersOf} names them. */
+function mappedParameters(checker: Checker, mapped: Type): Type[] {
+  const own = new Set<number>();
+  const found = new Map<number, Type>();
+  const seen = new Set<number>();
+  const visit = (type: Type, depth: number): void => {
+    if (depth > MAPPED_DEPTH || seen.has(type.id)) {
+      return;
+    }
+    seen.add(type.id);
+    if (type.isMappedType()) {
+      own.add(type.getTypeParameter().id);
+    }
+    if (type.isTypeParameter() && !type.isThisType) {
+      found.set(type.id, type);
+    }
+    const aliased = (type as { readonly aliasTypeArguments?: readonly number[] })
+      .aliasTypeArguments;
+    const inner = [
+      ...(type.isUnionType() || type.isIntersectionType() ? type.getTypes() : []),
+      ...(type.isTypeReference() ? checker.getTypeArguments(type) : []),
+      ...(aliased === undefined || aliased.length === 0 ? [] : type.getAliasTypeArguments()),
+      ...(partQuestion(type)?.() ?? []),
+    ];
+    for (const part of inner) {
+      if (part !== undefined) {
+        visit(part, depth + 1);
+      }
+    }
+  };
+  visit(mapped, 0);
+  return [...found.values()].filter((parameter) => !own.has(parameter.id));
 }
 
 /**
@@ -565,6 +627,12 @@ export function queriesOf(
             () => type.getConstraint(),
           )
         : undefined,
+    baseConstraintOf: (type) =>
+      one(
+        "getBaseConstraintOfType",
+        () => typeLocation(type),
+        () => checker.getBaseConstraintOfType(type),
+      ),
     indexedAccessOf: (type) =>
       type.isIndexedAccessType()
         ? one(
@@ -655,6 +723,37 @@ export function queriesOf(
         "getTypeParameterAtPosition",
         () => `signature ${String(signature.id)} position ${String(index)}`,
         () => signature.getTypeParameterAtPosition(index),
+      ),
+    restTypeOf: (signature) =>
+      signature.hasRestParameter
+        ? one(
+            "getTypeOfSymbol",
+            () => `signature ${String(signature.id)} rest parameter`,
+            () => {
+              const rest = signature.getParameters().at(-1);
+              return rest === undefined ? undefined : checker.getTypeOfSymbol(rest);
+            },
+          )
+        : undefined,
+    numberIndexOf: (type) =>
+      one(
+        "getIndexTypeOfType",
+        () => typeLocation(type),
+        () => checker.getIndexTypeOfType(type, IndexKind.Number),
+      ),
+    mappedParametersOf: (type) =>
+      type.isMappedType()
+        ? one(
+            "getConstraintType",
+            () => typeLocation(type),
+            () => mappedParameters(checker, type),
+          )
+        : [],
+    propertyTypeOf: (type, name) =>
+      one(
+        "getTypeOfPropertyOfType",
+        () => `${typeLocation(type)} property ${name}`,
+        () => checker.getTypeOfPropertyOfType(type, name),
       ),
     signatureOf: (declaration) =>
       one(

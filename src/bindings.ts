@@ -29,7 +29,7 @@ import {
   type SourceFile,
 } from "@typescript/native/ast";
 import { GENERATORS } from "./contract/contract.generated.ts";
-import type { GeneratedFact } from "./generated-file.ts";
+import type { GeneratedFact } from "./exemptions/generated-file.ts";
 import { componentOf, nameNodeOf } from "./inventory.ts";
 import { nameComponent, spell } from "./ref.ts";
 import { bytewise } from "./text/compare.ts";

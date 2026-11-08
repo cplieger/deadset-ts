@@ -1,8 +1,8 @@
 {
-  "corpus_version": "6.0.0",
+  "corpus_version": "6.1.0",
   "product": { "name": "deadset-ts", "version": "0.1.0", "language": "ts" },
   "result": "pass",
-  "totals": { "fixtures": 377, "pass": 364, "gap": 0, "fail": 0, "pending": 13 },
+  "totals": { "fixtures": 379, "pass": 366, "gap": 0, "fail": 0, "pending": 13 },
   "fixtures": [
     {
       "fixture": "abstract-member-through-this",
@@ -572,6 +572,132 @@
             "confidence": "certain",
             "reachability_class": "certain",
             "component": { "root": true }
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "class-installed-as-a-global",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "ByDefineProperty.send",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["interface-satisfaction"] }
+        },
+        {
+          "symbol": "ByDefineProperty.spare",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "method",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "ByErasedReceiver.send",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["interface-satisfaction"] }
+        },
+        {
+          "symbol": "ByErasedReceiver.spare",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "method",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "ByGlobalThis.send",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["interface-satisfaction"] }
+        },
+        {
+          "symbol": "ByGlobalThis.spare",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "method",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "ByReplaceProperty.send",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["interface-satisfaction"] }
+        },
+        {
+          "symbol": "ByReplaceProperty.spare",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "method",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "BySelf.send",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["interface-satisfaction"] }
+        },
+        {
+          "symbol": "BySelf.spare",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "method",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "ByStubGlobal.send",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["interface-satisfaction"] }
+        },
+        {
+          "symbol": "ByStubGlobal.spare",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "method",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "ByWindow.send",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["interface-satisfaction"] }
+        },
+        {
+          "symbol": "ByWindow.spare",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "method",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
           },
           "suppression": { "suppressed": true, "stale": false }
         }
@@ -3535,6 +3661,55 @@
           "suppression": { "suppressed": true, "stale": false }
         },
         { "symbol": "Tier.Top", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "exemption-values-through-function-methods-and-this",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "ByApply.connectedCallback",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        },
+        {
+          "symbol": "ByBind.connectedCallback",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        },
+        {
+          "symbol": "ByCall.connectedCallback",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        },
+        {
+          "symbol": "ByLeft.connectedCallback",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "method",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "ByRight.connectedCallback",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        },
+        {
+          "symbol": "ByWrapper.connectedCallback",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["framework-lifecycle"] }
+        },
+        {
+          "symbol": "Record.key",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        }
       ],
       "unexpected": []
     },

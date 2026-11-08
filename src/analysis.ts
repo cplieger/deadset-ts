@@ -15,7 +15,6 @@ import {
   configuredRef,
   declarationsNamed,
 } from "./roots/configured-declarations.ts";
-import { decorator } from "./decorator.ts";
 import { configurationNeeds, dependenciesOf, projectNeeds } from "./dependencies.ts";
 import { carriersOf, NO_CARRIERS, type Carriers } from "./exposure.ts";
 import { deprecatedDeclarations, type Deprecation } from "./deprecation.ts";
@@ -26,32 +25,19 @@ import type { AppliedConvention } from "./entries/conventions.ts";
 import { readSources, type SourceFacts } from "./entries/sources.ts";
 import { readWorkflows, type Workflows } from "./entries/workflow-steps.ts";
 import { readEdgeSides } from "./edges.ts";
-import { enumGroup } from "./enum-group.ts";
 import { bindingsOf, distinctBindings, type BindingRecord } from "./bindings.ts";
-import { generatedFile, generatedFilesOf, type GeneratedFact } from "./generated-file.ts";
+import { generatedFilesOf, type GeneratedFact } from "./exemptions/generated-file.ts";
 import { inOperandNames } from "./findings/in-operands.ts";
 import { sourceFilesOf } from "./source-files.ts";
-import {
-  evidenceRecords,
-  heldRecords,
-  disabledClasses,
-  exemptionsOf,
-  isUnansweredRecord,
-  writtenRecords,
-  type Detector,
-  type Detectors,
-} from "./exempt.ts";
-import type { TSExemptionClass } from "./exempt-classes.ts";
+import { DETECTORS, detection } from "./exemptions/detectors.ts";
+import { exemptionsOf, settle, type Detectors, type Exemption } from "./exemptions/lifecycle.ts";
 import { heldByInclusion, sourcePaths, sourceTree } from "./file-facts.ts";
 import type { Finding } from "./finding.ts";
 import { findingsPass, recordedFindings, rowKey, type PassResult } from "./findings-pass.ts";
 import type { EmitterInput } from "./findings/emitter.ts";
 import { unmatchedRootFindings, type SelfCheckFacts } from "./findings/self-check.ts";
-import { frameworkLifecycle } from "./framework-lifecycle.ts";
 import type { Host } from "./host.ts";
 import { implementations, mergeImplementations } from "./findings/implementations.ts";
-import { injectionContainer } from "./injection-container.ts";
-import { interfaceSatisfaction, settledSatisfaction } from "./interface-satisfaction.ts";
 import { intraFunctionFacts, projectParts, type ProjectParts } from "./intra-function-parts.ts";
 import { type Inventory, type InventorySymbol } from "./inventory.ts";
 import { inventory } from "./inventory/enumerate.ts";
@@ -69,7 +55,6 @@ import type { UnansweredQuestion } from "./query.ts";
 import { byPosition, isComponentFile, type Position } from "./position.ts";
 import type { TypeErrorSkip, UnansweredCount } from "./report.ts";
 import { skippedUnits, type SkippedUnit } from "./type-errors.ts";
-import { reflectiveLookup } from "./reflective-lookup.ts";
 import { references, type Reference } from "./references.ts";
 import {
   rootSet,
@@ -79,7 +64,7 @@ import {
   type HeldScripts,
 } from "./roots/root-set.ts";
 import type { Scope } from "./scope.ts";
-import { decodedMembers, serializationContract, type Decoded } from "./serialization-contract.ts";
+import { decodedMembers, type Decoded } from "./exemptions/serialization-contract.ts";
 import { outsideTestReferences, testFilesAt, type OutsideTest } from "./tests/outside.ts";
 import type { UnseenLoad } from "./roots/unseen-loads.ts";
 import type { UnresolvedSpecifier } from "./load/specifiers.ts";
@@ -100,9 +85,7 @@ import { isPartKind, type SuppressionRecord, type Suppressions, type Verdict } f
 import { bindRows, readBaseline, readIgnoreFile, type Recorded } from "./suppress-file.ts";
 import { inlineDirectives, inlineSuppressions, type InlineDirective } from "./suppress-inline.ts";
 import { sweep, type Sweep, type SweepPolicy } from "./liveness/sweep.ts";
-import type { Exemption } from "./exempt.ts";
 import type { Mode } from "./tests/file-class.ts";
-import { readTemplates, templateField } from "./template-field.ts";
 import { bytewise } from "./text/compare.ts";
 import { holdsManifest, manifestAt } from "./fs/manifest.ts";
 import { runDirectories } from "./entries/run-directories.ts";
@@ -444,19 +427,6 @@ interface ComponentWarning {
   readonly reason: string;
 }
 
-/** The exemption classes this analyzer detects, each by its detector; any other retains nothing. */
-export const DETECTORS: Detectors = new Map<TSExemptionClass, Detector>([
-  ["interface-satisfaction", interfaceSatisfaction],
-  ["enum-group", enumGroup],
-  ["generated-file", generatedFile],
-  ["template-field", templateField],
-  ["reflective-lookup", reflectiveLookup],
-  ["decorator", decorator],
-  ["injection-container", injectionContainer],
-  ["framework-lifecycle", frameworkLifecycle],
-  ["serialization-contract", serializationContract],
-]);
-
 /** What the sweep of one run reads of each project, beside what a caller's stage adds. */
 interface SweptProject<Extra> {
   readonly configFile: string;
@@ -599,11 +569,8 @@ function readRun<Extra>(
   ) => Extra,
 ): ReadRun<Extra> {
   const targetRoot = scope.target.path;
-  const disabled = disabledClasses(config);
-  const templates = disabled.has("template-field")
-    ? { delimiters: config.analysis.template_delimiters, files: [] }
-    : readTemplates(host, targetRoot, config.analysis);
   const consumers = scope.consumers.map((consumer) => consumer.path);
+  const detect = detection(host, targetRoot, config, consumers, detectors);
   const directories = runDirectories(host, targetRoot, (fileName, text) =>
     engine.parseSourceFile(fileName, text),
   );
@@ -616,21 +583,7 @@ function readRun<Extra>(
       formedForNode: projectRead.formedForNode,
     });
     const testFiles = testFilePaths(project, targetRoot, testFile);
-    const evidence = evidenceRecords(
-      {
-        project,
-        held: projectRead.held,
-        targetRoot,
-        templates,
-        ts: config.ts,
-        consumers,
-        ...(config.analysis.generated_files === "include"
-          ? {}
-          : { generated: projectRead.generated }),
-      },
-      detectors,
-      disabled,
-    );
+    const evidence = detect({ project, held: projectRead.held, generated: projectRead.generated });
     const components = project.ownSourceFiles().filter(isComponentFile);
     const injected = project.program
       .getSourceFileNames()
@@ -724,30 +677,29 @@ function readRun<Extra>(
       ...one.decoded.copied,
     ]),
   ]);
-  const evidence = withOutside.map((one) => writtenRecords(one.evidence, written));
-  const settled = settledSatisfaction(
-    withOutside.map((one, index) => ({
-      evidence: evidence[index] ?? [],
+  const settled = settle(
+    withOutside.map((one) => ({
+      records: one.evidence,
       held: one.projectRead.held,
+      testFiles: new Set([...one.testFiles, ...support]),
     })),
-    [...withOutside.flatMap((one) => one.references), ...read.result.references],
+    {
+      references: [...withOutside.flatMap((one) => one.references), ...read.result.references],
+      written,
+      mode,
+    },
   );
   const answers = withOutside.map((one, index): SweptProject<Extra> => {
     const { projectRead } = one;
-    const satisfied = settled[index];
-    const detected = heldRecords(satisfied?.evidence ?? evidence[index] ?? [], {
-      mode,
-      testFiles: new Set([...one.testFiles, ...support]),
-    });
-    const exempt = detected.records;
-    const made = [...one.references, ...(satisfied?.references ?? [])];
+    const exempt = settled[index]?.records ?? [];
+    const made = [...one.references, ...(settled[index]?.references ?? [])];
     const held = new Set(projectRead.held.symbols.map((symbol) => symbol.position.path));
     const supportFiles = [...support].filter((path) => held.has(path)).sort(bytewise);
     const testUsedFiles = [...testUsed].filter((path) => held.has(path)).sort(bytewise);
     const configured: Configured = {
       configuration: projectRead.configuration,
       symbols: projectRead.held.symbols,
-      references: [...made, ...evidenceReferences(projectRead.held.symbols, detected.inTestFiles)],
+      references: made,
       roots: projectRead.rooted.liveUnderReachability,
       testFiles: [...one.testFiles, ...supportFiles],
       ...(supportFiles.length === 0 ? {} : { supportFiles }),
@@ -769,7 +721,7 @@ function readRun<Extra>(
         ...projectRead.rooted.unanswered,
         ...made.filter((reference) => reference.guessed === true).map((reference) => reference.to),
         ...one.held,
-        ...exempt.filter(isUnansweredRecord).map((record) => record.id),
+        ...exempt.filter((record) => record.unanswered === true).map((record) => record.id),
         ...one.decoded.unanswered,
       ],
       filledOutside: one.decoded.filled,
@@ -820,39 +772,6 @@ function readRun<Extra>(
     nestedDirs: read.plan.packages.nested,
     workflows: read.result.workflows,
   };
-}
-
-/**
- * The test references exemption evidence written in a test file makes: each is a read of
- * the declaration it would retain, made by the test file at the evidence's site.
- */
-function evidenceReferences(
-  symbols: readonly InventorySymbol[],
-  inTestFiles: readonly Exemption[],
-): readonly Reference[] {
-  if (inTestFiles.length === 0) {
-    return [];
-  }
-  const files = new Map(
-    symbols
-      .filter((symbol) => symbol.kind === "file")
-      .map((symbol) => [symbol.position.path, symbol.id]),
-  );
-  return inTestFiles.flatMap((record) => {
-    const from = files.get(record.site.path);
-    return from === undefined
-      ? []
-      : [
-          {
-            from,
-            to: record.id,
-            position: record.site,
-            use: "read",
-            resolution: "syntax",
-            test: true,
-          },
-        ];
-  });
 }
 
 /**

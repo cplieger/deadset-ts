@@ -56,7 +56,7 @@ import type { Use } from "../references.ts";
 import { isLoadCall, type LoadCall } from "../roots/unseen-loads.ts";
 import { keyNameOf, type KeyedAccess } from "../symbol-keys.ts";
 import { parenthesesRemoved } from "../unwrap.ts";
-import { handedOn, valuesOf } from "../value-flow.ts";
+import { handedOn, valuesOf } from "./values.ts";
 
 /**
  * The operators whose left side one assignment stores into. A compound assignment is

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { bindingsOf, distinctBindings } from "./bindings.ts";
-import { generatorOf, generatedMark, type GeneratedFact } from "./generated-file.ts";
+import { generatorOf, generatedMark, type GeneratedFact } from "./exemptions/generated-file.ts";
 import { openEngine } from "./session.ts";
 
 const engine = openEngine({ collectTiming: false });

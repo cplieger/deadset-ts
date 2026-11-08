@@ -1,5 +1,6 @@
 import { nodeHost } from "../bin/node-host.ts";
-import { DETECTORS, emitterInputOver, readEmitterRun, type RunSweep } from "../src/analysis.ts";
+import { emitterInputOver, readEmitterRun, type RunSweep } from "../src/analysis.ts";
+import { DETECTORS } from "../src/exemptions/detectors.ts";
 import type { ResolvedConfig } from "../src/config.ts";
 import type { CompletedFinding } from "../src/finding.ts";
 import type { EmitterInput } from "../src/findings/emitter.ts";

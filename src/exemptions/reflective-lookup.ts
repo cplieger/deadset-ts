@@ -1,0 +1,179 @@
+/**
+ * The reflective-lookup class: a member is held back, at the lowest confidence, when
+ * a string literal equal to its name is the key of an element access or the property
+ * key of a `Reflect.get`, `Reflect.set` or `Reflect.has` call, because the member is
+ * then read by a name the program computes nowhere the reference pass can follow.
+ *
+ * The evidence is a string beside a lookup rather than a type relation, so the
+ * string reaches every member of that name on any type, static members included,
+ * and every record names the string's own position. A key that is not literal text
+ * holds nothing back: a computed name is the case no exact rule serves. `Reflect` is
+ * the global one only: a local declaration of that name is a different object. An
+ * element access through a receiver whose type declares a string index signature, and is
+ * not `any`, reads that signature and holds nothing back.
+ */
+
+import {
+  isCallExpression,
+  isElementAccessExpression,
+  isIdentifier,
+  isNoSubstitutionTemplateLiteral,
+  isPropertyAccessExpression,
+  isStringLiteral,
+  type Node,
+  type SourceFile,
+} from "@typescript/native/ast";
+import { TypeFlags, type Type } from "@typescript/native/sync";
+import type { DetectorInput, Evidence } from "./lifecycle.ts";
+import { memberNames } from "../member-names.ts";
+import { renderPosition } from "../position.ts";
+import { isAnswered, UNANSWERED } from "../query.ts";
+import type { ProjectView } from "../session.ts";
+
+/** The `Reflect` methods whose second argument is a property key. */
+const REFLECT_KEYED: ReadonlySet<string> = new Set(["get", "set", "has"]);
+
+/** One literal key at one lookup, and how the lookup is spelled in a record. */
+interface Lookup {
+  readonly key: Node;
+  readonly name: string;
+  readonly callee: string;
+  /** The `Reflect` the call names, where the lookup is a `Reflect` call. */
+  readonly reflect: Node | undefined;
+  /** The expression an element access reads from, where the lookup is one. */
+  readonly receiver: Node | undefined;
+}
+
+/** The text one key denotes, where it is literal text. */
+function literalText(node: Node | undefined): string | undefined {
+  if (node !== undefined && (isStringLiteral(node) || isNoSubstitutionTemplateLiteral(node))) {
+    return node.text;
+  }
+  return undefined;
+}
+
+/** Every lookup one file writes with a literal key, in source order. */
+function lookupsOf(file: SourceFile): readonly Lookup[] {
+  const found: Lookup[] = [];
+  const visit = (node: Node): void => {
+    if (isElementAccessExpression(node)) {
+      const name = literalText(node.argumentExpression);
+      if (name !== undefined) {
+        found.push({
+          key: node.argumentExpression,
+          name,
+          callee: `[${JSON.stringify(name)}]`,
+          reflect: undefined,
+          receiver: node.expression,
+        });
+      }
+    } else if (isCallExpression(node) && isPropertyAccessExpression(node.expression)) {
+      const target = node.expression.expression;
+      const method = node.expression.name;
+      const key = node.arguments[1];
+      const name = literalText(key);
+      if (
+        isIdentifier(target) &&
+        target.text === "Reflect" &&
+        isIdentifier(method) &&
+        REFLECT_KEYED.has(method.text) &&
+        key !== undefined &&
+        name !== undefined
+      ) {
+        found.push({
+          key,
+          name,
+          callee: `Reflect.${method.text}`,
+          reflect: target,
+          receiver: undefined,
+        });
+      }
+    }
+    node.forEachChild(visit);
+  };
+  file.forEachChild(visit);
+  return found;
+}
+
+/**
+ * Whether a receiver's type is not `any` and declares a string index signature. A type
+ * whose index signatures the checker did not answer for is read as declaring none, so
+ * the lookup retains what it names.
+ */
+function readsAMapping<Brand>(project: ProjectView<Brand>, type: Type): boolean {
+  if ((type.flags & TypeFlags.Any) !== 0) {
+    return false;
+  }
+  const infos = project.queries.indexInfosOf(type);
+  return isAnswered(infos) && infos.some((info) => (info.keyType.flags & TypeFlags.String) !== 0);
+}
+
+/**
+ * The reflective-lookup detector: every member whose name a literal key of a lookup
+ * spells, recorded at the key.
+ */
+export function reflectiveLookup<Brand>(input: DetectorInput<Brand>): readonly Evidence[] {
+  const { project, held, targetRoot } = input;
+  const files = project.ownSourceFiles();
+  const lookups = files.flatMap(lookupsOf);
+  if (lookups.length === 0) {
+    return [];
+  }
+
+  // Whether each written `Reflect` is the global one, asked in one batch: a name
+  // declared only in the project's own files shadows it, and an augmentation of the
+  // global merges into it, which keeps the library's declaration.
+  const ownFiles = project.ownPaths();
+  const reflects = lookups.flatMap((lookup) =>
+    lookup.reflect === undefined ? [] : [lookup.reflect],
+  );
+  const global = new Set<Node>();
+  if (reflects.length > 0) {
+    project.symbolsAt(reflects.map((node) => project.handle(node))).forEach((symbol, index) => {
+      const node = reflects[index];
+      // A name the checker did not answer for is read as the global, which retains.
+      const isGlobal =
+        symbol === UNANSWERED ||
+        (symbol !== undefined &&
+          (symbol.declarations.length === 0 ||
+            symbol.declarations.some((declaration) => !ownFiles.has(declaration.path))));
+      if (node !== undefined && isGlobal) {
+        global.add(node);
+      }
+    });
+  }
+
+  // An element access through a receiver that maps every string key to one value type
+  // reads that mapping rather than a member, asked in one batch.
+  const receivers = lookups.flatMap((lookup) =>
+    lookup.receiver === undefined ? [] : [lookup.receiver],
+  );
+  const mapped = new Set<Node>();
+  project.queries.typesAt(receivers).forEach((type, index) => {
+    const receiver = receivers[index];
+    if (
+      receiver !== undefined &&
+      type !== undefined &&
+      isAnswered(type) &&
+      readsAMapping(project, type)
+    ) {
+      mapped.add(receiver);
+    }
+  });
+
+  const members = memberNames(files, held);
+  const found: Evidence[] = [];
+  for (const lookup of lookups) {
+    if (lookup.reflect !== undefined && !global.has(lookup.reflect)) {
+      continue;
+    }
+    if (lookup.receiver !== undefined && mapped.has(lookup.receiver)) {
+      continue;
+    }
+    const site = renderPosition(lookup.key.getSourceFile(), targetRoot, lookup.key.getStart());
+    for (const member of members.get(lookup.name) ?? []) {
+      found.push({ id: member.id, detail: `looked up by ${lookup.callee}`, site });
+    }
+  }
+  return found;
+}
