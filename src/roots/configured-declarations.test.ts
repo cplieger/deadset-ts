@@ -3,7 +3,9 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import { nodeHost } from "../../bin/node-host.ts";
 import { targetConfigFiles, writeProject } from "../../__test-helpers__/projects.ts";
 import { aliasChains } from "../alias-chain.ts";
-import { calleeName, callsOf, resolvedTargets } from "../calls.ts";
+import { resolvedTargets } from "../alias-chain.ts";
+import { projectSites } from "../exemptions/sites.ts";
+import { nameOf } from "../index/values.ts";
 import type { DeclarationEntry } from "../config.ts";
 import {
   declarationsNamed,
@@ -197,16 +199,16 @@ function resolveAll(): {
       ENTRIES.map(([, entry]) => entry),
     );
     const chains = aliasChains(project, held);
-    const calls = callsOf(project).filter((call) =>
-      call.getSourceFile().fileName.endsWith("/main.ts"),
-    );
+    const calls = projectSites(project, held)
+      .calls.map((one) => one.call)
+      .filter((call) => call.getSourceFile().fileName.endsWith("/main.ts"));
     const targets = resolvedTargets(
       project,
-      calls.flatMap((call) => calleeName(call.expression) ?? []),
+      calls.flatMap((call) => nameOf(call.expression) ?? []),
     );
     return {
       calls: calls.map((call) => {
-        const name = calleeName(call.expression);
+        const name = nameOf(call.expression);
         const target = name === undefined ? undefined : targets.get(name);
         const labels = ENTRIES.filter((_entry, index) => {
           const one = resolved[index];
@@ -330,7 +332,9 @@ describe("the declarations a configuration names", () => {
         held,
         ENTRIES.map(([, entry]) => entry),
       );
-      const nodes = callsOf(project).flatMap((call) => calleeName(call.expression) ?? []);
+      const nodes = projectSites(project, held)
+        .calls.map((one) => one.call)
+        .flatMap((call) => nameOf(call.expression) ?? []);
       const named = entriesAt(project, aliasChains(project, held), nodes, resolved);
       return [...named].map(
         ([node, entries]) =>
@@ -366,7 +370,9 @@ describe("the declarations a configuration names", () => {
           ([, entry]) => entry,
         ),
       );
-      const nodes = callsOf(project).flatMap((call) => calleeName(call.expression) ?? []);
+      const nodes = projectSites(project, held)
+        .calls.map((one) => one.call)
+        .flatMap((call) => nameOf(call.expression) ?? []);
       const chains = aliasChains(project, held);
       failing.on = true;
       try {

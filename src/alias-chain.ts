@@ -1,7 +1,7 @@
 /**
  * Where an import or export chain leads in one project: from one symbol to each
  * declaration of the target it is, and along the chain of aliases it heads to each
- * declaration every link of that chain is.
+ * declaration every link of that chain is, and what a name resolves to through them.
  */
 
 import {
@@ -12,10 +12,11 @@ import {
   isImportSpecifier,
   isNamespaceExport,
   isNamespaceImport,
+  type Node,
 } from "@typescript/native/ast";
 import { SymbolFlags, type Symbol as TSSymbol } from "@typescript/native/sync";
 import { isParameterProperty, nodeKey, type Inventory } from "./inventory.ts";
-import { UNANSWERED, type Answer } from "./query.ts";
+import { must, UNANSWERED, type Answer } from "./query.ts";
 import type { ProjectView } from "./session.ts";
 
 /** One declaration a chain reaches, and whether a step along an alias reached it. */
@@ -194,4 +195,39 @@ export function aliasChains<Brand>(project: ProjectView<Brand>, held: Inventory)
     chainOf,
     nextDeclared,
   };
+}
+
+/**
+ * What each of a batch of nodes resolves to, every alias followed to the declaration
+ * it stands for. A node the checker resolves to nothing, and an alias that resolves
+ * to nothing, are absent from the answer. Each alias is followed once. A question the
+ * checker does not answer stops the pass, as {@link must} stops.
+ */
+export function resolvedTargets<Brand>(
+  project: ProjectView<Brand>,
+  nodes: readonly Node[],
+): ReadonlyMap<Node, TSSymbol> {
+  const followed = new Map<number, TSSymbol | undefined>();
+  const targets = new Map<Node, TSSymbol>();
+  project
+    .symbolsAt(nodes.map((node) => project.handle(node)))
+    .map(must)
+    .forEach((symbol, index) => {
+      const node = nodes[index];
+      if (symbol === undefined || node === undefined) {
+        return;
+      }
+      let target: TSSymbol | undefined = symbol;
+      if ((symbol.flags & SymbolFlags.Alias) !== 0) {
+        if (!followed.has(symbol.id)) {
+          const aliased = must(project.queries.aliased(symbol));
+          followed.set(symbol.id, aliased.declarations.length === 0 ? undefined : aliased);
+        }
+        target = followed.get(symbol.id);
+      }
+      if (target !== undefined) {
+        targets.set(node, target);
+      }
+    });
+  return targets;
 }

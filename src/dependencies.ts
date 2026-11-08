@@ -202,7 +202,7 @@ export function packageOfSpecifier(specifier: string): string | undefined {
 }
 
 /** The package an installed file belongs to, read below the last dependency directory of its path. */
-function packageOfPath(path: string): string | undefined {
+export function packageOfPath(path: string): string | undefined {
   const at = path.lastIndexOf(MODULES_SEGMENT);
   return at < 0 ? undefined : packageOfSpecifier(path.slice(at + MODULES_SEGMENT.length));
 }

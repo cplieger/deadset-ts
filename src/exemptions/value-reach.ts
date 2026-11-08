@@ -1,0 +1,258 @@
+/**
+ * The classes of the target a value of one type carries, and the members of the other
+ * object types the target writes that it carries, as a serializer walking the value reaches
+ * them: through constituents, array and tuple elements, the data members and index
+ * signatures of the types the target writes, a class's polymorphic `this` type, and the values
+ * `stored` gives for a type where it erases them. The walk stops at `any`, `unknown`, any
+ * other type parameter, a function and an interface or class of another program, so an
+ * instance held only there is missed.
+ */
+
+import {
+  isAsExpression,
+  isParenthesizedExpression,
+  isSatisfiesExpression,
+  isTypeAssertion,
+  type Node,
+} from "@typescript/native/ast";
+import {
+  ObjectFlags,
+  SymbolFlags,
+  TypeFlags,
+  type ObjectType,
+  type Symbol as TSSymbol,
+  type Type,
+} from "@typescript/native/sync";
+import { classNames, typesAt } from "../class-members.ts";
+import type { Inventory } from "../inventory.ts";
+import { must } from "../query.ts";
+import type { ProjectView } from "../session.ts";
+
+/**
+ * The object types whose members the walk reads whatever declares them. A reverse-mapped
+ * type has no symbol: it is the shape the checker infers from an argument the target
+ * writes against a homomorphic mapped type.
+ */
+const WRITTEN = ObjectFlags.ObjectLiteral | ObjectFlags.Mapped | ObjectFlags.ReverseMapped;
+
+/** The symbols of an anonymous object type the target writes as a type. */
+const LITERAL_SYMBOLS = SymbolFlags.TypeLiteral | SymbolFlags.ObjectLiteral;
+
+/** What a value of one type carries that the target declares. */
+export interface Reached {
+  /** The identifiers of the target's classes. */
+  readonly classes: ReadonlySet<string>;
+  /**
+   * The members of the interfaces and object types the target writes, other than its
+   * classes: each data member, and each method or getter named `toJSON` or `toString`.
+   */
+  readonly members: readonly TSSymbol[];
+}
+
+/** What each type's values carry, each type asked of the checker once. */
+interface ValueReach {
+  reachedFrom(type: Type): Reached;
+}
+
+/** The two conversion methods a serializer or a formatter resolves on a value's own shape. */
+export const CONVERSION_NAMES: ReadonlySet<string> = new Set(["toJSON", "toString"]);
+
+/** The types that keep nothing of a value they are given, or that a decode gives a value. */
+export const ERASED = TypeFlags.Any | TypeFlags.Unknown;
+
+/**
+ * The members that can answer a conversion: a serializer reads the name with `[[Get]]`
+ * and calls what it answers, so a getter answers it as a method does:
+ * https://tc39.es/ecma262/#sec-serializejsonproperty (step 2).
+ */
+export const CONVERSION_MEMBERS = SymbolFlags.Method | SymbolFlags.GetAccessor;
+
+/**
+ * The types each value is checked against by the `satisfies` expressions and type assertions
+ * it is written as, through parentheses, and the innermost operand's own type where there is
+ * one. A `satisfies` expression's static type is its operand's, so an object literal it
+ * checks carries its own members and not the target's, though the literal's properties
+ * write the target's; an assertion to `unknown` or `any` hides the operand's type.
+ */
+export function checkedTypes<Brand>(
+  project: ProjectView<Brand>,
+  values: readonly Node[],
+): readonly (readonly Type[])[] {
+  const nodes = values.map((value) => {
+    const found: Node[] = [];
+    let at = value;
+    while (
+      isParenthesizedExpression(at) ||
+      isSatisfiesExpression(at) ||
+      isAsExpression(at) ||
+      isTypeAssertion(at)
+    ) {
+      if (!isParenthesizedExpression(at)) {
+        found.push(at.type);
+      }
+      at = at.expression;
+    }
+    return found.length === 0 ? found : [...found, at];
+  });
+  const types = typesAt(project, nodes.flat());
+  let next = 0;
+  return nodes.map((one) => {
+    const part = types.slice(next, next + one.length);
+    next += one.length;
+    return part.filter((type): type is Type => type !== undefined);
+  });
+}
+
+/** The global array types, whose element type is what an array value carries. */
+function arrayTargets<Brand>(project: ProjectView<Brand>): ReadonlySet<number> {
+  const queries = project.queries;
+  return new Set(
+    ["Array", "ReadonlyArray"].flatMap((name) => {
+      const symbol = must(queries.resolveName(name, SymbolFlags.Type, undefined, false));
+      return symbol === undefined ? [] : [must(queries.declaredTypeOf(symbol)).id];
+    }),
+  );
+}
+
+/**
+ * The walk over one project's types, against the classes of `held`, the same
+ * project's inventory.
+ */
+export function valueReach<Brand>(
+  project: ProjectView<Brand>,
+  held: Inventory,
+  stored: (type: Type) => readonly Type[] = () => [],
+): ValueReach {
+  const queries = project.queries;
+  const names = [...classNames(project, held)];
+  const declared = typesAt(
+    project,
+    names.map(([, node]) => node),
+  );
+  const classOfTarget = new Map<number, string>();
+  names.forEach(([id], index) => {
+    const type = declared[index];
+    if (type !== undefined) {
+      classOfTarget.set(type.id, id);
+    }
+  });
+  const arrays = arrayTargets(project);
+  const own = project.ownPaths();
+  const children = new Map<number, readonly Type[]>();
+
+  /** The generic target of a type reference, and the type itself otherwise. */
+  const targetOf = (type: ObjectType): Type =>
+    (type.objectFlags & ObjectFlags.Reference) !== 0 ? must(queries.targetOf(type)) : type;
+
+  const classOf = (type: Type): string | undefined => {
+    if (!type.isObjectType()) {
+      return undefined;
+    }
+    return classOfTarget.get(type.id) ?? classOfTarget.get(targetOf(type).id);
+  };
+
+  /** Whether the target writes the object type, so its members are what the value holds. */
+  const isWritten = (type: ObjectType): boolean => {
+    if ((type.objectFlags & WRITTEN) !== 0) {
+      return true;
+    }
+    const symbol: TSSymbol | undefined = must(queries.symbolOfType(type));
+    if (symbol === undefined) {
+      return false;
+    }
+    if ((type.objectFlags & ObjectFlags.Anonymous) !== 0) {
+      return (symbol.flags & LITERAL_SYMBOLS) !== 0;
+    }
+    // A class the inventory holds is read as a class before this, so an own class
+    // here is one it does not hold, such as a class declared in a function.
+    return (
+      (symbol.flags & (SymbolFlags.Interface | SymbolFlags.Class)) !== 0 &&
+      symbol.declarations.every((handle) => own.has(handle.path))
+    );
+  };
+
+  /** The types a value of one object type holds in its data members. */
+  const memberTypes = (type: Type): readonly Type[] => {
+    const properties = must(queries.propertiesOf(type)).filter(
+      (property) => (property.flags & SymbolFlags.Property) !== 0,
+    );
+    const types = queries.typesOfSymbols(properties).map(must);
+    return [
+      ...types.filter((held): held is Type => held !== undefined),
+      ...must(queries.indexInfosOf(type)).map((info) => info.valueType),
+    ];
+  };
+
+  /** Whether the walk reads one type's members because the target writes the type, not as a class. */
+  const writtenObject = (type: Type): boolean => {
+    if (!type.isObjectType() || classOf(type) !== undefined) {
+      return false;
+    }
+    const target = targetOf(type);
+    const isList =
+      type.isTypeReference() &&
+      (arrays.has(target.id) ||
+        (target.isObjectType() && (target.objectFlags & ObjectFlags.Tuple) !== 0));
+    return !isList && isWritten(type);
+  };
+
+  /** The data members and conversion members of one written object type. */
+  const carried = (type: Type): readonly TSSymbol[] =>
+    must(queries.propertiesOf(type)).filter(
+      (property) =>
+        (property.flags & SymbolFlags.Property) !== 0 ||
+        ((property.flags & CONVERSION_MEMBERS) !== 0 && CONVERSION_NAMES.has(property.name)),
+    );
+
+  /** The types a value of one type holds, read once per type. */
+  const childrenOf = (type: Type): readonly Type[] => {
+    const known = children.get(type.id);
+    if (known !== undefined) {
+      return known;
+    }
+    let found: readonly Type[] = [];
+    if (type.isUnionType() || type.isIntersectionType()) {
+      found = must(queries.constituents(type));
+    } else if (type.isTypeParameter() && type.isThisType === true) {
+      // A value of a class's polymorphic `this` type is an instance of the class.
+      found = [must(queries.constraintOf(type))].filter((one) => one !== undefined);
+    } else if (type.isObjectType()) {
+      const target = targetOf(type);
+      const isList =
+        type.isTypeReference() &&
+        (arrays.has(target.id) ||
+          (target.isObjectType() && (target.objectFlags & ObjectFlags.Tuple) !== 0));
+      if (classOf(type) !== undefined || (!isList && isWritten(type))) {
+        found = memberTypes(type);
+      } else if (isList && type.isTypeReference()) {
+        found = must(queries.typeArguments(type));
+      }
+    }
+    found = [...found, ...stored(type)];
+    children.set(type.id, found);
+    return found;
+  };
+
+  return {
+    reachedFrom: (type) => {
+      const classes = new Set<string>();
+      const members: TSSymbol[] = [];
+      const seen = new Set<number>();
+      const pending: Type[] = [type];
+      for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+        if (seen.has(next.id)) {
+          continue;
+        }
+        seen.add(next.id);
+        const owner = classOf(next);
+        if (owner !== undefined) {
+          classes.add(owner);
+        } else if (writtenObject(next)) {
+          members.push(...carried(next));
+        }
+        pending.push(...childrenOf(next));
+      }
+      return { classes, members };
+    },
+  };
+}

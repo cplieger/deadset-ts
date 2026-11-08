@@ -17,8 +17,7 @@ import {
   type Node,
 } from "@typescript/native/ast";
 import { SymbolFlags, type NodeHandle, type Symbol as TSSymbol } from "@typescript/native/sync";
-import type { AliasChains } from "../alias-chain.ts";
-import { resolvedTargets } from "../calls.ts";
+import { resolvedTargets, type AliasChains } from "../alias-chain.ts";
 import type { DeclarationEntry, ResolvedConfig } from "../config.ts";
 import { declaredComponent, type Inventory } from "../inventory.ts";
 import { must, Unanswerable } from "../query.ts";

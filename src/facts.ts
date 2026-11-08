@@ -6,7 +6,7 @@
 
 import { FACTS_VERSION } from "./contract/contract.generated.ts";
 import type { BindingRecord } from "./bindings.ts";
-import type { GeneratedFact } from "./generated-file.ts";
+import type { GeneratedFact } from "./exemptions/generated-file.ts";
 import { LANGUAGE, PRODUCT } from "./product.ts";
 import { bytewise } from "./text/compare.ts";
 
