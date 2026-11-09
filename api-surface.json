@@ -5,6 +5,7 @@
     {
       "path": "@typescript/native/ast",
       "names": [
+        "AccessorDeclaration",
         "ArrowFunction",
         "BinaryExpression",
         "BindingElement",
@@ -18,7 +19,9 @@
         "ConstructorDeclaration",
         "Decorator",
         "ElementAccessExpression",
+        "ExportSpecifier",
         "Expression",
+        "ExpressionStatement",
         "ForInStatement",
         "ForOfStatement",
         "FunctionDeclaration",
@@ -74,8 +77,8 @@
         "isDecorator",
         "isDefaultClause",
         "isDeleteExpression",
+        "isDoStatement",
         "isElementAccessExpression",
-        "isEmptyStatement",
         "isEnumDeclaration",
         "isEnumMember",
         "isEqualityOperator",
@@ -158,13 +161,16 @@
         "isTypeOfExpression",
         "isTypeOperatorNode",
         "isTypeParameterDeclaration",
+        "isTypePredicateNode",
         "isTypeQueryNode",
         "isTypeReferenceNode",
         "isUnionTypeNode",
         "isVariableDeclaration",
         "isVariableDeclarationList",
         "isVariableStatement",
-        "isVoidExpression"
+        "isVoidExpression",
+        "isWhileStatement",
+        "isWithStatement"
       ]
     },
     {

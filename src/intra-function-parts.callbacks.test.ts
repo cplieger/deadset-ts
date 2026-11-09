@@ -67,7 +67,7 @@ describe("an unread parameter of a function used as a value", () => {
         ]),
       ).toEqual([
         "first 3 certain: parameter first is never read in the body, and a read parameter follows it, so rename it to _first",
-        "third 3 certain: parameter third is never read in the body",
+        "third 3 probable: parameter third is never read in the body",
         "first 5 certain: parameter first is never read in the body, and a read parameter follows it, so rename it to _first",
         "toFixed 6 probable: parameter toFixed is never read in the body",
       ]);
