@@ -1,8 +1,8 @@
 {
-  "corpus_version": "6.1.0",
+  "corpus_version": "6.2.0",
   "product": { "name": "deadset-ts", "version": "0.1.0", "language": "ts" },
   "result": "pass",
-  "totals": { "fixtures": 381, "pass": 368, "gap": 0, "fail": 0, "pending": 13 },
+  "totals": { "fixtures": 382, "pass": 369, "gap": 0, "fail": 0, "pending": 13 },
   "fixtures": [
     {
       "fixture": "abstract-member-through-this",
@@ -8864,6 +8864,91 @@
         },
         {
           "symbol": "Sent.id",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "serialized-values-whose-type-is-not-concrete",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "Base.base",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "Boxed.id",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "Boxed.secret",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "Copied.id",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "Copied.secret",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "Deep.id",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "Deep.secret",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "Derived.id",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "Derived.secret",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "Frozen.id",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "Frozen.secret",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        { "symbol": "Precise.id", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Precise.secret",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "class-member",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "Stored.id",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "Stored.secret",
           "result": "pass",
           "actual": { "report": "none", "retained_by": ["serialization-contract"] }
         }
