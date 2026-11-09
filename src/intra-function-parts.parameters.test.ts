@@ -271,3 +271,97 @@ describe("a decorated method's signature", () => {
     LOAD_TIMEOUT,
   );
 });
+
+describe("a method's signature a class hierarchy fixes", () => {
+  it(
+    "is fixed where the checker resolves an extends clause to its class, through an import alias, and free on another class spelled as that alias",
+    () => {
+      expect(
+        partsOf(
+          [
+            'import { Cached } from "./other.js";',
+            "",
+            "class Base {",
+            "  save(entry: string, unused: number): string {",
+            "    return entry;",
+            "  }",
+            "}",
+            "",
+            'console.log(new Base().save("a", 1), new Cached().save("b", 2));',
+          ],
+          {
+            files: {
+              "src/store.ts": [
+                "export class Store {",
+                "  save(entry: string, unused: number): string {",
+                "    return entry;",
+                "  }",
+                "}",
+                "",
+              ].join("\n"),
+              "src/other.ts": [
+                'import { Store as Base } from "./store.js";',
+                "",
+                "export class Cached extends Base {}",
+                "",
+              ].join("\n"),
+            },
+          },
+        ),
+      ).toEqual(["DS1401 unused src/main.ts:4"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "is free where the class resolves and only a clause the checker resolves to nothing spells its name",
+    () => {
+      expect(
+        partsOf(
+          [
+            "class Base {",
+            "  save(entry: string, unused: number): string {",
+            "    return entry;",
+            "  }",
+            "}",
+            "",
+            'console.log(new Base().save("a", 1));',
+          ],
+          {
+            files: {
+              "src/other.ts": ["// @ts-nocheck", "export class Child extends Base {}", ""].join(
+                "\n",
+              ),
+            },
+          },
+        ),
+      ).toEqual(["DS1401 unused src/main.ts:2"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "is fixed where another class implements the class, whose method must still accept the arguments",
+    () => {
+      expect(
+        partsOf([
+          "class Shape {",
+          "  area(scale: number): number {",
+          "    return 1;",
+          "  }",
+          "}",
+          "",
+          "class Square implements Shape {",
+          "  area(scale: number): number {",
+          "    return scale * scale;",
+          "  }",
+          "}",
+          "",
+          "const shapes: Shape[] = [new Shape(), new Square()];",
+          "console.log(shapes.map((one) => one.area(2)));",
+        ]),
+      ).toEqual([]);
+    },
+    LOAD_TIMEOUT,
+  );
+});

@@ -32,7 +32,7 @@
     "lint:fix": "eslint . --fix && prettier --write ."
   },
   "cplieger": {
-    "vitestShards": 2
+    "vitestShards": 3
   },
   "dependencies": {
     "@typescript/native": "npm:typescript@7.1.0-dev.20261103.1"

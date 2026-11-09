@@ -370,6 +370,8 @@ describe("the intra-function family", () => {
       expect(found.map(({ code, name, line }) => ({ code, name, line }))).toEqual([
         { code: "DS1401", name: "unit", line: 1 },
       ]);
+      // A consumer holding the published function may count its length.
+      expect(found[0]?.finding.confidence).toBe("probable");
     },
     LOAD_TIMEOUT,
   );
@@ -855,6 +857,36 @@ describe("a result every call discards", () => {
     ].join("\n"),
   };
   const COMPLETE = { ...ENTRY, consumers: { complete: true } };
+
+  it(
+    "is not reported of a member of an unexported class a published signature names, in a library whose consumer set is open",
+    () => {
+      const found = partsOf(
+        {
+          "package.json":
+            '{ "name": "@example/library", "private": true, "type": "module", "exports": "./src/index.ts" }\n',
+          "src/index.ts": [
+            "class Widget {",
+            "  compute(): number {",
+            "    return 1;",
+            "  }",
+            "}",
+            "",
+            "export function make(): Widget {",
+            "  const widget = new Widget();",
+            "  widget.compute();",
+            "  return widget;",
+            "}",
+            "",
+          ].join("\n"),
+        },
+        { target: { kind: "library" } },
+      );
+
+      expect(found.map(({ code, line }) => `${code} ${String(line)}`)).toEqual([]);
+    },
+    LOAD_TIMEOUT,
+  );
 
   it(
     "is reported only of a declaration no module exports, a member of an exported class included, while the consumer set is open",

@@ -2,9 +2,24 @@ import { CODE, type Confidence } from "../contract/contract.generated.ts";
 import type { Finding } from "../finding.ts";
 import { KINDS } from "../kinds.ts";
 import { parameterRef } from "../ref.ts";
-import { type PartFact } from "../intra-function-parts.ts";
+import type { PartFact, PartKind } from "../intra-function-parts.ts";
 import { reachedWithTheTests } from "../liveness/sweep.ts";
 import type { Emitter, EmitterInput } from "./emitter.ts";
+
+/** The code each part kind is reported under, and what its finding says before the overlap clause. */
+const PART_KINDS: Readonly<Record<PartKind, { code: string; says: (name: string) => string }>> = {
+  parameter: {
+    code: CODE.unusedParameter,
+    says: (name) => `parameter ${name} is never read in the body`,
+  },
+  result: { code: CODE.unusedResult, says: () => "result is discarded at every call site" },
+  store: { code: CODE.deadStore, says: (name) => `value written to ${name} is never read` },
+  statement: { code: CODE.unreachableStatement, says: () => "statement is unreachable" },
+  case: {
+    code: CODE.unreachableCase,
+    says: (name) => `case ${name} is covered by an earlier case of the same switch`,
+  },
+};
 
 /** A list of rules as a sentence names them. */
 function spelled(rules: readonly string[]): string {
@@ -38,21 +53,29 @@ type ParameterVerdict =
   | undefined;
 
 /**
- * Whether one unread parameter is reported, and how. Of a free signature it is deleted. A
- * caller may pass a function used as a value more arguments than it declares, so there one
- * a read parameter follows is renamed to an underscore name, which the compilers read as
- * declared unread, and one no read parameter follows is deleted: kept where the call's
- * inference may read its annotation, at `probable` where nothing reads the annotation or
- * where it is a name a contextually typed object pattern binds.
+ * Whether one unread parameter is reported, and how (DS1401's precondition). Of a free
+ * signature it is deleted. Of a function used as a value, one a read parameter follows is
+ * renamed to an underscore name, and any other is deleted, kept where the call's inference
+ * may read its annotation. A deletion is `probable` where an unread annotation or a
+ * contextual pattern may matter to the caller, or where `length` counts the parameter of
+ * a function used as a value or of a root, whose holder may count it.
  */
 function parameterVerdict(
   part: PartFact,
   free: ReadonlySet<string>,
   freeButValued: ReadonlySet<string>,
+  rooted: ReadonlySet<string>,
 ): ParameterVerdict {
   const place = part.parameter;
+  const counted = place?.counted === true;
   if (place?.inValue !== true && free.has(part.declaration)) {
-    return place?.annotated === undefined ? { fix: "delete", confidence: "certain" } : undefined;
+    if (place?.annotated !== undefined) {
+      return undefined;
+    }
+    return {
+      fix: "delete",
+      confidence: counted && rooted.has(part.declaration) ? "probable" : "certain",
+    };
   }
   const valued = place?.inValue === true || freeButValued.has(part.declaration);
   if (!valued) {
@@ -64,7 +87,7 @@ function parameterVerdict(
   if (place?.annotated === "steers") {
     return undefined;
   }
-  const unseen = place?.annotated === "free" || place?.contextualPattern === true;
+  const unseen = place?.annotated === "free" || place?.contextualPattern === true || counted;
   return { fix: "delete", confidence: unseen ? "probable" : "certain" };
 }
 
@@ -78,16 +101,14 @@ function parameterVerdict(
 function reported(
   input: EmitterInput,
   part: PartFact,
+  rooted: ReadonlySet<string>,
   callersUnknown: ReadonlySet<string>,
 ): boolean {
-  if (part.used) {
-    return false;
-  }
   const { free, freeButValued, discardedEverywhere } = input.intraFunction;
-  switch (part.code) {
-    case CODE.unusedParameter:
-      return parameterVerdict(part, free, freeButValued) !== undefined;
-    case CODE.unusedResult:
+  switch (part.kind) {
+    case "parameter":
+      return parameterVerdict(part, free, freeButValued, rooted) !== undefined;
+    case "result":
       return (
         free.has(part.declaration) &&
         discardedEverywhere.has(part.declaration) &&
@@ -120,49 +141,50 @@ export const intraFunction: Emitter = (input) => {
     const testCode = union.test[at] === true || union.support[at] === true;
     return !testCode || (reached[at] === true && !testsOfDeadCode.has(id));
   };
-  const unknown = new Set(
+  const rooted: ReadonlySet<string> = new Set(
     union.rooted.flatMap((root) => {
       const symbol = union.symbols[root.at];
       return symbol === undefined ? [] : [symbol.id];
     }),
   );
+  const unknown = new Set(rooted);
   const { declared, loaded } = input.boundary.consumers;
   const closed = input.config.consumers.complete && declared.every((id) => loaded.includes(id));
-  const published = (id: string): boolean => {
-    const symbol = byId.get(id);
-    return (
-      symbol !== undefined &&
-      symbol.kind !== "file" &&
-      (symbol.exported || published(symbol.parent))
-    );
-  };
   if (!closed) {
-    for (const part of input.intraFunction.parts) {
-      if (published(part.declaration)) {
-        unknown.add(part.declaration);
-      }
+    for (const id of input.intraFunction.published) {
+      unknown.add(id);
     }
   }
   const found: Finding[] = [];
   for (const part of input.intraFunction.parts) {
     const declaration = byId.get(part.declaration);
-    const overlap = KINDS.get(part.code)?.overlap?.ts ?? [];
-    if (declaration === undefined || !judged(declaration.id) || !reported(input, part, unknown)) {
+    const { code, says } = PART_KINDS[part.kind];
+    const overlap = KINDS.get(code)?.overlap?.ts ?? [];
+    if (
+      declaration === undefined ||
+      !judged(declaration.id) ||
+      !reported(input, part, rooted, unknown)
+    ) {
       continue;
     }
     const verdict =
-      part.code === CODE.unusedParameter
-        ? parameterVerdict(part, input.intraFunction.free, input.intraFunction.freeButValued)
+      part.kind === "parameter"
+        ? parameterVerdict(
+            part,
+            input.intraFunction.free,
+            input.intraFunction.freeButValued,
+            rooted,
+          )
         : undefined;
     const message =
       verdict?.fix === "rename"
-        ? `${part.message}, and a read parameter follows it, so rename it to _${part.name}`
-        : part.message;
+        ? `${says(part.name)}, and a read parameter follows it, so rename it to _${part.name}`
+        : says(part.name);
     found.push({
-      code: part.code,
+      code,
       position: part.position,
       symbol: {
-        ...(part.code === CODE.unusedParameter
+        ...(part.kind === "parameter"
           ? { ref: parameterRef(declaration.ref, part.name), holder: declaration.ref }
           : { ref: declaration.ref }),
         kind: part.kind,

@@ -87,6 +87,7 @@ export function sweepOnly(config: ResolvedConfig, swept: RunSweep): EmitterInput
     intraFunction: {
       parts: [],
       imports: [],
+      published: new Set(),
       free: new Set(),
       freeButValued: new Set(),
       discardedEverywhere: new Set(),
