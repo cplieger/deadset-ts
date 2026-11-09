@@ -5,11 +5,12 @@ ts://@example/serialization-contract/src/model.ts#Event.kind	src/model.ts:26:3	s
 ts://@example/serialization-contract/src/model.ts#Event.toString	src/model.ts:28:3	serialization-contract	src/main.ts:46:13	passed to console.log
 ts://@example/serialization-contract/src/model.ts#Event.toJSON	src/model.ts:32:3	serialization-contract	src/main.ts:46:13	passed to console.log
 ts://@example/serialization-contract/src/model.ts#Payload.body	src/model.ts:43:3	serialization-contract	src/main.ts:47:28	passed to Schema.parse
-ts://@example/serialization-contract/src/model.ts#Frame.bytes	src/model.ts:48:3	serialization-contract	src/main.ts:48:8	passed to encode
+ts://@example/serialization-contract/src/model.ts#Frame.bytes	src/model.ts:48:3	serialization-contract	src/main.ts:48:8	passed to encode	serialization-contract	src/wire.ts:4:17	passed to String
 ts://@example/serialization-contract/src/model.ts#Message.text	src/model.ts:53:3	serialization-contract	src/main.ts:49:6	passed to send
 ts://@example/serialization-contract/src/model.ts#Relayed.text	src/model.ts:58:3	serialization-contract	src/main.ts:50:7	passed to relay
 ts://@example/serialization-contract/src/model.ts#Traced.step	src/model.ts:63:3	serialization-contract	src/main.ts:51:7	passed to trace
 ts://@example/serialization-contract/src/model.ts#Traced.toString	src/model.ts:65:3	serialization-contract	src/main.ts:51:7	passed to trace
+ts://@example/serialization-contract/src/model.ts#Shaped.field	src/model.ts:72:3	serialization-contract	src/wire.ts:20:15	passed to console.log
 ts://@example/serialization-contract/src/model.ts#Snapshot.at	src/model.ts:77:3	serialization-contract	src/model.ts:80:27	passed to JSON.stringify
 ts://@example/serialization-contract/src/model.ts#Batch.size	src/model.ts:147:3	serialization-contract	src/model.ts:150:43	passed to JSON.stringify
 ts://@example/serialization-contract/src/model.ts#Bound.id	src/model.ts:156:3	serialization-contract	src/main.ts:60:11	passed to sendBound

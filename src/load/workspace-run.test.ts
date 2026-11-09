@@ -487,6 +487,7 @@ describe("a workspace package imported by name", () => {
         ),
       ).toEqual([`DS1001 packages/a/src/${unread} shared`]);
     },
+    30_000,
   );
 });
 

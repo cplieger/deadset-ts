@@ -105,6 +105,7 @@
         "isImportSpecifier",
         "isImportTypeNode",
         "isIndexedAccessTypeNode",
+        "isInferTypeNode",
         "isInterfaceDeclaration",
         "isIntersectionTypeNode",
         "isJSDocText",

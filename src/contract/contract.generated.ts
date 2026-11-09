@@ -4,7 +4,7 @@ export const CONTRACT_VERSION = "8.0.0";
 export const SCHEMA_VERSIONS = ["9.0.0"] as const;
 export const SCHEMA_VERSION = "9.0.0";
 export const FACTS_VERSION = "1.0.0";
-export const CORPUS_VERSION = "6.1.0";
+export const CORPUS_VERSION = "6.2.0";
 export const CODE_PREFIX = "DS";
 export const FAMILY_KEY_LENGTH = 4;
 

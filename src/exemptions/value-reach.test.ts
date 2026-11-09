@@ -18,6 +18,8 @@ function reachOf(
   model: readonly string[],
   types: readonly string[],
   files: Readonly<Record<string, string>> = {},
+  concrete = false,
+  named = false,
 ): string[] {
   const declarations = types.map((type, index) => `declare const v${String(index)}: ${type};`);
   const root = writeProject({ ...files, "main.ts": `${[...model, ...declarations].join("\n")}\n` });
@@ -47,9 +49,16 @@ function reachOf(
         if (type === undefined) {
           throw new Error(`no type for ${types[index] ?? ""}`);
         }
-        const { classes, members } = reach.reachedFrom(type);
-        const classNames = [...classes].map((id) => nameOf.get(id) ?? id).sort();
-        const memberNames = members.map((member) => member.name).sort();
+        const reached = reach.reachedFrom(type);
+        if (concrete) {
+          return `${types[index] ?? ""}: ${reached.concrete ? "concrete" : "not concrete"}`;
+        }
+        if (named) {
+          const all = [...reached.named].map((id) => nameOf.get(id) ?? id).sort();
+          return `${types[index] ?? ""}: named ${all.join(" ")}`;
+        }
+        const classNames = [...reached.classes].map((id) => nameOf.get(id) ?? id).sort();
+        const memberNames = reached.members.map((member) => member.name).sort();
         return `${types[index] ?? ""}: classes ${classNames.join(" ")} | members ${memberNames.join(" ")}`;
       });
     });
@@ -187,6 +196,98 @@ describe("what a value carries", () => {
         ["Map<string, Item>"],
       ),
     ).toEqual(["Map<string, Item>: classes  | members "]);
+  });
+
+  it("is what another program's generic type holds of its type arguments in its data members", () => {
+    expect(
+      reachOf(CLASSES, ["IteratorResult<Order, undefined>", "PromiseSettledResult<Item>"]),
+    ).toEqual([
+      "IteratorResult<Order, undefined>: classes Order | members ",
+      "PromiseSettledResult<Item>: classes Item | members ",
+    ]);
+  });
+
+  it("is concrete only for a primitive, a literal or a plain class of the target, and what each holds", () => {
+    expect(
+      reachOf(
+        [
+          ...CLASSES,
+          "export interface Box<U> {",
+          "  v: U;",
+          "}",
+          "export interface HasId {",
+          "  id: number;",
+          "}",
+          "export abstract class Shape {",
+          "  side = 1;",
+          "}",
+          "export class Crate<T> {",
+          "  held!: T;",
+          "}",
+          "export class Holder {",
+          "  order = new Order();",
+          "  loose: unknown;",
+          "}",
+        ],
+        [
+          "Order",
+          'Order | undefined | "tag" | 1',
+          "string",
+          "{ held: Order }",
+          "Box<Order>",
+          "Order[]",
+          "IteratorResult<Order, undefined>",
+          "Readonly<Order>",
+          "Order & { tag: string }",
+          "Partial<{ held: Order }>",
+          "Box<Readonly<Order>>",
+          "any",
+          "unknown",
+          "object",
+          "{}",
+          "HasId",
+          "Shape",
+          "Crate<Item>",
+          "Holder",
+          "() => Order",
+        ],
+        {},
+        true,
+      ),
+    ).toEqual([
+      "Order: concrete",
+      'Order | undefined | "tag" | 1: concrete',
+      "string: concrete",
+      "{ held: Order }: not concrete",
+      "Box<Order>: not concrete",
+      "Order[]: not concrete",
+      "IteratorResult<Order, undefined>: not concrete",
+      "Readonly<Order>: not concrete",
+      "Order & { tag: string }: not concrete",
+      "Partial<{ held: Order }>: not concrete",
+      "Box<Readonly<Order>>: not concrete",
+      "any: not concrete",
+      "unknown: not concrete",
+      "object: not concrete",
+      "{}: not concrete",
+      "HasId: not concrete",
+      "Shape: not concrete",
+      "Crate<Item>: not concrete",
+      "Holder: not concrete",
+      "() => Order: not concrete",
+    ]);
+  });
+
+  it("names every class of the target where a generic type instantiates itself afresh at each level", () => {
+    expect(
+      reachOf(
+        [...CLASSES, "export interface Chain<T> {", "  next?: Chain<[T]>;", "  value: T;", "}"],
+        ["Chain<Order>"],
+        {},
+        false,
+        true,
+      ),
+    ).toEqual(["Chain<Order>: named Item Order"]);
   });
 
   it("is nothing of a class itself, whose statics and prototype a serializer never reads", () => {
