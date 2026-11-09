@@ -2,7 +2,7 @@
   "corpus_version": "6.1.0",
   "product": { "name": "deadset-ts", "version": "0.1.0", "language": "ts" },
   "result": "pass",
-  "totals": { "fixtures": 379, "pass": 366, "gap": 0, "fail": 0, "pending": 13 },
+  "totals": { "fixtures": 381, "pass": 368, "gap": 0, "fail": 0, "pending": 13 },
   "fixtures": [
     {
       "fixture": "abstract-member-through-this",
@@ -128,6 +128,56 @@
           "suppression": { "suppressed": true, "stale": false }
         },
         { "symbol": "Steered", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "arity-of-a-function-held-as-a-value",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "HeldSecond",
+          "result": "pass",
+          "actual": {
+            "report": "DS1401",
+            "symbol_kind": "parameter",
+            "confidence": "probable",
+            "reachability_class": "probable",
+            "details": {
+              "overlap": ["tsc --noUnusedParameters", "@typescript-eslint/no-unused-vars"]
+            }
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "LocalSecond",
+          "result": "pass",
+          "actual": {
+            "report": "DS1401",
+            "symbol_kind": "parameter",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "details": {
+              "overlap": ["tsc --noUnusedParameters", "@typescript-eslint/no-unused-vars"]
+            }
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "MeasuredSecond", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "UncountedThird",
+          "result": "pass",
+          "actual": {
+            "report": "DS1401",
+            "symbol_kind": "parameter",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "details": {
+              "overlap": ["tsc --noUnusedParameters", "@typescript-eslint/no-unused-vars"]
+            }
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
       ],
       "unexpected": []
     },
@@ -421,8 +471,8 @@
           "actual": {
             "report": "DS1401",
             "symbol_kind": "parameter",
-            "confidence": "certain",
-            "reachability_class": "certain",
+            "confidence": "probable",
+            "reachability_class": "probable",
             "details": {
               "overlap": ["tsc --noUnusedParameters", "@typescript-eslint/no-unused-vars"]
             }
@@ -437,8 +487,8 @@
           "actual": {
             "report": "DS1401",
             "symbol_kind": "parameter",
-            "confidence": "certain",
-            "reachability_class": "certain",
+            "confidence": "probable",
+            "reachability_class": "probable",
             "details": {
               "overlap": ["tsc --noUnusedParameters", "@typescript-eslint/no-unused-vars"]
             }
@@ -2511,9 +2561,14 @@
       "expectations": [
         {
           "symbol": "Initial",
-          "result": "fail",
-          "actual": { "report": "none" },
-          "message": "want DS1404 as the finding at target/main.ts:2, got none"
+          "result": "pass",
+          "actual": {
+            "report": "DS1404",
+            "symbol_kind": "store",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
         },
         { "symbol": "OneBranch", "result": "pass", "actual": { "report": "none" } }
       ],
@@ -6881,8 +6936,8 @@
           "actual": {
             "report": "DS1401",
             "symbol_kind": "parameter",
-            "confidence": "certain",
-            "reachability_class": "certain",
+            "confidence": "probable",
+            "reachability_class": "probable",
             "details": {
               "overlap": ["tsc --noUnusedParameters", "@typescript-eslint/no-unused-vars"]
             }
@@ -7039,6 +7094,98 @@
         { "symbol": "TrailingMethod", "result": "pass", "actual": { "report": "none" } },
         { "symbol": "WrappedFirst", "result": "pass", "actual": { "report": "none" } },
         { "symbol": "WrappedSecond", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "parts-across-branches-loops-and-try",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "AfterCatch", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "AfterTryFinally",
+          "result": "pass",
+          "actual": {
+            "report": "DS1405",
+            "symbol_kind": "statement",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "details": { "overlap": ["tsc allowUnreachableCode", "eslint no-unreachable"] }
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "BranchMayKeep", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "BranchesOverwrite",
+          "result": "pass",
+          "actual": {
+            "report": "DS1404",
+            "symbol_kind": "store",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "details": {
+              "overlap": ["eslint no-useless-assignment", "@typescript-eslint/no-unused-vars"]
+            }
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "FallThroughWrite",
+          "result": "pass",
+          "actual": {
+            "report": "DS1404",
+            "symbol_kind": "store",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "details": {
+              "overlap": ["eslint no-useless-assignment", "@typescript-eslint/no-unused-vars"]
+            }
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "LoopInitial",
+          "result": "pass",
+          "actual": {
+            "report": "DS1404",
+            "symbol_kind": "store",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "details": {
+              "overlap": ["eslint no-useless-assignment", "@typescript-eslint/no-unused-vars"]
+            }
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "LoopWrite",
+          "result": "pass",
+          "actual": {
+            "report": "DS1404",
+            "symbol_kind": "store",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "details": {
+              "overlap": ["eslint no-useless-assignment", "@typescript-eslint/no-unused-vars"]
+            }
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "SwitchBreakWrite", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "SwitchInitial",
+          "result": "pass",
+          "actual": {
+            "report": "DS1404",
+            "symbol_kind": "store",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "details": {
+              "overlap": ["eslint no-useless-assignment", "@typescript-eslint/no-unused-vars"]
+            }
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
       ],
       "unexpected": []
     },
