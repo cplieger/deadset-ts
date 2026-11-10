@@ -70,6 +70,7 @@ describe("serialization-contract", () => {
       "Item.sku src/main.ts:45:16 passed to JSON.stringify",
       "Payload.body src/main.ts:47:28 passed to Schema.parse",
       "Frame.bytes src/main.ts:48:8 passed to encode",
+      "Frame.bytes src/wire.ts:4:17 passed to String",
     ]);
   });
 
@@ -178,7 +179,6 @@ describe("serialization-contract", () => {
       "Order.total",
       "Order.label",
       "Event.describe",
-      "Shaped.field",
       "Registry.entries",
       "Deferred.value",
       "Census.count",
@@ -188,16 +188,17 @@ describe("serialization-contract", () => {
     ]);
   });
 
-  it("reads JSON.stringify and the unknown parameters of ambient declarations where the configuration names no serializer", () => {
+  it("reads JSON.stringify and the unknown parameters of ambient declarations where the configuration names no serializer, and a value an `object` parameter hands one", () => {
     const unconfigured = sweepFixture(JSON.stringify({ target: { kind: "application" } }));
 
     expect(serialized(unconfigured, "Order", "Payload", "Frame")).toEqual([
       "Order.id src/main.ts:45:16 passed to JSON.stringify",
       "Order.items src/main.ts:45:16 passed to JSON.stringify",
       'Payload.body src/main.ts:47:28 passed to object({body:""}).parse',
+      "Frame.bytes src/wire.ts:4:17 passed to String",
     ]);
     expect(deadMembers(unconfigured)).not.toContain("Payload.body");
-    expect(deadMembers(unconfigured)).toContain("Frame.bytes");
+    expect(deadMembers(unconfigured)).not.toContain("Frame.bytes");
   });
 });
 
@@ -598,7 +599,7 @@ describe("serialization-contract over a written tree", () => {
   );
 
   it(
-    "holds back what a typed rest parameter's type reaches, and nothing of the class an argument is",
+    "holds back what a typed rest parameter's type reaches, and the class an argument it types is",
     () => {
       expect(
         retainedIn([
@@ -607,7 +608,10 @@ describe("serialization-contract over a written tree", () => {
           "function pack(...items: Sized[]): void { JSON.stringify(items); }",
           "pack(new Crate(), { size: 2 });",
         ]),
-      ).toEqual(["Sized.size 3:57 passed to JSON.stringify"]);
+      ).toEqual([
+        "Sized.size 3:57 passed to JSON.stringify",
+        "Crate.size 3:57 passed to JSON.stringify",
+      ]);
     },
     LOAD_TIMEOUT,
   );
@@ -1908,6 +1912,864 @@ describe("a member of a type the program sends or only receives", () => {
           "console.log(checked, JSON.stringify(sent), JSON.stringify(stored));",
         ]),
       ).toEqual(["DS1003 Payload.ghost certain"]);
+    },
+    LOAD_TIMEOUT,
+  );
+});
+
+describe("a serialized value whose argument type is not concrete", () => {
+  const parcel = "class Parcel { private secret = 1; id = 2; }";
+  it.each([
+    [
+      "a library's mapped result",
+      [parcel, "export const out = JSON.stringify(Object.freeze(new Parcel()));"],
+      "",
+    ],
+    [
+      "an outside result inferred through a mapped place over a type parameter a constraint names",
+      [
+        parcel,
+        'import { emit } from "./outside.js";',
+        "export const out = JSON.stringify(emit(new Parcel()));",
+      ],
+      "export declare function emit<T extends object>(x: Readonly<T>): T;\n",
+    ],
+    [
+      "an outside place typed by a mapped type whose template is an object type over a type parameter",
+      [parcel, 'import { save } from "./outside.js";', "save({ box: { value: new Parcel() } });"],
+      'export declare function save<T>(value: { [K in "box"]: { value: T } }): void;\n',
+    ],
+    [
+      "a type parameter four type arguments deep",
+      [
+        parcel,
+        "interface Box<U> { v: U }",
+        "function save<T>(x: Box<Box<Box<Box<T>>>>): string { return JSON.stringify(x); }",
+        "export const out = save({ v: { v: { v: { v: new Parcel() } } } });",
+      ],
+      "",
+    ],
+    [
+      "a type parameter of a class",
+      [
+        parcel,
+        "class Store<T> { save(x: T): string { return JSON.stringify(x); } }",
+        "export const out = new Store<Parcel>().save(new Parcel());",
+      ],
+      "",
+    ],
+    [
+      "a class's type parameter a constructor parameter property holds",
+      [
+        parcel,
+        "class Store<T> { constructor(private readonly v: T) {} dump(): string { return JSON.stringify(this.v); } }",
+        "export const out = new Store(new Parcel()).dump();",
+      ],
+      "",
+    ],
+    [
+      "a variable an outside result inferred through a mapped place initializes",
+      [
+        parcel,
+        'import { emit } from "./outside.js";',
+        "const copy = emit(new Parcel());",
+        "export const out = JSON.stringify(copy);",
+      ],
+      "export declare function emit<T extends object>(x: Readonly<T>): T;\n",
+    ],
+    [
+      "an object type a project function returns over a type parameter",
+      [
+        parcel,
+        "function wrap<T>(x: T): { inner: T } { return { inner: x }; }",
+        "function save<T>(x: T): string { return JSON.stringify(wrap(x)); }",
+        "export const out = save(new Parcel());",
+      ],
+      "",
+    ],
+    [
+      "this in a class another class extends",
+      [
+        "class Base { base = 0; dump(): string { return JSON.stringify(this); } }",
+        "class Parcel extends Base { private secret = 1; id = 2; }",
+        "export const out = new Parcel().dump();",
+      ],
+      "",
+    ],
+    [
+      "this in a generic class whose type argument a new expression infers",
+      [
+        parcel,
+        "class Store<T> { constructor(readonly v: T) {} dump(): string { return JSON.stringify(this); } }",
+        "export const out = new Store(new Parcel()).dump();",
+      ],
+      "",
+    ],
+    [
+      "a library's generic result whose data member holds its type argument",
+      [
+        parcel,
+        "function* make(): Generator<Parcel> { yield new Parcel(); }",
+        "export const out = JSON.stringify(make().next());",
+      ],
+      "",
+    ],
+    [
+      "a generic interface that instantiates itself afresh at each level",
+      [
+        parcel,
+        "interface Chain<T> { value: T; next?: Chain<[T]> }",
+        "const chain: Chain<Parcel> = { value: new Parcel() };",
+        "export const out = JSON.stringify(chain);",
+      ],
+      "",
+    ],
+    [
+      "a library iterable of a type parameter, walked by a loop",
+      [
+        parcel,
+        "function saveAll<T>(xs: Iterable<T>): string[] { const out: string[] = []; for (const x of xs) { out.push(JSON.stringify(x)); } return out; }",
+        "export const out = saveAll([new Parcel()]);",
+      ],
+      "",
+    ],
+    [
+      "a library iterable of a type parameter, serialized whole",
+      [
+        parcel,
+        "function save<T>(xs: Iterable<T>): string { return JSON.stringify(xs); }",
+        "export const out = save([new Parcel()]);",
+      ],
+      "",
+    ],
+    [
+      "a library map's value type parameter",
+      [
+        parcel,
+        'function dump<T>(m: Map<string, T>): string { return JSON.stringify(m.get("a")); }',
+        'export const out = dump(new Map([["a", new Parcel()]]));',
+      ],
+      "",
+    ],
+    [
+      "a library set of a type parameter, spread",
+      [
+        parcel,
+        "function save<T>(xs: ReadonlySet<T>): string[] { return [...xs].map((x) => JSON.stringify(x)); }",
+        "export const out = save(new Set([new Parcel()]));",
+      ],
+      "",
+    ],
+    [
+      "an own generic interface's method result",
+      [
+        parcel,
+        "interface Source<T> { get(): T }",
+        "function save<T>(s: Source<T>): string { return JSON.stringify(s.get()); }",
+        "export const out = save({ get: () => new Parcel() });",
+      ],
+      "",
+    ],
+    [
+      "a promise of a type parameter",
+      [
+        parcel,
+        "async function save<T>(p: Promise<T>): Promise<string> { return JSON.stringify(await p); }",
+        "export const out = save(Promise.resolve(new Parcel()));",
+      ],
+      "",
+    ],
+    [
+      "a callback's result type parameter",
+      [
+        parcel,
+        "function run<T>(f: () => T): string { return JSON.stringify(f()); }",
+        "export const out = run(() => new Parcel());",
+      ],
+      "",
+    ],
+    [
+      "a library map's value type parameter at a place an intersection opens",
+      [
+        parcel,
+        'function dump<T>(m: Map<string, T> & { tag?: string }): string { return JSON.stringify(m.get("a")); }',
+        'export const out = dump(new Map([["a", new Parcel()]]));',
+      ],
+      "",
+    ],
+    [
+      "a callback's result type parameter at a place an intersection opens",
+      [
+        parcel,
+        "function run<T>(f: (() => T) & { tag?: string }): string { return JSON.stringify(f()); }",
+        "export const out = run(() => new Parcel());",
+      ],
+      "",
+    ],
+    [
+      "a generic function passed as a callback",
+      [
+        parcel,
+        "function serialize<T>(x: T): string { return JSON.stringify(x); }",
+        "export const out = [new Parcel()].map(serialize);",
+      ],
+      "",
+    ],
+    [
+      "a generic function stored where its calls cannot be read",
+      [
+        parcel,
+        "function serialize<T>(x: T): string { return JSON.stringify(x); }",
+        "export const table = [serialize];",
+        "export const made = new Parcel();",
+      ],
+      "",
+    ],
+    [
+      "a generic method an interface dispatches to",
+      [
+        parcel,
+        "interface Saver { save<T>(x: T): string }",
+        "class JsonSaver implements Saver { save<T>(x: T): string { return JSON.stringify(x); } }",
+        "const s: Saver = new JsonSaver();",
+        "export const out = s.save(new Parcel());",
+      ],
+      "",
+    ],
+    [
+      "a generic method an abstract base dispatches to",
+      [
+        parcel,
+        "abstract class Saver { abstract save<T>(x: T): string; }",
+        "class JsonSaver extends Saver { save<T>(x: T): string { return JSON.stringify(x); } }",
+        "const s: Saver = new JsonSaver();",
+        "export const out = s.save(new Parcel());",
+      ],
+      "",
+    ],
+    [
+      "a parameter typed object",
+      [
+        parcel,
+        "function save(x: object): string { return JSON.stringify(x); }",
+        "export const out = save(new Parcel());",
+      ],
+      "",
+    ],
+    [
+      "a parameter typed by the empty object type",
+      [
+        parcel,
+        "function save(x: {}): string { return JSON.stringify(x); }",
+        "export const out = save(new Parcel());",
+      ],
+      "",
+    ],
+    [
+      "a project function's result typed any",
+      [
+        parcel,
+        "function make(): any { return new Parcel(); }",
+        "export const out = JSON.stringify(make());",
+      ],
+      "",
+    ],
+    [
+      "a project function's result typed unknown, held in a variable",
+      [
+        parcel,
+        "function make(): unknown { return new Parcel(); }",
+        "const made = make();",
+        "export const out = JSON.stringify(made);",
+      ],
+      "",
+    ],
+    [
+      "a this parameter typed by the class, through call",
+      [
+        parcel,
+        "function dump(this: Parcel): string { return JSON.stringify(this); }",
+        "export const out = dump.call(new Parcel());",
+      ],
+      "",
+    ],
+    [
+      "a this parameter typed by a type parameter the class constrains, through call",
+      [
+        parcel,
+        "function dump<T extends Parcel>(this: T): string { return JSON.stringify(this); }",
+        "export const out = dump.call(new Parcel());",
+      ],
+      "",
+    ],
+    [
+      "a this parameter typed by a type parameter nothing constrains, through call",
+      [
+        parcel,
+        "function dump<T>(this: T): string { return JSON.stringify(this); }",
+        "export const out = dump.call(new Parcel());",
+      ],
+      "",
+    ],
+    [
+      "a this parameter typed unknown, through call",
+      [
+        parcel,
+        "function dump(this: unknown): string { return JSON.stringify(this); }",
+        "export const out = dump.call(new Parcel());",
+      ],
+      "",
+    ],
+    [
+      "an outside function's result whose type names a structural supertype",
+      [
+        parcel,
+        'import { normalize } from "./outside.js";',
+        "export const out = JSON.stringify(normalize(new Parcel()));",
+      ],
+      "export declare function normalize(x: { id: number }): { id: number };\n",
+    ],
+    [
+      "an annotated variable passed to a generic serializer",
+      [
+        parcel,
+        "interface HasId { id: number }",
+        "function save<T>(x: T): string { return JSON.stringify(x); }",
+        "const h: HasId = new Parcel();",
+        "export const out = save(h);",
+      ],
+      "",
+    ],
+    [
+      "a parameter typed by an interface the class implements structurally",
+      [
+        parcel,
+        "interface HasId { id: number }",
+        "function save(x: HasId): string { return JSON.stringify(x); }",
+        "export const out = save(new Parcel());",
+      ],
+      "",
+    ],
+    [
+      "a parameter typed by a type literal the class matches",
+      [
+        parcel,
+        "function save(x: { id: number }): string { return JSON.stringify(x); }",
+        "export const out = save(new Parcel());",
+      ],
+      "",
+    ],
+    [
+      "a parameter typed by a base class",
+      [
+        "class Base { id = 1; }",
+        "class Parcel extends Base { private secret = 1; }",
+        "function save(b: Base): string { return JSON.stringify(b); }",
+        "export const out = save(new Parcel());",
+      ],
+      "",
+    ],
+    [
+      "a generic interface that instantiates itself afresh at each level, from a declared function, its value first",
+      [
+        parcel,
+        "interface Chain<T> { value: T; next?: Chain<[T]> }",
+        "declare function make(): Chain<Parcel>;",
+        "export const out = JSON.stringify(make());",
+      ],
+      "",
+    ],
+    [
+      "a spread of a parameter typed object",
+      [
+        parcel,
+        "function send(x: object): string { return JSON.stringify({ ...x }); }",
+        "export const out = send(new Parcel());",
+      ],
+      "",
+    ],
+    [
+      "a spread of a variable an interface types",
+      [
+        parcel,
+        "interface HasId { id: number }",
+        "const h: HasId = new Parcel();",
+        "export const out = JSON.stringify({ ...h });",
+      ],
+      "",
+    ],
+    [
+      "a spread of a variable a base class types",
+      [
+        "class Base { id = 1; }",
+        "class Parcel extends Base { private secret = 1; }",
+        "const b: Base = new Parcel();",
+        "export const out = JSON.stringify({ ...b });",
+      ],
+      "",
+    ],
+    [
+      "an object literal's getter",
+      [
+        parcel,
+        "const p = new Parcel();",
+        "export const out = JSON.stringify({ get data() { return p; } });",
+      ],
+      "",
+    ],
+    [
+      "an object literal's getter over a parameter",
+      [
+        parcel,
+        "function send(p: Parcel): string { return JSON.stringify({ get data() { return p; } }); }",
+        "export const out = send(new Parcel());",
+      ],
+      "",
+    ],
+    [
+      "an object literal's getter beside a data member",
+      [
+        parcel,
+        "const box = { n: 1, get inner(): Parcel { return new Parcel(); } };",
+        "export const out = JSON.stringify(box);",
+      ],
+      "",
+    ],
+    [
+      "an object literal's getter typed unknown",
+      [
+        parcel,
+        "const p = new Parcel();",
+        "export const out = JSON.stringify({ get data(): unknown { return p; } });",
+      ],
+      "",
+    ],
+    [
+      "a class's toJSON result",
+      [
+        parcel,
+        "class Wrap { toJSON() { return new Parcel(); } }",
+        "export const out = JSON.stringify(new Wrap());",
+      ],
+      "",
+    ],
+    [
+      "a class's toJSON result beside a data member",
+      [
+        parcel,
+        "class Box { hidden = 1; toJSON(): Parcel { return new Parcel(); } }",
+        "export const out = JSON.stringify(new Box());",
+      ],
+      "",
+    ],
+    [
+      "a toJSON a base class declares",
+      [
+        parcel,
+        "class Base { toJSON(): Parcel { return new Parcel(); } }",
+        "class Sub extends Base { n = 1; }",
+        "export const out = JSON.stringify(new Sub());",
+      ],
+      "",
+    ],
+    [
+      "a subclass's toJSON behind a variable a base class types",
+      [
+        parcel,
+        "class Base { id = 1; }",
+        "class Derived extends Base { toJSON() { return new Parcel(); } }",
+        "const b: Base = new Derived();",
+        "export const out = JSON.stringify(b);",
+      ],
+      "",
+    ],
+    [
+      "a class's toJSON result typed unknown",
+      [
+        parcel,
+        "class Wrap { toJSON(): unknown { return new Parcel(); } }",
+        "export const out = JSON.stringify(new Wrap());",
+      ],
+      "",
+    ],
+    [
+      "a class's toJSON getter that returns a function",
+      [
+        parcel,
+        "class Wrap { get toJSON() { return () => new Parcel(); } }",
+        "export const out = JSON.stringify(new Wrap());",
+      ],
+      "",
+    ],
+    [
+      "a generic subclass of a concrete base, through a parameter the base types",
+      [
+        parcel,
+        "class Base { id = 1; }",
+        "class Derived<T> extends Base { constructor(public extra: T) { super(); } }",
+        "function save(b: Base): string { return JSON.stringify(b); }",
+        "export const out = save(new Derived(new Parcel()));",
+      ],
+      "",
+    ],
+    [
+      "a generic subclass of a concrete base that assigns its member",
+      [
+        parcel,
+        "class Base { n = 1; }",
+        "class Sub<T> extends Base { value: T; constructor(value: T) { super(); this.value = value; } }",
+        "function save(b: Base): string { return JSON.stringify(b); }",
+        "export const out = save(new Sub(new Parcel()));",
+      ],
+      "",
+    ],
+    [
+      "a member typed unknown its initializer writes",
+      [
+        parcel,
+        "class X { extra: unknown = new Parcel(); }",
+        "export const out = JSON.stringify(new X());",
+      ],
+      "",
+    ],
+    [
+      "a member typed unknown a constructor's this assignment writes",
+      [
+        parcel,
+        "class X { extra: unknown; constructor() { this.extra = new Parcel(); } }",
+        "export const out = JSON.stringify(new X());",
+      ],
+      "",
+    ],
+    [
+      "a member typed unknown a this element assignment writes",
+      [
+        parcel,
+        'class X { extra: unknown; constructor() { this["extra"] = new Parcel(); } }',
+        "export const out = JSON.stringify(new X());",
+      ],
+      "",
+    ],
+    [
+      "a member an interface types its initializer writes",
+      [
+        parcel,
+        "interface HasId { id: number }",
+        "class X { extra: HasId = new Parcel(); }",
+        "export const out = JSON.stringify(new X());",
+      ],
+      "",
+    ],
+    [
+      "a member typed object its initializer writes",
+      [
+        parcel,
+        "class Box { item: object = new Parcel(); }",
+        "export const out = JSON.stringify(new Box());",
+      ],
+      "",
+    ],
+    [
+      "a member typed by the empty object type its initializer writes",
+      [
+        parcel,
+        "class Box { item: {} = new Parcel(); }",
+        "export const out = JSON.stringify(new Box());",
+      ],
+      "",
+    ],
+    [
+      "a member typed object a constructor's this assignment writes",
+      [
+        parcel,
+        "class Box { item: object; constructor() { this.item = new Parcel(); } }",
+        "export const out = JSON.stringify(new Box());",
+      ],
+      "",
+    ],
+    [
+      "a member typed object a method's this assignment writes",
+      [
+        parcel,
+        "class Box { item: object = {}; put(p: Parcel): void { this.item = p; } }",
+        "const box = new Box();",
+        "box.put(new Parcel());",
+        "export const out = JSON.stringify(box);",
+      ],
+      "",
+    ],
+    [
+      "a subclass member typed unknown behind a variable a base class types",
+      [
+        parcel,
+        "class Base { id = 1; }",
+        "class Derived extends Base { extra: unknown = new Parcel(); }",
+        "const b: Base = new Derived();",
+        "export const out = JSON.stringify(b);",
+      ],
+      "",
+    ],
+    [
+      "a generic method a non-generic interface method dispatches to",
+      [
+        parcel,
+        "interface Saver { save(x: unknown): string }",
+        "class JsonSaver implements Saver { save<T>(x: T): string { return JSON.stringify(x); } }",
+        "const s: Saver = new JsonSaver();",
+        "export const out = s.save(new Parcel());",
+      ],
+      "",
+    ],
+    [
+      "a generic method a non-generic interface method dispatches to, through a parameter",
+      [
+        parcel,
+        "interface Sink { write(value: object): void }",
+        "class Impl implements Sink { write<T>(value: T): void { JSON.stringify(value); } }",
+        "export function go(s: Sink): void { s.write(new Parcel()); }",
+        "go(new Impl());",
+      ],
+      "",
+    ],
+    [
+      "a generic method a non-generic abstract method dispatches to",
+      [
+        parcel,
+        "abstract class Saver { abstract save(x: unknown): string; }",
+        "class JsonSaver extends Saver { save<T>(x: T): string { return JSON.stringify(x); } }",
+        "const s: Saver = new JsonSaver();",
+        "export const out = s.save(new Parcel());",
+      ],
+      "",
+    ],
+    [
+      "a generic method whose parameters do not name its type parameter, a non-generic interface method dispatching to it",
+      [
+        parcel,
+        "interface Saver { save(x: unknown): string }",
+        "class JsonSaver implements Saver { last: unknown; save<T>(x: unknown): string { this.last = x; return JSON.stringify(this.last as T); } }",
+        "const s: Saver = new JsonSaver();",
+        "export const out = s.save(new Parcel());",
+      ],
+      "",
+    ],
+    [
+      "Object.assign onto this",
+      [
+        parcel,
+        "class Wrap { constructor(x: Parcel) { Object.assign(this, x); } }",
+        "export const out = JSON.stringify(new Wrap(new Parcel()));",
+      ],
+      "",
+    ],
+  ])(
+    "holds back every member of the class, through %s",
+    (_form, main, declarations) => {
+      expect(memberFindings(main, declarations).filter((one) => one.includes("Parcel."))).toEqual(
+        [],
+      );
+    },
+    LOAD_TIMEOUT,
+  );
+});
+
+describe("a package's generic type that instantiates itself afresh at each level", () => {
+  it(
+    "holds back every member of the class its value holds",
+    () => {
+      expect(
+        retainedIn(
+          [
+            'import type { Chain } from "chain";',
+            "class Parcel { private secret = 1; id = 2; }",
+            "const chain: Chain<Parcel> = { value: new Parcel() };",
+            "export const out = JSON.stringify(chain);",
+          ],
+          {
+            "node_modules/chain/package.json": JSON.stringify({
+              name: "chain",
+              version: "1.0.0",
+              types: "index.d.ts",
+            }),
+            "node_modules/chain/index.d.ts":
+              "export interface Chain<T> { value: T; next?: Chain<[T]> }\n",
+          },
+        )
+          .map((line) => line.replace(/ \d+:\d+ /u, " "))
+          .sort(),
+      ).toEqual(["Parcel.id passed to JSON.stringify", "Parcel.secret passed to JSON.stringify"]);
+    },
+    LOAD_TIMEOUT,
+  );
+});
+
+describe("a package's generic type that instantiates itself afresh at each level, from a declared function", () => {
+  it(
+    "holds back every member of the class its value holds, its value declared first",
+    () => {
+      expect(
+        retainedIn(
+          [
+            'import type { Chain } from "chain";',
+            "class Parcel { private secret = 1; id = 2; }",
+            "declare function make(): Chain<Parcel>;",
+            "export const out = JSON.stringify(make());",
+          ],
+          {
+            "node_modules/chain/package.json": JSON.stringify({
+              name: "chain",
+              version: "1.0.0",
+              types: "index.d.ts",
+            }),
+            "node_modules/chain/index.d.ts":
+              "export interface Chain<T> { value: T; next?: Chain<[T]> }\n",
+          },
+        )
+          .map((line) => line.replace(/ \d+:\d+ /u, " "))
+          .filter((line) => line.startsWith("Parcel."))
+          .sort(),
+      ).toEqual(["Parcel.id passed to JSON.stringify", "Parcel.secret passed to JSON.stringify"]);
+    },
+    LOAD_TIMEOUT,
+  );
+});
+
+describe("a serialized type larger than the walk reads", () => {
+  it(
+    "holds back every member of every class past the walk's bound",
+    () => {
+      const count = 4300;
+      const ids = Array.from({ length: count }, (_none, at) => at);
+      expect(
+        memberFindings([
+          ...ids.map((at) => `class C${String(at)} { private secret = ${String(at)}; }`),
+          `interface Root { ${ids.map((at) => `c${String(at)}: C${String(at)};`).join(" ")} }`,
+          "function save(r: Root): string { return JSON.stringify(r); }",
+          `export const out = save({ ${ids.map((at) => `c${String(at)}: new C${String(at)}()`).join(", ")} });`,
+        ]).filter((one) => one.includes(".secret")),
+      ).toEqual([]);
+    },
+    LOAD_TIMEOUT * 3,
+  );
+});
+
+describe("an outside place written over a type parameter", () => {
+  it.each([
+    [
+      "an object type over the type parameter",
+      "<T>(x: { value: T }): void",
+      "emit({ value: new Parcel() });",
+    ],
+    [
+      "a mapped type whose template is an object type over the type parameter",
+      '<T>(x: { [K in "box"]: { value: T } }): void',
+      "emit({ box: { value: new Parcel() } });",
+    ],
+  ])(
+    "holds back the conversions of a value passed to %s",
+    (_form, signature, call) => {
+      expect(
+        retainedIn(
+          [
+            'import { emit } from "./outside.ts";',
+            'class Parcel { id = 1; toString(): string { return ""; } }',
+            call,
+          ],
+          { "outside.ts": `export declare function emit${signature};\n` },
+        )
+          .map((line) => line.replace(/ \d+:\d+ /u, " "))
+          .sort(),
+      ).toEqual(["Parcel.id passed to emit", "Parcel.toString passed to emit"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "holds back the conversions of a value passed to an outside method whose result is this",
+    () => {
+      expect(
+        retainedIn(
+          [
+            'import { Log } from "./outside.ts";',
+            'class Parcel { id = 1; toString(): string { return ""; } }',
+            "const log = new Log<Parcel>();",
+            "log.add(new Parcel());",
+          ],
+          { "outside.ts": "export declare class Log<T> { add(x: T): this; }\n" },
+        )
+          .map((line) => line.replace(/ \d+:\d+ /u, " "))
+          .sort(),
+      ).toEqual(["Parcel.id passed to log.add", "Parcel.toString passed to log.add"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it.each([
+    ["an object type the result is", "<T>(x: T): { value: T }", "emit(new Parcel());"],
+    ["a promise of an object type", "<T>(body: T): Promise<{ data: T }>", "emit(new Parcel());"],
+    [
+      "an object type beside another member",
+      "<T>(body: T): { sent: T; ok: boolean }",
+      "emit(new Parcel());",
+    ],
+  ])(
+    "holds back the conversions of a value passed to an outside function whose result holds it in %s",
+    (_form, signature, call) => {
+      expect(
+        retainedIn(
+          [
+            'import { emit } from "./outside.ts";',
+            'class Parcel { id = 1; toString(): string { return ""; } }',
+            call,
+          ],
+          { "outside.ts": `export declare function emit${signature};\n` },
+        )
+          .map((line) => line.replace(/ \d+:\d+ /u, " "))
+          .sort(),
+      ).toEqual(["Parcel.id passed to emit", "Parcel.toString passed to emit"]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it.each([["a function the result returns", "<T>(x: T): () => T"]])(
+    "holds back nothing of a value handed back through %s",
+    (_form, signature) => {
+      expect(
+        retainedIn(
+          [
+            'import { emit } from "./outside.ts";',
+            'import { Parcel } from "./parcel.ts";',
+            "console.log(emit(new Parcel()));",
+          ],
+          {
+            "parcel.ts": 'export class Parcel { id = 1; toString(): string { return ""; } }\n',
+            "outside.ts": `import type { Parcel } from "./parcel.ts";\nexport declare function emit${signature};\n`,
+          },
+        ).filter((line) => line.includes("passed to emit")),
+      ).toEqual([]);
+    },
+    LOAD_TIMEOUT,
+  );
+});
+
+describe("a generic function's result read through the call that instantiates it", () => {
+  it(
+    "takes nothing from what the type parameter's constraint holds at other calls",
+    () => {
+      const held = retainedIn(
+        [
+          'import { hold } from "./outside.ts";',
+          "const strings: string[] = [];",
+          "function listed<A extends unknown[]>(...items: A): A { return items; }",
+          "function save<T>(...v: [T] & unknown[]): string { return JSON.stringify(v); }",
+          'class Sent { id = 1; toString(): string { return ""; } }',
+          "hold.apply(undefined, listed(new Sent(), ...strings));",
+          'class Saved { id = 1; toString(): string { return ""; } }',
+          "save.apply(undefined, [new Saved()]);",
+        ],
+        { "outside.ts": "export declare function hold<T>(...v: T[]): void;\n" },
+      ).map((line) => line.split(" ")[0]);
+      expect([...new Set(held)].sort()).toEqual(["Saved.id", "Sent.id", "Sent.toString"]);
     },
     LOAD_TIMEOUT,
   );

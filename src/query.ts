@@ -249,12 +249,6 @@ export interface Queries {
    * a tuple or an array-like interface; none where the type has no number index.
    */
   numberIndexOf(type: Type): Answer<Type | undefined>;
-  /**
-   * The type parameters a mapped type is over: every one its alias's arguments, its key
-   * set, its `as` clause or its template names, through the types they are spelled from,
-   * each mapped type's own key parameter aside; none for another type.
-   */
-  mappedParametersOf(type: Type): Answer<readonly Type[]>;
   /** The type of one named property of a type, its apparent members included; none where it has none. */
   propertyTypeOf(type: Type, name: string): Answer<Type | undefined>;
   signatureOf(declaration: Node): Answer<Signature | undefined>;
@@ -291,43 +285,6 @@ function partQuestion(type: Type): (() => readonly (Type | undefined)[]) | undef
     return () => [type.getBaseType(), type.getConstraint()];
   }
   return undefined;
-}
-
-/** How deep {@link mappedParameters} reads, as a recursive mapped type makes a new one at each level. */
-const MAPPED_DEPTH = 4;
-
-/** The type parameters a mapped type is over, as {@link Queries.mappedParametersOf} names them. */
-function mappedParameters(checker: Checker, mapped: Type): Type[] {
-  const own = new Set<number>();
-  const found = new Map<number, Type>();
-  const seen = new Set<number>();
-  const visit = (type: Type, depth: number): void => {
-    if (depth > MAPPED_DEPTH || seen.has(type.id)) {
-      return;
-    }
-    seen.add(type.id);
-    if (type.isMappedType()) {
-      own.add(type.getTypeParameter().id);
-    }
-    if (type.isTypeParameter() && !type.isThisType) {
-      found.set(type.id, type);
-    }
-    const aliased = (type as { readonly aliasTypeArguments?: readonly number[] })
-      .aliasTypeArguments;
-    const inner = [
-      ...(type.isUnionType() || type.isIntersectionType() ? type.getTypes() : []),
-      ...(type.isTypeReference() ? checker.getTypeArguments(type) : []),
-      ...(aliased === undefined || aliased.length === 0 ? [] : type.getAliasTypeArguments()),
-      ...(partQuestion(type)?.() ?? []),
-    ];
-    for (const part of inner) {
-      if (part !== undefined) {
-        visit(part, depth + 1);
-      }
-    }
-  };
-  visit(mapped, 0);
-  return [...found.values()].filter((parameter) => !own.has(parameter.id));
 }
 
 /**
@@ -678,11 +635,16 @@ export function queriesOf(
         () => type.getAliasSymbol(),
       ),
     aliasArgumentsOf: (type) =>
-      one(
-        "getAliasTypeArguments",
-        () => typeLocation(type),
-        () => type.getAliasTypeArguments(),
-      ),
+      // The type object reports whether the alias was given arguments, so a type without
+      // them asks nothing.
+      ((type as { readonly aliasTypeArguments?: readonly number[] }).aliasTypeArguments ?? [])
+        .length === 0
+        ? []
+        : one(
+            "getAliasTypeArguments",
+            () => typeLocation(type),
+            () => type.getAliasTypeArguments(),
+          ),
     signaturesOf: (type, kind) =>
       one(
         "getSignaturesOfType",
@@ -741,14 +703,6 @@ export function queriesOf(
         () => typeLocation(type),
         () => checker.getIndexTypeOfType(type, IndexKind.Number),
       ),
-    mappedParametersOf: (type) =>
-      type.isMappedType()
-        ? one(
-            "getConstraintType",
-            () => typeLocation(type),
-            () => mappedParameters(checker, type),
-          )
-        : [],
     propertyTypeOf: (type, name) =>
       one(
         "getTypeOfPropertyOfType",

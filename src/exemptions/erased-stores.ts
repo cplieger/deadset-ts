@@ -1,32 +1,48 @@
 /**
  * The values the program stores in a property, an index signature, an array element or a
- * variable. A serializer emits the value a slot holds, so it walks each stored value at its
- * own static type and each type it is checked against, whatever supertype the slot names.
- * Containers are identified by the checker's type identity, so two of one type share what
- * either stores. A store into an erased property of a type the analyzed program does not
- * declare hands the value to the code that declares it.
+ * variable, each walked at its own static type and each type it is checked against, since
+ * a serializer emits the value a slot holds. Containers are the checker's types, so two of
+ * one type share their stores, and a class's instances share what its initializers, `this`
+ * and `Object.assign` store. A store into an erased property of a type the program does
+ * not declare hands the value to the code that declares it.
  */
 
 import {
   isArrayLiteralExpression,
   isBinaryExpression,
   isCallExpression,
+  isClassDeclaration,
+  isClassExpression,
+  isClassStaticBlockDeclaration,
+  isConstructorDeclaration,
   isElementAccessExpression,
+  isFunctionDeclaration,
+  isFunctionExpression,
+  isGetAccessorDeclaration,
   isIdentifier,
+  isMethodDeclaration,
   isNoSubstitutionTemplateLiteral,
   isNumericLiteral,
   isObjectLiteralExpression,
   isPropertyAccessExpression,
   isPropertyAssignment,
+  isPropertyDeclaration,
+  isSetAccessorDeclaration,
   isShorthandPropertyAssignment,
+  isSourceFile,
   isSpreadElement,
   isStringLiteral,
   isVariableDeclaration,
+  ModifierFlags,
   SyntaxKind,
+  type CallExpression,
   type Expression,
+  type Identifier,
   type Node,
+  type PropertyAccessExpression,
 } from "@typescript/native/ast";
 import { SymbolFlags, type Type } from "@typescript/native/sync";
+import { modifiersOf } from "../inventory.ts";
 import { must } from "../query.ts";
 import type { ProjectView } from "../session.ts";
 import { checkedTypes, ERASED } from "./value-reach.ts";
@@ -49,10 +65,15 @@ interface Stored {
 
 /** One store into a slot of a container: the property it names, or none for an element or an index. */
 interface Store extends Stored {
-  /** The expression whose type is the container, or the literal whose contextual type is. */
+  /**
+   * The expression whose type is the container, the literal whose contextual type is, or
+   * the name of the class whose instances are.
+   */
   readonly container: Expression;
   readonly contextual: boolean;
   readonly name: string | undefined;
+  /** The `Object` an `Object.assign` copying the value names, which must be the standard library's. */
+  readonly copiedBy?: Node;
 }
 
 /** A store into an erased property of a type no file of the project declares. */
@@ -85,6 +106,55 @@ function literalKey(node: Expression): string | undefined {
 function declaresSlot(node: Node): boolean {
   const held = node as { readonly type?: Node; readonly initializer?: Node };
   return held.type !== undefined || held.initializer === undefined;
+}
+
+/**
+ * The name of the class whose instance a `this` is, where it is one of a named class's
+ * instance members; an arrow function's `this` is its enclosing one's.
+ */
+function classOfThis(node: Node): Identifier | undefined {
+  for (let at = node.parent; !isSourceFile(at); at = at.parent) {
+    if (
+      isMethodDeclaration(at) ||
+      isConstructorDeclaration(at) ||
+      isGetAccessorDeclaration(at) ||
+      isSetAccessorDeclaration(at) ||
+      isPropertyDeclaration(at)
+    ) {
+      const owner = at.parent;
+      return (isClassDeclaration(owner) || isClassExpression(owner)) &&
+        (modifiersOf(at) & ModifierFlags.Static) === 0
+        ? owner.name
+        : undefined;
+    }
+    if (
+      isFunctionDeclaration(at) ||
+      isFunctionExpression(at) ||
+      isClassStaticBlockDeclaration(at)
+    ) {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+/** The container a store into `target` names: its class for a `this` of one, else itself. */
+function storedInto(target: Expression): Expression {
+  const at = parenthesesRemoved(target);
+  return (at.kind === SyntaxKind.ThisKeyword ? classOfThis(at) : undefined) ?? target;
+}
+
+/** Whether a node calls `Object.assign`, which copies each source's own members into its target. */
+function isObjectAssign(node: Node): node is CallExpression & {
+  readonly expression: PropertyAccessExpression;
+} {
+  return (
+    isCallExpression(node) &&
+    isPropertyAccessExpression(node.expression) &&
+    isIdentifier(node.expression.expression) &&
+    node.expression.expression.text === "Object" &&
+    node.expression.name.text === "assign"
+  );
 }
 
 /** One target a destructuring assignment writes, and what it receives. */
@@ -194,7 +264,8 @@ function patternTargets(pattern: Expression, from: Stored, out: Target[]): void 
 export function erasedStores<Brand>(project: ProjectView<Brand>): ErasedStores {
   const queries = project.queries;
   const own = project.ownPaths();
-  const stores: Store[] = [];
+  const candidates: Store[] = [];
+  const assigns: Node[] = [];
   const assigned: (Stored & { readonly target: Node })[] = [];
   const slotVariables: Node[] = [];
   for (const file of project.ownSourceFiles()) {
@@ -203,7 +274,7 @@ export function erasedStores<Brand>(project: ProjectView<Brand>): ErasedStores {
         for (const property of node.properties) {
           if (isShorthandPropertyAssignment(property) && isIdentifier(property.name)) {
             const { name } = property;
-            stores.push({
+            candidates.push({
               container: node,
               contextual: true,
               name: name.text,
@@ -215,7 +286,7 @@ export function erasedStores<Brand>(project: ProjectView<Brand>): ErasedStores {
             (isIdentifier(property.name) || isStringLiteral(property.name))
           ) {
             const value = property.initializer;
-            stores.push({
+            candidates.push({
               container: node,
               contextual: true,
               name: property.name.text,
@@ -227,7 +298,7 @@ export function erasedStores<Brand>(project: ProjectView<Brand>): ErasedStores {
       } else if (isArrayLiteralExpression(node)) {
         for (const element of node.elements) {
           if (!isSpreadElement(element)) {
-            stores.push({
+            candidates.push({
               container: node,
               contextual: true,
               name: undefined,
@@ -241,16 +312,16 @@ export function erasedStores<Brand>(project: ProjectView<Brand>): ErasedStores {
         patternTargets(node.left, { value: node.right, path: [] }, targets);
         for (const { target, value, path } of targets) {
           if (isPropertyAccessExpression(target)) {
-            stores.push({
-              container: target.expression,
+            candidates.push({
+              container: storedInto(target.expression),
               contextual: false,
               name: target.name.text,
               value,
               path,
             });
           } else if (isElementAccessExpression(target)) {
-            stores.push({
-              container: target.expression,
+            candidates.push({
+              container: storedInto(target.expression),
               contextual: false,
               name: literalKey(target.argumentExpression),
               value,
@@ -261,12 +332,43 @@ export function erasedStores<Brand>(project: ProjectView<Brand>): ErasedStores {
           }
         }
       } else if (
+        isPropertyDeclaration(node) &&
+        node.initializer !== undefined &&
+        (isIdentifier(node.name) || isStringLiteral(node.name)) &&
+        (isClassDeclaration(node.parent) || isClassExpression(node.parent)) &&
+        node.parent.name !== undefined &&
+        (modifiersOf(node) & ModifierFlags.Static) === 0
+      ) {
+        candidates.push({
+          container: node.parent.name,
+          contextual: false,
+          name: node.name.text,
+          value: node.initializer,
+          path: [],
+        });
+      } else if (isObjectAssign(node)) {
+        const [target, ...sources] = node.arguments;
+        assigns.push(node.expression.expression);
+        const container = target === undefined ? undefined : storedInto(target);
+        for (const source of sources) {
+          if (container !== undefined && !isSpreadElement(source)) {
+            candidates.push({
+              container,
+              contextual: false,
+              name: undefined,
+              value: source,
+              path: [],
+              copiedBy: node.expression.expression,
+            });
+          }
+        }
+      } else if (
         isCallExpression(node) &&
         isPropertyAccessExpression(node.expression) &&
         ELEMENT_STORES.has(node.expression.name.text)
       ) {
         for (const argument of node.arguments) {
-          stores.push({
+          candidates.push({
             container: node.expression.expression,
             contextual: false,
             name: undefined,
@@ -285,6 +387,21 @@ export function erasedStores<Brand>(project: ProjectView<Brand>): ErasedStores {
     file.forEachChild(visit);
   }
 
+  const standard = new Set(
+    queries
+      .symbolsAt(assigns)
+      .map(must)
+      .flatMap((symbol, at) =>
+        symbol !== undefined &&
+        symbol.declarations.length > 0 &&
+        symbol.declarations.every((handle) => !own.has(handle.path))
+          ? [assigns[at]]
+          : [],
+      ),
+  );
+  const stores = candidates.filter(
+    (one) => one.copiedBy === undefined || standard.has(one.copiedBy),
+  );
   const contextual = stores.filter((one) => one.contextual);
   const contexts = queries.contextualTypes(contextual.map((one) => one.container)).map(must);
   const containerOf = new Map<Store, Type | undefined>(

@@ -1,0 +1,11 @@
+{
+  "description": "Adjudications of findings in vendored upstream source, which this repository copies unedited.",
+  "ignore": [
+    {
+      "code": "DS1404",
+      "symbol": "ts://@cplieger/deadset-ts/src/vendor/unbash/lexer.ts#Lexer.readBacktickExpansion",
+      "path": "src/vendor/unbash/lexer.ts",
+      "reason": "Vendored from unbash 6.0.0 unedited: the empty initial value of inner is overwritten on both branches upstream."
+    }
+  ]
+}
