@@ -459,8 +459,9 @@ const NODE: Runtime = {
 };
 
 /**
- * `tsx [watch] [options] <file> [arguments]`, https://tsx.is/usage, which takes Node's options
- * too: https://tsx.is/node-enhancement
+ * `tsx [watch] [options] <file> [arguments]`, which takes Node's options too:
+ * https://github.com/privatenumber/tsx/blob/master/docs/node-enhancement.md
+ * `watch`: https://github.com/privatenumber/tsx/blob/master/docs/watch-mode.md
  */
 const TSX: Runtime = {
   preloads: new Map([
@@ -712,7 +713,7 @@ const npx = packageExec(NPX, false);
 const npmExec = packageExec(NPM_EXEC, true);
 
 /**
- * `npm run <script> [-- <arguments>]`, https://docs.npmjs.com/cli/v11/commands/npm-run-script:
+ * `npm run <script> [-- <arguments>]`, https://docs.npmjs.com/cli/v11/commands/npm-run:
  * it runs another script of the same manifest, which is read on its own.
  */
 const npmRun: Reader = (words) => {
@@ -1127,7 +1128,7 @@ function letters(written: string): readonly string[] {
   return Array.from(written, (letter) => `-${letter}`);
 }
 
-/** https://www.gnu.org/software/findutils/manual/html_node/find_html/xargs-options.html */
+/** https://www.gnu.org/software/findutils/manual/find.html#xargs-options */
 const XARGS: Options = {
   valued: new Set([
     ...letters("adEILnPs"),
@@ -1162,12 +1163,12 @@ function xargs(words: readonly Word[]): Appending {
   };
 }
 
-/** `find`'s actions that run a command up to a `;` or `+`, each `{}` in its words a path it finds: https://www.gnu.org/software/findutils/manual/html_node/find_html/Single-File.html */
+/** `find`'s actions that run a command up to a `;` or `+`, each `{}` in its words a path it finds: https://www.gnu.org/software/findutils/manual/find.html#Single-File */
 const FIND_ACTIONS = new Set(["-exec", "-execdir", "-ok", "-okdir"]);
 
 /**
  * GNU find's options and primaries that take the next word, two for `-fprintf`:
- * https://www.gnu.org/software/findutils/manual/html_node/find_html/Primary-Index.html
+ * https://www.gnu.org/software/findutils/manual/find.html#Primary-Index
  */
 const FIND_VALUED = new Set([
   ...["-D", "-name", "-iname", "-path", "-ipath", "-wholename", "-iwholename", "-regex"],
@@ -1536,7 +1537,7 @@ function envCmdLines(words: readonly Word[]): Lines {
 }
 
 /**
- * `dotenvx run [options] -- <command>`, https://dotenvx.com/docs/advanced/run, whose command
+ * `dotenvx run [options] -- <command>`, https://dotenvx.com/docs/cli/run/, whose command
  * stands after `--`: https://github.com/dotenvx/dotenvx/blob/main/src/cli/dotenvx.js
  */
 const DOTENVX_RUN: Options = {
@@ -1683,7 +1684,13 @@ function runtimeGrammar(line: Runtime, doc: string): Grammar {
  */
 const GRAMMARS: ReadonlyMap<string, Grammar> = new Map<string, Grammar>([
   ["node", runtimeGrammar(NODE, "https://nodejs.org/api/cli.html")],
-  ["tsx", runtimeGrammar(TSX, "https://tsx.is/usage")],
+  [
+    "tsx",
+    runtimeGrammar(
+      TSX,
+      "https://github.com/privatenumber/tsx/blob/master/docs/node-enhancement.md",
+    ),
+  ],
   ["ts-node", runtimeGrammar(TS_NODE, "https://typestrong.org/ts-node/docs/options")],
   ["bun", runtimeGrammar(BUN, "https://bun.com/docs/cli/run")],
   ["deno", runtimeGrammar(DENO, "https://docs.deno.com/runtime/reference/cli/run/")],
@@ -1798,7 +1805,7 @@ const GRAMMARS: ReadonlyMap<string, Grammar> = new Map<string, Grammar>([
             options: DOTENVX_RUN,
             operand: "command",
             ended: true,
-            doc: "https://dotenvx.com/docs/advanced/run",
+            doc: "https://dotenvx.com/docs/cli/run/",
           },
         ],
       ]),
@@ -1831,7 +1838,7 @@ const GRAMMARS: ReadonlyMap<string, Grammar> = new Map<string, Grammar>([
     {
       options: XARGS,
       operand: "appended",
-      doc: "https://www.gnu.org/software/findutils/manual/html_node/find_html/xargs-options.html",
+      doc: "https://www.gnu.org/software/findutils/manual/find.html#xargs-options",
     },
   ],
   [
