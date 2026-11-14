@@ -35,7 +35,7 @@
     "vitestShards": 3
   },
   "dependencies": {
-    "@typescript/native": "npm:typescript@7.1.0-dev.20261103.1"
+    "@typescript/native": "npm:typescript@7.1.0-dev.20261111.1"
   },
   "overrides": {
     "qs": "^6.15.2"
