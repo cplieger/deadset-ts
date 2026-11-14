@@ -5,6 +5,7 @@ import { matrixFor, policyOf } from "../../__test-helpers__/sweep.ts";
 import { nodeHost } from "../../bin/node-host.ts";
 import { fixture } from "../../__test-helpers__/fixtures.ts";
 import { runSweep, type RunSweep } from "../analysis.ts";
+import type { Exemption } from "../exemptions/lifecycle.ts";
 import type { InventorySymbol } from "../inventory.ts";
 import type { Reference } from "../references.ts";
 import { resolve } from "../resolve.ts";
@@ -105,16 +106,18 @@ describe("the two relations over one project", () => {
     );
   });
 
-  it("reaches what a barrel stars, through the namespace the entry imports it as", () => {
-    expect(verdict("src/starred.ts#starred"), "reached, and named by nothing").toBe(
-      "reachability\treference-counting",
-    );
+  it("reaches nothing a barrel's star or namespace re-export holds through a member read of the namespace the entry imports it as", () => {
+    expect(
+      verdict("src/starred.ts#starred"),
+      "a member read by name reaches only the export it names, and a re-export nothing " +
+        "unseen uses is no use by itself (references-ts.4)",
+    ).toBe("-\treference-counting");
     expect(
       verdict("src/starred.ts#reachedThroughTheStar"),
-      "so the declaration only it references is live",
-    ).toBe("reference-counting,reachability\tlive");
-    expect(verdict("src/grouped.ts#member"), "and what a namespace re-export holds").toBe(
-      "reachability\treference-counting",
+      "so the declaration only it references is referenced and unreached",
+    ).toBe("reference-counting\treachability");
+    expect(verdict("src/grouped.ts#member"), "and so is what a namespace re-export holds").toBe(
+      "-\treference-counting",
     );
   });
 
@@ -176,9 +179,9 @@ describe("a module's evaluation", () => {
         "imports is unreached",
     ).toBe("-\treference-counting");
     expect(
-      evaluated("src/spaced.ts#unread"),
-      "while a namespace import reads the module's namespace, which holds every export",
-    ).toBe("reachability\treference-counting");
+      [evaluated("src/spaced.ts#read"), evaluated("src/spaced.ts#unread")],
+      "and a namespace import's member read reaches only the export it names (references-ts.4)",
+    ).toEqual(["reference-counting,reachability\tlive", "-\treference-counting"]);
   });
 });
 
@@ -339,6 +342,106 @@ describe("the sweep over an in-memory graph", () => {
       candidates(sweep(throughNamespace, policyOf({ marked: [], mode: PLAIN })), all),
       "a reference to the file names the module's namespace, which holds its exports",
     ).toEqual(["exported reference-counting"]);
+  });
+
+  it("reaches only the export a judged read of a namespace object names, and every export a read no rule judged, a used re-export or a whole read of a namespace passes on", () => {
+    const worker = file("src/worker.ts");
+    const named = { ...declared("named", 2, "src/worker.ts"), exported: true };
+    const other = { ...declared("other", 3, "src/worker.ts"), exported: true };
+    const space = {
+      ...declared("Space", 4, "src/worker.ts"),
+      kind: "namespace" as const,
+      exported: true,
+    };
+    const member = { ...declared("member", 5, "src/worker.ts"), parent: space.id, exported: true };
+    const held = { ...declared("held", 6, "src/worker.ts"), parent: space.id, exported: true };
+    const barrel = file("src/barrel.ts");
+    const holdsFrom = file("src/held.ts");
+    const user = declared("user", 5);
+    const dead = declared("dead", 6);
+    const all = [source, user, dead, worker, named, other, space, member, held, barrel, holdsFrom];
+    const ROOT: Root[] = [{ id: user.id, kind: "configured", source: "user" }];
+    // What only `dead` references is live under reference counting, so a reachability
+    // candidate among them is one no read from the root reaches.
+    // `held` passes a namespace object on, as an alias declaration does.
+    const fromDead = [
+      reference(dead, other),
+      reference(dead, member),
+      reference(dead, held),
+      { ...reference(held, holdsFrom), namespace: true as const, reexport: true as const },
+    ];
+    const swept = (
+      references: readonly Reference[],
+      roots: readonly Root[] = ROOT,
+      held: { readonly marked?: readonly string[]; readonly exempt?: readonly Exemption[] } = {},
+    ): string[] =>
+      candidates(
+        sweep(
+          matrixFor(all, [...fromDead, ...references], roots, []),
+          policyOf({ marked: [], mode: PLAIN, ...held }),
+        ),
+        all,
+      ).filter((one) => !one.startsWith("dead ") && !one.startsWith("named "));
+    const judged = { ...reference(user, worker), namespace: true as const };
+    const passes = {
+      ...reference(barrel, worker),
+      namespace: true as const,
+      reexport: true as const,
+    };
+
+    expect(
+      swept([judged, reference(user, named)]),
+      "a member read by name reaches only that export (references-ts.4)",
+    ).toEqual([
+      "other reachability",
+      "Space reference-counting",
+      "member reachability",
+      "held reachability",
+    ]);
+    expect(
+      swept([reference(user, worker)]),
+      "a use no rule judges reads every export, and a namespace's whole read every member (.5)",
+    ).toEqual(["Space reference-counting"]);
+    expect(
+      swept([{ ...reference(user, barrel), namespace: true as const }, passes]),
+      "a re-export nothing unseen uses passes nothing on (.4)",
+    ).toEqual([
+      "other reachability",
+      "Space reference-counting",
+      "member reachability",
+      "held reachability",
+    ]);
+    expect(
+      swept([passes], [{ id: barrel.id, kind: "configured", source: "barrel" }]),
+      "and a root's re-export every export, under both relations, its callers being unseen",
+    ).toEqual(["user reference-counting"]);
+    const record: Exemption = {
+      id: barrel.id,
+      class: "decorator",
+      detail: "named by @register",
+      site: barrel.position,
+    };
+    for (const [label, held] of [
+      ["a suppression mark", { marked: [barrel.id] }],
+      ["an exemption record", { exempt: [record] }],
+    ] as const) {
+      expect(
+        swept([passes], ROOT, held),
+        `${label} on a re-export reads whole what it passes on, which reference counting leaves to the references (.4)`,
+      ).toEqual(["Space reference-counting"]);
+    }
+    expect(
+      swept([judged, reference(user, space)]),
+      "a namespace read whole reaches every member it exports",
+    ).toEqual(["other reachability"]);
+    expect(
+      swept([
+        judged,
+        { ...reference(user, space), namespace: true as const },
+        reference(user, member),
+      ]),
+      "and a member read by name only that member",
+    ).toEqual(["other reachability", "held reachability"]);
   });
 
   it("follows a marked test declaration's references in a production sweep", () => {

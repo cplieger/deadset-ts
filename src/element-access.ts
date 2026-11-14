@@ -1,7 +1,8 @@
 /**
- * The members an element access reads by the literal type of its index: `o[k]` with `k`
- * typed `"a" | "b"` reads `a` and `b` of the type of `o`, an index typed `keyof T` reads
- * every member of `T`, and an index typed as a type parameter reads what its constraint does. Where the index is a parameter of a function every call of which the
+ * The members an element access reads by the literal type of its index (`references-ts.25`):
+ * `o[k]` with `k` typed `"a" | "b"` reads `a` and `b` of the type of `o`, an index typed
+ * `keyof T` reads every member of `T`, and an index typed as a type parameter reads what its
+ * constraint admits. Where the index is a parameter of a function every call of which the
  * target holds, the members are read at each call, by the type of the argument it passes.
  */
 
@@ -41,7 +42,7 @@ import {
   type SourceFile,
 } from "@typescript/native/ast";
 import type { Type } from "@typescript/native/sync";
-import { UNANSWERED } from "./query.ts";
+import { isAnswered, UNANSWERED, type Answer, type Queries } from "./query.ts";
 import type { Read, ReadRule } from "./references/read-rule.ts";
 import { parenthesesRemoved } from "./unwrap.ts";
 
@@ -364,14 +365,6 @@ export const elementAccess: ReadRule = {
 
         const nodes = lookups.flatMap((one) => [one.index, one.object]);
         const types = queries.typesAt(nodes);
-        // A type parameter's body serves every instantiation, so it reads what its constraint admits.
-        const keysOf = (type: Type): Type => {
-          if (!type.isTypeParameter()) {
-            return type;
-          }
-          const constraint = queries.constraintOf(type);
-          return constraint === UNANSWERED || constraint === undefined ? type : constraint;
-        };
         const partsOf = (type: Type): readonly Type[] => {
           const parts = queries.constituents(type);
           return parts === UNANSWERED ? [type] : parts;
@@ -379,11 +372,12 @@ export const elementAccess: ReadRule = {
         lookups.forEach((lookup, at) => {
           const indexType = types[2 * at];
           const objectType = types[2 * at + 1];
-          const literals =
+          const admitted =
             indexType === undefined || indexType === UNANSWERED
-              ? undefined
-              : literalNames(partsOf(keysOf(indexType)));
-          if (indexType === UNANSWERED || objectType === UNANSWERED) {
+              ? indexType
+              : admittedKeyNames(queries, indexType);
+          const literals = admitted instanceof Set ? admitted : undefined;
+          if (admitted === UNANSWERED || objectType === UNANSWERED) {
             found.push({
               kind: "held",
               from: lookup.from,
@@ -396,17 +390,21 @@ export const elementAccess: ReadRule = {
             });
             return;
           }
-          if (objectType === undefined || literals === undefined) {
+          if (objectType === undefined || admitted === undefined) {
             return;
           }
           for (const part of partsOf(objectType)) {
             const properties = queries.propertiesOf(part);
             if (properties === UNANSWERED) {
-              found.push({ kind: "held", from: lookup.from, names: [...literals] });
+              found.push({
+                kind: "held",
+                from: lookup.from,
+                ...(literals === undefined ? { members: true as const } : { names: [...literals] }),
+              });
               continue;
             }
             for (const property of properties) {
-              if (!literals.has(property.escapedName)) {
+              if (literals !== undefined && !literals.has(property.escapedName)) {
                 continue;
               }
               for (const to of chains.declarationsOf(property)) {
@@ -433,17 +431,54 @@ export const elementAccess: ReadRule = {
   },
 };
 
-/** The names a union of literal types spells, or none where a constituent is no string or number literal. */
-function literalNames(parts: readonly Type[]): ReadonlySet<string> | undefined {
+/** The member name a string or number literal type spells, or undefined for another type. */
+function literalName(type: Type): string | undefined {
+  return type.isStringLiteralType() || type.isNumberLiteralType() ? String(type.value) : undefined;
+}
+
+/**
+ * The member names an index the compiler types as `type` reads (`references-ts.25`): each
+ * string and number literal of the union it is, and for a type parameter, whose body serves
+ * every instantiation, those of its base constraint, or `"every"` where that constraint is not
+ * literal names or there is none. Undefined where a constituent is neither, which reads no
+ * member under the rule; `UNANSWERED` where the checker did not answer, read as every member.
+ */
+export function admittedKeyNames(
+  queries: Pick<Queries, "constituents" | "baseConstraintOf">,
+  type: Type,
+): Answer<ReadonlySet<string> | "every" | undefined> {
+  const partsOf = (of: Type): Answer<readonly Type[]> =>
+    of.isUnionType() ? queries.constituents(of) : [of];
+  const parts = partsOf(type);
+  if (!isAnswered(parts)) {
+    return UNANSWERED;
+  }
   const names = new Set<string>();
+  let every = false;
+  let other = false;
   for (const part of parts) {
-    if (part.isStringLiteralType()) {
-      names.add(part.value);
-    } else if (part.isNumberLiteralType()) {
-      names.add(String(part.value));
-    } else {
-      return undefined;
+    const name = literalName(part);
+    if (name !== undefined) {
+      names.add(name);
+      continue;
+    }
+    if (!part.isTypeParameter()) {
+      other = true;
+      continue;
+    }
+    const constraint = queries.baseConstraintOf(part);
+    const admitted =
+      constraint === undefined || !isAnswered(constraint) ? constraint : partsOf(constraint);
+    if (!isAnswered(admitted)) {
+      return UNANSWERED;
+    }
+    const spelled = (admitted ?? [part]).map(literalName);
+    every ||= spelled.includes(undefined);
+    for (const one of spelled) {
+      if (one !== undefined) {
+        names.add(one);
+      }
     }
   }
-  return names;
+  return other ? undefined : every ? "every" : names;
 }

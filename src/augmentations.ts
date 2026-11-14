@@ -20,18 +20,9 @@ import type { ProjectView } from "./session.ts";
 import type { SourceFiles } from "./source-files.ts";
 import type { NodeHandle } from "@typescript/native/sync";
 
-/** Whether one declaration is a `declare global` block: a module-level namespace named `global`. */
-export function isGlobalBlock(
-  symbol: InventorySymbol,
-  held: Inventory,
-  files: ReadonlySet<string>,
-): boolean {
-  return (
-    symbol.kind === "namespace" &&
-    files.has(symbol.parent) &&
-    symbol.ref.endsWith("#global") &&
-    !held.modules.has(symbol.id)
-  );
+/** Whether one declaration is a module-level `declare global` block (`InventorySymbol.block`). */
+export function isGlobalBlock(symbol: InventorySymbol, files: ReadonlySet<string>): boolean {
+  return symbol.block === "global" && files.has(symbol.parent);
 }
 
 /**
@@ -46,7 +37,7 @@ function holdersOf(
 ): ((id: string) => { readonly ids: readonly string[]; readonly global: boolean }) | undefined {
   const files = new Set(held.symbols.filter((one) => one.kind === "file").map((one) => one.id));
   const globals = new Set(
-    held.symbols.filter((one) => isGlobalBlock(one, held, files)).map((one) => one.id),
+    held.symbols.filter((one) => isGlobalBlock(one, files)).map((one) => one.id),
   );
   if (globals.size === 0 && held.modules.size === 0 && scripts.size === 0) {
     return undefined;
@@ -207,6 +198,9 @@ export function augmentationReferences(
         use: "read",
         resolution: reference.resolution,
         test: reference.test && !typed,
+        // A container read on the way to a member is read by name: it reaches no export
+        // by itself (references-ts.4).
+        namespace: true,
       };
       const key = referenceKey(read);
       if (!made.has(key) && !reads.has(key)) {

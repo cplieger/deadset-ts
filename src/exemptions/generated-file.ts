@@ -15,6 +15,7 @@ import {
   type Node,
   type SourceFile,
 } from "@typescript/native/ast";
+import { writesWholeSchema } from "../bindings.ts";
 import { GENERATORS } from "../contract/contract.generated.ts";
 import type { DetectorInput, Evidence } from "./lifecycle.ts";
 import { minifiedBy } from "../javascript-file.ts";
@@ -211,23 +212,39 @@ function imports(file: SourceFile, module: string): boolean {
 
 /** The option sets the rows of `references-ts.36` name, by row; every other row's is met by any output. */
 const OPTION_SETS: Readonly<Record<string, (file: SourceFile) => boolean>> = {
-  "ts-proto-2-output-schema": (file) => imports(file, "ts-proto-descriptors"),
+  "ts-proto-2-output-schema": (file) =>
+    imports(file, "ts-proto-descriptors") && writesWholeSchema(file),
   "ts-proto-2": writesServicePath,
   "ts-proto-2-types": (file) => !writesServicePath(file),
 };
 
+/** One row of `generators.json`, as {@link generatorOf} matches a file against it. */
+interface GeneratorRow {
+  readonly id: string;
+  readonly plugin: string;
+  readonly header: string;
+  readonly runtimeImport?: string;
+  readonly versions?: { readonly min: string; readonly max: string };
+}
+
 /** The first generator row one file matches, in `generators.json`'s order, as `bindings.3` reads it. */
-export function generatorOf(file: SourceFile): GeneratorMatch | undefined {
+export function generatorOf(
+  file: SourceFile,
+  rows: readonly GeneratorRow[] = GENERATORS,
+): GeneratorMatch | undefined {
   const lines = leadingComments(file.text).flat();
-  for (const row of GENERATORS) {
+  for (const row of rows) {
     const header = new RegExp(row.header, "u");
-    if (!lines.some((one) => header.test(one.text))) {
+    if (
+      !lines.some((one) => header.test(one.text)) ||
+      (row.runtimeImport !== undefined && !imports(file, row.runtimeImport))
+    ) {
       continue;
     }
     const statements = STATEMENTS[row.plugin] ?? {};
     const [version] = statements.version === undefined ? [] : after(lines, statements.version);
     if (
-      "versions" in row &&
+      row.versions !== undefined &&
       (version === undefined ||
         !satisfies(
           version.replace(/^v/u, ""),

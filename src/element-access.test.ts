@@ -1,5 +1,48 @@
+import { rmSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { emitterInputOf, findingsOf } from "../__test-helpers__/emitter-input.ts";
+import { writeProject } from "../__test-helpers__/projects.ts";
 import { treeFindings } from "../__test-helpers__/tree-findings.ts";
+import { resolve } from "./resolve.ts";
+import { openEngine, type Engine } from "./session.ts";
+
+/**
+ * Each finding of an application tree entered at `main.ts`, as `<code> <subject name>`, the
+ * compiler server panicking on every question the accessor `panicking` is asked.
+ */
+function panickingFindings(main: string, panicking: string): readonly string[] {
+  const root = writeProject({
+    "package.json": JSON.stringify({ name: "@example/tree", private: true, type: "module" }),
+    "main.ts": main,
+  });
+  try {
+    const { config } = resolve({
+      repository: {
+        text: JSON.stringify({
+          target: { kind: "application" },
+          analysis: { min_confidence: "possible" },
+          ts: { entry_files: ["main.ts"] },
+        }),
+        label: "deadset.json",
+      },
+    });
+    const opened = openEngine({ collectTiming: false });
+    const engine: Engine = {
+      ...opened,
+      ask: (accessor, locations, question) => {
+        if (accessor === panicking) {
+          throw new Error(`panic: ${accessor}`);
+        }
+        return opened.ask(accessor, locations, question);
+      },
+    };
+    return findingsOf(emitterInputOf(root, config, { engine })).map(
+      (finding) => `${finding.code} ${finding.symbol.name}`,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
 
 describe("an element access whose index the compiler types as literals", () => {
   it("reads and writes each member a union of literal types names, and no other", () => {
@@ -112,5 +155,41 @@ describe("an element access whose index the compiler types as literals", () => {
     });
 
     expect(found.filter((one) => one.includes("Doc."))).toEqual(["DS1301 Doc.draft"]);
+  });
+
+  it("reads what a type parameter's constraint admits through every constraint it names, and every member where it admits a name no literal spells", () => {
+    const found = treeFindings({
+      "main.ts": [
+        "interface Fields { title: string; body: string; extra: string }",
+        'export function chained<J extends "title", K extends J>(of: Fields, key: K): string {',
+        "  return of[key];",
+        "}",
+        "interface Open { left: string; right: string }",
+        "export function open<K extends string>(of: Open & Record<K, string>, key: K): string {",
+        "  return of[key];",
+        "}",
+        "",
+      ].join("\n"),
+    });
+
+    expect(
+      found.filter((one) => /\b(?:Fields|Open)\./u.test(one)),
+      "the transitive constraint names title, and a string constraint admits every name",
+    ).toEqual(["DS1003 Fields.body", "DS1003 Fields.extra"]);
+  });
+
+  it("holds every member a type parameter's constraint could admit where the checker leaves it unanswered", () => {
+    const found = panickingFindings(
+      [
+        "interface Fields { title: string; body: string; extra: string }",
+        'export function pick<K extends "title">(of: Fields, key: K): string {',
+        "  return of[key];",
+        "}",
+        "",
+      ].join("\n"),
+      "getBaseConstraintOfType",
+    );
+
+    expect(found.filter((one) => one.includes("Fields."))).toEqual([]);
   });
 });

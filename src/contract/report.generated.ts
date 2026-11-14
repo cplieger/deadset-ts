@@ -312,10 +312,12 @@ export interface NotesEntry {
     | "generation-config-unread"
     | "module-not-loaded"
     | "published-package"
+    | "schema-findings-withheld"
     | "schema-unparsed"
     | "unbound-schema"
     | "unmapped-entry"
     | "unread-command"
+    | "unread-entry"
     | "unresolved-import"
     | "unresolved-specifier";
   readonly path: string;
@@ -785,7 +787,15 @@ export const REPORT_SCHEMAS = {
               then: { not: { required: ["key"] } },
             },
             {
+              if: { properties: { kind: { const: "schema-findings-withheld" } } },
+              then: { not: { required: ["key"] } },
+            },
+            {
               if: { properties: { kind: { const: "unread-command" } } },
+              then: { not: { required: ["key"] } },
+            },
+            {
+              if: { properties: { kind: { const: "unread-entry" } } },
               then: { not: { required: ["key"] } },
             },
             {
@@ -802,10 +812,12 @@ export const REPORT_SCHEMAS = {
                 "generation-config-unread",
                 "module-not-loaded",
                 "published-package",
+                "schema-findings-withheld",
                 "schema-unparsed",
                 "unbound-schema",
                 "unmapped-entry",
                 "unread-command",
+                "unread-entry",
                 "unresolved-import",
                 "unresolved-specifier",
               ],

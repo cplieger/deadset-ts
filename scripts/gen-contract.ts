@@ -109,6 +109,7 @@ export async function generated(read: Reader): Promise<string> {
       language: string;
       versions?: { min: string; max: string };
       header: string;
+      runtime_import?: string;
       cell: string;
     }[];
   };
@@ -284,10 +285,11 @@ export async function generated(read: Reader): Promise<string> {
           id: row.id,
           plugin: row.plugin,
           header: row.header,
+          ...(row.runtime_import === undefined ? {} : { runtimeImport: row.runtime_import }),
           ...(row.versions === undefined ? {} : { versions: row.versions }),
           cell: row.cell,
         })),
-    )} as const satisfies readonly { readonly id: string; readonly plugin: string; readonly header: string; readonly versions?: { readonly min: string; readonly max: string }; readonly cell: string }[];`,
+    )} as const satisfies readonly { readonly id: string; readonly plugin: string; readonly header: string; readonly runtimeImport?: string; readonly versions?: { readonly min: string; readonly max: string }; readonly cell: string }[];`,
     "",
     "/** Each group of failure classes, and the text opening the line that names one of its failures. */",
     `export const FAILURE_PREFIXES = ${JSON.stringify(Object.fromEntries(Object.entries(exits.failure_classes).map(([group, row]) => [group, row.prefix])))} as const;`,

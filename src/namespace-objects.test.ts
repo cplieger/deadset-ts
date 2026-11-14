@@ -136,17 +136,15 @@ describe("a module namespace object", () => {
   it.each([
     ["named", "a property read by name"],
     ["indexed", "an index that is a string literal"],
-    ["awaited", "the value an await of a dynamic import produces"],
-    ["aliased", "a const binding of a namespace object"],
-    ["then", "the first parameter of a then callback"],
+    // A const or a then callback's first parameter given the object binds it (references-ts.4).
+    ["awaited", "a const binding of the value an await of a dynamic import produces"],
+    ["aliased", "a const binding of a const binding of a namespace object"],
+    ["then", "the identifier first parameter of a then callback"],
     ["destructured", "a property an object binding pattern destructures"],
     [
       "spelled",
       "a property read by name, beside a property, a member and a label spelled as the binding",
     ],
-    ["letted", "a let binding of a namespace object"],
-    ["scoped", "a var binding of a namespace object, read outside the block that declares it"],
-    ["looped", "a let binding a loop head declares, beside a later binding of its name"],
     ["exported", "a property read by name, beside an export renamed to the binding's name"],
   ])("references only the export %s reads, through %s", (name) => {
     expect(
@@ -165,6 +163,9 @@ describe("a module namespace object", () => {
       "a var binding of the object passed as an argument outside the block that declares it",
     ],
     ["queried", "a typeof query of the object"],
+    ["letted", "a let binding of a namespace object"],
+    ["scoped", "a var binding of a namespace object, read outside the block that declares it"],
+    ["looped", "a let binding a loop head declares, beside a later binding of its name"],
   ])("references every export of %s, through %s", (name) => {
     expect(
       reported().filter((line) => line.startsWith("DS1001 ") && line.includes(` ${name}`)),
@@ -219,6 +220,21 @@ describe("a module namespace object in a project of its own", () => {
       ['import * as templated from "./templated.js";', "hold(templated[`templatedUsed`]);"],
     ],
     [
+      "awaitedName",
+      "a property read by name of an awaited dynamic import",
+      ['hold((await import("./awaitedName.js")).awaitedNameUsed);'],
+    ],
+    [
+      "awaitedSlot",
+      "a string literal index of an awaited dynamic import",
+      ['hold((await import("./awaitedSlot.js"))["awaitedSlotUsed"]);'],
+    ],
+    [
+      "thenned",
+      "an object pattern of a then callback's first parameter",
+      ['void import("./thenned.js").then(({ thennedUsed }) => hold(thennedUsed));'],
+    ],
+    [
       "qualified",
       "a qualified name a type query writes",
       [
@@ -266,18 +282,6 @@ describe("a module namespace object in a project of its own", () => {
       "the promise of a dynamic import a binding holds",
       ['const pending = import("./pending.js");', "hold(pending);"],
     ],
-    [
-      "cyclic",
-      "consts of a block that read its name through each other",
-      [
-        'import * as cyclic from "./cyclic.js";',
-        "{",
-        "  const alias = cyclic;",
-        "  const cyclic = alias;",
-        "  hold(cyclic);",
-        "}",
-      ],
-    ],
   ])("references every export of %s, through %s", (name, _, lines) => {
     expect(
       reported(beside(name, lines)).filter(
@@ -315,6 +319,18 @@ describe("a module namespace object in a project of its own", () => {
         "  hold(shadowed.other);",
         "}",
         "shadow();",
+      ],
+    ],
+    [
+      "cyclic",
+      "consts of a block that shadow its name and read each other, which the compiler resolves to the block's",
+      [
+        'import * as cyclic from "./cyclic.js";',
+        "{",
+        "  const alias = cyclic;",
+        "  const cyclic = alias;",
+        "  hold(cyclic);",
+        "}",
       ],
     ],
     [

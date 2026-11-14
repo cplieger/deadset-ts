@@ -25,7 +25,13 @@ import type { AppliedConvention } from "./entries/conventions.ts";
 import { readSources, type SourceFacts } from "./entries/sources.ts";
 import { readWorkflows, type Workflows } from "./entries/workflow-steps.ts";
 import { readEdgeSides } from "./edges.ts";
-import { bindingsOf, distinctBindings, type BindingRecord } from "./bindings.ts";
+import {
+  bindingsOf,
+  distinctBindings,
+  type BindingRecord,
+  type Bindings,
+  type Bound,
+} from "./bindings.ts";
 import { generatedFilesOf, type GeneratedFact } from "./exemptions/generated-file.ts";
 import { inOperandNames } from "./findings/in-operands.ts";
 import { sourceFilesOf } from "./source-files.ts";
@@ -65,6 +71,13 @@ import {
 } from "./roots/root-set.ts";
 import type { Scope } from "./scope.ts";
 import { decodedMembers, type Decoded } from "./exemptions/serialization-contract.ts";
+import {
+  schemaFacts,
+  type Cap,
+  type MemberRead,
+  type SchemaFacts,
+  type SchemaRead,
+} from "./schema-reads.ts";
 import { outsideTestReferences, testFilesAt, type OutsideTest } from "./tests/outside.ts";
 import type { UnseenLoad } from "./roots/unseen-loads.ts";
 import type { UnresolvedSpecifier } from "./load/specifiers.ts";
@@ -165,7 +178,7 @@ interface ProjectRead {
   /** The project's generated files, by path below the target root, each with what decided it. */
   readonly generated: ReadonlyMap<string, GeneratedFact>;
   /** The binding identities its generated files publish (`bindings.6`, `bindings.7`). */
-  readonly bindings: readonly BindingRecord[];
+  readonly bindings: Bindings;
   /** What the project's entry sources enter and name, read once. */
   readonly sources: SourceFacts;
   /** Whether the run formed the program to resolve its modules as Node does (program.36). */
@@ -258,6 +271,7 @@ function readProjects<Answer>(
                 .filter((one) => one.kind === "file")
                 .map((one) => [one.position.path, one.ref]),
             ),
+            held.declarations,
           ),
           sources,
           formedForNode: formedForNode(planned),
@@ -436,6 +450,8 @@ interface SweptProject<Extra> {
   readonly unanswered: readonly string[];
   /** The data members a generic declared outside the analysis fills, which it may read. */
   readonly filledOutside: readonly string[];
+  /** What its hand-written production code does with its generated declarations. */
+  readonly schema: SchemaFacts;
   /** What only a bundler's retry of an import Node leaves unresolved names (program.38). */
   readonly possiblyLoaded: readonly string[];
   readonly typeErrorSkips: readonly TypeErrorSkip[];
@@ -464,6 +480,7 @@ interface ReadProject<Extra> {
   readonly imports: ReadonlyMap<string, readonly string[]>;
   /** The data members its production code decodes into. */
   readonly decoded: Decoded;
+  readonly schema: SchemaFacts;
   readonly extra: Extra;
 }
 
@@ -590,6 +607,8 @@ function readRun<Extra>(
       .some((name) => name.endsWith(`/node_modules/${GLOBALS_RUNNER}/globals.d.ts`));
     const pathOf = (file: (typeof components)[number]): string =>
       relativePath(targetRoot, file.fileName) ?? file.fileName;
+    const generatedFile = (file: SourceFile): boolean =>
+      projectRead.generated.has(relativePath(targetRoot, file.fileName) ?? "");
     return {
       projectRead,
       references: resolved.references,
@@ -629,6 +648,16 @@ function readRun<Extra>(
         productionFiles(project, targetRoot, testFiles),
         consumers,
       ),
+      schema: schemaFacts(
+        project,
+        projectRead.held,
+        targetRoot,
+        productionFiles(project, targetRoot, testFiles).filter((file) => !generatedFile(file)),
+        generatedFile,
+        projectRead.bindings,
+        resolved.references,
+        [...projectRead.rooted.liveUnderReachability.map((root) => root.id), ...resolved.held],
+      ),
       extra: extra(
         project,
         projectRead,
@@ -664,7 +693,8 @@ function readRun<Extra>(
     withOutside.flatMap((one) => one.testFiles),
     testEvidence(host, targetRoot, withOutside),
   );
-  // A member a decode fills or a copy carries is written: a value decoded and sent again carries it on.
+  // A member a decode fills or a copy carries is written: a value decoded and sent again
+  // carries it on, as is every field a schema serializer's construction or decode writes.
   const written = new Set([
     ...countedWrites(
       [...withOutside.flatMap((one) => one.references), ...read.result.references],
@@ -675,6 +705,7 @@ function readRun<Extra>(
       ...one.decoded.filled,
       ...one.decoded.parsed,
       ...one.decoded.copied,
+      ...one.schema.written,
     ]),
   ]);
   const settled = settle(
@@ -725,6 +756,7 @@ function readRun<Extra>(
         ...one.decoded.unanswered,
       ],
       filledOutside: one.decoded.filled,
+      schema: one.schema,
       possiblyLoaded: one.possiblyLoaded,
       typeErrorSkips: projectRead.typeErrorSkips,
       unmappedEntries: projectRead.rooted.unmappedEntries,
@@ -867,7 +899,7 @@ interface EmitterExtra {
   readonly implementations: ReturnType<typeof implementations>;
   readonly heldByInclusion: readonly string[];
   readonly generated: ReadonlyMap<string, GeneratedFact>;
-  readonly bindings: readonly BindingRecord[];
+  readonly bindings: Bindings;
   readonly inOperands: readonly string[];
   readonly rooted: Roots;
   readonly directives: readonly InlineDirective[];
@@ -1155,7 +1187,8 @@ function readAnalysis(
       ),
       unseenLoads: read.projects.flatMap((one) => one.extra.unseenLoads),
       generated: new Map(read.projects.flatMap((one) => [...one.extra.generated])),
-      bindings: distinctBindings(read.projects.flatMap((one) => one.extra.bindings)),
+      bindings: distinctBindings(read.projects.flatMap((one) => one.extra.bindings.records)),
+      schema: runSchema(read.projects),
     },
     configured: read.projects.map((one) => one.configured),
     symbols,
@@ -1266,6 +1299,40 @@ interface RunFacts {
   readonly generated: ReadonlyMap<string, GeneratedFact>;
   /** Every binding record the run's generated files publish, each once. */
   readonly bindings: readonly BindingRecord[];
+  /** What the carrier sweep reads of the run's generated files and hand code. */
+  readonly schema: RunSchema;
+}
+
+/** The schema facts of every project of a run, joined. */
+interface RunSchema {
+  readonly bound: readonly Bound[];
+  readonly opaque: ReadonlySet<string>;
+  readonly reads: readonly SchemaRead[];
+  readonly memberReads: readonly MemberRead[];
+  /** Per consumer record's symbol, its cap: persistence where projects give both. */
+  readonly caps: ReadonlyMap<string, Cap>;
+}
+
+/** {@link RunSchema} over a run's projects. */
+function runSchema(
+  projects: readonly {
+    readonly schema: SchemaFacts;
+    readonly extra: { readonly bindings: Bindings };
+  }[],
+): RunSchema {
+  const caps = new Map<string, Cap>();
+  for (const [symbol, cap] of projects.flatMap((one) => [...one.schema.caps])) {
+    if (caps.get(symbol) !== "persistence") {
+      caps.set(symbol, cap);
+    }
+  }
+  return {
+    bound: projects.flatMap((one) => one.extra.bindings.bound),
+    opaque: new Set(projects.flatMap((one) => one.extra.bindings.opaque)),
+    reads: projects.flatMap((one) => one.schema.reads),
+    memberReads: projects.flatMap((one) => one.schema.memberReads),
+    caps,
+  };
 }
 
 /** One configuration whose component files a run cannot read. */

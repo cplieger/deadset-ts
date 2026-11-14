@@ -17,6 +17,10 @@ export interface Target {
   readonly id: string;
   readonly guessed?: boolean;
   readonly stepped?: boolean;
+  /** `Reference.namespace`. */
+  readonly namespace?: boolean;
+  /** `Reference.reexport`. */
+  readonly reexport?: boolean;
 }
 
 /** One write's index among the records, by its file, with the value it stores. */
@@ -97,6 +101,8 @@ export class Sink {
         resolution: target.guessed === true ? "by-name" : target.stepped === true ? "alias" : via,
         test,
         ...(target.guessed === true ? { guessed: true as const } : {}),
+        ...(target.namespace === true ? { namespace: true as const } : {}),
+        ...(target.reexport === true ? { reexport: true as const } : {}),
       });
       if (this.#consumer === undefined && !("column" in at)) {
         const named = this.#named.get(file) ?? [];

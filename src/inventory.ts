@@ -102,6 +102,12 @@ export interface InventorySymbol {
   readonly visibility: Visibility;
   /** Whether the declaration is a static member of a class. */
   readonly static: boolean;
+  /**
+   * Set on a `namespace`-kind declaration that is a module block rather than a namespace:
+   * `module` for a `declare module` named by a string, which is a module as a file is, and
+   * `global` for a global augmentation, whose members are globals no value holds.
+   */
+  readonly block?: "module" | "global";
 }
 
 /** Where a directive written above a declaration binds it. */
@@ -233,6 +239,8 @@ export interface Building {
   readonly holder: Building | undefined;
   readonly startLines: Set<number>;
   readonly partLines: Set<number>;
+  /** {@link InventorySymbol.block}. */
+  block: "module" | "global" | undefined;
 }
 
 /** A container whose members are read from a symbol table, from the tree, or both. */
@@ -354,6 +362,11 @@ export class Builder {
     this.#modules.push([record, name]);
   }
 
+  /** A `namespace`-kind declaration that is a module block (`InventorySymbol.block`). */
+  block(record: Building, block: "module" | "global"): void {
+    record.block = block;
+  }
+
   /** The declaration enumerated at one node, where one is. */
   recordAt(node: Node): Building | undefined {
     return this.#byNode.get(nodeKey(node.getSourceFile(), node));
@@ -455,6 +468,7 @@ export class Builder {
       ...fields,
       startLines: new Set(),
       partLines: new Set(),
+      block: undefined,
     };
     this.#records.push(kept);
     this.#byNode.set(nodeKey(kept.file, kept.node), kept);
@@ -760,6 +774,7 @@ function render(record: Building): InventorySymbol {
     exported: record.exported,
     visibility: record.visibility,
     static: record.static,
+    ...(record.block === undefined ? {} : { block: record.block }),
   };
 }
 

@@ -134,8 +134,8 @@ describe("the reference table of every reference form", () => {
     ).toBe(11);
     expect(
       asked(EVERY_REFERENCE, "getResolvedSymbol")[0],
-      "and no name here is residue: a statement label is the form a batch leaves, and a " +
-        "label names no declaration",
+      "and no name here is residue: a batch leaves a name that resolves to nothing, and a " +
+        "statement label, which names no declaration, is no site (references-ts.3)",
     ).toBe(0);
     expect(
       EVERY_REFERENCE.outsideDeclarations,
@@ -557,12 +557,13 @@ describe("the test files of a written project", () => {
 });
 
 describe("the cost of one pass", () => {
-  it("is one lookup per shorthand and one per name a batch leaves, and no batched shorthand", () => {
+  it("is one lookup per shorthand and one per name a batch leaves, and no batched shorthand or label", () => {
     const analyzed = analyzeProject(
       {
         "package.json": ESM,
         "main.ts":
-          "export const x = 1;\nouter: for (;;) {\n  break outer;\n}\nexport const o = { x };\n",
+          "export const x = 1;\nouter: for (;;) {\n  break outer;\n}\nexport const o = { x };\n" +
+          "// @ts-expect-error\nconsole.log(missing);\n// @ts-expect-error\nconsole.log(missing);\n",
       },
       { references: { testFiles: [] } },
     );
@@ -572,8 +573,10 @@ describe("the cost of one pass", () => {
         asked(analyzed, "getResolvedSymbol")[0],
         asked(analyzed, "getShorthandAssignmentValueSymbol")[0],
       ],
-      "the batch holds the two label names, which it leaves, and not the shorthand",
-    ).toEqual([2, 2, 1]);
+      "the batch holds the six names of the two reads, console, log and missing each, and " +
+        "leaves the two that resolve to nothing; it holds neither the shorthand nor the " +
+        "label's names, which are no use (references-ts.3)",
+    ).toEqual([6, 2, 1]);
   });
 
   it("accounts for every request where a use reads a literal's property", () => {

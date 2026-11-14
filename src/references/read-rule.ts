@@ -38,6 +38,8 @@ export type Read =
       readonly via: Resolution;
       /** A read a rule counts as production code's whoever writes it. */
       readonly production?: true;
+      /** `Reference.namespace`: a judged read of a module, reaching no export by itself. */
+      readonly namespace?: true;
     }
   | {
       readonly kind: "held";

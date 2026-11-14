@@ -77,6 +77,26 @@ export function namesACaller(kind: RootKind): boolean {
   return NAMES_A_CALLER[kind];
 }
 
+/**
+ * What one reference reads beyond the declaration it names (references-ts.3 to .5): `whole`
+ * where no rule judged the read, so it may read everything the declaration exports; `passes`
+ * where a re-export passes a namespace object on, read whole only where code the
+ * analysis does not see uses its source; `none` for a judged read of a namespace object, a
+ * write, and an evaluation, which reaches the module's top level alone.
+ */
+export type Reads = "whole" | "passes" | "none";
+
+/** {@link Reads} of one reference, from the marks the reference pass gives it. */
+function readsOf(reference: Reference): Reads {
+  if (reference.use === "evaluation" || reference.use === "write") {
+    return "none";
+  }
+  if (reference.namespace !== true) {
+    return "whole";
+  }
+  return reference.reexport === true ? "passes" : "none";
+}
+
 /** One reference as the sweep reads it: the declaration named, and whether a test file made it. */
 export interface Edge {
   readonly to: number;
@@ -85,11 +105,7 @@ export interface Edge {
   readonly test: boolean;
   /** Whether only the name answered, which counts at the sweep's guessed tier alone. */
   readonly guessed: boolean;
-  /**
-   * Whether the reference evaluates the module whose file it names, which reaches the
-   * module's top level and none of what it exports.
-   */
-  readonly evaluation: boolean;
+  readonly reads: Reads;
   /**
    * Whether a loaded consumer made it, whose test references a mode may class as
    * production. Only a consumed edge can be one.
@@ -140,11 +156,7 @@ export interface Graph {
   readonly ambient: readonly boolean[];
   /** Per declaration, whether the sweep judges its liveness. */
   readonly subject: readonly boolean[];
-  /**
-   * Per declaration, the declarations its export table names where it is a file, and
-   * nothing for any other declaration. A reference that reads a file reads the module's
-   * namespace, which reaches everything the module exports.
-   */
+  /** Per declaration, what a whole read of it references directly ({@link wholeReads}). */
   readonly exportsOf: readonly (readonly number[])[];
   /** Every root naming a declaration the inventory holds, in the order the root set gives them. */
   readonly rooted: readonly Rooted[];
@@ -169,6 +181,68 @@ interface Sources {
   readonly unjudged?: ReadonlySet<string>;
   /** Per reference, in the order given, the configurations that make it. */
   readonly configurations?: readonly (readonly string[])[];
+}
+
+/** Whether one declaration is a value `namespace`, rather than a module block or a global augmentation. */
+function valueNamespace(symbol: InventorySymbol): boolean {
+  return symbol.kind === "namespace" && symbol.block === undefined;
+}
+
+/**
+ * Per declaration, by position, what a whole read of it references directly (references-ts.3,
+ * .5): a file's, a `declare module` block's or a value `namespace`'s exported declarations. The
+ * declarations of one symbol share one container and one ref; where they merge a `namespace`
+ * with a class, a function or an enum, each of them reads every merged body's exports, the
+ * class's static members and the enum's members. Nothing else is read here: a nested namespace value is read
+ * whole in turn by whoever expands it. `parent` gives each declaration's container's position.
+ */
+export function wholeReads(
+  symbols: readonly InventorySymbol[],
+  parent: readonly number[],
+): readonly (readonly number[])[] {
+  const reads: number[][] = symbols.map(() => []);
+  const keyOf = (place: number, symbol: InventorySymbol): string =>
+    `${String(parent[place] ?? OUTSIDE)} ${symbol.ref}`;
+  const groups = new Map<string, number[]>();
+  const namespaced = new Set<string>();
+  symbols.forEach((symbol, place) => {
+    if (
+      symbol.kind === "class" ||
+      symbol.kind === "enum" ||
+      symbol.kind === "function" ||
+      valueNamespace(symbol)
+    ) {
+      const key = keyOf(place, symbol);
+      groups.set(key, [...(groups.get(key) ?? []), place]);
+      if (valueNamespace(symbol)) {
+        namespaced.add(key);
+      }
+    }
+  });
+  symbols.forEach((symbol, place) => {
+    const container = parent[place] ?? OUTSIDE;
+    const holding = symbols[container];
+    if (holding === undefined) {
+      return;
+    }
+    if (holding.kind === "file" || holding.block === "module") {
+      if (symbol.exported) {
+        reads[container]?.push(place);
+      }
+      return;
+    }
+    const key = keyOf(container, holding);
+    const member =
+      (valueNamespace(holding) && symbol.exported) ||
+      (holding.kind === "class" && symbol.static) ||
+      (holding.kind === "enum" && symbol.kind === "enum-member");
+    if (member && namespaced.has(key)) {
+      for (const one of groups.get(key) ?? []) {
+        reads[one]?.push(place);
+      }
+    }
+  });
+  return reads;
 }
 
 /** Adds one reference's count to the counts of the declaration it names. */
@@ -232,7 +306,7 @@ export function graphOf(
       reference: place,
       test,
       guessed,
-      evaluation: reference.use === "evaluation",
+      reads: readsOf(reference),
       consumer,
     };
     if (consumer || reference.unheld === true || unjudged.has(reference.from)) {
@@ -243,13 +317,7 @@ export function graphOf(
   });
 
   const parent = symbols.map((symbol) => at(symbol.parent));
-  const exportsOf: number[][] = symbols.map(() => []);
-  symbols.forEach((symbol, position) => {
-    const container = parent[position] ?? OUTSIDE;
-    if (symbol.exported && symbols[container]?.kind === "file") {
-      exportsOf[container]?.push(position);
-    }
-  });
+  const exportsOf = wholeReads(symbols, parent);
 
   const rooted: Rooted[] = [];
   for (const root of roots) {

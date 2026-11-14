@@ -110,7 +110,7 @@ describe("the graph of a run", () => {
 
     expect(graph.out).toEqual([
       [],
-      [{ to: 2, reference: 2, test: false, guessed: false, evaluation: false, consumer: false }],
+      [{ to: 2, reference: 2, test: false, guessed: false, reads: "whole", consumer: false }],
       [],
       [],
       [],
@@ -132,8 +132,8 @@ describe("the graph of a run", () => {
 
     expect(graph.out).toEqual([[], [], [], [], []]);
     expect(graph.consumed).toEqual([
-      { to: 2, reference: 0, test: false, guessed: false, evaluation: false, consumer: true },
-      { to: 4, reference: 1, test: true, guessed: false, evaluation: false, consumer: false },
+      { to: 2, reference: 0, test: false, guessed: false, reads: "whole", consumer: true },
+      { to: 4, reference: 1, test: true, guessed: false, reads: "whole", consumer: false },
     ]);
     expect(graph.made[4]).toEqual({ production: 0, test: 1, consumerTest: 0 });
   });
@@ -157,15 +157,176 @@ describe("the graph of a run", () => {
 
     expect(graph.made[2]).toEqual({ production: 0, test: 1, consumerTest: 0 });
     expect(graph.out[1]).toEqual([
-      { to: 2, reference: 0, test: true, guessed: false, evaluation: false, consumer: false },
+      { to: 2, reference: 0, test: true, guessed: false, reads: "whole", consumer: false },
     ]);
   });
 
-  it("lists under a file only the declarations its export table names, and under no other container", () => {
-    const graph = graphOf(SYMBOLS, [], [], []);
+  it("lists under a module or a namespace every export, whatever its reads, and under no other container", () => {
+    const CLASS = declared("Box", "class", 6, FILE.id, true);
+    const MEMBER = declared("field", "class-member", 7, CLASS.id, true);
+    const HELD = declared("Space.held", "variable", 8, SPACE.id, true);
+    const NESTED = declared("Space.Nested", "namespace", 9, SPACE.id, true);
+    // A `declare module` renders its name unquoted where the name is an identifier ("config").
+    const CONFIG = { ...declared("config", "namespace", 10, FILE.id), block: "module" as const };
+    const SHIM = declared("config.title", "variable", 11, CONFIG.id, true);
+    const AUGMENT = { ...declared("global", "namespace", 12, FILE.id), block: "global" as const };
+    const AUGMENTED = declared("global.tally", "variable", 13, AUGMENT.id, true);
+    // A value `namespace global` is a namespace like any other.
+    const VALUE = declared("global", "namespace", 14, FILE.id);
+    const VALUE_HELD = declared("global.space", "variable", 15, VALUE.id, true);
+    const SHIM_HELD = declared("config.space", "variable", 16, CONFIG.id, true);
+    const graph = graphOf(
+      [
+        ...SYMBOLS,
+        CLASS,
+        MEMBER,
+        HELD,
+        NESTED,
+        CONFIG,
+        SHIM,
+        AUGMENT,
+        AUGMENTED,
+        VALUE,
+        VALUE_HELD,
+        SHIM_HELD,
+      ],
+      [
+        reference(HELD.id, FILE.id, { namespace: true, reexport: true }),
+        reference(VALUE_HELD.id, FILE.id, { namespace: true, reexport: true }),
+        reference(SHIM_HELD.id, FILE.id, { namespace: true, reexport: true }),
+      ],
+      [],
+      [],
+    );
 
-    expect(graph.parent).toEqual([OUTSIDE, 0, 0, 0, 3]);
-    expect(graph.exportsOf).toEqual([[1, 3], [], [], [], []]);
+    expect(graph.parent).toEqual([OUTSIDE, 0, 0, 0, 3, 0, 5, 3, 3, 0, 9, 0, 11, 0, 13, 9]);
+    expect(
+      graph.exportsOf,
+      "a whole read of a namespace reads every export (references-ts.5), a `declare module` " +
+        "lists its exports as a file does, whatever its name spells, and a global augmentation nothing",
+    ).toEqual([
+      [1, 3, 5],
+      [],
+      [],
+      [4, 7, 8],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [10, 15],
+      [],
+      [],
+      [],
+      [14],
+      [],
+      [],
+    ]);
+  });
+
+  it("lists under a function merged with a namespace the namespace's exports", () => {
+    const FN = declared("F", "function", 2, FILE.id, true);
+    const FN_NS = declared("F", "namespace", 3, FILE.id, true);
+    const HELPER = declared("F.helper", "function", 4, FN_NS.id, true);
+    expect(graphOf([FILE, FN, FN_NS, HELPER], [], [], []).exportsOf).toEqual([
+      [1, 2],
+      [3],
+      [3],
+      [],
+    ]);
+  });
+
+  it("lists under each declaration of a namespace merged with a class or an enum every merged body's exports, the statics and the enum's members", () => {
+    const one = (symbol: InventorySymbol, ref: string, isStatic = false): InventorySymbol => ({
+      ...symbol,
+      ref: `ts://@example/memory/src/a.ts#${ref}`,
+      static: isStatic,
+    });
+    const CLASS = declared("C", "class", 2, FILE.id, true);
+    const STATIC = one(declared("C.s", "method", 3, CLASS.id), "C.s", true);
+    const FIELD = declared("C.n", "class-member", 4, CLASS.id);
+    const CLASS_NS = declared("C", "namespace", 5, FILE.id, true);
+    const X = declared("C.x", "variable", 6, CLASS_NS.id, true);
+    const ENUM = declared("E", "enum", 7, FILE.id, true);
+    const A = declared("E.A", "enum-member", 8, ENUM.id);
+    const ENUM_NS = declared("E", "namespace", 9, FILE.id, true);
+    const F = declared("E.f", "function", 10, ENUM_NS.id, true);
+    const PLAIN = declared("P", "class", 11, FILE.id, true);
+    const PLAIN_STATIC = one(declared("P.s", "method", 12, PLAIN.id), "P.s", true);
+    const N1 = declared("N", "namespace", 13, FILE.id, true);
+    const N1_A = declared("N.a", "variable", 14, N1.id, true);
+    const N2 = declared("N", "namespace", 15, FILE.id, true);
+    const N2_B = declared("N.b", "variable", 16, N2.id, true);
+    const graph = graphOf(
+      [
+        FILE,
+        CLASS,
+        STATIC,
+        FIELD,
+        CLASS_NS,
+        X,
+        ENUM,
+        A,
+        ENUM_NS,
+        F,
+        PLAIN,
+        PLAIN_STATIC,
+        N1,
+        N1_A,
+        N2,
+        N2_B,
+      ],
+      [],
+      [],
+      [],
+    );
+
+    expect(
+      graph.exportsOf,
+      "P-J14-11 point 1: a whole read takes in merged statics and enum members",
+    ).toEqual([
+      [1, 4, 6, 8, 10, 12, 14],
+      [2, 5],
+      [],
+      [],
+      [2, 5],
+      [],
+      [7, 9],
+      [],
+      [7, 9],
+      [],
+      [],
+      [],
+      [13, 15],
+      [],
+      [13, 15],
+      [],
+    ]);
+  });
+
+  it("marks what each reference reads beyond the declaration it names (references-ts.3 to .5)", () => {
+    const graph = graphOf(
+      SYMBOLS,
+      [
+        reference(USED.id, FILE.id),
+        reference(USED.id, FILE.id, { namespace: true }),
+        reference(USED.id, FILE.id, { namespace: true, reexport: true }),
+        reference(USED.id, FILE.id, { reexport: true }),
+        reference(USED.id, FILE.id, { use: "evaluation" }),
+        reference(USED.id, SPACE.id, { use: "write" }),
+      ],
+      [],
+      [],
+    );
+
+    expect(graph.out[1]?.map((edge) => edge.reads)).toEqual([
+      "whole",
+      "none",
+      "passes",
+      "whole",
+      "none",
+      "none",
+    ]);
   });
 
   it("roots only a declaration it holds", () => {

@@ -1467,7 +1467,7 @@ describe("analyze --facts", () => {
         facts_version: "1.0.0",
         analyzer: { name: "deadset-ts", version: "0.0.0" },
         language: "ts",
-        evaluated: false,
+        evaluated: true,
         generated: [
           {
             path: "src/gen/v1/a_pb.ts",

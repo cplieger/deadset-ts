@@ -66,16 +66,10 @@ export function spellsNoBinding(node: Identifier): boolean {
       (parent.propertyName !== undefined && parent.name === node)
     );
   }
+  if (spellsNoUse(node)) {
+    return true;
+  }
   if (
-    isPropertyAssignment(parent) ||
-    isPropertyDeclaration(parent) ||
-    isMethodDeclaration(parent) ||
-    isPropertySignatureDeclaration(parent) ||
-    isMethodSignatureDeclaration(parent) ||
-    isGetAccessorDeclaration(parent) ||
-    isSetAccessorDeclaration(parent) ||
-    isEnumMember(parent) ||
-    isJsxAttribute(parent) ||
     isVariableDeclaration(parent) ||
     isParameterDeclaration(parent) ||
     isFunctionDeclaration(parent) ||
@@ -92,6 +86,30 @@ export function spellsNoBinding(node: Identifier): boolean {
     isImportEqualsDeclaration(parent) ||
     isNamespaceExport(parent) ||
     isNamespaceExportDeclaration(parent)
+  ) {
+    return parent.name === node;
+  }
+  return false;
+}
+
+/**
+ * Whether one identifier is a spelling references-ts.3 names as no use of a binding of its
+ * name: a property or member name an object literal, a class, an interface, a type literal
+ * or an enum declares, a JSX attribute's name, or a statement label with the `break` and
+ * `continue` that name it.
+ */
+export function spellsNoUse(node: Identifier): boolean {
+  const parent = node.parent;
+  if (
+    isPropertyAssignment(parent) ||
+    isPropertyDeclaration(parent) ||
+    isMethodDeclaration(parent) ||
+    isPropertySignatureDeclaration(parent) ||
+    isMethodSignatureDeclaration(parent) ||
+    isGetAccessorDeclaration(parent) ||
+    isSetAccessorDeclaration(parent) ||
+    isEnumMember(parent) ||
+    isJsxAttribute(parent)
   ) {
     return parent.name === node;
   }

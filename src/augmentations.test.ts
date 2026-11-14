@@ -322,7 +322,10 @@ const MAIN = declared("main.ts", 1, "file", "", "");
 const LIB = declared("main.ts", 2, "namespace", "lib", MAIN.id);
 const PLUGINS = declared("main.ts", 3, "interface", "lib.P", LIB.id);
 const SEARCH = declared("main.ts", 4, "type-member", "lib.P.search", PLUGINS.id);
-const GLOBAL = declared("main.ts", 5, "namespace", "global", MAIN.id);
+const GLOBAL = {
+  ...declared("main.ts", 5, "namespace", "global", MAIN.id),
+  block: "global" as const,
+};
 const SPACE = declared("main.ts", 6, "namespace", "global.NS", GLOBAL.id);
 const DEEP = declared("main.ts", 7, "interface", "global.NS.Deep", SPACE.id);
 const READ = declared("main.ts", 8, "type-member", "global.NS.Deep.read", DEEP.id);
@@ -381,9 +384,9 @@ function readThrough(to: InventorySymbol, scripts?: ReadonlySet<string>): string
 }
 
 describe("a use of a declaration an augmentation holds", () => {
-  it("reads every interface and namespace between it and a declare global block, and the block, where the use is", () => {
+  it("reads every interface and namespace between it and a declare global block, and the block, where the use is, each by name", () => {
     expect(augmentationReferences(HELD, [written(READ)])).toEqual(
-      [DEEP, SPACE, GLOBAL].map((to) => ({ ...written(to), use: "read" })),
+      [DEEP, SPACE, GLOBAL].map((to) => ({ ...written(to), use: "read", namespace: true })),
     );
   });
 

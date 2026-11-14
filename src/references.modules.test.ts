@@ -324,6 +324,8 @@ describe("a namespace handed on whole", () => {
   const MAIN = 'import * as space from "./lib.js";\nconsole.log(space);\n';
 
   it("reads every export of every file, by name, where the checker leaves its module unanswered", () => {
+    const binding = (accessor: string, locations: readonly string[]): boolean =>
+      accessor === "getImmediateAliasedSymbol" && locations.some((one) => one.endsWith(" space"));
     expect(
       resolutionsOf(
         {
@@ -333,9 +335,16 @@ describe("a namespace handed on whole", () => {
           "main.ts": MAIN,
         },
         (reference) => read(reference) && byName(reference),
-        { panicsOn: asking(MAIN, '"./lib.js"') },
+        { panicsOn: binding },
       ),
-    ).toEqual(["main.ts:2:13 shown by-name", "main.ts:2:13 elsewhere by-name"]);
+      "the name may stand for any file, and its whole use reads every export of each",
+    ).toEqual([
+      "main.ts:2:13 lib.ts by-name",
+      "main.ts:2:13 shown by-name",
+      "main.ts:2:13 main.ts by-name",
+      "main.ts:2:13 other.ts by-name",
+      "main.ts:2:13 elsewhere by-name",
+    ]);
   });
 
   it("reads the exports its module declares, by name, where the checker leaves its exports unanswered", () => {
@@ -1205,6 +1214,26 @@ describe("a use the checker leaves unanswered", () => {
     ).toEqual(["main.ts:2:21 lib.ts", "main.ts:2:21 main.ts"]);
   });
 
+  it("names every file through a whole-module re-export, bare or under a namespace", () => {
+    for (const [main, at] of [
+      ['export * from "./lib.js";\n', '"./lib.js"'],
+      ['export * as space from "./lib.js";\n', "space"],
+    ] as const) {
+      expect(
+        referencesOf(
+          { "package.json": ESM, ...modules("lib"), "main.ts": main },
+          (reference) => byName(reference) && read(reference),
+          {
+            panicsOn: asking(main, at),
+          },
+        ),
+      ).toEqual([
+        `main.ts:1:${String(main.indexOf('"./lib.js"') + 1)} lib.ts`,
+        `main.ts:1:${String(main.indexOf('"./lib.js"') + 1)} main.ts`,
+      ]);
+    }
+  });
+
   it("names nothing through an import whose exported name no declaration of the target bears", () => {
     const main = 'import { thing as local } from "outside";\nexport const total = local();\n';
 
@@ -1214,6 +1243,247 @@ describe("a use the checker leaves unanswered", () => {
       }),
       "the module is no file of the target, so the name it exports is a declaration elsewhere",
     ).toEqual([]);
+  });
+});
+
+describe("a read of a module through a namespace", () => {
+  const LIB = "export const libValue = 1;\nexport const spareValue = 2;\n";
+  const BARREL = [
+    'export * as space from "./lib.js";',
+    'import * as ns from "./lib.js";',
+    "export { ns };",
+    'export * as default from "./lib.js";',
+    "",
+  ].join("\n");
+
+  /**
+   * Each read `main.ts` makes of a file, with whether it names no export, and then each
+   * export of `lib.ts` it reads, by name.
+   */
+  const readsOf = (
+    files: Readonly<Record<string, string>>,
+    manifest = ESM,
+    options: Omit<AnalyzeOptions, "references"> = {},
+  ): string[] => {
+    const { references, label } = analyzed({ "package.json": manifest, ...files }, options);
+    const made = references.filter(
+      (reference) => reference.position.path === "main.ts" && read(reference),
+    );
+    return [
+      ...made
+        .filter((reference) => label(reference.to).endsWith(".ts"))
+        .map(
+          (reference) =>
+            `${positionKey(reference.position)} ${label(reference.to)}${reference.namespace === true ? " namespace" : ""}`,
+        ),
+      ...new Set(
+        made
+          .map((reference) => label(reference.to))
+          .filter((name) => ["libValue", "spareValue", "elsewhere"].includes(name))
+          .sort(),
+      ),
+    ];
+  };
+
+  it("names no export where an import the checker resolves to a module binds a namespace object, whatever form imports it", () => {
+    for (const [main, manifest] of [
+      ['import * as space from "./lib.js";', ESM],
+      ['import { space } from "./barrel.js";', ESM],
+      ['import { ns as space } from "./barrel.js";', ESM],
+      ['import space from "./barrel.js";', ESM],
+      ['import space = require("./lib.js");', CJS],
+    ] as const) {
+      expect(
+        readsOf(
+          {
+            "lib.ts": LIB,
+            "barrel.ts": BARREL,
+            "main.ts": `${main}\nconsole.log(space.libValue);\n`,
+          },
+          manifest,
+        ),
+        main,
+      ).toEqual(["main.ts:2:13 lib.ts namespace", "libValue"]);
+    }
+  });
+
+  it("names every export where a namespace object is used whole", () => {
+    for (const main of [
+      'import * as space from "./lib.js";',
+      'import { space } from "./barrel.js";',
+      'import space from "./barrel.js";',
+    ]) {
+      expect(
+        readsOf({
+          "lib.ts": LIB,
+          "barrel.ts": BARREL,
+          "main.ts": `${main}\nconsole.log(space);\n`,
+        }),
+        main,
+      ).toEqual(["main.ts:2:13 lib.ts namespace", "libValue", "spareValue"]);
+    }
+  });
+
+  it("names no export through a namespace object another's member or literal index is, or that an export default or an export = passes on, and every export a whole use reads", () => {
+    const DEFAULTED = 'import * as ns from "./lib.js";\nexport default ns;\n';
+    const ASSIGNED = 'import ns = require("./lib.js");\nexport = ns;\n';
+    for (const [setup, at, manifest] of [
+      ['import * as b from "./barrel.js";', "b.space", ESM],
+      ['import * as b from "./barrel.js";', 'b["space"]', ESM],
+      ['import space from "./defaulted.js";', "space", ESM],
+      ['import space = require("./assigned.js");', "space", CJS],
+    ] as const) {
+      for (const [use, exported] of [
+        [`${at}.libValue`, ["libValue"]],
+        [at, ["libValue", "spareValue"]],
+      ] as const) {
+        const lines = readsOf(
+          {
+            "lib.ts": LIB,
+            "barrel.ts": BARREL,
+            ...(manifest === ESM ? { "defaulted.ts": DEFAULTED } : { "assigned.ts": ASSIGNED }),
+            "main.ts": `${setup}\nconsole.log(${use});\n`,
+          },
+          manifest,
+        );
+        const files = lines.filter((line) => line.includes(".ts"));
+        expect(files.length, `${setup} ${use}`).toBeGreaterThan(0);
+        expect(
+          files.filter((line) => !line.endsWith(" namespace")),
+          `${setup} ${use}`,
+        ).toEqual([]);
+        expect(
+          lines.filter((line) => !line.includes(".ts")),
+          `${setup} ${use}`,
+        ).toEqual(exported);
+      }
+    }
+  });
+
+  it("names every export through a binding a namespace object is given, made by the binding's declaration", () => {
+    const NS = 'import * as ns from "./lib.js";\n';
+    for (const [holder, main] of [
+      [`${NS}export const space = ns;\n`, 'import { space } from "./holder.js";'],
+      [`${NS}const space = ns;\nexport { space };\n`, 'import { space } from "./holder.js";'],
+      [`${NS}const space = ns;\nexport default space;\n`, 'import space from "./holder.js";'],
+      [
+        'import * as b from "./barrel.js";\nexport const { space } = b;\n',
+        'import { space } from "./holder.js";',
+      ],
+      ['export const space = await import("./lib.js");\n', 'import { space } from "./holder.js";'],
+    ] as const) {
+      const { references, label } = analyzed(
+        {
+          "package.json": ESM,
+          "lib.ts": LIB,
+          "barrel.ts": BARREL,
+          "holder.ts": holder,
+          "main.ts": `${main}\nconsole.log(space.libValue);\n`,
+        },
+        {},
+      );
+      const readBy = (path: string): readonly string[] => [
+        ...new Set(
+          references
+            .filter((reference) => reference.position.path === path && read(reference))
+            .map((reference) => label(reference.to))
+            .filter((name) => ["libValue", "spareValue"].includes(name))
+            .sort(),
+        ),
+      ];
+      expect(readBy("holder.ts"), holder).toEqual(["libValue", "spareValue"]);
+      expect(readBy("main.ts"), holder).toEqual(["libValue"]);
+    }
+    for (const setup of [
+      'import * as b from "./barrel.js";\nconst { space } = b;',
+      'const { space } = await import("./barrel.js");',
+    ]) {
+      expect(
+        readsOf({
+          "lib.ts": LIB,
+          "barrel.ts": BARREL,
+          "main.ts": `${setup}\nconsole.log(space.libValue);\n`,
+        }).filter((line) => !line.includes(".ts")),
+        setup,
+      ).toEqual(["libValue", "spareValue"]);
+    }
+  });
+
+  it("passes a namespace object on from an alias declaration only where it is exported, its own uses judged where read", () => {
+    for (const [alias, passes] of [
+      ["import x = ns;", false],
+      ["export import x = ns;", true],
+    ] as const) {
+      for (const [use, exported] of [
+        ["x.libValue", ["libValue"]],
+        ["x", ["libValue", "spareValue"]],
+      ] as const) {
+        const main = `import * as ns from "./lib.js";\n${alias}\nconsole.log(${use});\n`;
+        const { references, label } = analyzed(
+          {
+            "package.json": ESM,
+            "lib.ts": LIB,
+            "main.ts": main,
+          },
+          {},
+        );
+        const made = references.filter(
+          (reference) => reference.position.path === "main.ts" && read(reference),
+        );
+        const aliased = made.filter(
+          (reference) => reference.position.line === 2 && label(reference.to) === "lib.ts",
+        );
+        expect(
+          aliased.map((reference) => [reference.namespace, reference.reexport]),
+          main,
+        ).toEqual([[true, passes ? true : undefined]]);
+        expect(
+          [...new Set(made.map((reference) => label(reference.to)))]
+            .filter((name) => name !== "lib.ts")
+            .sort(),
+          main,
+        ).toEqual(exported);
+      }
+    }
+  });
+
+  it("names no export of any file through a type-only re-export whose next step the checker leaves unanswered", () => {
+    const step = (accessor: string, locations: readonly string[]): boolean =>
+      accessor === "getImmediateAliasedSymbol" && locations.some((one) => one.endsWith(" typed"));
+    const lines = readsOf(
+      {
+        "lib.ts": LIB,
+        "barrel.ts": 'export type * as typed from "./lib.js";\n',
+        "other.ts": "export const elsewhere = 1;\n",
+        "main.ts":
+          'import { typed as space } from "./barrel.js";\nexport type Space = typeof space;\n',
+      },
+      ESM,
+      { panicsOn: step },
+    );
+    expect(lines.filter((line) => line.endsWith(".ts")).length).toBeGreaterThan(0);
+    expect(
+      lines.filter((line) => !line.includes(".ts")),
+      "a type-only link binds no namespace object, so the whole use reads no export",
+    ).toEqual([]);
+  });
+
+  it("names the module whole, and no export, through a binding a type-only declaration makes", () => {
+    for (const main of [
+      'import type * as space from "./lib.js";',
+      'import type { space } from "./barrel.js";',
+      'import { type space } from "./barrel.js";',
+      'import { typed as space } from "./barrel.js";',
+    ]) {
+      expect(
+        readsOf({
+          "lib.ts": LIB,
+          "barrel.ts": `${BARREL}export type * as typed from "./lib.js";\n`,
+          "main.ts": `${main}\nexport type Space = typeof space;\n`,
+        }),
+        main,
+      ).toEqual(["main.ts:2:28 lib.ts"]);
+    }
   });
 });
 

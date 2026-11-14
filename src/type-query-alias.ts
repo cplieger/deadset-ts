@@ -14,7 +14,6 @@ import {
   isModuleDeclaration,
   isStringLiteral,
   isVariableStatement,
-  SyntaxKind,
   type Node,
   type SourceFile,
 } from "@typescript/native/ast";
@@ -67,13 +66,15 @@ function exportedBy(type: Node): Node | undefined {
   return undefined;
 }
 
-/** Whether one module declaration is a `declare global` block. */
+/**
+ * Whether one module declaration is a `declare global` block: its file's module augmentations,
+ * the compiler's record of one, list its name, which no namespace spelled `global` is.
+ */
 function isGlobalBlock(node: Node): boolean {
   return (
     isModuleDeclaration(node) &&
-    node.keyword !== SyntaxKind.NamespaceKeyword &&
     isIdentifier(node.name) &&
-    node.name.text === "global"
+    node.getSourceFile().moduleAugmentations.includes(node.name)
   );
 }
 

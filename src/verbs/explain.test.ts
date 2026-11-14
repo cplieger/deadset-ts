@@ -210,8 +210,8 @@ describe("explain", () => {
           "answer: live",
           "  live under: reference-counting reachability",
           "  reached from: root entry-file src/main.ts:1:1",
-          "  reference: src/main.ts:3:13\tread\tsrc/main.ts:1:1 -> src/lib.ts:1:1",
-          "  export: src/lib.ts:1:1 -> src/lib.ts:1:17",
+          // A whole use of a namespace object reads each export where it is written (references-ts.5).
+          "  reference: src/main.ts:3:13\tread\tsrc/main.ts:1:1 -> src/lib.ts:1:17",
           "",
         ].join("\n"),
       );

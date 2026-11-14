@@ -10,12 +10,13 @@ import {
   isImportDeclaration,
   isStringLiteralLikeNode,
   type Node,
+  type ObjectBindingPattern,
   type SourceFile,
 } from "@typescript/native/ast";
-import type { Symbol as TSSymbol } from "@typescript/native/sync";
+import { SymbolFlags, type Symbol as TSSymbol } from "@typescript/native/sync";
 import type { AliasChains, ChainTarget } from "../alias-chain.ts";
 import { amdPath, amdPlatform } from "../amd.ts";
-import type { destructuring } from "../destructuring.ts";
+import { nameText, type destructuring } from "../destructuring.ts";
 import { specifierCandidates } from "../entries/configuration-files.ts";
 import type { RunDirectories } from "../entries/run-directories.ts";
 import { bindingsOf, importedNames } from "../import-bindings.ts";
@@ -29,6 +30,15 @@ import {
 } from "../index/sites.ts";
 import { nodeKey, type Inventory, type InventorySymbol } from "../inventory.ts";
 import { JAVASCRIPT_FILE } from "../javascript-file.ts";
+import {
+  indexedBy,
+  judged,
+  judgedProperty,
+  NONE,
+  PASSES,
+  valueAt,
+  type Judgement,
+} from "../namespace-objects.ts";
 import {
   dirnamePath,
   isRelativeSpecifier,
@@ -82,11 +92,51 @@ export interface Pass<Brand> {
   /** What an import {@link possibleLoad} retries names: its file and what it binds there. */
   readonly possiblyLoaded: Set<string>;
   readonly declaredIn: (moduleId: string) => readonly InventorySymbol[];
-  readonly exportsRead: (module: Answer<TSSymbol>) => readonly ChainTarget[];
+  /**
+   * The read set of one whole use of a namespace value, under both relations: `candidates` are
+   * what a name the checker left unanswered may stand for (`references.ts`).
+   */
+  readonly exportsRead: (
+    module: Answer<TSSymbol>,
+    candidates?: readonly string[],
+  ) => readonly ChainTarget[];
+  /**
+   * The member one namespace value's export table holds under `name`, along its alias chain, and
+   * the namespace value that member is, where it is one.
+   */
+  readonly memberOf: (
+    namespace: TSSymbol,
+    name: string,
+  ) => {
+    readonly targets: readonly ChainTarget[];
+    readonly inner: Answer<TSSymbol | undefined>;
+  };
   readonly named: (node: Node) => readonly ChainTarget[];
   readonly targetsOf: (symbol: TSSymbol) => readonly ChainTarget[];
   readonly throughAliases: (targets: readonly ChainTarget[]) => readonly ChainTarget[];
   readonly ownFiles: () => SourceFiles;
+  /** The symbol the value of one shorthand property assignment names, asked once per assignment. */
+  readonly shorthandValue: (assignment: Node) => Answer<TSSymbol | undefined>;
+  /**
+   * The declarations a name the checker left unanswered may stand for where one may be a namespace
+   * value (a file, a namespace import, a value `namespace`, an alias, or a namespace binding its
+   * file declares under that name), and undefined where none may.
+   */
+  readonly candidates: (node: Node) => readonly string[] | undefined;
+  /** Whether one declaration's name binds a namespace value (`AliasChains.namespaceOf`). */
+  readonly binding: (name: Node) => boolean;
+}
+
+/**
+ * One judgement whose binding the checker settles: a namespace binding reads nothing itself, and
+ * one a module's or a namespace's top level holds passes the value on (references-ts.4).
+ */
+function settled<Brand>(pass: Pass<Brand>, judgement: Judgement): Judgement {
+  const binds = judgement.binds;
+  if (binds === undefined || !pass.binding(binds.name)) {
+    return judgement;
+  }
+  return binds.held ? PASSES : NONE;
 }
 
 /** One form of site, and the uses it makes once the file's batch has answered. */
@@ -151,22 +201,159 @@ const parameterWrites: ReferenceSource = {
 
 /**
  * A re-export references the first declaration its alias chain carries forward that the
- * inventory declares, one link per re-export, or for a bare star the module it names.
+ * inventory declares, one link per re-export, or for a bare star the module it names. A
+ * whole-module re-export the checker did not answer for may carry any file. A re-export is
+ * no use by itself (`references-ts.4`), and one of a namespace object reads no export.
  */
 const links: ReferenceSource = {
   batched: ({ links: found }) => found.map((link) => link.node),
-  emit({ file, links: found }, answered, { sink, chains, named }) {
+  emit({ file, links: found }, answered, { sink, chains, named, fileIds }) {
     for (const link of found) {
       const symbol = answered.get(link.node);
       if (symbol === undefined) {
         continue;
       }
       const carried: readonly Target[] =
-        symbol === UNANSWERED ? named(link.at) : carriedBy(chains, link, symbol);
+        symbol !== UNANSWERED
+          ? marked(carriedBy(chains, link, symbol), namespaceAt(chains, symbol), true)
+          : link.module
+            ? [...fileIds].map((id) => ({ id, guessed: true }))
+            : named(link.at);
       sink.add(file, link.at, link.from, carried, "read", link.alias ? "alias" : "batch");
     }
   },
 };
+
+/**
+ * Whether one symbol stands, every step answered, for a namespace value, a module's object or a
+ * `namespace` declaration (`AliasChains.namespaceOf`).
+ */
+function namespaceAt(chains: AliasChains, symbol: TSSymbol): boolean {
+  const namespace = chains.namespaceOf(symbol);
+  return namespace !== undefined && namespace !== UNANSWERED;
+}
+
+/**
+ * One use's targets, marked as reading a namespace object where `namespace`, whose uses the
+ * pass judged where they are read, and as a re-export's where `reexport`.
+ */
+function marked<One extends Target>(
+  targets: readonly One[],
+  namespace: boolean,
+  reexport: boolean,
+): readonly One[] {
+  return namespace || reexport
+    ? targets.map((one) => ({
+        ...one,
+        ...(namespace ? { namespace } : {}),
+        ...(reexport ? { reexport } : {}),
+      }))
+    : targets;
+}
+
+/**
+ * The namespace what may be a namespace value stands for, by the checker's answer for what names
+ * it: `UNANSWERED` where the checker did not answer, which may be any module, undefined where
+ * it is none.
+ */
+function namespaceNamed(
+  chains: AliasChains,
+  answer: Answer<TSSymbol | undefined>,
+): Answer<TSSymbol | undefined> {
+  return answer === undefined || answer === UNANSWERED ? answer : chains.namespaceOf(answer);
+}
+
+/** One use of a namespace value that reads it whole. */
+interface WholeUse {
+  readonly namespace: Answer<TSSymbol>;
+  readonly at: Node;
+  readonly from: string;
+  /** Where the checker left the name unanswered, the declarations it may stand for. */
+  readonly candidates?: readonly string[];
+  /** An object pattern of names read from the value by name instead (`Judgement.pattern`). */
+  readonly pattern?: ObjectBindingPattern;
+}
+
+/**
+ * What one use of a name the checker resolved to `symbol` reads as a namespace value, a module's
+ * object or a `namespace` declaration, where `namespaceOf` says it is one or `guessed`, the
+ * declarations a name the checker failed on may stand for, says it may be: whether it is one, the
+ * marks its targets carry, and the whole reads `judge`'s judgement adds to `wholes`. A namespace
+ * left unanswered may be any of them, so it marks nothing (`references-ts.3`).
+ */
+function namespaceRead(
+  chains: AliasChains,
+  symbol: Answer<TSSymbol | undefined>,
+  guessed: readonly string[] | undefined,
+  judge: () => Judgement,
+  from: string,
+  wholes: WholeUse[],
+): { readonly resolved: boolean; readonly namespace: boolean; readonly reexport: boolean } {
+  const answered = typeof symbol === "object";
+  const namespace = answered
+    ? chains.namespaceOf(symbol)
+    : guessed === undefined
+      ? undefined
+      : UNANSWERED;
+  if (namespace === undefined) {
+    return { resolved: false, namespace: false, reexport: false };
+  }
+  const judgement = judge();
+  const unanswered = answered || guessed === undefined ? {} : { candidates: guessed };
+  for (const at of judgement.whole) {
+    wholes.push({ namespace, at, from, ...unanswered });
+  }
+  const pattern = judgement.pattern;
+  if (pattern !== undefined) {
+    wholes.push({ namespace, at: pattern, from, pattern, ...unanswered });
+  }
+  return {
+    resolved: true,
+    namespace: namespace !== UNANSWERED,
+    reexport: judgement.passes && answered,
+  };
+}
+
+/**
+ * The whole reads of a file's namespace values, each reading every export (`references-ts.5`),
+ * and its object patterns read by name from a value the checker answered (`references-ts.4`).
+ */
+function readWholes<Brand>(file: SourceFile, uses: readonly WholeUse[], pass: Pass<Brand>): void {
+  for (const use of uses) {
+    if (use.pattern !== undefined && use.namespace !== UNANSWERED) {
+      readPattern(file, use.namespace, use.pattern, use.from, pass);
+      continue;
+    }
+    const read = pass.exportsRead(use.namespace, use.candidates);
+    pass.sink.add(file, use.at, use.from, read, "read", "batch");
+  }
+}
+
+/**
+ * Each name of an object pattern of names alone destructuring one namespace value reads the
+ * member the value's export table holds under it, and a member that is a namespace value whole.
+ */
+function readPattern<Brand>(
+  file: SourceFile,
+  namespace: TSSymbol,
+  pattern: ObjectBindingPattern,
+  from: string,
+  pass: Pass<Brand>,
+): void {
+  const { sink, exportsRead, memberOf } = pass;
+  for (const element of pattern.elements) {
+    const key = element.propertyName ?? element.name;
+    const name = nameText(key);
+    if (key === undefined || name === undefined) {
+      continue;
+    }
+    const { targets, inner } = memberOf(namespace, name);
+    sink.add(file, key, from, targets, "read", "destructured");
+    if (inner !== undefined) {
+      sink.add(file, key, from, exportsRead(inner), "read", "batch");
+    }
+  }
+}
 
 /**
  * The declarations one re-export carries forward: for an alias, the first link along its chain
@@ -440,14 +627,68 @@ const loads: ReferenceSource = {
   },
 };
 
-/** A use of a module namespace object that may read every export of the module reads them all. */
+/**
+ * A use of the namespace object a dynamic `import()` gives that may read every export of the
+ * module reads them all. A re-export of one passes it on: it reads the module's file as a
+ * re-export does, and every export where the module went unanswered.
+ */
 const wholes: ReferenceSource = {
   batched: ({ wholes: found }) => found.map((whole) => whole.specifier),
-  emit({ file, wholes: found }, answered, { sink, exportsRead }) {
+  emit({ file, wholes: found }, answered, pass) {
+    const { sink, chains } = pass;
+    const uses: WholeUse[] = [];
     for (const whole of found) {
-      const module = answered.get(whole.specifier);
-      if (module !== undefined) {
-        sink.add(file, whole.at, whole.from, exportsRead(module), "read", "batch");
+      const namespace = namespaceNamed(chains, answered.get(whole.specifier));
+      if (namespace === undefined) {
+        continue;
+      }
+      const binding =
+        whole.binds === undefined ? undefined : settled(pass, { ...NONE, binds: whole.binds });
+      if (binding === NONE) {
+        continue;
+      }
+      if ((whole.passes === true || binding === PASSES) && namespace !== UNANSWERED) {
+        const files = chains
+          .declarationsOf(namespace)
+          .map((id) => ({ id, stepped: false, guessed: false }));
+        sink.add(file, whole.at, whole.from, marked(files, true, true), "read", "batch");
+        continue;
+      }
+      const pattern = whole.pattern;
+      uses.push({ namespace, at: whole.at, from: whole.from, ...(pattern ? { pattern } : {}) });
+    }
+    readWholes(file, uses, pass);
+  },
+};
+
+/**
+ * A direct eval reads every binding in scope where it is called, by names the checker does not
+ * resolve (`directEval`): each such binding the checker says is a namespace value is read
+ * whole there, a precise binding's form notwithstanding. An eval whose callee resolves to a
+ * declaration of the program is a call of it.
+ */
+const dynamics: ReferenceSource = {
+  batched: ({ dynamics: found }) => found.map(({ callee }) => callee),
+  emit({ file, dynamics: found }, answered, pass) {
+    const { project, sink, chains, exportsRead } = pass;
+    const own = project.ownPaths();
+    for (const { callee: at, from } of found) {
+      if (!chains.undeclared(answered.get(at))) {
+        continue;
+      }
+      const visible = project.queries.symbolsInScope(at, SymbolFlags.Value | SymbolFlags.Alias);
+      if (visible === UNANSWERED) {
+        sink.add(file, at, from, exportsRead(UNANSWERED), "read", "batch");
+        continue;
+      }
+      for (const symbol of visible) {
+        if (!symbol.declarations.some((handle) => own.has(handle.path))) {
+          continue;
+        }
+        const namespace = chains.namespaceOf(symbol);
+        if (namespace !== undefined) {
+          sink.add(file, at, from, exportsRead(namespace), "read", "batch");
+        }
       }
     }
   },
@@ -488,21 +729,42 @@ const markup: ReferenceSource = {
 
 /**
  * A pattern names a property of the value it destructures, which no name node of the pattern
- * resolves to: a shorthand's name is the local it binds.
+ * resolves to: a shorthand's name is the local it binds. A namespace value an inventory
+ * declaration binds is read by that declaration, which holds it.
  */
 const patterns: ReferenceSource = {
-  emit({ file, reads }, _answered, { sink, held, destructured, targetsOf }) {
+  emit({ file, reads }, _answered, pass) {
+    const { sink, held, chains, destructured, targetsOf } = pass;
+    const wholeUses: WholeUse[] = [];
     destructured.resolve(reads).forEach((symbol, index) => {
       const read = reads[index];
       if (symbol === undefined || read === undefined) {
         return;
       }
+      const holding =
+        typeof symbol === "object" && chains.namespaceOf(symbol) !== undefined
+          ? held.declarations.get(nodeKey(file, read.key.parent))
+          : undefined;
+      const from = holding ?? read.from;
+      const { namespace } = namespaceRead(
+        chains,
+        symbol,
+        undefined,
+        () => judgedProperty(read),
+        from,
+        wholeUses,
+      );
       const targets: readonly Target[] =
         symbol === UNANSWERED
           ? (held.byName.get(read.name) ?? []).map((id) => ({ id, guessed: true }))
-          : targetsOf(symbol).map((target) => ({ ...target, stepped: false }));
-      sink.add(file, read.key, read.from, targets, "read", "destructured");
+          : marked(
+              targetsOf(symbol).map((target) => ({ ...target, stepped: false })),
+              namespace,
+              false,
+            );
+      sink.add(file, read.key, from, targets, "read", "destructured");
     });
+    readWholes(file, wholeUses, pass);
   },
 };
 
@@ -529,15 +791,41 @@ const keyed: ReferenceSource = {
  * A name a use writes resolves to what it names; a re-export something imports is used and so
  * is the declaration behind it, so the use names every link of the chain its name stands at the
  * head of. A shorthand is left out of the batch: its name resolves to the property the literal
- * declares, which this project's inventory never holds, so its value is asked on its own.
+ * declares, which this project's inventory never holds, so its value is asked on its own. A
+ * name the checker resolves to a namespace value is judged where it is read; a literal index
+ * reads only through one, and reads it whole where the checker does not name the member.
  */
 const names: ReferenceSource = {
   batched: ({ uses }) =>
-    uses.filter((site) => site.shorthand === undefined).map((site) => site.node),
+    uses.flatMap((site) =>
+      site.shorthand !== undefined
+        ? []
+        : [site.node, ...(site.through === undefined ? [] : [site.through])],
+    ),
   emit({ file, uses }, answered, pass) {
-    const { project, sink, named, targetsOf, throughAliases } = pass;
+    const { sink, chains, named, targetsOf, throughAliases, candidates } = pass;
+    const wholeUses: WholeUse[] = [];
     for (const site of uses) {
-      const symbol = symbolFor(project, site, answered);
+      const receiver =
+        site.through === undefined ? undefined : namespaceNamed(chains, answered.get(site.through));
+      if (site.through !== undefined && receiver === undefined) {
+        continue;
+      }
+      const symbol = symbolFor(pass, site, answered);
+      if (receiver !== undefined && (symbol === undefined || symbol === UNANSWERED)) {
+        const through = site.through;
+        const candidates =
+          receiver === UNANSWERED && through !== undefined && answered.get(through) === UNANSWERED
+            ? named(through).map(({ id }) => id)
+            : undefined;
+        wholeUses.push({
+          namespace: receiver,
+          at: site.node,
+          from: site.from,
+          ...(candidates === undefined ? {} : { candidates }),
+        });
+        continue;
+      }
       if (symbol === undefined) {
         continue;
       }
@@ -547,21 +835,43 @@ const names: ReferenceSource = {
           : typeof answered.get(site.node) === "object"
             ? "batch"
             : "resolved-symbol";
-      const targets = throughAliases(symbol === UNANSWERED ? named(site.node) : targetsOf(symbol));
-      const value = site.use === "write" ? storedValue(site.node) : undefined;
-      sink.add(file, site.node, site.from, targets, site.use, direct, value);
+      // A store into an element of a namespace value reads the value; a write of the binding
+      // itself is a use that reads every export.
+      const receives = site.use === "write" && indexedBy(site.node) !== undefined;
+      const { resolved, namespace, reexport } = namespaceRead(
+        chains,
+        symbol,
+        symbol === UNANSWERED ? candidates(site.node) : undefined,
+        () =>
+          site.use === "write" && !receives
+            ? { passes: false, whole: [site.node] }
+            : settled(pass, judged(valueAt(site.node))),
+        site.from,
+        wholeUses,
+      );
+      const targets = throughAliases(
+        marked(
+          symbol === UNANSWERED ? named(site.node) : targetsOf(symbol),
+          symbol !== UNANSWERED && namespace,
+          symbol !== UNANSWERED && reexport,
+        ),
+      );
+      const use = receives && resolved ? "read" : site.use;
+      const value = use === "write" ? storedValue(site.node) : undefined;
+      sink.add(file, site.node, site.from, targets, use, direct, value);
     }
+    readWholes(file, wholeUses, pass);
   },
 };
 
 /** The symbol one site resolves to, asking only the accessor the site's form names. */
 function symbolFor<Brand>(
-  project: ProjectView<Brand>,
+  { project, shorthandValue }: Pass<Brand>,
   site: Site,
   answered: ReadonlyMap<Node, Answer<TSSymbol>>,
 ): Answer<TSSymbol | undefined> {
   if (site.shorthand !== undefined) {
-    return project.shorthandValueAt(project.handle(site.shorthand));
+    return shorthandValue(site.shorthand);
   }
   const batched = answered.get(site.node);
   if (batched === UNANSWERED || typeof batched === "object") {
@@ -576,6 +886,7 @@ const REFERENCE_SOURCES: readonly ReferenceSource[] = [
   links,
   evaluations,
   wholes,
+  dynamics,
   urls,
   workers,
   markup,

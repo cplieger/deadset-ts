@@ -148,6 +148,11 @@ export interface Analyzed {
    * node of: a pass that fetches one pays a request for a declaration no inventory holds.
    */
   readonly outsideDeclarations: readonly number[];
+  /**
+   * Per project, the declaration nodes the reference pass read and the alias steps it asked
+   * for: the resolution work its questions cost, which a memo keeps to one per symbol.
+   */
+  readonly resolutions: readonly number[];
   /** One entry per project, and none where no root set was asked for. */
   readonly roots: readonly Roots[];
   /**
@@ -240,6 +245,7 @@ export function analyzeRoot(root: string, options: AnalyzeOptions = {}): Analyze
   const resolved: (References & { readonly testFilePaths: readonly string[] })[] = [];
   const referenceAsks: ReadonlyMap<string, Asked>[] = [];
   const outsideDeclarations: number[] = [];
+  const resolutions: number[] = [];
   const rooted: Roots[] = [];
   const manifest = readManifest(host, root);
   let requests = 0;
@@ -251,13 +257,19 @@ export function analyzeRoot(root: string, options: AnalyzeOptions = {}): Analyze
       const testFile = patternTestFile(wanted.testFiles, root);
       asks = new Map();
       let outside = 0;
+      let resolving = 0;
       const counted = {
         ...project,
         declarationAt: (handle: Parameters<typeof project.declarationAt>[0]) => {
+          resolving += 1;
           if (!project.ownPaths().has(handle.path)) {
             outside += 1;
           }
           return project.declarationAt(handle);
+        },
+        aliasStepOf: (symbol: Parameters<typeof project.aliasStepOf>[0]) => {
+          resolving += 1;
+          return project.aliasStepOf(symbol);
         },
       };
       resolved.push({
@@ -272,6 +284,7 @@ export function analyzeRoot(root: string, options: AnalyzeOptions = {}): Analyze
       });
       referenceAsks.push(asks);
       outsideDeclarations.push(outside);
+      resolutions.push(resolving);
       asks = undefined;
       requests += engine.getTimingInfo().totals.requestCount - before;
     }
@@ -297,6 +310,7 @@ export function analyzeRoot(root: string, options: AnalyzeOptions = {}): Analyze
     references: resolved,
     referenceAsks,
     outsideDeclarations,
+    resolutions,
     roots: rooted,
     referenceRequests: requests,
   };

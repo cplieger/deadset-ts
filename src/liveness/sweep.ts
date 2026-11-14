@@ -13,6 +13,7 @@ import { edgeWithheldBy, type Mode } from "../tests/file-class.ts";
 import { componentsOf, type Component, type Positional } from "./components.ts";
 import { namesACaller, OUTSIDE, type Counts, type Edge, type Graph, type Rooted } from "./graph.ts";
 import type { Matrix } from "./matrix.ts";
+import { walk, type Seed, type Step as Stepped, type Walked } from "./reach.ts";
 
 /** The liveness relation that decided a declaration, as a finding spells it. */
 export type Relation = "reference-counting" | "reachability";
@@ -154,10 +155,7 @@ export interface Sweep {
 }
 
 /** One step a pass reached a declaration by. */
-type Step =
-  | { readonly k: "seed"; readonly origin: Origin }
-  | { readonly k: "reference"; readonly from: number; readonly edge: Edge }
-  | { readonly k: "export"; readonly from: number; readonly edge: Edge };
+type Step = Stepped<Origin>;
 
 /** One declaration a held mechanism seeds, and what seeds it. */
 interface HeldSeed {
@@ -178,11 +176,7 @@ interface Seeds {
 }
 
 /** What one pass reached, how, and which gates opened. */
-interface Reached {
-  readonly reached: readonly boolean[];
-  readonly by: readonly (Step | undefined)[];
-  readonly opened: ReadonlySet<number>;
-}
+type Reached = Walked<Origin>;
 
 /** The references to one declaration the mode counts: under `production` none test code made but those it classes as production. */
 function countedRefs(made: Counts | undefined, mode: Mode): number {
@@ -207,89 +201,30 @@ function splitRefs(
 /**
  * Per declaration, whether one pass reaches it, the step that first reached it, and the gated
  * files that opened. Held seeds reach through every reference, a test file's included; roots
- * and consumed references through those the mode counts, and a held seed met after a caller
- * expands its declaration again. A read of a file reaches its exports; an evaluation, a root or
- * a consumed reference to a file reaches its top level alone. The roots' first hops precede the
- * consumed references, so a path is the shortest from the earliest root.
+ * and consumed references through those the mode counts. Every seed is used by code the
+ * analysis does not see, and only a root's or a caller outside's re-export passes on what it
+ * names; what a read reaches beyond its target is the walk's rule (`reach.ts`), and with
+ * `namespaces` false a whole read reaches its target alone.
  */
 function reach(graph: Graph, seeds: Seeds, mode: Mode, namespaces = true): Reached {
-  const reached = graph.symbols.map(() => false);
-  const holding = graph.symbols.map(() => false);
-  const expanded = graph.symbols.map(() => [false, false]);
-  const by: (Step | undefined)[] = graph.symbols.map(() => undefined);
-  const opened = new Set<number>();
-  const queue: { readonly at: number; readonly holds: boolean }[] = [];
-
-  const enter = (at: number, holds: boolean, expands: boolean, step: Step): void => {
-    if (!reached[at]) {
-      reached[at] = true;
-      by[at] = step;
-      const gate = seeds.gated.get(at);
-      if (gate !== undefined && seeds.counted(at)) {
-        opened.add(at);
-        for (const seed of gate) {
-          enter(seed.at, true, false, { k: "seed", origin: seed.origin });
-        }
-      }
-      if (!holds) {
-        queue.push({ at, holds });
-      }
-    }
-    if (holds && !holding[at]) {
-      holding[at] = true;
-      queue.push({ at, holds });
-    }
-    const mode = expanded[at];
-    if (!expands || mode === undefined || mode[holds ? 1 : 0] === true) {
-      return;
-    }
-    mode[holds ? 1 : 0] = true;
-    for (const exported of graph.exportsOf[at] ?? []) {
-      enter(
-        exported,
-        holds,
-        false,
-        step.k === "seed" ? step : { k: "export", from: step.from, edge: step.edge },
-      );
-    }
-  };
-  const follows = (edge: Edge, holds: boolean): boolean =>
-    (seeds.guessed || !edge.guessed) && (holds || !edgeWithheldBy(mode, edge));
-
-  for (const seed of seeds.held) {
-    enter(seed.at, true, false, { k: "seed", origin: seed.origin });
-  }
-  for (const rooted of graph.rooted) {
-    enter(rooted.at, false, false, { k: "seed", origin: { k: "root", rooted } });
-  }
-  const firstHops = queue.length;
-  for (let head = 0; ; head += 1) {
-    if (head === firstHops) {
-      for (const edge of graph.consumed) {
-        if (follows(edge, false)) {
-          enter(edge.to, false, namespaces && !edge.evaluation, {
-            k: "reference",
-            from: OUTSIDE,
-            edge,
-          });
-        }
-      }
-    }
-    const next = queue[head];
-    if (next === undefined) {
-      break;
-    }
-    for (const edge of graph.out[next.at] ?? []) {
-      if (follows(edge, next.holds)) {
-        enter(edge.to, next.holds, namespaces && !edge.evaluation, {
-          k: "reference",
-          from: next.at,
-          edge,
-        });
-      }
-    }
-  }
-  return { reached, by, opened };
+  const used = (seed: HeldSeed): Seed<Origin> => ({ ...seed, holds: true, used: true });
+  return walk(graph, {
+    seeds: [
+      ...seeds.held.map(used),
+      ...graph.rooted.map((rooted) => ({
+        at: rooted.at,
+        holds: false,
+        used: true,
+        passes: true,
+        origin: { k: "root", rooted } as const,
+      })),
+    ],
+    gated: new Map([...seeds.gated].map(([file, gate]) => [file, gate.map(used)])),
+    opens: seeds.counted,
+    follows: (edge, _from, holds) =>
+      (seeds.guessed || !edge.guessed) && (holds || !edgeWithheldBy(mode, edge)),
+    expands: namespaces,
+  });
 }
 
 /**
@@ -442,8 +377,11 @@ class Sweeping {
     ]) {
       exempt[seed.at] = true;
     }
+    // What a root's or a caller outside's re-export passes on is used under both relations (references-ts.4).
     const live = graph.symbols.map((_symbol, at): readonly Relation[] => [
-      ...(this.countLive(at, view) ? (["reference-counting"] as const) : []),
+      ...(this.countLive(at, view) || reached.passed[at] === true
+        ? (["reference-counting"] as const)
+        : []),
       ...(reached.reached[at] === true ? (["reachability"] as const) : []),
     ]);
     const dead = graph.symbols.map(

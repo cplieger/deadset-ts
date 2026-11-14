@@ -6,7 +6,7 @@
  * counts is the sweep's reading of this set.
  */
 
-import { SyntaxKind, type Node } from "@typescript/native/ast";
+import { SyntaxKind, type Node, type SourceFile } from "@typescript/native/ast";
 import type { Symbol as TSSymbol } from "@typescript/native/sync";
 import { aliasChains, type ChainTarget } from "./alias-chain.ts";
 import { augmentationReferences, mergedGlobalInterfaces } from "./augmentations.ts";
@@ -15,7 +15,8 @@ import { destructuring } from "./destructuring.ts";
 import type { RunDirectories } from "./entries/run-directories.ts";
 import { bindingsOf } from "./import-bindings.ts";
 import { sitesOf } from "./index/sites.ts";
-import { nodeKey, type Inventory, type InventorySymbol } from "./inventory.ts";
+import { nameNodeOf, nodeKey, type Inventory, type InventorySymbol } from "./inventory.ts";
+import { OUTSIDE, wholeReads } from "./liveness/graph.ts";
 import { relativePath } from "./paths.ts";
 import type { Position } from "./position.ts";
 import { DEFAULT_BATCH_CAP, propertyTables, UNANSWERED, type Answer } from "./query.ts";
@@ -23,6 +24,7 @@ import { heldBy, READ_RULES } from "./references/read-rules.ts";
 import { Sink } from "./references/sink.ts";
 import { emitFile, prepared, type Pass } from "./references/sources.ts";
 import type { ProjectView } from "./session.ts";
+import { boundValue } from "./namespace-objects.ts";
 import { sourceFilesOf, type SourceFiles } from "./source-files.ts";
 import { bytewise } from "./text/compare.ts";
 import type { TestFile } from "./tests/file-class.ts";
@@ -79,6 +81,19 @@ export interface Reference {
    * reference may be a use of any declaration so spelled, so the run holds what it names.
    */
   readonly guessed?: true;
+  /**
+   * Present on each read a use of a namespace value makes, the checker resolving the use to a
+   * module or a `namespace` declaration, where the pass judges every use where it is read and
+   * records the members each reads, and on a re-export's read of one: the read names no member
+   * (references-ts.3 to .5).
+   */
+  readonly namespace?: true;
+  /**
+   * Present on a re-export's read of what it carries, and on an alias declaration's: it is no
+   * use by itself, its uses being judged where it is read (references-ts.4), unless a root
+   * names it, whose callers the analysis does not see.
+   */
+  readonly reexport?: true;
   /**
    * The identifier of the consumer whose file made the reference, absent for one the
    * target made. A consumer's declarations are no declarations of the run, so such a
@@ -217,32 +232,222 @@ export function references<Brand>(
     }
     return moduleBodies.get(moduleId) ?? [];
   };
-  const exportedBy = (ids: Iterable<string>): readonly ChainTarget[] =>
-    [...ids].flatMap((id) =>
-      declaredIn(id)
-        .filter((symbol) => symbol.exported)
-        .map((symbol) => ({ id: symbol.id, stepped: false, guessed: true })),
-    );
-  const exportsCache = new Map<number, readonly ChainTarget[]>();
+  const positions = new Map(held.symbols.map((symbol, place) => [symbol.id, place]));
+  let inventoryReads: readonly (readonly number[])[] | undefined;
   /**
-   * Every declaration one module exports, each re-export walked along its chain. A module
-   * the checker left unanswered may be any file, so it reads every file's exports.
+   * Every declaration a whole read of each of `ids` references by the inventory alone
+   * (`wholeReads`), each member read whole in turn: the read where the checker leaves a table
+   * unanswered, so each target is guessed.
    */
-  const exportsRead = (module: Answer<TSSymbol>): readonly ChainTarget[] => {
-    if (module === UNANSWERED) {
-      return exportedBy(fileIds);
+  const inventoryRead = (ids: Iterable<string>): readonly ChainTarget[] => {
+    inventoryReads ??= wholeReads(
+      held.symbols,
+      held.symbols.map((symbol) => positions.get(symbol.parent) ?? OUTSIDE),
+    );
+    const reads = inventoryReads;
+    const queue = [...ids].flatMap((id) => positions.get(id) ?? []);
+    const seen = new Set(queue);
+    const found: ChainTarget[] = [];
+    // An array's iterator reads its length at each step, so the members queued here are read too.
+    for (const at of queue) {
+      for (const member of reads[at] ?? []) {
+        const symbol = held.symbols[member];
+        if (!seen.has(member) && symbol !== undefined) {
+          seen.add(member);
+          queue.push(member);
+          found.push({ id: symbol.id, stepped: false, guessed: true });
+        }
+      }
     }
-    const known = exportsCache.get(module.id);
+    return found;
+  };
+
+  let sourceById: ReadonlyMap<string, SourceFile> | undefined;
+  const declarationNodes = new Map<string, ReadonlyMap<string, Node>>();
+  const declarationSymbols = new Map<string, Answer<TSSymbol | undefined>>();
+  /** The symbol the checker gives one declaration of the inventory at its own name. */
+  const declarationSymbol = (id: string): Answer<TSSymbol | undefined> => {
+    if (!declarationSymbols.has(id)) {
+      sourceById ??= new Map(
+        project.ownSourceFiles().flatMap((file) => {
+          const fileId = declaredAt(file);
+          return fileId === undefined ? [] : [[fileId, file] as const];
+        }),
+      );
+      let fileId = id;
+      while (!fileIds.has(fileId) && positions.has(fileId)) {
+        fileId = held.symbols[positions.get(fileId) ?? OUTSIDE]?.parent ?? "";
+      }
+      const file = sourceById.get(fileId);
+      if (file !== undefined && !declarationNodes.has(fileId)) {
+        const nodes = new Map<string, Node>();
+        const visit = (node: Node): void => {
+          const declared = declaredAt(node);
+          if (declared !== undefined && !nodes.has(declared)) {
+            nodes.set(declared, node);
+          }
+          node.forEachChild(visit);
+        };
+        file.forEachChild(visit);
+        declarationNodes.set(fileId, nodes);
+      }
+      const node = declarationNodes.get(fileId)?.get(id);
+      const name = node === undefined ? undefined : nameNodeOf(node);
+      declarationSymbols.set(
+        id,
+        name === undefined ? UNANSWERED : project.symbolsAt([project.handle(name)])[0],
+      );
+    }
+    return declarationSymbols.get(id);
+  };
+
+  /** One namespace value's read set before an entry the checker left unanswered adds any module's. */
+  interface Closure {
+    readonly read: readonly ChainTarget[];
+    /** Whether an entry's chain went unanswered, so the read also takes in any module's. */
+    readonly anyModule: boolean;
+  }
+  const closures = new Map<number, Closure>();
+  /**
+   * The read set of one namespace value the checker answers (references-ts.3, .5): every entry
+   * of its export table along its alias chain, and the read set of each entry that is a namespace
+   * value the inventory declares, through every level, each value once.
+   */
+  const closureOf = (module: TSSymbol): Closure => {
+    const known = closures.get(module.id);
     if (known !== undefined) {
       return known;
     }
-    const table = project.queries.exportsOfModule(module);
-    const read =
-      table === UNANSWERED
-        ? exportedBy(chains.declarationsOf(module))
-        : table.flatMap((exported) => chains.chainOf(exported));
-    exportsCache.set(module.id, read);
-    return read;
+    const found = new Map<string, ChainTarget>();
+    const add = (targets: readonly ChainTarget[]): void => {
+      for (const target of targets) {
+        if (!found.has(target.id)) {
+          found.set(target.id, target);
+        }
+      }
+    };
+    const seen = new Set([module.id]);
+    const queue = [module];
+    let anyModule = false;
+    for (const namespace of queue) {
+      const table = project.queries.exportsOfModule(namespace);
+      if (table === UNANSWERED) {
+        add(inventoryRead(chains.declarationsOf(namespace)));
+        continue;
+      }
+      for (const exported of table) {
+        add(chains.chainOf(exported));
+        const inner = chains.namespaceOf(exported);
+        if (inner === UNANSWERED) {
+          anyModule = true;
+        } else if (
+          inner !== undefined &&
+          !seen.has(inner.id) &&
+          chains.declarationsOf(inner).length > 0
+        ) {
+          seen.add(inner.id);
+          queue.push(inner);
+        }
+      }
+    }
+    const closure = { read: [...found.values()], anyModule };
+    closures.set(module.id, closure);
+    return closure;
+  };
+
+  /** Whether one declaration of the inventory is a value `namespace`. */
+  const valueNamespace = (id: string): boolean => {
+    const symbol = held.symbols[positions.get(id) ?? OUTSIDE];
+    return symbol?.kind === "namespace" && symbol.block === undefined;
+  };
+  /** Whether one declaration of the inventory is an alias, which records no target it stands for. */
+  const alias = (id: string): boolean =>
+    held.symbols[positions.get(id) ?? OUTSIDE]?.kind === "export-alias";
+  /** The read set of one value `namespace` of the inventory. */
+  const namespaceSet = (id: string): readonly ChainTarget[] => {
+    const symbol = declarationSymbol(id);
+    return typeof symbol === "object" ? closureOf(symbol).read : inventoryRead([id]);
+  };
+
+  let everyFile: readonly ChainTarget[] | undefined;
+  /** The read set of every module of the target, each file by its module symbol. */
+  const everyFileRead = (): readonly ChainTarget[] => {
+    if (everyFile === undefined) {
+      const owned = project.ownSourceFiles().flatMap((file) => {
+        const fileId = declaredAt(file);
+        return fileId !== undefined && fileIds.has(fileId) ? [{ file, fileId }] : [];
+      });
+      const modules = project.symbolsAt(
+        owned.map(({ file }) => project.handle(file)),
+        cap,
+      );
+      everyFile = owned.flatMap(({ fileId }, index) => {
+        const module = modules[index];
+        return typeof module === "object" ? closureOf(module).read : inventoryRead([fileId]);
+      });
+    }
+    return everyFile;
+  };
+  /**
+   * What a whole use whose name the checker left unanswered reads: whatever the name may stand
+   * for (references-ts.5, program.33). A candidate that is a file or an alias, whose target the
+   * inventory does not record, or no candidate list, may be any module or any value `namespace`;
+   * a value `namespace` among `candidates`, through which a merged class, function or enum is
+   * named too, reads its own set. Every target is guessed.
+   */
+  const unansweredRead = (candidates?: readonly string[]): readonly ChainTarget[] => {
+    const found = new Map<string, ChainTarget>();
+    const add = (targets: readonly ChainTarget[]): void => {
+      for (const target of targets) {
+        if (!found.has(target.id)) {
+          found.set(target.id, { ...target, guessed: true });
+        }
+      }
+    };
+    const any = candidates === undefined || candidates.some((id) => fileIds.has(id) || alias(id));
+    if (any) {
+      add(everyFileRead());
+    }
+    const namespaces = any
+      ? held.symbols.flatMap((symbol) => (valueNamespace(symbol.id) ? [symbol.id] : []))
+      : candidates.filter(valueNamespace);
+    for (const id of namespaces) {
+      add(namespaceSet(id));
+    }
+    return [...found.values()];
+  };
+  /** The member one namespace value's export table holds under `name` (`Pass.memberOf`). */
+  const memberOf = (
+    namespace: TSSymbol,
+    name: string,
+  ): { readonly targets: readonly ChainTarget[]; readonly inner: Answer<TSSymbol | undefined> } => {
+    const table = project.queries.exportsOfModule(namespace);
+    if (table === UNANSWERED) {
+      return { targets: inventoryRead(chains.declarationsOf(namespace)), inner: undefined };
+    }
+    const exported = table.find((one) => one.name === name);
+    return exported === undefined
+      ? { targets: [], inner: undefined }
+      : { targets: chains.chainOf(exported), inner: chains.namespaceOf(exported) };
+  };
+  /**
+   * The read set of one whole use of a namespace value (references-ts.5), the one the reference
+   * pass gives every such use under both relations; `candidates` are the declarations an
+   * unanswered name may stand for.
+   */
+  const exportsRead = (
+    module: Answer<TSSymbol>,
+    candidates?: readonly string[],
+  ): readonly ChainTarget[] => {
+    if (module === UNANSWERED) {
+      return unansweredRead(candidates);
+    }
+    const { read, anyModule } = closureOf(module);
+    if (!anyModule) {
+      return read;
+    }
+    const ids = new Set(read.map((target) => target.id));
+    return [...read, ...unansweredRead().filter((target) => !ids.has(target.id))];
   };
 
   /**
@@ -322,11 +527,11 @@ export function references<Brand>(
       }),
     };
   });
+  const destructured = destructuring(project, cap, tables);
   const loadable = sites
     .filter((one) => fileIds.has(one.fileId))
     .map(({ file, fileId }) => ({ file, fileId }));
   const directories = options.directories;
-  const destructured = destructuring(project, cap, tables);
   const contextual = contextualUses(
     project,
     held,
@@ -370,7 +575,39 @@ export function references<Brand>(
     return found;
   };
 
+  const bindings = new Map<Node, boolean>();
+  /** Whether one declaration's name binds a namespace value, asked once per name. */
+  const binding = (name: Node): boolean => {
+    let known = bindings.get(name);
+    if (known === undefined) {
+      const symbol = project.symbolsAt([project.handle(name)])[0];
+      known = typeof symbol === "object" && typeof chains.namespaceOf(symbol) === "object";
+      bindings.set(name, known);
+    }
+    return known;
+  };
+  const namesBound = new Map<SourceFile, ReadonlySet<string>>();
+  /** The names one file's declarations that may bind a namespace value bind (`boundValue`). */
+  const bindingNames = (file: SourceFile): ReadonlySet<string> => {
+    let names = namesBound.get(file);
+    if (names === undefined) {
+      const found = new Set<string>();
+      const visit = (node: Node): void => {
+        const name = (node as { readonly name?: Node }).name;
+        if (name !== undefined && boundValue(node) !== undefined) {
+          found.add(name.getText());
+        }
+        node.forEachChild(visit);
+      };
+      file.forEachChild(visit);
+      names = found;
+      namesBound.set(file, names);
+    }
+    return names;
+  };
+
   let ownFiles: SourceFiles | undefined;
+  const shorthands = new Map<Node, Answer<TSSymbol | undefined>>();
   const pass: Pass<Brand> = {
     project,
     held,
@@ -389,6 +626,7 @@ export function references<Brand>(
     possiblyLoaded: new Set(),
     declaredIn,
     exportsRead,
+    memberOf,
     named,
     targetsOf: (symbol) => {
       const through = forwarded(symbol);
@@ -398,6 +636,22 @@ export function references<Brand>(
     },
     throughAliases,
     ownFiles: () => (ownFiles ??= sourceFilesOf(project, targetRoot)),
+    candidates: (node) => {
+      const ids = named(node).map(({ id }) => id);
+      if (ids.some((id) => fileIds.has(id) || valueNamespace(id) || alias(id))) {
+        return ids;
+      }
+      const file = node.getSourceFile();
+      // A namespace binding may be any module or namespace, which a file candidate stands for.
+      return bindingNames(file).has(node.getText()) ? [...ids, declaredAt(file) ?? ""] : undefined;
+    },
+    binding,
+    shorthandValue: (assignment) => {
+      if (!shorthands.has(assignment)) {
+        shorthands.set(assignment, project.shorthandValueAt(project.handle(assignment)));
+      }
+      return shorthands.get(assignment);
+    },
   };
 
   for (const site of contextual.writes) {
@@ -418,7 +672,7 @@ export function references<Brand>(
           read.file,
           read.at,
           read.from,
-          [read.to],
+          [read.namespace === true ? { id: read.to, namespace: true } : read.to],
           read.use,
           read.via,
           undefined,

@@ -2185,6 +2185,16 @@ describe("a serialized value whose argument type is not concrete", () => {
       "",
     ],
     [
+      "a project function's result typed unknown, held in a variable a shorthand property names",
+      [
+        parcel,
+        "function make(): unknown { return new Parcel(); }",
+        "const made = make();",
+        "export const out = JSON.stringify({ made });",
+      ],
+      "",
+    ],
+    [
       "a this parameter typed by the class, through call",
       [
         parcel,

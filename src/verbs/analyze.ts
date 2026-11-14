@@ -404,7 +404,10 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
   const factsPath = documents.facts;
   if (factsPath !== undefined) {
     writeDocument(host, factsPath, "name a path the run can write", () => [
-      factsDocument(version, run.generated, run.bindings),
+      factsDocument(version, analysis, {
+        capsAllowed: config.analysis.min_confidence === "possible",
+        mode,
+      }),
     ]);
   }
   const options = {
