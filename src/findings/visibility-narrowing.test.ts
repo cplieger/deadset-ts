@@ -16,7 +16,7 @@ import { evaluateEdges, readEdgeSides, type EdgeEvaluation } from "../edges.ts";
 import type { Boundary, EdgeSide } from "./boundary.ts";
 import type { EmitterInput } from "./emitter.ts";
 import { EMITTERS } from "./emitters.ts";
-import { narrowings } from "./visibility-narrowing.ts";
+import { visibilityNarrowing } from "./visibility-narrowing.ts";
 
 const NARROWING = fixture("projects", "visibility-narrowing");
 const REDUNDANT_KEYWORD = fixture("corpus", "redundant-export-keyword", "ts", "target");
@@ -59,7 +59,11 @@ function inputOf(root: string, given: Case = {}): EmitterInput {
 
 /** The family's findings over one input, each side of a declared edge evaluated over them. */
 function evaluated(input: EmitterInput): ReturnType<typeof evaluateEdges> {
-  return evaluateEdges(narrowings(input), input.boundary.edges, input.swept.matrix.union.symbols);
+  return evaluateEdges(
+    visibilityNarrowing(input),
+    input.boundary.edges,
+    input.swept.matrix.union.symbols,
+  );
 }
 
 /** The findings the family reports over one input, those a declared edge holds left out. */
@@ -342,7 +346,7 @@ describe("the table's visibility-narrowing emitter", () => {
   it("reports what the family reports over a run no declared edge holds a finding of", () => {
     const input = inputOf(NARROWING, { edges: false });
 
-    expect(tableEmitter()(input)).toEqual(narrowings(input));
+    expect(tableEmitter()(input)).toEqual(visibilityNarrowing(input));
   });
 
   it("reports a finding a declared edge names, which the edge's evaluation then holds", () => {
@@ -376,7 +380,7 @@ describe("the TypeScript rendering of the corpus case redundant-export-keyword",
     );
 
     expect(findings.map(line)).toEqual([
-      "lib.ts:9:17: function local: exported function is referenced only inside the file that declares it (DS1503)",
+      "lib.ts:9:17: function local: exported function local is referenced only inside the file that declares it (DS1503)",
     ]);
   });
 

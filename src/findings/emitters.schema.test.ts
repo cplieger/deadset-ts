@@ -13,6 +13,11 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { emitterInputOf, findingsOf } from "../../__test-helpers__/emitter-input.ts";
+import { SYMBOL_SUBJECTS } from "../contract/contract.generated.ts";
+import { positionKey } from "../position.ts";
+import { codesOf } from "./codes.ts";
+import type { EmitterInput } from "./emitter.ts";
+import { EMITTERS } from "./emitters.ts";
 import { contractDocument, fixture, ROOT } from "../../__test-helpers__/fixtures.ts";
 import { schemaRefusals } from "../schema.ts";
 import type { CompletedFinding } from "../finding.ts";
@@ -70,6 +75,9 @@ describe("the finding schema's validator", () => {
 /** The bound on one case, which loads one whole target. */
 const LOAD_TIMEOUT = 60_000;
 
+/** The bound on the case that loads the repository's own source, the largest target here. */
+const SOURCE_TIMEOUT = 180_000;
+
 /** Whether a corpus fixture's run ends with a setup failure, which leaves no finding to check. */
 function endsInSetupFailure(name: string): boolean {
   const expectation = JSON.parse(
@@ -91,6 +99,30 @@ function targets(): [string, string][] {
     .filter((name) => !endsInSetupFailure(name))
     .map((name): [string, string] => [`corpus/${name}`, fixture("corpus", name, "ts", "target")]);
   return [...projects, ...corpus];
+}
+
+/**
+ * Every declaration two findings of the emitters name, and every declaration two code
+ * tables give a code: each subject is reported once, under the most specific code.
+ */
+function reportedTwice(input: EmitterInput): string[] {
+  const named = new Map<string, string[]>();
+  for (const emit of EMITTERS.values()) {
+    for (const finding of emit(input)) {
+      if (SYMBOL_SUBJECTS[finding.symbol.kind as keyof typeof SYMBOL_SUBJECTS] === "declaration") {
+        const key = positionKey(finding.position);
+        named.set(key, [...(named.get(key) ?? []), finding.code]);
+      }
+    }
+  }
+  const { dead, fallen, live } = codesOf(input);
+  const tabled = [...dead.keys()].filter((id) => fallen.has(id) || live.has(id));
+  return [
+    ...[...named].flatMap(([key, codes]) =>
+      codes.length > 1 ? [`${key} reported as ${codes.join(" and ")}`] : [],
+    ),
+    ...tabled.map((id) => `${id} given a code by two tables`),
+  ];
 }
 
 describe("every finding the table reports", () => {
@@ -123,18 +155,23 @@ describe("every finding the table reports", () => {
     const document = existsSync(path)
       ? readFileSync(path, "utf8")
       : JSON.stringify({ target: { kind: "application" } });
-    const findings: readonly CompletedFinding[] = findingsOf(
-      emitterInputOf(root, resolve({ repository: { text: document, label: path } }).config),
+    const input = emitterInputOf(
+      root,
+      resolve({ repository: { text: document, label: path } }).config,
     );
-    return findings.flatMap((finding) =>
-      validate(wireFinding(finding)).map(
-        (error) => `${finding.code} ${finding.symbol.name} ${error}`,
+    const findings: readonly CompletedFinding[] = findingsOf(input);
+    return [
+      ...findings.flatMap((finding) =>
+        validate(wireFinding(finding)).map(
+          (error) => `${finding.code} ${finding.symbol.name} ${error}`,
+        ),
       ),
-    );
+      ...reportedTwice(input),
+    ];
   };
 
   it.each(targets())(
-    "over %s meets the finding schema",
+    "over %s meets the finding schema and names each subject once",
     { timeout: LOAD_TIMEOUT },
     (_label, target) => {
       expect(violations(readable(target))).toEqual([]);
@@ -144,8 +181,8 @@ describe("every finding the table reports", () => {
   // The whole repository reports nothing, so its own source is read without the tests and
   // the entry files that keep it live, which leaves findings of several codes to check.
   it(
-    "over the repository's source without its tests meets the finding schema",
-    { timeout: LOAD_TIMEOUT },
+    "over the repository's source without its tests meets the finding schema and names each subject once",
+    { timeout: SOURCE_TIMEOUT },
     () => {
       const copy = mkdtempSync(join(tmpdir(), "deadset-ts-schema-"));
       copies.push(copy);

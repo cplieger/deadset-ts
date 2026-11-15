@@ -1,20 +1,21 @@
 import { rmSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { nodeHost } from "../bin/node-host.ts";
-import { readFixture } from "../__test-helpers__/fixtures.ts";
-import { targetConfigFiles, writeProject } from "../__test-helpers__/projects.ts";
-import { discoverProjects } from "./load/discover.ts";
-import { inventory } from "./inventory/enumerate.ts";
-import { tokenStart } from "./position.ts";
-import { scopeForDir } from "./scope.ts";
-import { openEngine, runSession } from "./session.ts";
+import { nodeHost } from "../../bin/node-host.ts";
+import { readFixture } from "../../__test-helpers__/fixtures.ts";
+import { targetConfigFiles, writeProject } from "../../__test-helpers__/projects.ts";
+import { discoverProjects } from "../load/discover.ts";
+import { projectParts } from "../intra-function-parts.ts";
+import { inventory } from "../inventory/enumerate.ts";
+import { tokenStart } from "../position.ts";
+import { scopeForDir } from "../scope.ts";
+import { openEngine, runSession } from "../session.ts";
 import {
   classifyComment,
   DIRECTIVE_EXPRESSIONS,
   inlineDirectives,
   inlineSuppressions,
   type InlineDirective,
-} from "./suppress-inline.ts";
+} from "./inline.ts";
 
 /** One case of the published suppression token corpus. */
 interface CorpusCase {
@@ -137,9 +138,10 @@ function inlineOf(files: Readonly<Record<string, string>>): {
     const host = nodeHost();
     const engine = openEngine({ collectTiming: false });
     const configFiles = targetConfigFiles(discoverProjects(engine, host, scopeForDir(host, root)));
-    const { projects } = runSession(engine, configFiles, (project) =>
-      inlineDirectives(project, inventory(project, host, root), root),
-    );
+    const { projects } = runSession(engine, configFiles, (project) => {
+      const held = inventory(project, host, root);
+      return inlineDirectives(project, held, root, projectParts(project, held, [], root).imports);
+    });
     const { records } = inlineSuppressions(projects);
     return {
       comments: projects.flat().map((one) => `${String(one.site.line)} ${one.text}`),

@@ -2784,3 +2784,37 @@ describe("a generic function's result read through the call that instantiates it
     LOAD_TIMEOUT,
   );
 });
+
+describe("a member a destructuring rest carries", () => {
+  it(
+    "is held where an annotated rest of a `JSON.parse` result is serialized",
+    () => {
+      expect(
+        memberFindings([
+          "interface Bag { [k: string]: number | undefined; kept?: number }",
+          'const { id, ...rest }: Bag & { id: number } = JSON.parse(\'{"id":0,"kept":1}\');',
+          "void id;",
+          "console.log(JSON.stringify(rest));",
+        ]).filter((one) => one.includes("Bag.kept")),
+      ).toEqual([]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "is held where the rest of a parameter a program call fills is serialized",
+    () => {
+      expect(
+        memberFindings([
+          "interface Bag { secret?: string; kept?: string }",
+          "function save(bag: Bag): string {",
+          "  const { secret: _secret, ...rest } = bag;",
+          "  return JSON.stringify(rest);",
+          "}",
+          'console.log(save({ secret: "s", kept: "k" }));',
+        ]).filter((one) => one.includes("Bag.kept")),
+      ).toEqual([]);
+    },
+    LOAD_TIMEOUT,
+  );
+});

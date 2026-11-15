@@ -3,7 +3,7 @@ import { contractDocument } from "../__test-helpers__/fixtures.ts";
 import { schemaRefusals } from "./schema.ts";
 import type { CompletedFinding } from "./finding.ts";
 import type { PassResult } from "./findings-pass.ts";
-import type { StaleSuppression } from "./findings/self-check.ts";
+import type { StaleSuppression } from "./suppression/ledger.ts";
 import { buildReport, capFindings, sortFindings, type ReportInput } from "./report.ts";
 import type { Report } from "./contract/report.generated.ts";
 
@@ -72,6 +72,7 @@ function result(
   return {
     findings,
     staleSuppressions,
+    stale: [],
     edgeEvaluations: [],
     totals: {
       suppressionsInEffect: 2,
@@ -80,7 +81,6 @@ function result(
       pending: 0,
       withheld: { certain: 0, probable: 2, possible: 5 },
     },
-    ledger: { verdicts: [], withheld: () => false },
   };
 }
 

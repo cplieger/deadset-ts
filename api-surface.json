@@ -6,6 +6,7 @@
       "path": "@typescript/native/ast",
       "names": [
         "AccessorDeclaration",
+        "ArrayLiteralExpression",
         "ArrowFunction",
         "BinaryExpression",
         "BindingElement",

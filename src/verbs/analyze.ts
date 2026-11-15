@@ -30,7 +30,8 @@ import { json } from "../reporters/json.ts";
 import { RENDERINGS } from "../reporters/reporters.ts";
 import { parseTemplate, TemplateError, type Template } from "../reporters/template.ts";
 import { resolve } from "../resolve.ts";
-import { otherSchemeRows, rowReason, writeBaseline, type Recorded } from "../suppress-file.ts";
+import { otherRows, rowReason, writeBaseline, type Recorded } from "../suppression/baseline.ts";
+import { baselineRows } from "../suppression/documents.ts";
 import type { UnseenLoad } from "../roots/unseen-loads.ts";
 import type { UnreadInput } from "../load/plan.ts";
 import type { UnresolvedSpecifier } from "../load/specifiers.ts";
@@ -433,7 +434,9 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
       "name a path the run can write, or repair the rows of the baseline the run would keep",
       () => {
         const kept =
-          host.kindOf(baselinePath) === "file" ? otherSchemeRows(host.readFile(baselinePath)) : [];
+          host.kindOf(baselinePath) === "file"
+            ? otherRows(baselineRows(host.readFile(baselinePath)))
+            : [];
         return writeBaseline(recorded, analyzerProvenance(version), kept);
       },
     );

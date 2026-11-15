@@ -26,7 +26,6 @@ import {
   isNoSubstitutionTemplateLiteral,
   isNumericLiteral,
   isObjectBindingPattern,
-  isObjectLiteralExpression,
   isPostfixUnaryExpression,
   isPrefixUnaryExpression,
   isPropertyAccessExpression,
@@ -62,7 +61,7 @@ import {
 import { callsPlatformBy, lexicalBinding, writtenName, type BindingOf } from "../platform-calls.ts";
 import type { Component } from "../ref.ts";
 import { spellsNoBinding } from "../spelled-names.ts";
-import { unwrapped } from "../unwrap.ts";
+import { objectLiteralOf, unwrapped } from "../unwrap.ts";
 
 /**
  * The export table of a CommonJS file: the module value `module.exports` is assigned and
@@ -394,8 +393,9 @@ function readTable(
     if (isRequire(value)) {
       return;
     }
-    if (isObjectLiteralExpression(value)) {
-      value.properties.forEach(literalProperty);
+    const literal = objectLiteralOf(value);
+    if (literal !== undefined) {
+      literal.properties.forEach(literalProperty);
       return;
     }
     const base = { node, name, component: DEFAULT, value: node.right };
@@ -531,12 +531,12 @@ export function commonJSModuleValue(
   const table = readTable(file, free, topLevelDeclarations(file), lexicalBinding(declarationOf));
   const held = table.whole === undefined ? undefined : unwrapped(table.whole);
   const members = [...table.entries.values()].flatMap((entry) =>
-    entry.component === DEFAULT && held !== undefined && !isObjectLiteralExpression(held)
+    entry.component === DEFAULT && held !== undefined && objectLiteralOf(held) === undefined
       ? []
       : [{ key: entry.component.text, value: entry.value, node: entry.node }],
   );
   return {
-    whole: held === undefined || isObjectLiteralExpression(held) ? undefined : table.whole,
+    whole: held === undefined || objectLiteralOf(held) !== undefined ? undefined : table.whole,
     members,
     open: table.membersOpen || opens(file, free, table.modelled),
   };
@@ -554,11 +554,12 @@ function isDefineProperty(node: Node): boolean {
 
 /** The value a property descriptor literal gives, where it writes a `value` or a `get`. */
 function describedValue(descriptor: Node): { readonly value: Node | undefined } | undefined {
-  if (!isObjectLiteralExpression(descriptor)) {
+  const literal = objectLiteralOf(descriptor);
+  if (literal === undefined) {
     return undefined;
   }
   let found: { readonly value: Node | undefined } | undefined;
-  for (const element of descriptor.properties) {
+  for (const element of literal.properties) {
     const key = isSpreadAssignment(element) ? undefined : componentOf(element.name)?.text;
     if (key === "value") {
       return {

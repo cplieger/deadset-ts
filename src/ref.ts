@@ -22,9 +22,12 @@ const TS_QUOTED = String.raw`'(?:[^'\\\r\n]|\\['\\nr])*'`;
 const TS_COMPUTED = String.raw`\[[^\]\r\n\t ]+\]`;
 const TS_HEAD = `(?:${TS_IDENT}|${TS_QUOTED})`;
 const TS_MEMBER = `(?:${TS_IDENT}|#${TS_IDENT}|${TS_QUOTED}|${TS_COMPUTED})`;
-const TS_PACKAGE = String.raw`(?:@[A-Za-z0-9._-]+/)?[A-Za-z0-9._-]+`;
+const TS_PACKAGE_PART = String.raw`(?:[A-Za-z0-9._-]|%[0-9A-F]{2})+`;
+const TS_PACKAGE = `(?:@${TS_PACKAGE_PART}/)?${TS_PACKAGE_PART}`;
 const TS_DIRS = String.raw`(?:[^/#\r\n]+/)*`;
-const TS_FILE = String.raw`${TS_DIRS}[^/#\r\n]+(?:(?:\.d)?\.[mc]?ts|\.tsx|\.[mc]?js|\.jsx)`;
+// No reference names a `.json` file: it declares nothing, and a manifest scopes only a dependency.
+const TS_EXT = String.raw`(?:[A-Za-z0-9]{1,3}|[A-Za-ik-z0-9][A-Za-z0-9]{3}|j[A-Za-rt-z0-9][A-Za-z0-9]{2}|js[A-Za-np-z0-9][A-Za-z0-9]|jso[A-Za-mo-z0-9]|[A-Za-z0-9]{5,})`;
+const TS_FILE = String.raw`${TS_DIRS}[^/#\r\n]+\.${TS_EXT}`;
 
 const SCOPE = `${PREFIX}${TS_PACKAGE}/${TS_FILE}`;
 const MANIFEST_SCOPE = `${PREFIX}${TS_PACKAGE}/${TS_DIRS}package\\.json`;
@@ -51,6 +54,57 @@ export const REF_EXPRESSIONS: readonly string[] = [
 const REF_FORMS: readonly RegExp[] = REF_EXPRESSIONS.map(
   (expression) => new RegExp(expression, "u"),
 );
+
+/** The characters a package component spells as they are. */
+const PACKAGE_CHARACTER = /^[A-Za-z0-9._-]$/u;
+const SCOPED = /^@([^/]+)\/([^/]+)$/u;
+
+/** The UTF-8 bytes of one code point, a lone surrogate encoded as its own value. */
+function utf8(code: number): readonly number[] {
+  if (code < 0x80) {
+    return [code];
+  }
+  if (code < 0x800) {
+    return [0xc0 | (code >> 6), 0x80 | (code & 0x3f)];
+  }
+  if (code < 0x10000) {
+    return [0xe0 | (code >> 12), 0x80 | ((code >> 6) & 0x3f), 0x80 | (code & 0x3f)];
+  }
+  return [
+    0xf0 | (code >> 18),
+    0x80 | ((code >> 12) & 0x3f),
+    0x80 | ((code >> 6) & 0x3f),
+    0x80 | (code & 0x3f),
+  ];
+}
+
+/** One part of a package name with every UTF-8 byte outside the grammar's set percent-encoded in uppercase. */
+function encodedPart(part: string): string {
+  let out = "";
+  for (let at = 0; at < part.length;) {
+    const code = part.codePointAt(at) ?? 0;
+    at += code > 0xffff ? 2 : 1;
+    const character = String.fromCodePoint(code);
+    out += PACKAGE_CHARACTER.test(character)
+      ? character
+      : utf8(code)
+          .map((byte) => `%${byte.toString(16).toUpperCase().padStart(2, "0")}`)
+          .join("");
+  }
+  return out;
+}
+
+/**
+ * The canonical spelling of a package name as a package component: the `@` and the `/`
+ * of a scoped name kept, and every other byte outside the grammar's set percent-encoded
+ * (RFC 3986, section 2.1), so a name npm installed under its older rules is spelled too.
+ */
+function packageComponent(name: string): string {
+  const scoped = SCOPED.exec(name);
+  return scoped === null
+    ? encodedPart(name)
+    : `@${encodedPart(scoped[1] ?? "")}/${encodedPart(scoped[2] ?? "")}`;
+}
 
 const IDENTIFIER = new RegExp(`^${TS_IDENT}$`, "u");
 const PRIVATE_NAME = new RegExp(`^#${TS_IDENT}$`, "u");
@@ -171,14 +225,14 @@ export function spell(component: Component): string {
  * names the module itself.
  */
 export function renderRef(module: Module, fragment: Fragment): string {
-  const scope = `${PREFIX}${module.package}/${module.path}`;
+  const scope = `${PREFIX}${packageComponent(module.package)}/${module.path}`;
   switch (fragment.of) {
     case "module":
       return `${scope}#`;
     case "alias":
       return `${scope}#${aliasFragment(fragment.name, fragment.block)}`;
     case "dependency":
-      return `${scope}#${fragment.name}:${fragment.section}`;
+      return `${scope}#${packageComponent(fragment.name)}:${fragment.section}`;
     case "declaration": {
       const chain = fragment.chain.map(spell).join(".");
       const isStatic = fragment.static ? ":static" : "";

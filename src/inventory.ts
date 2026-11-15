@@ -754,6 +754,15 @@ function chainOf(record: Building): readonly Component[] {
 }
 
 /**
+ * Source text as a finding's name spells it: a line break and the blanks around it as one
+ * space, and no space after a colon, because a text line ends the name at a colon and a
+ * space (finding.schema.json, `symbol.name`).
+ */
+export function displayName(text: string): string {
+  return text.replace(/\s*[\r\n]\s*/gu, " ").replace(/: +/gu, ":");
+}
+
+/**
  * One declaration as the inventory reports it. The display name is the chain in the
  * spelling a reference gives it, except where the declaration carries a name of its own
  * the reference does not: a file, whose reference names its module, and a default export.
@@ -764,9 +773,10 @@ function render(record: Building): InventorySymbol {
   return {
     id: positionKey(record.position),
     ref: refOf(record, chain),
-    name:
+    name: displayName(
       record.localName ??
-      (record.typeParameter === undefined ? spelled : `${spelled}<${record.typeParameter}>`),
+        (record.typeParameter === undefined ? spelled : `${spelled}<${record.typeParameter}>`),
+    ),
     kind: record.kind,
     position: record.position,
     endLine: record.endLine,

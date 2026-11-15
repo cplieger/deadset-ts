@@ -7,19 +7,30 @@
 import { EXIT_CLEAN, EXIT_FINDINGS, EXIT_PENDING } from "./contract/contract.generated.ts";
 import type { AnalysisInputs } from "./analysis.ts";
 import { fails, type ResolvedConfig } from "./config.ts";
-import type { EdgeEvaluation } from "./edges.ts";
+import { evaluateEdges, type EdgeEvaluation } from "./edges.ts";
 import type { CompletedFinding, Finding } from "./finding.ts";
-import { decidedFindings, type Withheld } from "./findings/emitters.ts";
-import {
-  fileRefsOf,
-  staleSuppressions,
-  type StaleRecord,
-  type StaleSuppression,
-} from "./findings/self-check.ts";
-import { namesKind, pairs, suppressionCounts, type Ledger } from "./suppress.ts";
-import type { Provenance, Recorded } from "./suppress-file.ts";
-import { bytewise } from "./text/compare.ts";
+import { dialsOver, reportable, withheldOf, type Withheld } from "./findings/dials.ts";
+import type { EmitterInput } from "./findings/emitter.ts";
+import { findingKey, keysOf, runEmitters } from "./findings/emitters.ts";
+import { fileRefsOf, suppressionRef } from "./findings/self-check.ts";
+import { subjectsOf } from "./findings/subjects.ts";
+import { OUTSIDE } from "./liveness/graph.ts";
+import { positionKey } from "./position.ts";
 import { PRODUCT } from "./product.ts";
+import { declarationKey } from "./ref.ts";
+import type { Provenance } from "./suppression/baseline.ts";
+import {
+  counts,
+  decide,
+  staleRecords,
+  staleSuppressions,
+  type Judged,
+  type Ledger,
+  type StaleSuppression,
+} from "./suppression/ledger.ts";
+import { isRowSubject, type SuppressionRecord } from "./suppression/records.ts";
+import { bytewise } from "./text/compare.ts";
+import { insideSkipped } from "./type-errors.ts";
 
 /** The counts a report's totals carry beside its findings. */
 interface PassTotals {
@@ -41,8 +52,8 @@ export interface PassResult {
   /** One evaluation per declared edge side of this language. */
   readonly edgeEvaluations: readonly EdgeEvaluation<CompletedFinding>[];
   readonly totals: PassTotals;
-  /** What every suppression record did, in reading order. */
-  readonly ledger: Ledger;
+  /** Each record the ledger judged stale that a stale suppression reports, in reading order. */
+  readonly stale: readonly SuppressionRecord[];
 }
 
 /** The canonical order: path, line, column, code, then the symbol reference. */
@@ -56,44 +67,142 @@ function canonical(a: Finding, b: Finding): number {
   );
 }
 
+/** What the suppressions of a run swept under their marks are decided against. */
+interface Suppressed {
+  /** The same run swept with no mark, which is where a kind about liveness reports a marked declaration. */
+  readonly unmarked: EmitterInput;
+  /** The run's suppression records, in reading order. */
+  readonly records: readonly SuppressionRecord[];
+}
+
+/** What the findings stage answers about one run. */
+interface DecidedFindings {
+  /** Every finding the run reports, each emitter's in table order. */
+  readonly findings: readonly CompletedFinding[];
+  /** One evaluation per declared edge side of this language, ordered by edge, then by side. */
+  readonly evaluations: readonly EdgeEvaluation<CompletedFinding>[];
+  /** What every suppression record did, in reading order. */
+  readonly ledger: Ledger;
+  /** Every finding a record could name, and what the ledger read beside them. */
+  readonly would: readonly CompletedFinding[];
+  readonly judged: Judged<CompletedFinding>;
+  /** The findings the minimum confidence withheld, by confidence. */
+  readonly withheld: Withheld;
+}
+
 /**
- * The pass over one run. The emitter table decides every record against every finding the
- * run would produce with no record there, withholds what the records claim, and evaluates
- * the declared edges; a stale record then names the codes its declaration reports instead.
+ * The declaration each finding of one run is about, or the one holding the part it is
+ * about, as a record binds it: the declaration at the finding's position where its
+ * reference is the finding's, else the first of its file carrying that reference, and none
+ * for a row of a document.
+ */
+function declarationsOf(input: EmitterInput): (finding: Finding) => string {
+  const union = input.swept.matrix.union;
+  const byReference = new Map<string, string>();
+  for (const symbol of union.symbols) {
+    const key = declarationKey(symbol.ref, symbol.position.path);
+    if (!byReference.has(key)) {
+      byReference.set(key, symbol.id);
+    }
+  }
+  return (finding) => {
+    if (isRowSubject(finding.symbol.kind)) {
+      return "";
+    }
+    const ref = finding.symbol.holder ?? finding.symbol.ref;
+    const at = union.at(positionKey(finding.position));
+    const declared = at === OUTSIDE ? undefined : union.symbols[at];
+    if (declared?.ref === ref) {
+      return declared.id;
+    }
+    return (
+      byReference.get(declarationKey(ref, finding.position.path)) ??
+      (finding.symbol.kind === "import" ? positionKey(finding.position) : "")
+    );
+  };
+}
+
+/**
+ * Every finding of one run swept under its suppressions' marks, decided in one pass, so a
+ * root one emitter reports withholds what another reports in its component and a pending
+ * finding is in its edge's evaluation alone. A record is decided against a finding a mark
+ * can remove, one that carries a liveness relation or falls with dead declarations, as the
+ * run swept with every mark withdrawn reports it, and against any other as the run swept
+ * under the marks reports it.
+ */
+export function decidedFindings(
+  input: EmitterInput,
+  suppressed: Suppressed = { unmarked: input, records: [] },
+): DecidedFindings {
+  const found = runEmitters(input);
+  const unmarked = suppressed.records.length === 0 ? [] : runEmitters(suppressed.unmarked, true);
+  const markable = (finding: CompletedFinding): boolean =>
+    finding.livenessRelation !== undefined || finding.fallsWith !== undefined;
+  const would = [
+    ...unmarked.filter(markable),
+    ...(suppressed.records.length === 0 ? [] : found.filter((finding) => !markable(finding))),
+  ];
+  const { sweep } = input.swept;
+  const s = subjectsOf(input);
+  // A hold is a gap of the analysis, which leaves a record it touches dormant; a live
+  // component file's markup is no gap, so a record on one of its bindings stays in effect.
+  const unanswered = keysOf(s, sweep.held);
+  const markup = keysOf(s, sweep.bindings);
+  const heldIds = new Set(sweep.held);
+  const held = (finding: CompletedFinding): boolean =>
+    unanswered.has(findingKey(finding)) || insideSkipped(input.swept.skipped, finding.position);
+  const judged: Judged<CompletedFinding> = {
+    dials: dialsOver({ input, found }, { input: suppressed.unmarked, found: unmarked }),
+    holds: { withholds: held, holdsRecord: (record) => heldIds.has(record.bound) },
+    declarationOf: declarationsOf(input),
+  };
+  const ledger = decide(suppressed.records, would, judged);
+  const candidates = found.filter(
+    (finding) => !ledger.withheld(finding) && !held(finding) && !markup.has(findingKey(finding)),
+  );
+  const evaluated = evaluateEdges(
+    reportable(input, candidates),
+    input.boundary.edges,
+    input.swept.matrix.union.symbols,
+  );
+  return {
+    findings: evaluated.findings,
+    evaluations: evaluated.evaluations,
+    ledger,
+    would,
+    judged,
+    withheld: withheldOf(input, candidates),
+  };
+}
+
+/**
+ * The pass over one run. The findings stage decides every record against every finding
+ * the run would produce with no record there, withholds what the records claim, and
+ * evaluates the declared edges; a stale suppression then names the codes its declaration
+ * reports instead.
  */
 export function findingsPass(inputs: AnalysisInputs): PassResult {
   const { marked, unmarked, suppressions } = inputs;
   const decided = decidedFindings(marked, { unmarked, records: suppressions.records });
-  const { ledger, would } = decided;
-
-  const stale: StaleRecord[] = [];
-  suppressions.records.forEach((record, at) => {
-    if (ledger.verdicts[at] !== "stale") {
-      return;
-    }
-    const reports = would
-      .filter(
-        (finding) =>
-          finding.code !== record.code && pairs({ ...record, code: finding.code }, finding),
-      )
-      .map((finding) => finding.code);
-    stale.push({ record, reports });
-  });
-
-  const records = staleSuppressions(stale, fileRefsOf(marked.swept.matrix.union.symbols));
-  const counts = suppressionCounts(suppressions.records, ledger);
+  const { ledger } = decided;
+  const stale = staleRecords(suppressions.records, ledger);
+  const files = fileRefsOf(marked.swept.matrix.union.symbols);
+  const records = staleSuppressions(stale, decided.would, decided.judged, (record) =>
+    suppressionRef(record.symbol, record.path, files),
+  );
+  const counted = counts(suppressions.records, ledger);
   return {
     findings: [...decided.findings].sort(canonical),
     staleSuppressions: records,
     edgeEvaluations: decided.evaluations,
     totals: {
-      suppressionsInEffect: counts.inEffect,
-      reasonsRecorded: counts.reasonsRecorded,
+      suppressionsInEffect: counted.inEffect,
+      reasonsRecorded: counted.reasonsRecorded,
       staleSuppressions: records.length,
       pending: decided.evaluations.filter((one) => one.finding !== undefined).length,
       withheld: decided.withheld,
     },
-    ledger,
+    stale,
   };
 }
 
@@ -114,36 +223,6 @@ export function verdictOf(result: PassResult, config: ResolvedConfig): number {
     fails(finding.severity, config.reporters.fail_on),
   );
   return failing ? EXIT_FINDINGS : EXIT_CLEAN;
-}
-
-/** What a baseline row is recorded from: a finding's code, subject and file. */
-export interface RecordableFinding {
-  readonly code: string;
-  readonly symbol: { readonly ref: string; readonly kind: string };
-  readonly position: { readonly path: string };
-}
-
-/**
- * The rows one round of a baseline write records from its findings, in their order. A
- * finding no baseline row can name is not recorded: a row recording it would be stale on
- * the first read back. Two findings that would record the same row, two parts of one
- * declaration under one code, record it once.
- */
-export function recordedFindings(findings: readonly RecordableFinding[]): readonly Recorded[] {
-  const rows = new Map<string, Recorded>();
-  for (const finding of findings) {
-    if (!namesKind(finding.symbol.kind, "baseline")) {
-      continue;
-    }
-    const row = { code: finding.code, symbol: finding.symbol.ref, path: finding.position.path };
-    rows.set(rowKey(row), rows.get(rowKey(row)) ?? row);
-  }
-  return [...rows.values()];
-}
-
-/** One row's identity: its code, its symbol and its path. */
-export function rowKey(row: Recorded): string {
-  return `${row.code}\u0000${row.symbol}\u0000${row.path}`;
 }
 
 /** The analyzer identity a baseline this analyzer writes names as its rows' provenance. */

@@ -142,6 +142,8 @@ export interface Graph {
   readonly made: readonly Counts[];
   /** Per declaration, those of {@link Graph.made} only a name answered. */
   readonly guessedMade: readonly Counts[];
+  /** Per declaration, how many of the test references {@link Graph.made} counts are test-file exemption evidence. */
+  readonly testEvidence: readonly number[];
   /** The references the graph was built from, in the order given. */
   readonly references: readonly Reference[];
   /** Per reference, the configurations that make it, in the run's order. */
@@ -284,6 +286,7 @@ export function graphOf(
   const out: Edge[][] = symbols.map(() => []);
   const made = symbols.map(() => ({ production: 0, test: 0, consumerTest: 0 }));
   const guessedMade = symbols.map(() => ({ production: 0, test: 0, consumerTest: 0 }));
+  const testEvidence = symbols.map(() => 0);
   const consumed: Edge[] = [];
   references.forEach((reference, place) => {
     const to = at(reference.to);
@@ -300,6 +303,9 @@ export function graphOf(
     const guesses = guessedMade[to];
     if (guessed && guesses !== undefined) {
       count(guesses, test, consumer);
+    }
+    if (test && reference.evidence === true) {
+      testEvidence[to] = (testEvidence[to] ?? 0) + 1;
     }
     const edge = {
       to,
@@ -332,6 +338,7 @@ export function graphOf(
     out,
     made,
     guessedMade,
+    testEvidence,
     references,
     configurations: sources.configurations ?? references.map(() => []),
     parent,

@@ -353,6 +353,11 @@ describe("a class installed as a global the platform's code constructs", () => {
     ],
     ["an assignment by a written key", IMPORTED, '(globalThis as any)["WebSocket"] = FakeSocket;'],
     [
+      "an assignment by a parenthesized written key",
+      IMPORTED,
+      '(globalThis as any)[("WebSocket")] = FakeSocket;',
+    ],
+    [
       "Object.defineProperty",
       IMPORTED,
       'Object.defineProperty(globalThis, "WebSocket", { value: FakeSocket });',

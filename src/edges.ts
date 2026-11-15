@@ -14,7 +14,7 @@ import type { InventorySymbol } from "./inventory.ts";
 import { dotted, placeIn, positionAt, readStrict, StrictJSONError } from "./json-document.ts";
 import { positionKey } from "./position.ts";
 import { firstRefusal } from "./schema.ts";
-import { isPartSubject } from "./suppress.ts";
+import { isPartSubject } from "./suppression/records.ts";
 import { bytewise } from "./text/compare.ts";
 import { UsageError } from "./usage.ts";
 

@@ -7,7 +7,6 @@
  */
 
 import {
-  isArrayLiteralExpression,
   isArrowFunction,
   isBindingElement,
   isCallExpression,
@@ -40,7 +39,7 @@ import { carriedValues, nameOf, type CarriedValue } from "../index/values.ts";
 import type { Inventory } from "../inventory.ts";
 import { must } from "../query.ts";
 import type { ProjectView } from "../session.ts";
-import { parenthesesRemoved, unwrapped } from "../unwrap.ts";
+import { arrayLiteralOf, parenthesesRemoved, unwrapped } from "../unwrap.ts";
 import type { ProjectSites } from "./sites.ts";
 
 /** One class of the target a call passes or a decorator is attached to, and where. */
@@ -113,9 +112,10 @@ function throughMethod(call: CallExpression): MethodForm | undefined {
     let passed: readonly Expression[] = rest;
     let listed = false;
     if (expression.name.text === "apply") {
-      const list = rest[0] === undefined ? undefined : parenthesesRemoved(rest[0]);
-      listed = list !== undefined && !isArrayLiteralExpression(list);
-      passed = list === undefined ? [] : isArrayLiteralExpression(list) ? list.elements : [list];
+      const list = rest[0];
+      const elements = arrayLiteralOf(list)?.elements;
+      listed = list !== undefined && elements === undefined;
+      passed = list === undefined ? [] : (elements ?? [parenthesesRemoved(list)]);
     }
     return {
       method: expression.name,

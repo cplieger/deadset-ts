@@ -66,10 +66,10 @@ describe("an unread parameter of a function used as a value", () => {
           ");",
         ]),
       ).toEqual([
-        "first 3 certain: parameter first is never read in the body, and a read parameter follows it, so rename it to _first",
-        "third 3 probable: parameter third is never read in the body",
-        "first 5 certain: parameter first is never read in the body, and a read parameter follows it, so rename it to _first",
-        "toFixed 6 probable: parameter toFixed is never read in the body",
+        "first 3 certain: parameter first of file src/main.ts is never read in the body, and a read parameter follows it, so rename it to _first",
+        "third 3 probable: parameter third of file src/main.ts is never read in the body",
+        "first 5 certain: parameter first of file src/main.ts is never read in the body, and a read parameter follows it, so rename it to _first",
+        "toFixed 6 probable: parameter toFixed of file src/main.ts is never read in the body",
       ]);
     },
     LOAD_TIMEOUT,
@@ -90,9 +90,9 @@ describe("an unread parameter of a function used as a value", () => {
           ");",
         ]),
       ).toEqual([
-        "unread 3 probable: parameter unread is never read in the body",
-        "value 4 certain: parameter value is never read in the body, and a read parameter follows it, so rename it to _value",
-        "unused 5 probable: parameter unused is never read in the body",
+        "unread 3 probable: parameter unread of file src/main.ts is never read in the body",
+        "value 4 certain: parameter value of file src/main.ts is never read in the body, and a read parameter follows it, so rename it to _value",
+        "unused 5 probable: parameter unused of file src/main.ts is never read in the body",
       ]);
     },
     LOAD_TIMEOUT,
@@ -141,8 +141,8 @@ describe("a name an object pattern binds in a parameter of a contextually typed 
           ");",
         ]),
       ).toEqual([
-        "fieldState 3 probable: parameter fieldState is never read in the body",
-        "signal 6 probable: parameter signal is never read in the body",
+        "fieldState 3 probable: parameter fieldState of file src/main.ts is never read in the body",
+        "signal 6 probable: parameter signal of file src/main.ts is never read in the body",
       ]);
     },
     LOAD_TIMEOUT,

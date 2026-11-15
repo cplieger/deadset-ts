@@ -1,12 +1,13 @@
-import { CODE } from "./contract/contract.generated.ts";
+import { CODE } from "../contract/contract.generated.ts";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import type { Finding } from "./finding.ts";
-import type { Host } from "./host.ts";
-import type { InventorySymbol } from "./inventory.ts";
-import { joinPath } from "./paths.ts";
-import { ledgerOf, type Dials } from "./suppress.ts";
-import { IGNORE_FILE, readIgnoreFile } from "./suppress-file.ts";
+import type { Finding } from "../finding.ts";
+import type { Host } from "../host.ts";
+import type { InventorySymbol } from "../inventory.ts";
+import { joinPath } from "../paths.ts";
+import { positionKey } from "../position.ts";
+import { decide, type Dials } from "./ledger.ts";
+import { IGNORE_FILE, readIgnoreFile } from "./documents.ts";
 
 const ROOT = "/target";
 
@@ -115,7 +116,11 @@ function withheldBy(
     declared.map((one) => one.symbol),
   );
   const findings = declared.map((one) => one.finding);
-  const ledger = ledgerOf(read.records, findings, OPEN);
+  const ledger = decide(read.records, findings, {
+    dials: OPEN,
+    holds: { withholds: () => false, holdsRecord: () => false },
+    declarationOf: (found) => positionKey(found.position),
+  });
   return findings.filter((finding) => ledger.withheld(finding));
 }
 

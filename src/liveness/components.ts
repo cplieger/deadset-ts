@@ -358,11 +358,12 @@ function referencedCycles(
 }
 
 /**
- * The weakly connected parts of the dead subgraph, each its positions in ascending
- * order, ordered by their first position. Positions follow the graph's declaration
- * order, so a part's first position is its first member's site.
+ * The weakly connected parts of a graph given by its adjacency lists, each its positions
+ * in ascending order, ordered by their first position. Over the dead subgraph positions
+ * follow the graph's declaration order, so a part's first position is its first member's
+ * site.
  */
-function joined(adjacent: readonly (readonly number[])[]): readonly (readonly number[])[] {
+export function joined(adjacent: readonly (readonly number[])[]): readonly (readonly number[])[] {
   const leader = adjacent.map((_edges, position) => position);
   const find = (position: number): number => {
     let top = position;

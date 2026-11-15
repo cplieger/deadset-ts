@@ -1,30 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { contractDocument, readFixture } from "../__test-helpers__/fixtures.ts";
-import type { Finding } from "./finding.ts";
-import type { Host } from "./host.ts";
+import { contractDocument } from "../../__test-helpers__/fixtures.ts";
+import type { Finding } from "../finding.ts";
+import type { Host } from "../host.ts";
+import { IGNORE_FILE, readIgnoreFile } from "./documents.ts";
 import {
-  CODE_FORM,
-  GO_REF_EXPRESSIONS,
-  PATH_EXPRESSION,
-  isSymbolRef,
-  ledgerOf,
+  decide,
+  staleRecords,
+  staleSuppressions,
   type Dials,
   type Holds,
-  type SuppressionRecord,
-} from "./suppress.ts";
-import { IGNORE_FILE, readIgnoreFile } from "./suppress-file.ts";
-
-/** The expressions the symbol-reference page publishes for one language. */
-function publishedExpressions(language: string): string[] {
-  const lines = readFixture("contract", "grammar", "symbol-ref.md").split("\n");
-  return lines.flatMap((line, index) => {
-    const head = /^(?<language>go|ts) (?<forms>[a-z-]+(?:, [a-z-]+)*)$/u.exec(line);
-    const expression = lines[index + 1] ?? "";
-    return head?.groups?.["language"] === language && expression.startsWith("^")
-      ? [expression]
-      : [];
-  });
-}
+  type Ledger,
+  type StaleSuppression,
+} from "./ledger.ts";
+import { CODE_FORM, PATH_EXPRESSION, REFERENCE_FORM, type SuppressionRecord } from "./records.ts";
 
 describe("the forms an entry's values take", () => {
   const schema = contractDocument("finding.schema.json") as {
@@ -37,22 +25,18 @@ describe("the forms an entry's values take", () => {
     expect(CODE_FORM.source).toBe(schema.properties.code.pattern);
   });
 
-  it("admit a reference of the Go analyzer's grammar exactly as the grammar page publishes it", () => {
-    expect([...GO_REF_EXPRESSIONS].sort()).toEqual(publishedExpressions("go").sort());
-  });
-
-  it("accept either language's reference and refuse a bare name or a pattern", () => {
+  it("hold any scheme's reference to the form every scheme shares, and refuse a bare name", () => {
     expect(
       [
         "go://example.com/app#Catalog.ResolveAlias",
         "ts://@example/app/src/lib.ts#helper",
-        "Catalog.ResolveAlias",
+        "proto://acme/v1/backup.proto#BackupRequest",
         "go://example.com/app#Catalog.*",
-        "go://example.com/app#Catalog.ResolveAlias(name)",
-        "go://example.com/app#(limit)",
-        "go://example.com/app#Resolve(limit",
-      ].map(isSymbolRef),
-    ).toEqual([true, true, false, false, true, true, false]);
+        "Catalog.ResolveAlias",
+        "Go://example.com/app#Catalog",
+        "ts://",
+      ].map((ref) => REFERENCE_FORM.test(ref)),
+    ).toEqual([true, true, true, true, false, false, false]);
   });
 });
 
@@ -89,6 +73,30 @@ function recordOf(
 }
 
 const OPEN: Dials = { allows: () => false, withholds: () => false };
+
+/** No hold. */
+const NO_HOLDS: Holds = { withholds: () => false, holdsRecord: () => false };
+
+/**
+ * The declaration a finding of these cases is about: the one at its position, or for a
+ * part the one its holder names, which every case declares at column one of the part's line.
+ */
+function declarationOf(found: Finding): string {
+  if (found.symbol.kind === "dependency" || found.symbol.kind === "file") {
+    return "";
+  }
+  return `${found.position.path}:${String(found.position.line)}:1`;
+}
+
+/** The ledger over the records and findings given, under the dials and the holds given. */
+function ledgerOf(
+  records: readonly SuppressionRecord[],
+  would: readonly Finding[],
+  dials: Dials,
+  holds: Holds = NO_HOLDS,
+): Ledger {
+  return decide(records, would, { dials, holds, declarationOf });
+}
 
 describe("the ledger over a run's records", () => {
   const helper = finding("DS1002", "helper", 4);
@@ -197,7 +205,6 @@ describe("the ledger over a run's records", () => {
 
     expect([named.withheld(first), named.withheld(second)]).toEqual([false, true]);
     expect([holder.withheld(first), holder.withheld(second)]).toEqual([true, true]);
-    expect(isSymbolRef(first.symbol.ref)).toBe(true);
   });
 
   it("withholds through one entry the parameters of one name that two functions of one holder declare", () => {
@@ -285,12 +292,140 @@ describe("the ledger over a run's records", () => {
     expect(ledgerOf([elsewhere], [helper], OPEN).verdicts).toEqual(["stale"]);
   });
 
+  it("gives a finding about one of the declarations an entry resolved to that declaration's record alone", () => {
+    const first = finding("DS1001", "Opt", 1);
+    const second = { ...finding("DS1001", "Opt", 2), symbol: first.symbol };
+    const entry = { ...recordOf(first, "ignore"), bound: "src/lib.ts:1:1" };
+    const records = [entry, { ...entry, bound: "src/lib.ts:2:1" }];
+    const dialed: Dials = { allows: () => false, withholds: (one) => one === first };
+
+    expect(ledgerOf(records, [second, first], dialed).verdicts).toEqual(["dormant", "in-effect"]);
+  });
+
+  it("claims every finding it names that no earlier record claimed", () => {
+    const first = finding("DS1001", "Opt", 1);
+    const copy = { ...finding("DS1001", "Opt", 1), message: "the same finding read twice" };
+    const ledger = ledgerOf(
+      [recordOf(first, "ignore"), recordOf(first, "baseline")],
+      [first, copy],
+      OPEN,
+    );
+
+    expect(ledger.verdicts).toEqual(["in-effect", "stale"]);
+  });
+
   it("withholds no finding about a row of a document, which no record binds", () => {
     const row = finding("DS1601", "file", 1, "file");
     const ledger = ledgerOf([recordOf(row, "ignore")], [row], OPEN);
 
     expect(ledger.verdicts).toEqual(["stale"]);
     expect(ledger.withheld(row)).toBe(false);
+  });
+});
+
+describe("the stale suppressions of a run", () => {
+  const first = finding("DS1001", "Opt", 1);
+  const entry = { ...recordOf(first, "ignore"), bound: "src/lib.ts:1:1" };
+  const records = [entry, { ...entry, bound: "src/lib.ts:2:1" }];
+  const ledger = (verdicts: Ledger["verdicts"]): Ledger => ({ verdicts, withheld: () => false });
+
+  it("leaves out an entry one of whose records is in effect", () => {
+    expect(staleRecords(records, ledger(["in-effect", "stale"]))).toEqual([]);
+  });
+
+  it("reports an entry every record of which is stale once, at its first record", () => {
+    expect(staleRecords(records, ledger(["stale", "stale"]))).toEqual([entry]);
+  });
+
+  it("tells two codes of one directive apart", () => {
+    const directive = recordOf(first, "inline", 3);
+    const both = [directive, { ...directive, code: "DS1002" }];
+
+    expect(staleRecords(both, ledger(["in-effect", "stale"]))).toEqual([both[1]]);
+  });
+});
+
+function entry(
+  code: string,
+  site = { path: "deadset.json", line: 3, column: 5 },
+): SuppressionRecord {
+  return {
+    code,
+    symbol: "ts://@example/app/src/main.ts#helper",
+    path: "src/main.ts",
+    reason: "kept for the plugin API",
+    bound: "src/main.ts:1:17",
+    site,
+    mechanism: "ignore",
+  };
+}
+
+/** The stale suppressions of records whose declaration would report the codes given beside each. */
+function staleOf(
+  ...stale: { record: SuppressionRecord; reports: string[] }[]
+): readonly StaleSuppression[] {
+  const would = stale.flatMap(({ reports }) => reports.map((code) => finding(code, "helper", 1)));
+  return staleSuppressions(
+    stale.map((one) => one.record),
+    would,
+    { declarationOf: () => "src/main.ts:1:17" },
+    (record) => record.symbol,
+  );
+}
+
+function messages(...stale: { record: SuppressionRecord; reports: string[] }[]): string[] {
+  return staleOf(...stale).map((one) => one.message);
+}
+
+describe("a suppression site that matches no current finding", () => {
+  it("names its one code, and the one its declaration reports instead", () => {
+    expect(messages({ record: entry("DS1001"), reports: ["DS1002"] })).toEqual([
+      "ignore entry for DS1001 on ts://@example/app/src/main.ts#helper matches no current finding, and its declaration reports DS1002",
+    ]);
+  });
+
+  it("names two codes and two reports each joined by and, in code order whatever the order written", () => {
+    expect(
+      messages(
+        { record: entry("DS1003"), reports: ["DS1005"] },
+        { record: entry("DS1001"), reports: ["DS1301", "DS1005"] },
+      ),
+    ).toEqual([
+      "ignore entry for DS1001 and DS1003 on ts://@example/app/src/main.ts#helper matches no current finding, and its declaration reports DS1005 and DS1301",
+    ]);
+  });
+
+  it("names three codes as a list ending in and, and leaves out a report that is one of them", () => {
+    expect(
+      messages(
+        { record: entry("DS1104"), reports: ["DS1102"] },
+        { record: entry("DS1002"), reports: ["DS1001", "DS1003"] },
+        { record: entry("DS1102"), reports: [] },
+      ),
+    ).toEqual([
+      "ignore entry for DS1002, DS1102 and DS1104 on ts://@example/app/src/main.ts#helper matches no current finding, and its declaration reports DS1001 and DS1003",
+    ]);
+  });
+
+  it("is one record per site, the first record written naming the entry", () => {
+    const records = staleOf(
+      { record: entry("DS1002"), reports: [] },
+      { record: entry("DS1001", { path: "deadset.json", line: 9, column: 5 }), reports: [] },
+      { record: entry("DS1001"), reports: [] },
+    );
+
+    expect(records.map((one) => [one.position.line, one.entry.code, one.message])).toEqual([
+      [
+        3,
+        "DS1002",
+        "ignore entry for DS1001 and DS1002 on ts://@example/app/src/main.ts#helper matches no current finding",
+      ],
+      [
+        9,
+        "DS1001",
+        "ignore entry for DS1001 on ts://@example/app/src/main.ts#helper matches no current finding",
+      ],
+    ]);
   });
 });
 

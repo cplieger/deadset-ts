@@ -14,7 +14,6 @@ import {
   isExportAssignment,
   isExpressionStatement,
   isIdentifier,
-  isObjectLiteralExpression,
   isParenthesizedExpression,
   isPropertyAccessExpression,
   isPropertyAssignment,
@@ -23,6 +22,7 @@ import {
   type Node,
   type SourceFile,
 } from "@typescript/native/ast";
+import { objectLiteralOf } from "../unwrap.ts";
 import type { ParseFile } from "../entries/configuration-files.ts";
 import type { Host } from "../host.ts";
 import { isRecord } from "../json-document.ts";
@@ -79,10 +79,11 @@ function configObject(node: Node): Node | undefined {
 
 /** The value one object literal writes for one member as `name: value`. */
 function member(object: Node | undefined, name: string): Node | undefined {
-  if (object === undefined || !isObjectLiteralExpression(object)) {
+  const literal = objectLiteralOf(object);
+  if (literal === undefined) {
     return undefined;
   }
-  for (const property of object.properties) {
+  for (const property of literal.properties) {
     if (
       isPropertyAssignment(property) &&
       isIdentifier(property.name) &&

@@ -98,7 +98,7 @@ describe("explain", () => {
           "configurations: tsconfig.json",
           "answer: reported",
           "  code: DS1001 unused-exported",
-          "  message: exported function has no reference in the target and none from any loaded consumer",
+          "  message: exported function unusedExported has no reference in the target and none from any loaded consumer",
           "  class: certain",
           "  confidence: certain",
           "  liveness relation: reference-counting",

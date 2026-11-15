@@ -8,8 +8,9 @@ import type { PassResult } from "./findings-pass.ts";
 import { resolve } from "./resolve.ts";
 import { scopeForDir } from "./scope.ts";
 import { openEngine, type Engine } from "./session.ts";
-import type { Mechanism } from "./suppress.ts";
-import { BASELINE_FILE, IGNORE_FILE, writeBaseline } from "./suppress-file.ts";
+import { writeBaseline } from "./suppression/baseline.ts";
+import { BASELINE_FILE, IGNORE_FILE } from "./suppression/documents.ts";
+import type { Mechanism } from "./suppression/records.ts";
 import { whole } from "../__test-helpers__/whole.ts";
 
 /**

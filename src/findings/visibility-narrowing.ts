@@ -1,249 +1,15 @@
 import { CODE } from "../contract/contract.generated.ts";
 import type { Finding } from "../finding.ts";
-import { OUTSIDE, type Graph } from "../liveness/graph.ts";
-import { WORDS, type InventorySymbol } from "../inventory.ts";
-import type { Candidate } from "../liveness/sweep.ts";
-import { declarationKey } from "../ref.ts";
-import type { RootKind } from "../roots/root-set.ts";
-import { runnerCalls } from "../liveness/sweep.ts";
-import { exposedTypes, exposes } from "../exposure.ts";
-import type { Emitter, EmitterInput } from "./emitter.ts";
-import { writeOnlyDeclarations } from "./reads-and-writes.ts";
-
-/** How far the references to one declaration reach, from the narrowest. */
-type Reach = "file" | "package" | "outside";
-
-/**
- * The root kinds by which a consumer importing the package reaches a declaration. A
- * declaration or a file rooted by any other kind is entered by something that names it
- * from outside the reference graph: a runtime, a tool, a framework or the configuration.
- */
-const PUBLISHING: ReadonlySet<RootKind> = new Set<RootKind>(["manifest-entry", "published-api"]);
-
-/** Per declaration of the run, the facts both rules read. */
-interface Facts {
-  readonly graph: Graph;
-  /** The position of the file that holds each declaration. */
-  readonly fileOf: readonly number[];
-  /** The root kinds naming each declaration. */
-  readonly rootedBy: readonly ReadonlySet<RootKind>[];
-  /** Per file, whether a manifest export reaches a declaration it holds. */
-  readonly published: readonly boolean[];
-  /** Per declaration, how many references name it, and how far they reach. */
-  readonly named: readonly number[];
-  readonly reach: readonly Reach[];
-}
-
-function publishes(kinds: ReadonlySet<RootKind> | undefined): boolean {
-  return [...(kinds ?? [])].some((kind) => PUBLISHING.has(kind));
-}
-
-/**
- * The root kinds that name a file without entering it by its exports: a configuration
- * string or a script token runs the file, and no tool reads a name it exports.
- */
-const RUN_ONLY: ReadonlySet<RootKind> = new Set<RootKind>(["configuration-string", "script"]);
-
-/** Whether a root makes its file an entry file, or its declaration an entry, which a tool may read by name. */
-function entersByName(kinds: ReadonlySet<RootKind> | undefined): boolean {
-  return [...(kinds ?? [])].some((kind) => !PUBLISHING.has(kind) && !RUN_ONLY.has(kind));
-}
-
-/**
- * The root kinds whose root of a file enters no export by name: a document's import roots
- * each export it imports, so an export it does not import is judged as in any file.
- */
-const PER_NAME: ReadonlySet<RootKind> = new Set<RootKind>(["document-import"]);
-
-/**
- * Whether the roots of a declaration's file enter it by name: a test runner's root
- * enters only an export the runner calls, so another export of a test file is judged.
- */
-function fileEntersByName(
-  kinds: ReadonlySet<RootKind> | undefined,
-  symbol: InventorySymbol,
-): boolean {
-  const entering = [...(kinds ?? [])].filter(
-    (kind) => !PUBLISHING.has(kind) && !RUN_ONLY.has(kind) && !PER_NAME.has(kind),
-  );
-  return (
-    entering.some((kind) => kind !== "test-runner") || (entering.length > 0 && runnerCalls(symbol))
-  );
-}
-
-/**
- * Folds the run's references into the reach of each declaration.
- *
- * A reference reaches the file that holds the declaration that makes it. A reference
- * from a declaration the inventory does not hold is made by a consumer, and one from a
- * re-export a manifest export reaches stands for every consumer importing the name it
- * publishes; either reaches outside the package.
- */
-function factsOf(graph: Graph): Facts {
-  const { symbols, parent } = graph;
-  const fileOf = symbols.map((_symbol, at) => {
-    let file = at;
-    while (file !== OUTSIDE && symbols[file]?.kind !== "file") {
-      file = parent[file] ?? OUTSIDE;
-    }
-    return file;
-  });
-  const rootedBy = symbols.map(() => new Set<RootKind>());
-  for (const root of graph.rooted) {
-    rootedBy[root.at]?.add(root.kind);
-  }
-  const published = symbols.map(() => false);
-  symbols.forEach((_symbol, at) => {
-    const file = fileOf[at] ?? OUTSIDE;
-    if (file !== OUTSIDE && publishes(rootedBy[at])) {
-      published[file] = true;
-    }
-  });
-
-  const order: readonly Reach[] = ["file", "package", "outside"];
-  const wider = (a: Reach, b: Reach): Reach => (order.indexOf(a) >= order.indexOf(b) ? a : b);
-  const inGraph = symbols.map(() => 0);
-  const reach = symbols.map((): Reach => "file");
-  graph.out.forEach((edges, from) => {
-    const republished = symbols[from]?.kind === "export-alias" && publishes(rootedBy[from]);
-    for (const edge of edges) {
-      inGraph[edge.to] = (inGraph[edge.to] ?? 0) + 1;
-      const scope: Reach = republished
-        ? "outside"
-        : fileOf[from] === fileOf[edge.to]
-          ? "file"
-          : "package";
-      reach[edge.to] = wider(reach[edge.to] ?? "file", scope);
-    }
-  });
-  const named = graph.made.map((counts) => counts.production + counts.test);
-  named.forEach((count, at) => {
-    if (count > (inGraph[at] ?? 0)) {
-      reach[at] = "outside";
-    }
-  });
-  return { graph, fileOf, rootedBy, published, named, reach };
-}
-
-/** Whether one declaration is a declaration its file's export table names. */
-function topLevelExport(facts: Facts, at: number, symbol: InventorySymbol): boolean {
-  const parent = facts.graph.parent[at] ?? OUTSIDE;
-  return symbol.exported && parent !== OUTSIDE && facts.graph.symbols[parent]?.kind === "file";
-}
+import { codesOf } from "./codes.ts";
+import { draft, named } from "./draft.ts";
+import type { Emitter } from "./emitter.ts";
+import { subjectsOf } from "./subjects.ts";
 
 /** The visibility each narrowing code names, which only the narrowing codes carry. */
-const NARROWER: Readonly<Record<string, "file" | "package">> = {
-  [CODE.redundantExportKeyword]: "file",
-  [CODE.unnecessaryExport]: "package",
-};
-
-function findingOf(symbol: InventorySymbol, code: string, message: string): Finding {
-  const { path, line, column } = symbol.position;
-  const narrower = Object.hasOwn(NARROWER, code) ? NARROWER[code] : undefined;
-  const endLine = Math.max(line, symbol.endLine);
-  return {
-    code,
-    position: { path, line, column, endLine },
-    symbol: {
-      ref: symbol.ref,
-      kind: symbol.kind,
-      name: symbol.name,
-      sizeLines: endLine - line + 1,
-    },
-    message,
-    details: narrower === undefined ? {} : { narrowerVisibility: narrower },
-  };
-}
-
-/**
- * The narrowing finding about one live declaration, if one holds: an export of a file,
- * no re-export and none the write-only kind reports, that a reference names and nothing
- * enters by name. Every reference inside its own file makes it a redundant export
- * keyword, where no manifest export reaches the file or the world is closed; references
- * from other files of the package alone make a published one unnecessary when closed.
- */
-function narrowing(
-  facts: Facts,
-  at: number,
-  symbol: InventorySymbol,
-  world: {
-    readonly closed: boolean;
-    readonly writeOnly: ReadonlySet<string>;
-    readonly exposed: ReadonlySet<string> | "every";
-  },
-): Finding | undefined {
-  const { closed } = world;
-  const file = facts.fileOf[at] ?? OUTSIDE;
-  if (
-    !topLevelExport(facts, at, symbol) ||
-    world.writeOnly.has(declarationKey(symbol.ref, symbol.position.path)) ||
-    symbol.kind === "export-alias" ||
-    entersByName(facts.rootedBy[at]) ||
-    fileEntersByName(facts.rootedBy[file], symbol) ||
-    (facts.named[at] ?? 0) === 0
-  ) {
-    return undefined;
-  }
-  const word = WORDS[symbol.kind];
-  switch (facts.reach[at]) {
-    case "file":
-      if (facts.published[file] === true && !closed) {
-        return undefined;
-      }
-      return findingOf(
-        symbol,
-        CODE.redundantExportKeyword,
-        `exported ${word} is referenced only inside the file that declares it`,
-      );
-    case "package":
-      if (!closed || !publishes(facts.rootedBy[at]) || exposes(world.exposed, symbol)) {
-        return undefined;
-      }
-      return findingOf(
-        symbol,
-        CODE.unnecessaryExport,
-        `exported ${word} is referenced only inside the package that declares it`,
-      );
-    default:
-      return undefined;
-  }
-}
-
-/**
- * The unreachable-export finding about one dead declaration, if one holds: an unused
- * export no code outside the target can import, because the manifest declares
- * `exports` and no root reaches it. Each arm yields to a more specific kind, so one
- * declaration is reported once: a test whose every subject is dead, an interface, a
- * declaration only a test file references or a test that stays keeps, and a deprecated one.
- */
-function unreachable(
-  facts: Facts,
-  at: number,
-  symbol: InventorySymbol,
-  candidate: Candidate,
-  input: EmitterInput,
-): Finding | undefined {
-  if (
-    !input.boundary.encapsulated ||
-    !topLevelExport(facts, at, symbol) ||
-    (facts.rootedBy[at]?.size ?? 0) > 0 ||
-    candidate.testOfDeadCode ||
-    symbol.kind === "interface" ||
-    (candidate.testRefs > 0 && (candidate.productionRefs === 0 || candidate.keptByTests)) ||
-    (candidate.productionRefs === 0 && input.deprecated.has(symbol.id))
-  ) {
-    return undefined;
-  }
-  const found =
-    candidate.relation === "reachability"
-      ? "is referenced only from declarations that are themselves dead"
-      : "has no reference in the target";
-  return findingOf(
-    symbol,
-    CODE.unreachableExport,
-    `exported ${WORDS[symbol.kind]} ${found}, and nothing outside can import the file that declares it`,
-  );
-}
+const NARROWER: ReadonlyMap<string, "file" | "package"> = new Map([
+  [CODE.redundantExportKeyword, "file"],
+  [CODE.unnecessaryExport, "package"],
+]);
 
 /**
  * The visibility-narrowing kinds over one run: `DS1501`, `DS1101` and `DS1503`. A finding
@@ -252,65 +18,42 @@ function unreachable(
  * outside the file and the package whose use is decided in the other language. A
  * declaration of a generated file is reported only where generated files are included.
  */
-export function narrowings(input: EmitterInput): readonly Finding[] {
-  const facts = factsOf(input.swept.matrix.union);
-  const { declared, loaded } = input.boundary.consumers;
-  const closed = input.config.consumers.complete && declared.every((id) => loaded.includes(id));
-  const world = {
-    closed,
-    writeOnly: writeOnlyDeclarations(input),
-    exposed: closed
-      ? exposedTypes(
-          facts.graph,
-          facts.reach.map((reach) => reach === "outside"),
-          input.boundary.carriers,
-        )
-      : new Set<string>(),
-  };
-  const candidates = new Map(
-    input.swept.sweep.candidates.map((candidate) => [candidate.id, candidate]),
-  );
+export const visibilityNarrowing: Emitter = (input) => {
+  const codes = codesOf(input);
+  const s = subjectsOf(input);
   const generated =
     input.config.analysis.generated_files === "include" ? undefined : input.files.generated;
-
-  const findings: Finding[] = [];
-  facts.graph.symbols.forEach((symbol, at) => {
+  return s.union.symbols.flatMap((symbol): Finding[] => {
     if (generated?.has(symbol.position.path) === true) {
-      return;
+      return [];
     }
-    const candidate = candidates.get(symbol.id);
-    // A declaration of test code, a test file's or test-support code's, that only test code
-    // references is a candidate, live in the run that counts test references.
-    const live =
-      candidate === undefined ||
-      (facts.graph.test[at] === true && !candidate.unreferencedTest && !candidate.testOfDeadCode);
-    const found =
-      candidate === undefined || live
-        ? narrowing(facts, at, symbol, world)
-        : unreachable(facts, at, symbol, candidate, input);
-    if (found !== undefined) {
-      findings.push(found);
+    const subject = named(symbol);
+    if (codes.dead.get(symbol.id) === CODE.unreachableExport) {
+      const found =
+        s.candidate(symbol.id)?.relation === "reachability"
+          ? "is referenced only from declarations that are themselves dead"
+          : "has no reference in the target";
+      return [
+        draft(
+          CODE.unreachableExport,
+          symbol,
+          `exported ${subject} ${found}, and nothing outside can import the file that declares it`,
+          {},
+        ),
+      ];
     }
+    const code = codes.live.get(symbol.id);
+    const narrower = code === undefined ? undefined : NARROWER.get(code);
+    if (code === undefined || narrower === undefined) {
+      return [];
+    }
+    return [
+      draft(
+        code,
+        symbol,
+        `exported ${subject} is referenced only inside the ${narrower} that declares it`,
+        { narrowerVisibility: narrower },
+      ),
+    ];
   });
-  return findings;
-}
-
-/**
- * The declarations the unreachable-export kind reports, whether or not a declared edge
- * holds the finding pending: the unused-declaration kinds yield each to it.
- */
-export function unreachableExports(input: EmitterInput): ReadonlySet<string> {
-  const facts = factsOf(input.swept.matrix.union);
-  const found = new Set<string>();
-  for (const candidate of input.swept.sweep.candidates) {
-    const at = facts.graph.at(candidate.id);
-    const symbol = facts.graph.symbols[at];
-    if (symbol !== undefined && unreachable(facts, at, symbol, candidate, input) !== undefined) {
-      found.add(symbol.id);
-    }
-  }
-  return found;
-}
-
-/** The findings of the visibility-narrowing kinds, `DS1501`, `DS1101` and `DS1503`. */
-export const visibilityNarrowing: Emitter = narrowings;
+};

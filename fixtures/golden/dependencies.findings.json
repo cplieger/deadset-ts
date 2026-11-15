@@ -13,7 +13,7 @@
       "name": "left-pad",
       "sizeLines": 1
     },
-    "message": "only code that is itself dead uses the declared dependency",
+    "message": "only code that is itself dead uses the declared dependency left-pad",
     "details": {
       "dependencyClass": "dependency"
     },
@@ -35,7 +35,7 @@
       "name": "unused-runtime",
       "sizeLines": 1
     },
-    "message": "no import in the target needs the declared dependency",
+    "message": "no import in the target needs the declared dependency unused-runtime",
     "details": {
       "dependencyClass": "dependency"
     }
@@ -54,7 +54,7 @@
       "name": "@types/bundled",
       "sizeLines": 1
     },
-    "message": "no import in the target needs the declared development dependency",
+    "message": "no import in the target needs the declared development dependency @types/bundled",
     "details": {
       "dependencyClass": "dev-dependency"
     }
@@ -73,7 +73,7 @@
       "name": "unused-dev",
       "sizeLines": 1
     },
-    "message": "no import in the target needs the declared development dependency",
+    "message": "no import in the target needs the declared development dependency unused-dev",
     "details": {
       "dependencyClass": "dev-dependency"
     }
@@ -92,7 +92,7 @@
       "name": "peer-unused",
       "sizeLines": 1
     },
-    "message": "no import in the target needs the declared peer dependency",
+    "message": "no import in the target needs the declared peer dependency peer-unused",
     "details": {
       "dependencyClass": "peer-dependency"
     }

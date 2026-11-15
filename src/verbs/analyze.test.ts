@@ -1072,6 +1072,40 @@ describe("the baseline", () => {
   );
 
   it(
+    "records a finding in a .vue or a .svelte component file under its reference, which the next run reads back",
+    () => {
+      const tree = mkdtempSync(join(tmpdir(), "deadset-ts-baseline-"));
+      onTestFinished(() => {
+        rmSync(tree, { recursive: true, force: true });
+      });
+      cpSync(fixture("corpus", "findings-in-component-files", "ts", "target"), tree, {
+        recursive: true,
+      });
+      writeFileSync(join(tree, "deadset.json"), '{ "target": { "kind": "application" } }\n');
+      const baseline = join(tree, "deadset-baseline.json");
+
+      const first = analyze(tree, [`--baseline-write=${baseline}`], tree);
+      const rows = (
+        JSON.parse(readFileSync(baseline, "utf8")) as { baseline: { symbol: string }[] }
+      ).baseline;
+      const second = analyze(tree, [], tree);
+
+      expect(first.code).toBe(1);
+      expect(rows.map((row) => row.symbol)).toEqual([
+        "ts://@example/target/src/Card.svelte#Tile.hidden",
+        "ts://@example/target/src/Panel.vue#Row.dead",
+      ]);
+      expect(second.code).toBe(0);
+      expect(totalsOf(second)).toMatchObject({
+        findings: 0,
+        stale_suppressions: 0,
+        suppressions_in_effect: 2,
+      });
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
     "keeps the Go analyzer's rows of the baseline it rewrites, before its own",
     () => {
       const tree = mkdtempSync(join(tmpdir(), "deadset-ts-baseline-"));
@@ -1114,7 +1148,7 @@ describe("the baseline", () => {
       expect(got.code).toBe(3);
       expect(got.err).toMatch(
         new RegExp(
-          `^run failure: unwritten-output: ${baseline}: deadset-baseline\\.json cannot be rewritten keeping the other language's rows: .*: name a path the run can write, or repair the rows of the baseline the run would keep\n$`,
+          `^run failure: unwritten-output: ${baseline}: baseline deadset-baseline\\.json:1:\\d+: the member "line" is not one the grammar declares: .*: name a path the run can write, or repair the rows of the baseline the run would keep\n$`,
           "u",
         ),
       );

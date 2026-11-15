@@ -12,6 +12,75 @@ describe("an object literal handed to a callee the target does not implement", (
     expect(found.filter((one) => one.includes("Init."))).toEqual([]);
   });
 
+  it("leaves a literal behind an assertion or `satisfies` to the reads the program makes", () => {
+    const found = treeFindings({
+      "main.ts": [
+        "interface Rollout { name: string; build: number; notes: string }",
+        "interface Pushed { kind: string; extra?: string }",
+        "declare function send(rollout: Rollout): void;",
+        "declare function push(message: unknown): void;",
+        'send({ name: "r" } as Rollout);',
+        'push({ kind: "k" } satisfies Pushed);',
+        "const rollout = Object.assign({} as Rollout, { build: 7 });",
+        "console.log(JSON.stringify(rollout));",
+        "",
+      ].join("\n"),
+    });
+
+    expect(found.filter((one) => /Rollout\.|Pushed\./u.test(one))).toEqual([
+      "DS1003 Rollout.notes",
+      "DS1003 Pushed.extra",
+    ]);
+  });
+
+  it("is read against the parameter type where only a wrapped empty literal stands for the callee's type", () => {
+    const stub = (api: string): string[] =>
+      treeFindings({
+        "main.ts": [
+          "interface Opts { a?: number; b?: number }",
+          "interface Api { run(o: Opts): void }",
+          "declare const host: { install(api: Api): void };",
+          api,
+          "host.install(api);",
+          "api.run({ a: 1 });",
+          "",
+        ].join("\n"),
+      }).filter((one) => one.includes("Opts."));
+
+    expect(stub("const api = {} as unknown as Api;")).toEqual([]);
+    expect(stub("const api = ({}) as Api;")).toEqual([]);
+    expect(stub("const api: Api = ({}) as Api;")).toEqual([]);
+  }, 20_000);
+
+  it("reports a member a literal behind an assertion or `satisfies` never writes", () => {
+    const rollout = (literal: string): string[] =>
+      treeFindings({
+        "main.ts": [
+          "interface Rollout { name?: string; build?: number; notes?: string }",
+          'const base = { name: "r" };',
+          `const r = Object.assign(${literal} as Rollout, { build: 7 });`,
+          "console.log(JSON.stringify(r));",
+          "",
+        ].join("\n"),
+      }).filter((one) => one.includes("Rollout."));
+
+    expect(rollout('{ "name": "r" }')).toEqual(["DS1003 Rollout.notes"]);
+    expect(rollout("{ ...base }")).toEqual(["DS1003 Rollout.notes"]);
+    expect(
+      treeFindings({
+        "main.ts": [
+          "interface Pair { 0: string; 1?: string }",
+          "interface Pushed { kind: string; extra?: string }",
+          "declare function take(pair: Pair): void;",
+          "declare function push(message: Pushed): void;",
+          'take({ 0: "a" } as Pair);',
+          'push({ ["kind"]: "k" } satisfies Pushed);',
+          "",
+        ].join("\n"),
+      }).filter((one) => one.startsWith("DS1003")),
+    ).toEqual(["DS1003 Pair.'1'", "DS1003 Pushed.extra"]);
+  }, 20_000);
+
   it("is read only as the target's own callee reads it, where one stands for the signature", () => {
     const found = treeFindings({
       "main.ts": [

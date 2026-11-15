@@ -1,8 +1,8 @@
 {
-  "corpus_version": "6.3.0",
+  "corpus_version": "6.4.0",
   "product": { "name": "deadset-ts", "version": "0.1.0", "language": "ts" },
   "result": "pass",
-  "totals": { "fixtures": 386, "pass": 384, "gap": 0, "fail": 0, "pending": 2 },
+  "totals": { "fixtures": 392, "pass": 390, "gap": 0, "fail": 0, "pending": 2 },
   "fixtures": [
     {
       "fixture": "abstract-member-through-this",
@@ -3059,6 +3059,25 @@
       "unexpected": []
     },
     {
+      "fixture": "dependency-under-a-legacy-package-name",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "LegacyPad",
+          "result": "pass",
+          "actual": {
+            "report": "DS1701",
+            "symbol_kind": "dependency",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "details": { "dependency_class": "dependency" }
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "dependency-used-only-by-dead-code",
       "result": "pass",
       "expectations": [
@@ -3390,6 +3409,20 @@
           "suppression": { "suppressed": true, "stale": false }
         },
         { "symbol": "used", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "edge-side-in-a-generated-file",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "checksum",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["generated-file"] }
+        },
+        { "symbol": "decode", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "encode", "result": "pass", "actual": { "report": "none" } }
       ],
       "unexpected": []
     },
@@ -3879,6 +3912,37 @@
           },
           "suppression": { "suppressed": true, "stale": false }
         }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "findings-in-component-files",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "Row.dead",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "class-member",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "Row.used", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Tile.hidden",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "class-member",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "Tile.shown", "result": "pass", "actual": { "report": "none" } }
       ],
       "unexpected": []
     },
@@ -5456,6 +5520,30 @@
           "suppression": { "suppressed": true, "stale": false }
         },
         { "symbol": "ViewTick", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "method-of-a-class-implemented-as-an-interface",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "Implemented.get",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["interface-satisfaction"] }
+        },
+        {
+          "symbol": "Implemented.spare",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "method",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
       ],
       "unexpected": []
     },
@@ -9020,6 +9108,18 @@
       "unexpected": []
     },
     {
+      "fixture": "suppression-rows-of-a-third-scheme",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "ProtoEntry", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "ProtoRow", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "PythonEntry", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "baselined", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "ignored", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "suppression-under-another-code",
       "result": "pass",
       "expectations": [
@@ -10889,6 +10989,20 @@
           "suppression": { "suppressed": true, "stale": false }
         },
         { "symbol": "scaled", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "unreferenced-test-file-export-reported-once",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "api", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "notCalled",
+          "result": "pass",
+          "actual": { "report": "DS1101", "symbol_kind": "variable", "confidence": "certain" },
+          "suppression": { "suppressed": true, "stale": false }
+        }
       ],
       "unexpected": []
     },

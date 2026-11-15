@@ -2,12 +2,16 @@ import { cpSync, mkdtempSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
+import { nodeHost } from "../../bin/node-host.ts";
 import { emitterInputOf, findingsOf } from "../../__test-helpers__/emitter-input.ts";
 import { fixture } from "../../__test-helpers__/fixtures.ts";
 import { writeProject } from "../../__test-helpers__/projects.ts";
 import type { ResolvedConfig } from "../config.ts";
-import type { CompletedFinding } from "../finding.ts";
+import type { CompletedFinding, Finding } from "../finding.ts";
 import { resolve } from "../resolve.ts";
+import { run, type Writer } from "../run.ts";
+import { completed } from "./completion.ts";
+import { namesSubject } from "./draft.ts";
 
 /** The configuration one target's own document resolves to. */
 function configOf(target: string): ResolvedConfig {
@@ -601,5 +605,127 @@ describe("a component listed in full", () => {
       "Probe.check",
       "Probe.other",
     ]);
+  });
+});
+
+describe("a finding's message", () => {
+  const target = fixture("projects", "reads-and-writes");
+  const input = emitterInputOf(target, configOf(target));
+  const [done] = findingsOf(input);
+  const first: Finding | undefined =
+    done === undefined
+      ? undefined
+      : { code: done.code, position: done.position, symbol: done.symbol, message: done.message };
+
+  it.each([
+    ["not naming the subject", "the declaration has no reference in the target"],
+    ["naming another declaration only", "unexported function Open has no reference in the target"],
+    [
+      "naming the subject inside a longer identifier",
+      "unexported function XUnused has no reference",
+    ],
+  ])("is refused %s", (_what, message) => {
+    expect(first?.symbol.name).toBe("Unused");
+    const finding = { ...first, message } as Finding;
+    expect(() => completed(input, [finding])).toThrow(/does not name Unused in its message/u);
+  });
+
+  it("is refused spelling its subject other than the name the finding publishes", () => {
+    const finding = {
+      ...first,
+      symbol: { ...first?.symbol, name: "Box.'a:b'" },
+      message: "private class member Box.'a: b' has no reference in the target",
+    } as Finding;
+    expect(() => completed(input, [finding])).toThrow(/does not name Box.'a:b' in its message/u);
+  });
+});
+
+class MemoryWriter implements Writer {
+  text = "";
+  write(text: string): void {
+    this.text += text;
+  }
+}
+
+describe("a subject whose source text holds a colon and a space or a line break", () => {
+  it("is named in its message as the finding's symbol.name spells it", () => {
+    const root = writeProject({
+      "package.json": JSON.stringify({ name: "@example/tree", private: true, type: "module" }),
+      "deadset.json": JSON.stringify({
+        target: { kind: "application" },
+        ts: { entry_files: ["main.ts"] },
+      }),
+      "main.ts": [
+        "export function pick(k: string): number {",
+        "  switch (k) {",
+        '    case "c: d": return 1;',
+        '    case "c: d": return 2;',
+        "    case `a",
+        "b`: return 3;",
+        "    case `a",
+        "b`: return 4;",
+        "  }",
+        "  return 0;",
+        "}",
+        "function shape(): (x: number) => number { return (x) => x; }",
+        "function box(): { id: number } { return { id: 1 }; }",
+        "shape();",
+        "box();",
+        "",
+      ].join("\n"),
+      "orphan: x.ts": "export const x = 1;\n",
+    });
+    const report = join(root, "report.json");
+    try {
+      const err = new MemoryWriter();
+      const code = run(
+        ["analyze", "--target=.", "--min-confidence=possible", `--report=${report}`],
+        new MemoryWriter(),
+        err,
+        { ...nodeHost(), workingDirectory: () => root },
+      );
+      expect(err.text).toBe("");
+      expect(code).toBe(1);
+      const found = (
+        JSON.parse(readFileSync(report, "utf8")) as {
+          findings: { code: string; symbol: { name: string }; message: string }[];
+        }
+      ).findings;
+      const named = found
+        .filter((one) => ["DS1403", "DS1406", "DS1602"].includes(one.code))
+        .map((one) => `${one.code} ${one.symbol.name}`);
+      expect(named).toEqual(
+        expect.arrayContaining([
+          'DS1406 "c:d"',
+          "DS1406 `a b`",
+          "DS1403 1 of 1 ((x:number) => number)",
+          "DS1403 1 of 1 ({ id:number; })",
+          "DS1602 orphan:x.ts",
+        ]),
+      );
+      for (const one of found) {
+        expect(one.message).not.toMatch(/[\r\n]/u);
+        expect(namesSubject(one.message, one.symbol.name)).toBe(true);
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 60_000);
+});
+
+describe("whether a message names its subject", () => {
+  it.each([
+    ["exported method Catalog.resolve has no reference", "Catalog.resolve", true],
+    ["file src/a.ts: no import reaches it", "src/a.ts", true],
+    ["result 1 of 1 (Info) of function f is discarded", "1 of 1 (Info)", true],
+    ["the target has no reference to it", "target", false],
+    ["a variable a is unread", "a", true],
+    ["a variable is unread", "a", false],
+    ["member Box.id has no reference", "id", false],
+    ["variable $id has no reference", "id", false],
+    ["variable ids has no reference", "id", false],
+    ["no subject at all", "", false],
+  ])("in %j names %j: %s", (message, name, names) => {
+    expect(namesSubject(message, name)).toBe(names);
   });
 });

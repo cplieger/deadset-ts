@@ -11,9 +11,9 @@
       "9.0.0"
     ],
     "conformance": {
-      "corpus_version": "6.3.0",
+      "corpus_version": "6.4.0",
       "result": "pass",
-      "digest": "sha256:e026ac4f1a74a2551c6005564a9e97fd29c7622f7742b58f72badd88d4528f02"
+      "digest": "sha256:2f6f18073a6567736906c9ac84ff161e761db32732266e344ab96f988b3442d8"
     }
   },
   "target": {
@@ -178,7 +178,7 @@
       "consumers_loaded": [],
       "fixability": "narrowable",
       "severity": "warn",
-      "message": "exported enum is referenced only inside the file that declares it",
+      "message": "exported enum Flag is referenced only inside the file that declares it",
       "details": {
         "narrower_visibility": "file"
       }
@@ -254,7 +254,7 @@
       "consumers_loaded": [],
       "fixability": "deletable",
       "severity": "deny",
-      "message": "unexported enum has no reference in the target",
+      "message": "unexported enum Unused has no reference in the target",
       "details": {}
     },
     {
@@ -386,7 +386,7 @@
       "consumers_loaded": [],
       "fixability": "deletable",
       "severity": "deny",
-      "message": "member Gauge.#samples is written at 3 positions and never read",
+      "message": "private class member Gauge.#samples is written at 3 positions and never read",
       "details": {
         "write_positions": [
           {

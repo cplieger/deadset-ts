@@ -1,5 +1,6 @@
 import {
   isBinaryExpression,
+  isElementAccessExpression,
   isParenthesizedExpression,
   isPropertyAccessExpression,
   SyntaxKind,
@@ -202,7 +203,10 @@ export class Sink {
 /** The value one assignment stores through the name it writes, where it is a plain assignment. */
 export function storedValue(name: Node): Node | undefined {
   let target: Node = name;
-  if (isPropertyAccessExpression(name.parent) && name.parent.name === name) {
+  if (
+    (isPropertyAccessExpression(name.parent) && name.parent.name === name) ||
+    (isElementAccessExpression(name.parent) && name.parent.argumentExpression === name)
+  ) {
     target = name.parent;
   }
   while (isParenthesizedExpression(target.parent)) {

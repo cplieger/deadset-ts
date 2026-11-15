@@ -7,26 +7,18 @@
  */
 
 import {
-  isArrayLiteralExpression,
   isArrowFunction,
   isBinaryExpression,
   isCallExpression,
   isElementAccessExpression,
-  isForInStatement,
-  isForOfStatement,
   isFunctionDeclaration,
   isFunctionExpression,
   isIdentifier,
   isNoSubstitutionTemplateLiteral,
   isNumericLiteral,
-  isObjectLiteralExpression,
   isParenthesizedExpression,
   isPostfixUnaryExpression,
   isPrefixUnaryExpression,
-  isPropertyAssignment,
-  isShorthandPropertyAssignment,
-  isSpreadAssignment,
-  isSpreadElement,
   isStringLiteral,
   isVariableDeclaration,
   isVariableDeclarationList,
@@ -41,31 +33,12 @@ import {
   type ParameterDeclaration,
   type SourceFile,
 } from "@typescript/native/ast";
-import type { Type } from "@typescript/native/sync";
+import { TypeFlags, type Type } from "@typescript/native/sync";
 import { isAnswered, UNANSWERED, type Answer, type Queries } from "./query.ts";
 import type { Read, ReadRule } from "./references/read-rule.ts";
-import { parenthesesRemoved } from "./unwrap.ts";
+import { assigns, COMPOUND, parenthesesRemoved } from "./unwrap.ts";
 
 type Use = "read" | "write" | "both";
-
-/** The assignment operators that read their target before they write it. */
-const COMPOUND: ReadonlySet<SyntaxKind> = new Set([
-  SyntaxKind.PlusEqualsToken,
-  SyntaxKind.MinusEqualsToken,
-  SyntaxKind.AsteriskEqualsToken,
-  SyntaxKind.AsteriskAsteriskEqualsToken,
-  SyntaxKind.SlashEqualsToken,
-  SyntaxKind.PercentEqualsToken,
-  SyntaxKind.LessThanLessThanEqualsToken,
-  SyntaxKind.GreaterThanGreaterThanEqualsToken,
-  SyntaxKind.GreaterThanGreaterThanGreaterThanEqualsToken,
-  SyntaxKind.AmpersandEqualsToken,
-  SyntaxKind.BarEqualsToken,
-  SyntaxKind.CaretEqualsToken,
-  SyntaxKind.AmpersandAmpersandEqualsToken,
-  SyntaxKind.BarBarEqualsToken,
-  SyntaxKind.QuestionQuestionEqualsToken,
-]);
 
 /** How an expression is used where it is written: read, written, or both. */
 function useOf(node: Node): Use {
@@ -95,6 +68,26 @@ function useOf(node: Node): Use {
 function isLiteralIndex(node: Expression): boolean {
   const at = parenthesesRemoved(node);
   return isStringLiteral(at) || isNumericLiteral(at) || isNoSubstitutionTemplateLiteral(at);
+}
+
+/** Whether an index is string literal text. */
+function isStringIndex(node: Expression): boolean {
+  const at = parenthesesRemoved(node);
+  return isStringLiteral(at) || isNoSubstitutionTemplateLiteral(at);
+}
+
+/**
+ * Whether a receiver's type is not `any` and declares a string index signature: there a
+ * string literal index reads the signature, so this rule reads the member it names and
+ * reflective-lookup holds nothing back. A type whose index signatures the checker did not
+ * answer for declares none. Both sides call this one predicate, so no lookup falls between.
+ */
+export function readsAMapping(queries: Queries, type: Type): boolean {
+  if ((type.flags & TypeFlags.Any) !== 0) {
+    return false;
+  }
+  const infos = queries.indexInfosOf(type);
+  return isAnswered(infos) && infos.some((info) => (info.keyType.flags & TypeFlags.String) !== 0);
 }
 
 /** A function whose calls may decide an access, by the name its calls spell. */
@@ -158,68 +151,6 @@ function enclosingFunction(node: Node): Node | undefined {
   return undefined;
 }
 
-/** Whether an assignment target, a destructuring pattern at any depth included, assigns a name. */
-function targetAssigns(target: Node, name: string): boolean {
-  if (isParenthesizedExpression(target)) {
-    return targetAssigns(target.expression, name);
-  }
-  if (isIdentifier(target)) {
-    return target.text === name;
-  }
-  if (isArrayLiteralExpression(target)) {
-    return target.elements.some((element) => targetAssigns(element, name));
-  }
-  if (isObjectLiteralExpression(target)) {
-    return target.properties.some((property) =>
-      isPropertyAssignment(property)
-        ? targetAssigns(property.initializer, name)
-        : isShorthandPropertyAssignment(property)
-          ? isIdentifier(property.name) && property.name.text === name
-          : isSpreadAssignment(property) && targetAssigns(property.expression, name),
-    );
-  }
-  if (isSpreadElement(target)) {
-    return targetAssigns(target.expression, name);
-  }
-  // A pattern element with a default value, `[k = "a"] = …`, assigns its left side.
-  return (
-    isBinaryExpression(target) &&
-    target.operatorToken.kind === SyntaxKind.EqualsToken &&
-    targetAssigns(target.left, name)
-  );
-}
-
-/**
- * Whether a body assigns a name: by an assignment, a destructuring one included, an
- * increment or a decrement, or as the target of a `for…in` or `for…of` loop.
- */
-function assigns(body: Node | undefined, name: string): boolean {
-  let found = false;
-  const visit = (node: Node): void => {
-    if (found) {
-      return;
-    }
-    const target =
-      isBinaryExpression(node) &&
-      (node.operatorToken.kind === SyntaxKind.EqualsToken || COMPOUND.has(node.operatorToken.kind))
-        ? node.left
-        : (isPrefixUnaryExpression(node) || isPostfixUnaryExpression(node)) &&
-            (node.operator === SyntaxKind.PlusPlusToken ||
-              node.operator === SyntaxKind.MinusMinusToken)
-          ? node.operand
-          : (isForInStatement(node) || isForOfStatement(node)) &&
-              node.initializer.kind !== SyntaxKind.VariableDeclarationList
-            ? node.initializer
-            : undefined;
-    found = target !== undefined && targetAssigns(target, name);
-    node.forEachChild(visit);
-  };
-  if (body !== undefined) {
-    visit(body);
-  }
-  return found;
-}
-
 /** One lookup: the index whose literal type names members of the object's type, read where and by whom. */
 interface Lookup {
   readonly file: SourceFile;
@@ -228,6 +159,12 @@ interface Lookup {
   readonly object: Expression;
   readonly index: Expression;
   readonly use: Use;
+  /**
+   * A string literal index, read here only on a receiver that declares a string index
+   * signature: elsewhere reflective-lookup retains what it names, and on such a receiver
+   * it holds nothing back, so a member the literal names would have no reference.
+   */
+  readonly mapped?: true;
 }
 
 /** One access whose index may be a parameter decided at the function's calls. */
@@ -236,6 +173,7 @@ interface Candidate {
   readonly from: string;
   readonly access: ElementAccessExpression;
   readonly use: Use;
+  readonly mapped?: true;
 }
 
 /**
@@ -252,6 +190,8 @@ export const elementAccess: ReadRule = {
       visit(node, { file, from }) {
         if (isElementAccessExpression(node) && !isLiteralIndex(node.argumentExpression)) {
           candidates.push({ file, from, access: node, use: useOf(node) });
+        } else if (isElementAccessExpression(node) && isStringIndex(node.argumentExpression)) {
+          candidates.push({ file, from, access: node, use: useOf(node), mapped: true });
         }
         if (isCallExpression(node)) {
           calls.set(node, { file, from });
@@ -333,6 +273,7 @@ export const elementAccess: ReadRule = {
               object: candidate.access.expression,
               index: candidate.access.argumentExpression,
               use: candidate.use,
+              ...(candidate.mapped === true ? { mapped: true as const } : {}),
             });
             continue;
           }
@@ -391,6 +332,9 @@ export const elementAccess: ReadRule = {
             return;
           }
           if (objectType === undefined || admitted === undefined) {
+            return;
+          }
+          if (lookup.mapped === true && !readsAMapping(queries, objectType)) {
             return;
           }
           for (const part of partsOf(objectType)) {

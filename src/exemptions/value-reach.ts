@@ -34,9 +34,14 @@ import type { ProjectView } from "../session.ts";
 /**
  * The object types whose members the walk reads whatever declares them. A reverse-mapped
  * type has no symbol: it is the shape the checker infers from an argument the target
- * writes against a homomorphic mapped type.
+ * writes against a homomorphic mapped type; a destructuring rest's type is the shape the
+ * checker copies from the properties no sibling takes.
  */
-const WRITTEN = ObjectFlags.ObjectLiteral | ObjectFlags.Mapped | ObjectFlags.ReverseMapped;
+const WRITTEN =
+  ObjectFlags.ObjectLiteral |
+  ObjectFlags.Mapped |
+  ObjectFlags.ReverseMapped |
+  ObjectFlags.ObjectRestType;
 
 /** The symbols of an anonymous object type the target writes as a type. */
 const LITERAL_SYMBOLS = SymbolFlags.TypeLiteral | SymbolFlags.ObjectLiteral;

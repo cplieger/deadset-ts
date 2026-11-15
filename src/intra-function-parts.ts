@@ -122,8 +122,8 @@ import {
   importBindings,
   type JsxOptions,
 } from "./import-bindings.ts";
-import { isParameterProperty, nodeKey, type Inventory } from "./inventory.ts";
-import { positionKey, renderPosition } from "./position.ts";
+import { displayName, isParameterProperty, nodeKey, type Inventory } from "./inventory.ts";
+import { positionKey, renderPosition, startLine } from "./position.ts";
 import { publishedAPI } from "./roots/published-reach.ts";
 import { sourceFilesOf } from "./source-files.ts";
 import { importRef } from "./ref.ts";
@@ -142,7 +142,7 @@ export interface PartFact {
   /** The inventory's identifier of the declaration that holds the part. */
   readonly declaration: string;
   readonly kind: PartKind;
-  /** The part's display name: an identifier, or the text of a case. */
+  /** The part's display name, as {@link displayName} spells source text: an identifier, or the text of a case. */
   readonly name: string;
   readonly position: FindingPosition;
   /** Where the part is a parameter's name, what a function used as a value decides it by. */
@@ -194,11 +194,13 @@ interface SignatureFact {
 }
 
 /** One name an import declaration binds, and whether its file reads it. */
-interface ImportFact {
+export interface ImportFact {
   readonly ref: string;
   readonly name: string;
   readonly position: FindingPosition;
   readonly used: boolean;
+  /** The lines a directive binds it on: its statement's first line and its name's. */
+  readonly lines: readonly number[];
 }
 
 /** What one project answers about the parts of its declarations. */
@@ -1565,10 +1567,15 @@ export function projectParts<Brand>(
       if (fileId === undefined || fileRef === undefined) {
         continue;
       }
+      let statement: Node = binding;
+      while (statement.parent.kind !== SyntaxKind.SourceFile) {
+        statement = statement.parent;
+      }
       imports.push({
         ref: importRef(fileRef, binding.text),
         name: binding.text,
         position: spanOf(file, targetRoot, binding),
+        lines: [...new Set([startLine(file, statement.pos), startLine(file, binding.getStart())])],
         used:
           implicit.has(binding.text) ||
           bindingUses.some(
@@ -1613,7 +1620,7 @@ export function projectParts<Brand>(
     const part = (declaration: string, kind: PartKind, name: string, node: Node): PartFact => ({
       declaration,
       kind,
-      name,
+      name: displayName(name),
       position: spanOf(file, targetRoot, node),
     });
     walk.catches.forEach(({ name, holder }, at) => {
@@ -2652,7 +2659,7 @@ function resultParts<Brand>(
     found.push({
       declaration: id,
       kind: "result",
-      name: "result",
+      name: `1 of 1 (${displayName(spelled)})`,
       position: spanOf(file, root, at),
       thenable: !isAnswered(members) || members.some((member) => member.name === "then"),
     });

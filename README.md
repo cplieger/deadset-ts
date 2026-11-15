@@ -61,9 +61,9 @@ export class Counter {
 The text rendering lists three findings:
 
 ```text
-src/greet.ts:4:17: function farewell: exported function has no reference in the target and none from any loaded consumer [certain] (DS1001)
-src/greet.ts:8:11: class-member Counter.count: member Counter.count is written at 2 positions and never read [certain] (DS1301)
-src/greet.ts:12:3: method Counter.reset: method has no reference in the target [certain] (DS1003)
+src/greet.ts:4:17: function farewell: exported function farewell has no reference in the target and none from any loaded consumer [certain] (DS1001)
+src/greet.ts:8:11: class-member Counter.count: private class member Counter.count is written at 2 positions and never read [certain] (DS1301)
+src/greet.ts:12:3: method Counter.reset: method Counter.reset has no reference in the target [certain] (DS1003)
 summary: 3 findings (0 allow, 0 warn, 3 deny), 6 deletable lines, 0 suppressions in effect, 0 reasons recorded, 0 stale suppressions, 0 pending, 0 omitted
 ```
 

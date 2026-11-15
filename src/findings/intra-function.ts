@@ -4,20 +4,35 @@ import { KINDS } from "../kinds.ts";
 import { parameterRef } from "../ref.ts";
 import type { PartFact, PartKind } from "../intra-function-parts.ts";
 import { reachedWithTheTests } from "../liveness/sweep.ts";
+import { named } from "./draft.ts";
 import type { Emitter, EmitterInput } from "./emitter.ts";
 
-/** The code each part kind is reported under, and what its finding says before the overlap clause. */
-const PART_KINDS: Readonly<Record<PartKind, { code: string; says: (name: string) => string }>> = {
+/**
+ * The code each part kind is reported under, and what its finding says before the overlap
+ * clause about the part `name` of the declaration `of`, as a message names it.
+ */
+const PART_KINDS: Readonly<
+  Record<PartKind, { code: string; says: (name: string, of: string) => string }>
+> = {
   parameter: {
     code: CODE.unusedParameter,
-    says: (name) => `parameter ${name} is never read in the body`,
+    says: (name, of) => `parameter ${name} of ${of} is never read in the body`,
   },
-  result: { code: CODE.unusedResult, says: () => "result is discarded at every call site" },
-  store: { code: CODE.deadStore, says: (name) => `value written to ${name} is never read` },
-  statement: { code: CODE.unreachableStatement, says: () => "statement is unreachable" },
+  result: {
+    code: CODE.unusedResult,
+    says: (name, of) => `result ${name} of ${of} is discarded at every call site`,
+  },
+  store: {
+    code: CODE.deadStore,
+    says: (name, of) => `value written to ${name} in ${of} is never read`,
+  },
+  statement: {
+    code: CODE.unreachableStatement,
+    says: (_name, of) => `statement of ${of} is unreachable`,
+  },
   case: {
     code: CODE.unreachableCase,
-    says: (name) => `case ${name} is covered by an earlier case of the same switch`,
+    says: (name, of) => `case ${name} in ${of} is covered by an earlier case of the same switch`,
   },
 };
 
@@ -176,10 +191,11 @@ export const intraFunction: Emitter = (input) => {
             rooted,
           )
         : undefined;
+    const said = says(part.name, named(declaration));
     const message =
       verdict?.fix === "rename"
-        ? `${says(part.name)}, and a read parameter follows it, so rename it to _${part.name}`
-        : says(part.name);
+        ? `${said}, and a read parameter follows it, so rename it to _${part.name}`
+        : said;
     found.push({
       code,
       position: part.position,
@@ -188,7 +204,7 @@ export const intraFunction: Emitter = (input) => {
           ? { ref: parameterRef(declaration.ref, part.name), holder: declaration.ref }
           : { ref: declaration.ref }),
         kind: part.kind,
-        name: part.name,
+        name: part.kind === "statement" ? declaration.name : part.name,
         sizeLines: part.position.endLine - part.position.line + 1,
       },
       message: `${message}; ${overlapClause(overlap, part)}`,

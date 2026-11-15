@@ -8,7 +8,7 @@ import { CONFIG_MAX_BYTES } from "../contract/config.generated.ts";
 import { EDGES_FILE } from "../edges.ts";
 import type { Host } from "../host.ts";
 import { run, type Writer } from "../run.ts";
-import { BASELINE_FILE, IGNORE_FILE } from "../suppress-file.ts";
+import { BASELINE_FILE, IGNORE_FILE } from "../suppression/documents.ts";
 
 /** A valid document of each kind the target holds at its root. */
 const VALID: Readonly<Record<string, string>> = {

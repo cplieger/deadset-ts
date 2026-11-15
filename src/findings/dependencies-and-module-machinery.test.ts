@@ -258,7 +258,7 @@ describe("a workspace whose members declare dependencies", () => {
           .map((finding) => `${finding.symbol.name}: ${finding.message}`),
         "packages/tool/scripts/run.mjs imports member-tool, and nothing imports or roots run.mjs",
       ).toEqual([
-        "member-tool: only code that is itself dead uses the declared development dependency",
+        "member-tool: only code that is itself dead uses the declared development dependency member-tool",
       ]);
     } finally {
       rmSync(formed, { recursive: true, force: true });
@@ -344,9 +344,9 @@ describe("a dependency only dead code uses", () => {
             `${finding.symbol.name} ${finding.unreachableOnly === true ? "reached" : "unreferenced"}: ${finding.message}`,
         ),
       ).toEqual([
-        "dead-only unreferenced: only code that is itself dead uses the declared dependency",
-        "file-level unreferenced: only code that is itself dead uses the declared dependency",
-        "reached reached: only code that is itself dead uses the declared dependency",
+        "dead-only unreferenced: only code that is itself dead uses the declared dependency dead-only",
+        "file-level unreferenced: only code that is itself dead uses the declared dependency file-level",
+        "reached reached: only code that is itself dead uses the declared dependency reached",
       ]);
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -523,4 +523,101 @@ describe("a command a workspace member's script runs", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+});
+
+describe("a manifest declaring a dependency under a name outside the current npm rules", () => {
+  /** A project whose manifest declares one dependency under `name`, and nothing imports it. */
+  const project = (name: string): string =>
+    writeProject({
+      "package.json": `${JSON.stringify(
+        { name: "@example/tree", private: true, type: "module", dependencies: { [name]: "1.0.0" } },
+        null,
+        2,
+      )}\n`,
+      "deadset.json": JSON.stringify({
+        target: { kind: "application" },
+        ts: { entry_files: ["main.ts"] },
+      }),
+      "main.ts": "export const x = 1;\n",
+    });
+  const analyzed = (root: string, extra: readonly string[]): { code: number; err: string } => {
+    const err = new MemoryWriter();
+    const code = run(
+      ["analyze", "--target=.", `--report=${join(root, "report.json")}`, ...extra],
+      new MemoryWriter(),
+      err,
+      { ...nodeHost(), workingDirectory: () => root },
+    );
+    return { code, err: err.text };
+  };
+
+  it("ends the run with the usage code for the empty name, naming the manifest, the line and the section", () => {
+    const root = project("");
+    try {
+      const { code, err } = analyzed(root, []);
+      expect(code).toBe(2);
+      expect(err).toContain(
+        "package.json:6:5: dependencies declares a dependency under an empty name",
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  it.each([
+    ["a legacy name holding a tilde", "left~pad", "left%7Epad"],
+    ["a legacy name holding the other old characters", "a'b!c(d)e*", "a%27b%21c%28d%29e%2A"],
+    ["a scoped legacy name", "@old~scope/x!", "@old%7Escope/x%21"],
+    ["a name holding a space", "foo bar", "foo%20bar"],
+    ["a name holding a line feed", "a\nb", "a%0Ab", "a b"],
+    ["a name outside ASCII", "\u00fcber", "%C3%BCber"],
+  ])(
+    "reports %s as unused under its percent-encoded reference, and a baseline row of it is read back",
+    (_form, name, encoded, shown = name) => {
+      const root = project(name);
+      try {
+        const baseline = join(root, "deadset-baseline.json");
+        const first = analyzed(root, [`--baseline-write=${baseline}`]);
+        const report = JSON.parse(readFileSync(join(root, "report.json"), "utf8")) as {
+          findings: { code: string; symbol: { ref: string; name: string } }[];
+        };
+        const rows = (
+          JSON.parse(readFileSync(baseline, "utf8")) as { baseline: { symbol: string }[] }
+        ).baseline;
+        const second = analyzed(root, []);
+
+        expect(first.code).toBe(1);
+        expect(report.findings.map((one) => [one.code, one.symbol.ref, one.symbol.name])).toEqual([
+          ["DS1701", `ts://@example/tree/package.json#${encoded}:dependency`, shown],
+        ]);
+        expect(rows.map((row) => row.symbol)).toEqual([
+          `ts://@example/tree/package.json#${encoded}:dependency`,
+        ]);
+        expect(second.code).toBe(0);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    },
+    60_000,
+  );
+
+  it("writes a baseline row for a package name's dependency that the next run reads", () => {
+    const root = project("left-pad");
+    try {
+      const baseline = join(root, "deadset-baseline.json");
+      const first = analyzed(root, [`--baseline-write=${baseline}`]);
+      const rows = (
+        JSON.parse(readFileSync(baseline, "utf8")) as { baseline: { symbol: string }[] }
+      ).baseline;
+      const second = analyzed(root, []);
+
+      expect(first.code).toBe(1);
+      expect(rows.map((row) => row.symbol)).toEqual([
+        "ts://@example/tree/package.json#left-pad:dependency",
+      ]);
+      expect(second.code).toBe(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 60_000);
 });

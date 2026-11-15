@@ -101,10 +101,10 @@ describe("the interfaces emitter", () => {
         .filter((found) => found.code === "DS1201")
         .map((found) => `${found.symbol.name}: ${found.message}`),
     ).toEqual([
-      "Unused: nothing in the target names the interface as a type",
-      "OnlyDead: the interface is named as a type only from declarations that are themselves dead",
-      "Probe: the interface is named as a type only from test files",
-      "TestDouble: nothing in the target names the interface as a type",
+      "Unused: nothing in the target names interface Unused as a type",
+      "OnlyDead: interface OnlyDead is named as a type only from declarations that are themselves dead",
+      "Probe: interface Probe is named as a type only from test files",
+      "TestDouble: nothing in the target names interface TestDouble as a type",
     ]);
   });
 

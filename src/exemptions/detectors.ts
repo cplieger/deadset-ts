@@ -4,6 +4,7 @@
  * retains nothing.
  */
 
+import type { EdgeSide } from "../findings/boundary.ts";
 import type { ResolvedConfig } from "../config.ts";
 import type { Host } from "../host.ts";
 import type { Inventory } from "../inventory.ts";
@@ -52,12 +53,14 @@ export function detection(
   config: ResolvedConfig,
   consumers: readonly string[],
   detectors: Detectors,
+  edges: readonly EdgeSide[],
 ): <Brand>(one: DetectedProject<Brand>) => readonly Exemption[] {
   const disabled = new Set(config.exemptions.disabled);
   const templates = disabled.has("template-field")
     ? { delimiters: config.analysis.template_delimiters, files: [] }
     : readTemplates(host, targetRoot, config.analysis);
   const included = config.analysis.generated_files === "include";
+  const edgeNamed = new Set(edges.map((side) => side.symbol));
   return ({ project, held, generated }) =>
     detect(
       {
@@ -67,7 +70,7 @@ export function detection(
         templates,
         ts: config.ts,
         consumers,
-        ...(included ? {} : { generated }),
+        ...(included ? {} : { generated, edgeNamed }),
       },
       detectors,
       disabled,

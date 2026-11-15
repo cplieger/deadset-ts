@@ -13,7 +13,7 @@
       "name": "Unused",
       "sizeLines": 4
     },
-    "message": "nothing in the target names the interface as a type",
+    "message": "nothing in the target names interface Unused as a type",
     "details": {
       "implementations": [
         {
@@ -43,7 +43,7 @@
       "name": "OnlyDead",
       "sizeLines": 3
     },
-    "message": "the interface is named as a type only from declarations that are themselves dead",
+    "message": "interface OnlyDead is named as a type only from declarations that are themselves dead",
     "details": {
       "implementations": []
     }
@@ -62,7 +62,7 @@
       "name": "Channel.close",
       "sizeLines": 1
     },
-    "message": "no call site invokes or selects the method through the interface",
+    "message": "no call site invokes or selects interface method Channel.close through the interface",
     "details": {
       "implementations": [
         {
@@ -102,7 +102,7 @@
       "name": "Signal.raise",
       "sizeLines": 1
     },
-    "message": "no call site invokes or selects the method through the interface",
+    "message": "no call site invokes or selects interface method Signal.raise through the interface",
     "details": {
       "implementations": [
         {
@@ -142,7 +142,7 @@
       "name": "Listener.notify",
       "sizeLines": 1
     },
-    "message": "no call site invokes or selects the method through the interface",
+    "message": "no call site invokes or selects interface method Listener.notify through the interface",
     "details": {
       "implementations": []
     }
@@ -161,7 +161,7 @@
       "name": "Probe",
       "sizeLines": 3
     },
-    "message": "the interface is named as a type only from test files",
+    "message": "interface Probe is named as a type only from test files",
     "details": {
       "implementations": []
     }
@@ -180,7 +180,7 @@
       "name": "TestDouble",
       "sizeLines": 3
     },
-    "message": "nothing in the target names the interface as a type",
+    "message": "nothing in the target names interface TestDouble as a type",
     "details": {
       "implementations": []
     }
