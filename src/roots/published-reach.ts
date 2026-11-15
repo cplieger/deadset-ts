@@ -122,7 +122,7 @@ export function publishedAPI<Brand>(
     }
   }
   const files = new Set(held.symbols.filter((one) => one.kind === "file").map((one) => one.id));
-  const blocks = held.symbols.filter((one) => isGlobalBlock(one, held, files));
+  const blocks = held.symbols.filter((one) => isGlobalBlock(one, files));
   const fileOf = (id: string): string | undefined => {
     let at = byId.get(id);
     while (at !== undefined && at.kind !== "file") {

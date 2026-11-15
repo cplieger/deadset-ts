@@ -54,7 +54,7 @@ export interface PropertyRead {
 }
 
 /** The text a property name spells, or `undefined` for a computed name. */
-function nameText(node: Node | undefined): string | undefined {
+export function nameText(node: Node | undefined): string | undefined {
   if (node === undefined) {
     return undefined;
   }
@@ -431,5 +431,18 @@ export function destructuring<Brand>(
     });
   };
 
-  return { resolve };
+  // A pattern's read is asked by the holders of namespace objects first and its file's own pass after.
+  const known = new Map<Node, Answer<TSSymbol | undefined>>();
+  return {
+    resolve: (reads) => {
+      const asked = [...new Set(reads.filter((read) => !known.has(read.key)))];
+      (asked.length === 0 ? [] : resolve(asked)).forEach((answer, at) => {
+        const read = asked[at];
+        if (read !== undefined) {
+          known.set(read.key, answer);
+        }
+      });
+      return reads.map((read) => known.get(read.key));
+    },
+  };
 }

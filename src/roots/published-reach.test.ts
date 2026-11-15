@@ -171,7 +171,9 @@ describe("the types a library's published API reaches without writing them", () 
       "src/index.ts": 'import * as helpers from "./helpers.js";\n\nexport const api = helpers;\n',
     });
 
-    expect(lines(report)).toEqual(["DS1001 format possible", "DS1001 api possible"]);
+    // The binding given the namespace object holds it whole, which references every export
+    // (references-ts.5), so the published `api` keeps `format`.
+    expect(lines(report)).toEqual(["DS1001 api possible"]);
   });
 });
 

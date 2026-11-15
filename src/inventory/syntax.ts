@@ -144,6 +144,11 @@ const ARMS: ReadonlyMap<SyntaxKind, Arm> = new Map([
       into.exportScope(record, node.name);
       if (isStringLiteral(node.name)) {
         into.module(record, node.name.text);
+        into.block(record, "module");
+      } else if (node.getSourceFile().moduleAugmentations.includes(node.name)) {
+        // The file's module augmentations are the compiler's record of a global augmentation:
+        // `declare global` is listed, a `namespace` or `declare module` spelled `global` is not.
+        into.block(record, "global");
       }
       const body = node.body;
       if (body === undefined) {

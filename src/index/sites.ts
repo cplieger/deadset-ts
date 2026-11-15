@@ -40,6 +40,7 @@ import {
   SyntaxKind,
   type Identifier,
   type Node,
+  type ObjectBindingPattern,
   type ParameterDeclaration,
   type SourceFile,
   type StringLiteralLikeNode,
@@ -49,11 +50,17 @@ import { writtenValue } from "../entries/static-module.ts";
 import type { FlowAt, LiteralAt } from "../contextual-uses.ts";
 import { propertyReadsOf, type PropertyRead } from "../destructuring.ts";
 import { isParameterProperty, nodeKey } from "../inventory.ts";
-import { namespaceUses } from "../namespace-objects.ts";
+import {
+  directEval,
+  dynamicImports,
+  indexedThrough,
+  type ImportedUse,
+} from "../namespace-objects.ts";
 import { startsRelativePath } from "../paths.ts";
 import { writtenName } from "../platform-calls.ts";
 import type { Use } from "../references.ts";
 import { isLoadCall, type LoadCall } from "../roots/unseen-loads.ts";
+import { spellsNoUse } from "../spelled-names.ts";
 import { keyNameOf, type KeyedAccess } from "../symbol-keys.ts";
 import { parenthesesRemoved } from "../unwrap.ts";
 import { handedOn, valuesOf } from "./values.ts";
@@ -238,6 +245,11 @@ export interface Site {
   readonly shorthand: Node | undefined;
   readonly from: string;
   readonly use: Use;
+  /**
+   * For a literal index, the name of what may be the namespace value it reads, or the specifier
+   * of the `import()` whose value it indexes, read only where it is one.
+   */
+  readonly through?: Node;
 }
 
 /**
@@ -256,6 +268,8 @@ export interface Link {
   readonly from: string;
   /** Whether the node's symbol is an alias, which is followed one link along. */
   readonly alias: boolean;
+  /** Whether the re-export carries a whole module, `export *` or `export * as`. */
+  readonly module: boolean;
 }
 
 /** One place the walk found that evaluates a module, and the declaration that holds it. */
@@ -306,12 +320,24 @@ interface WorkerSite {
   readonly from: string;
 }
 
-/** One use of a module namespace object that may read every export of the module. */
+/** One use of the namespace object a dynamic `import()` gives that may read every export of the module. */
 interface WholeRead {
-  /** The module specifier, whose symbol is the module read. */
+  /** The call's literal specifier, whose symbol is the module read. */
   readonly specifier: Node;
   /** The use, whose position the reference carries. */
   readonly at: Node;
+  readonly from: string;
+  /** A re-export of the object passes it on, reading none of its exports itself. */
+  readonly passes?: true;
+  /** An object pattern of names whose names read the members so named (`Judgement.pattern`). */
+  readonly pattern?: ObjectBindingPattern;
+  /** The name the call's value is bound to, where it may be a namespace binding (`Judgement.binds`). */
+  readonly binds?: { readonly name: Node; readonly held: boolean };
+}
+
+/** One direct eval's callee ({@link directEval}), and the declaration that holds it. */
+interface DynamicSite {
+  readonly callee: Node;
   readonly from: string;
 }
 
@@ -342,6 +368,7 @@ export interface FileSites {
   readonly links: readonly Link[];
   readonly evaluations: readonly Evaluation[];
   readonly wholes: readonly WholeRead[];
+  readonly dynamics: readonly DynamicSite[];
   readonly urls: readonly ModuleURLAt[];
   readonly workers: readonly WorkerSite[];
   readonly loadCalls: readonly LoadCall[];
@@ -559,13 +586,13 @@ function linksOf(
   if (clause === undefined) {
     return specifier === undefined
       ? []
-      : [{ node: specifier, at: specifier, from: enclosing, alias: false }];
+      : [{ node: specifier, at: specifier, from: enclosing, alias: false, module: true }];
   }
   if (isNamespaceExport(clause)) {
     const from = declarations.get(nodeKey(file, clause));
     return from === undefined
       ? []
-      : [{ node: clause.name, at: specifier ?? clause.name, from, alias: true }];
+      : [{ node: clause.name, at: specifier ?? clause.name, from, alias: true, module: true }];
   }
   const found: Link[] = [];
   for (const element of clause.elements) {
@@ -576,6 +603,7 @@ function linksOf(
         at: element.propertyName ?? element.name,
         from,
         alias: true,
+        module: false,
       });
     }
   }
@@ -607,6 +635,50 @@ function isAssignmentPattern(node: Node): boolean {
 }
 
 /**
+ * The reads of the dynamic imports one file makes, by the node each is written at, and each
+ * literal index of an import's value with the specifier of the import it reads through.
+ */
+function importedReads(imports: readonly ImportedUse[]): {
+  readonly reads: ReadonlyMap<Node, readonly Omit<WholeRead, "at" | "from">[]>;
+  readonly indexes: ReadonlyMap<Node, Node>;
+} {
+  const reads = new Map<Node, Omit<WholeRead, "at" | "from">[]>();
+  const indexes = new Map<Node, Node>();
+  const add = (at: Node, read: Omit<WholeRead, "at" | "from">): void => {
+    reads.set(at, [...(reads.get(at) ?? []), read]);
+  };
+  for (const { at, specifier, judgement } of imports) {
+    const { binds } = judgement;
+    for (const whole of judgement.whole) {
+      add(whole, { specifier, ...(binds === undefined ? {} : { binds }) });
+    }
+    if (judgement.indexed !== undefined) {
+      indexes.set(judgement.indexed, specifier);
+    }
+    if (judgement.passes) {
+      add(at, { specifier, passes: true });
+    }
+    if (judgement.pattern !== undefined) {
+      add(at, { specifier, pattern: judgement.pattern });
+    }
+  }
+  return { reads, indexes };
+}
+
+/** The literal index of one element access of an `import()`'s value, with the import's specifier. */
+function importIndexed(
+  node: Node,
+  indexes: ReadonlyMap<Node, Node>,
+): { readonly node: Node; readonly through: Node } | undefined {
+  const through = isElementAccessExpression(node)
+    ? indexes.get(node.argumentExpression)
+    : undefined;
+  return through === undefined || !isElementAccessExpression(node)
+    ? undefined
+    : { node: node.argumentExpression, through };
+}
+
+/**
  * Every name node one file holds that is a use rather than a declaration, in source
  * order, each with its enclosing declaration and its use, and every re-export the file
  * writes. One walk answers all of it, because a second would have to agree with this one
@@ -626,12 +698,13 @@ export function sitesOf(
   const links: Link[] = [];
   const evaluations: Evaluation[] = [];
   const wholes: WholeRead[] = [];
+  const dynamics: DynamicSite[] = [];
   const urls: ModuleURLAt[] = [];
   const workers: WorkerSite[] = [];
   const loadCalls: LoadCall[] = [];
   const decorated: Decorated[] = [];
   const parameterWrites: ParameterWrite[] = [];
-  const namespaces = namespaceUses(file);
+  const imported = importedReads(dynamicImports(file));
   const literals: LiteralAt[] = [];
   const flows: FlowAt[] = [];
   const writes = new Set<number>();
@@ -660,9 +733,17 @@ export function sitesOf(
     }
   };
 
-  // A read rule sees every node, an unread subtree's too, each with its enclosing declaration.
-  const offerAll = (node: Node): void => {
+  // A read rule and the eval scan see every node, an unread subtree's too, each with its
+  // enclosing declaration.
+  const seen = (node: Node): void => {
     offer(node, enclosing);
+    const callee = directEval(node);
+    if (callee !== undefined) {
+      dynamics.push({ callee, from: enclosing });
+    }
+  };
+  const offerAll = (node: Node): void => {
+    seen(node);
     node.forEachChild(offerAll);
   };
   const visit = (node: Node): void => {
@@ -670,15 +751,24 @@ export function sitesOf(
       offerAll(node);
       return;
     }
-    offer(node, enclosing);
-    const namespace = namespaces.get(node);
-    if (namespace?.kind === "whole") {
-      wholes.push({ specifier: namespace.specifier, at: node, from: enclosing });
-    } else if (namespace?.kind === "indexed") {
-      found.push({ node: namespace.literal, shorthand: undefined, from: enclosing, use: "read" });
+    seen(node);
+    for (const read of imported.reads.get(node) ?? []) {
+      wholes.push({ ...read, at: node, from: enclosing });
+    }
+    const indexed = indexedThrough(node) ?? importIndexed(node, imported.indexes);
+    if (indexed !== undefined) {
+      // A literal index reads or writes the member it names as its access does.
+      const site = { ...indexed, shorthand: undefined, from: enclosing };
+      const written = accesses.written.has(node);
+      if (written) {
+        found.push({ ...site, use: "write" });
+      }
+      if (!written || accesses.read.has(node)) {
+        found.push({ ...site, use: "read" });
+      }
     }
     if (isName(node)) {
-      if (!declared.has(node.pos)) {
+      if (!declared.has(node.pos) && !(isIdentifier(node) && spellsNoUse(node))) {
         const site = { node, shorthand: shorthands.get(node.pos), from: enclosing };
         if (writes.has(node.pos)) {
           found.push({ ...site, use: "write" });
@@ -771,6 +861,7 @@ export function sitesOf(
     links,
     evaluations,
     wholes,
+    dynamics,
     urls,
     workers,
     loadCalls,

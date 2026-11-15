@@ -111,7 +111,7 @@ function fileDeclarations(file: SourceFile, globals: string[], modules: string[]
     if (
       isModuleDeclaration(statement) &&
       isIdentifier(statement.name) &&
-      statement.name.text === "global" &&
+      file.moduleAugmentations.includes(statement.name) &&
       statement.body !== undefined &&
       isModuleBlock(statement.body)
     ) {

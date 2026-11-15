@@ -1,13 +1,14 @@
 /**
  * The one way the analysis asks a project's checker anything. A question the compiler
- * server panics on answers {@link UNANSWERED}, and a batch it panics on whole is asked
- * again one question at a time; every caller reads an unanswered question as keeping a
- * declaration live, and each is recorded once so a run can say where it was partial.
+ * server panics on, or one at a node inside a `with` body, answers {@link UNANSWERED}, and a
+ * batch it panics on whole is asked again one question at a time; every caller reads an
+ * unanswered question as keeping a declaration live, and each is recorded once so a run can say
+ * where it was partial.
  * Questions of one accessor about many locations go out together, through the array
  * form where it has one and otherwise as one batch, one round trip per capped run.
  */
 
-import { isIdentifier, type Expression, type Node } from "@typescript/native/ast";
+import { isIdentifier, NodeFlags, type Expression, type Node } from "@typescript/native/ast";
 import {
   IndexKind,
   type APIRequestGenerator,
@@ -173,6 +174,8 @@ export interface Queries {
     excludeGlobals: boolean,
   ): Answer<TSSymbol | undefined>;
   exportsOfModule(module: TSSymbol): Answer<readonly TSSymbol[]>;
+  /** Every symbol of `meaning` visible at one node, globals included. */
+  symbolsInScope(node: Node, meaning: SymbolFlags): Answer<readonly TSSymbol[]>;
   /** One symbol's member table. */
   membersOf(symbol: TSSymbol): Answer<ReadonlyMap<string, TSSymbol>>;
   /** One symbol's export table. */
@@ -303,6 +306,34 @@ export function queriesOf(
     log.note({ configFile, accessor, location });
   };
 
+  /**
+   * The checker answers no question at a node inside a `with` body, whose names resolve against
+   * the statement's object first: the compiler flags each such node `InWithStatement` and its
+   * symbol, type and scope answers there are empty. The question is unanswered (program.33).
+   */
+  const blind = (accessor: string, node: Node | undefined): boolean => {
+    if (node === undefined || (node.flags & NodeFlags.InWithStatement) === 0) {
+      return false;
+    }
+    note(accessor, nodeLocation(node));
+    return true;
+  };
+
+  /** One accessor's answers for `nodes`, `ask` given only the nodes the checker can answer for. */
+  const sighted = <In extends Node, Out>(
+    accessor: string,
+    nodes: readonly In[],
+    ask: (run: readonly In[]) => Answer<Out>[],
+  ): Answer<Out>[] => {
+    const blinded = nodes.map((node) => blind(accessor, node));
+    if (!blinded.includes(true)) {
+      return ask(nodes);
+    }
+    const answers = ask(nodes.filter((_, index) => !blinded[index]));
+    let next = 0;
+    return blinded.map((one) => (one ? UNANSWERED : (answers[next++] as Answer<Out>)));
+  };
+
   const one = <T>(accessor: string, location: () => string, question: () => T): Answer<T> => {
     try {
       return ask(accessor, () => [location()], question);
@@ -412,23 +443,29 @@ export function queriesOf(
 
   return {
     symbolsAt: (nodes, cap = DEFAULT_BATCH_CAP) =>
-      many("getSymbolAtLocation", nodes, cap, nodeLocation, (run) =>
-        checker.getSymbolAtLocation(run),
+      sighted("getSymbolAtLocation", nodes, (asked) =>
+        many("getSymbolAtLocation", asked, cap, nodeLocation, (run) =>
+          checker.getSymbolAtLocation(run),
+        ),
       ),
     resolvedSymbol: (node) =>
-      isIdentifier(node)
-        ? one(
-            "getResolvedSymbol",
-            () => nodeLocation(node),
-            () => checker.getResolvedSymbol(node),
-          )
-        : undefined,
+      blind("getResolvedSymbol", node)
+        ? UNANSWERED
+        : isIdentifier(node)
+          ? one(
+              "getResolvedSymbol",
+              () => nodeLocation(node),
+              () => checker.getResolvedSymbol(node),
+            )
+          : undefined,
     shorthandValue: (node) =>
-      one(
-        "getShorthandAssignmentValueSymbol",
-        () => nodeLocation(node),
-        () => checker.getShorthandAssignmentValueSymbol(node),
-      ),
+      blind("getShorthandAssignmentValueSymbol", node)
+        ? UNANSWERED
+        : one(
+            "getShorthandAssignmentValueSymbol",
+            () => nodeLocation(node),
+            () => checker.getShorthandAssignmentValueSymbol(node),
+          ),
     immediateAliased: (symbol) =>
       one(
         "getImmediateAliasedSymbol",
@@ -442,17 +479,27 @@ export function queriesOf(
         () => checker.getAliasedSymbol(symbol),
       ),
     resolveName: (name, meaning, location, excludeGlobals) =>
-      one(
-        "resolveName",
-        () => (location === undefined ? `name ${name}` : nodeLocation(location)),
-        () => checker.resolveName(name, meaning, location, excludeGlobals),
-      ),
+      blind("resolveName", location)
+        ? UNANSWERED
+        : one(
+            "resolveName",
+            () => (location === undefined ? `name ${name}` : nodeLocation(location)),
+            () => checker.resolveName(name, meaning, location, excludeGlobals),
+          ),
     exportsOfModule: (module) =>
       one(
         "getExportsOfModule",
         () => symbolLocation(module),
         () => checker.getExportsOfModule(module),
       ),
+    symbolsInScope: (node, meaning) =>
+      blind("getSymbolsInScope", node)
+        ? UNANSWERED
+        : one(
+            "getSymbolsInScope",
+            () => nodeLocation(node),
+            () => checker.getSymbolsInScope(node, meaning),
+          ),
     membersOf: (symbol) =>
       one(
         "getMembers",
@@ -481,13 +528,19 @@ export function queriesOf(
         (symbol) => symbol.getJsDocTags(checker),
       ),
     typesAt: (nodes, cap = DEFAULT_BATCH_CAP) =>
-      many("getTypeAtLocation", nodes, cap, nodeLocation, (run) => checker.getTypeAtLocation(run)),
-    typeAt: (node) =>
-      one(
-        "getTypeAtLocation",
-        () => nodeLocation(node),
-        () => checker.getTypeAtLocation(node),
+      sighted("getTypeAtLocation", nodes, (asked) =>
+        many("getTypeAtLocation", asked, cap, nodeLocation, (run) =>
+          checker.getTypeAtLocation(run),
+        ),
       ),
+    typeAt: (node) =>
+      blind("getTypeAtLocation", node)
+        ? UNANSWERED
+        : one(
+            "getTypeAtLocation",
+            () => nodeLocation(node),
+            () => checker.getTypeAtLocation(node),
+          ),
     typesOfSymbols: (symbols, cap = DEFAULT_BATCH_CAP) =>
       many("getTypeOfSymbol", symbols, cap, symbolLocation, (run) => checker.getTypeOfSymbol(run)),
     typeOfSymbol: (symbol) =>
@@ -503,13 +556,15 @@ export function queriesOf(
         () => checker.getDeclaredTypeOfSymbol(symbol),
       ),
     contextualTypes: (nodes, cap = DEFAULT_BATCH_CAP) =>
-      each(
-        "getContextualType",
-        nodes,
-        cap,
-        nodeLocation,
-        (node) => checker.getContextualType.gen(node),
-        (node) => checker.getContextualType(node),
+      sighted("getContextualType", nodes, (asked) =>
+        each(
+          "getContextualType",
+          asked,
+          cap,
+          nodeLocation,
+          (node) => checker.getContextualType.gen(node),
+          (node) => checker.getContextualType(node),
+        ),
       ),
     propertiesOf: (type) =>
       one(
@@ -652,19 +707,23 @@ export function queriesOf(
         () => checker.getSignaturesOfType(type, kind),
       ),
     resolvedSignature: (node) =>
-      one(
-        "getResolvedSignature",
-        () => nodeLocation(node),
-        () => checker.getResolvedSignature(node),
-      ),
+      blind("getResolvedSignature", node)
+        ? UNANSWERED
+        : one(
+            "getResolvedSignature",
+            () => nodeLocation(node),
+            () => checker.getResolvedSignature(node),
+          ),
     resolvedSignatures: (nodes, cap = DEFAULT_BATCH_CAP) =>
-      each(
-        "getResolvedSignature",
-        nodes,
-        cap,
-        nodeLocation,
-        (node) => checker.getResolvedSignature.gen(node),
-        (node) => checker.getResolvedSignature(node),
+      sighted("getResolvedSignature", nodes, (asked) =>
+        each(
+          "getResolvedSignature",
+          asked,
+          cap,
+          nodeLocation,
+          (node) => checker.getResolvedSignature.gen(node),
+          (node) => checker.getResolvedSignature(node),
+        ),
       ),
     parameterType: (signature, index) =>
       one(
@@ -710,11 +769,13 @@ export function queriesOf(
         () => checker.getTypeOfPropertyOfType(type, name),
       ),
     signatureOf: (declaration) =>
-      one(
-        "getSignatureFromDeclaration",
-        () => nodeLocation(declaration),
-        () => checker.getSignatureFromDeclaration(declaration),
-      ),
+      blind("getSignatureFromDeclaration", declaration)
+        ? UNANSWERED
+        : one(
+            "getSignatureFromDeclaration",
+            () => nodeLocation(declaration),
+            () => checker.getSignatureFromDeclaration(declaration),
+          ),
     returnTypeOf: (signature) =>
       one(
         "getReturnTypeOfSignature",

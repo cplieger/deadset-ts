@@ -175,7 +175,14 @@ export const moduleDeclarations: ReadRule = {
         const named = namedBy(held);
         imports.forEach((one, index) => {
           const resolved = moduleOf(declared.length + index);
-          const read = (to: string, via: "batch" | "syntax", production: boolean): void => {
+          // The import's read of the declaration is a judged read of a module (references-ts.4),
+          // reaching no export by itself; each member it imports is read on its own.
+          const read = (
+            to: string,
+            via: "batch" | "syntax",
+            production: boolean,
+            module: boolean,
+          ): void => {
             found.push({
               kind: "named",
               from: one.from,
@@ -185,6 +192,7 @@ export const moduleDeclarations: ReadRule = {
               use: "read",
               via,
               ...(production ? { production: true as const } : {}),
+              ...(module ? { namespace: true as const } : {}),
             });
           };
           const same = new Set(
@@ -193,14 +201,15 @@ export const moduleDeclarations: ReadRule = {
               .map((declaration) => declaration.id),
           );
           for (const id of same) {
-            read(id, "batch", false);
+            read(id, "batch", false, true);
           }
           for (const declaration of named(one.specifier.text, one.names)) {
             // A wildcard declaration is how the compiler types the file a matching specifier
             // names, so the import uses it whoever writes it, a test included.
             if (declaration.wildcard || !same.has(declaration.id)) {
-              for (const to of [declaration.id, ...declaration.members]) {
-                read(to, "syntax", declaration.wildcard);
+              read(declaration.id, "syntax", declaration.wildcard, true);
+              for (const to of declaration.members) {
+                read(to, "syntax", declaration.wildcard, false);
               }
             }
           }

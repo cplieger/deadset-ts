@@ -1,8 +1,8 @@
 {
-  "corpus_version": "6.2.0",
+  "corpus_version": "6.3.0",
   "product": { "name": "deadset-ts", "version": "0.1.0", "language": "ts" },
   "result": "pass",
-  "totals": { "fixtures": 382, "pass": 369, "gap": 0, "fail": 0, "pending": 13 },
+  "totals": { "fixtures": 386, "pass": 384, "gap": 0, "fail": 0, "pending": 2 },
   "fixtures": [
     {
       "fixture": "abstract-member-through-this",
@@ -3364,8 +3364,21 @@
           "suppression": { "suppressed": true, "stale": false }
         },
         { "symbol": "home", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "shown", "result": "pass", "actual": { "report": "none" } },
         {
           "symbol": "spare",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "unshown",
           "result": "pass",
           "actual": {
             "report": "DS1001",
@@ -3583,11 +3596,6 @@
             "liveness_relation": "reference-counting"
           },
           "suppression": { "suppressed": true, "stale": false }
-        },
-        {
-          "symbol": "TierHigh",
-          "result": "pass",
-          "actual": { "report": "none", "retained_by": ["enum-group"] }
         },
         {
           "symbol": "TierMid",
@@ -5802,18 +5810,7 @@
       "expectations": [
         { "symbol": "shownByLet", "result": "pass", "actual": { "report": "none" } },
         { "symbol": "shownBySpelling", "result": "pass", "actual": { "report": "none" } },
-        {
-          "symbol": "spareByLet",
-          "result": "pass",
-          "actual": {
-            "report": "DS1001",
-            "symbol_kind": "function",
-            "confidence": "certain",
-            "reachability_class": "certain",
-            "liveness_relation": "reference-counting"
-          },
-          "suppression": { "suppressed": true, "stale": false }
-        },
+        { "symbol": "spareByLet", "result": "pass", "actual": { "report": "none" } },
         {
           "symbol": "spareBySpelling",
           "result": "pass",
@@ -7274,44 +7271,40 @@
       "unexpected": []
     },
     {
+      "fixture": "proto-facts-leave-report-unchanged",
+      "result": "pass",
+      "expectations": [],
+      "unexpected": []
+    },
+    {
       "fixture": "proto-facts-leave-report-unchanged-ts",
       "result": "pass",
       "expectations": [],
       "unexpected": []
     },
     {
-      "fixture": "proto-facts-unevaluated-before-serializers",
+      "fixture": "proto-field-read-in-one-language",
       "result": "pass",
       "expectations": [],
       "unexpected": []
     },
     {
-      "fixture": "proto-field-read-in-one-language",
-      "result": "pending",
-      "expectations": [],
-      "unexpected": [],
-      "message": "consumer record of PingRequest.number state want \"unreferenced\" got \"\"; consumer record of PingRequest.text state want \"live\" got \"\""
-    },
-    {
       "fixture": "proto-field-written-only",
-      "result": "pending",
+      "result": "pass",
       "expectations": [],
-      "unexpected": [],
-      "message": "consumer record of PingRequest.number state want \"unreferenced\" got \"\"; consumer record of PingRequest.text state want \"unreferenced\" got \"\"; consumer record of PingRequest state want \"live\" got \"\""
+      "unexpected": []
     },
     {
       "fixture": "proto-hand-serializer-reads",
-      "result": "pending",
+      "result": "pass",
       "expectations": [],
-      "unexpected": [],
-      "message": "consumer record of Item.number state want \"live\" got \"\"; consumer record of Item.text state want \"live\" got \"\"; consumer record of Envelope.item state want \"live\" got \"\"; consumer record of Envelope.label state want \"live\" got \"\"; consumer record of Other.number state want \"unreferenced\" got \"\""
+      "unexpected": []
     },
     {
       "fixture": "proto-oneof-protobuf-es",
-      "result": "pending",
+      "result": "pass",
       "expectations": [],
-      "unexpected": [],
-      "message": "consumer record of Outcome.ok state want \"live\" got \"\"; consumer record of Outcome.error state want \"live\" got \"\"; consumer record of Outcome.pending state want \"live\" got \"\"; consumer record of Outcome.skipped state want \"unreferenced\" got \"\"; consumer record of Probe.a state want \"live\" got \"\"; consumer record of Probe.b state want \"live\" got \"\""
+      "unexpected": []
     },
     {
       "fixture": "proto-protobuf-es-v2-tags",
@@ -7321,38 +7314,40 @@
     },
     {
       "fixture": "proto-protojson-unmarshal-caps",
-      "result": "pending",
+      "result": "pass",
       "expectations": [],
-      "unexpected": [],
-      "message": "consumer record of PingRequest.number state want \"live\" got \"\"; consumer record of PingRequest.number cap want \"persistence\" got \"\"; consumer record of PingRequest.text state want \"unreferenced\" got \"\"; consumer record of PingRequest.text cap want \"persistence\" got \"\"; consumer record of PingResponse.number state want \"unreferenced\" got \"\""
+      "unexpected": []
     },
     {
       "fixture": "proto-rpc-called-from-ts",
-      "result": "pending",
+      "result": "pass",
       "expectations": [],
-      "unexpected": [],
-      "message": "consumer record of PingService state want \"live\" got \"\"; consumer record of PingService.ping state want \"live\" got \"\"; consumer record of PingService.fail state want \"unreferenced\" got \"\""
+      "unexpected": []
     },
     {
       "fixture": "proto-transport-reads-nothing",
-      "result": "pending",
+      "result": "pass",
       "expectations": [],
-      "unexpected": [],
-      "message": "consumer record of PingRequest.number state want \"unreferenced\" got \"\"; consumer record of PingRequest.text state want \"unreferenced\" got \"\"; consumer record of PingService.ping state want \"live\" got \"\""
+      "unexpected": []
     },
     {
       "fixture": "proto-ts-create-literal-writes",
-      "result": "pending",
+      "result": "pass",
       "expectations": [],
-      "unexpected": [],
-      "message": "consumer record of PingRequest.number state want \"unreferenced\" got \"\"; consumer record of PingRequest.text state want \"unreferenced\" got \"\"; consumer record of PingRequestSchema state want \"live\" got \"\""
+      "unexpected": []
+    },
+    { "fixture": "proto-ts-equals-reads", "result": "pass", "expectations": [], "unexpected": [] },
+    {
+      "fixture": "proto-ts-genfile-value-exposes-descriptors",
+      "result": "pass",
+      "expectations": [],
+      "unexpected": []
     },
     {
-      "fixture": "proto-ts-equals-reads",
-      "result": "pending",
+      "fixture": "proto-ts-genfile-value-spellings",
+      "result": "pass",
       "expectations": [],
-      "unexpected": [],
-      "message": "consumer record of PingRequest.number state want \"live\" got \"\"; consumer record of PingRequest.text state want \"live\" got \"\"; consumer record of PingResponse.number state want \"unreferenced\" got \"\""
+      "unexpected": []
     },
     {
       "fixture": "proto-ts-proto-default-rpc-only",
@@ -7361,18 +7356,28 @@
       "unexpected": []
     },
     {
-      "fixture": "proto-ts-proto-message-fns",
-      "result": "pending",
+      "fixture": "proto-ts-proto-lower-case-service-methods",
+      "result": "pass",
       "expectations": [],
-      "unexpected": [],
-      "message": "want exactly one consumer record of PingRequest.number, got 0; want exactly one consumer record of PingRequest.text, got 0; want exactly one consumer record of PingResponse.number, got 0"
+      "unexpected": []
+    },
+    {
+      "fixture": "proto-ts-proto-message-fns",
+      "result": "pass",
+      "expectations": [],
+      "unexpected": []
+    },
+    {
+      "fixture": "proto-ts-proto-output-schema-without-decoders",
+      "result": "pass",
+      "expectations": [],
+      "unexpected": []
     },
     {
       "fixture": "proto-ts-serialization-contract",
-      "result": "pending",
+      "result": "pass",
       "expectations": [],
-      "unexpected": [],
-      "message": "consumer record of PingRequest.number state want \"live\" got \"\"; consumer record of PingRequest.text state want \"live\" got \"\""
+      "unexpected": []
     },
     {
       "fixture": "published-accessor-pair-types",

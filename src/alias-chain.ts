@@ -10,12 +10,17 @@ import {
   isIdentifier,
   isImportClause,
   isImportSpecifier,
+  isModuleBlock,
+  isModuleDeclaration,
   isNamespaceExport,
   isNamespaceImport,
+  isSourceFile,
+  SyntaxKind,
   type Node,
 } from "@typescript/native/ast";
 import { SymbolFlags, type Symbol as TSSymbol } from "@typescript/native/sync";
 import { isParameterProperty, nodeKey, type Inventory } from "./inventory.ts";
+import { boundValue, declaredTypeOnly } from "./namespace-objects.ts";
 import { must, UNANSWERED, type Answer } from "./query.ts";
 import type { ProjectView } from "./session.ts";
 
@@ -50,6 +55,22 @@ export interface AliasChains {
    * link is declared.
    */
   nextDeclared(symbol: TSSymbol): readonly ChainTarget[];
+  /**
+   * The namespace one symbol stands for as a value: a module, whose namespace object it binds
+   * (references-ts.3), or a `namespace` declaration. It is the symbol the alias chain ends at,
+   * every step answered and no link declared type-only, where that is either; `UNANSWERED` where
+   * a step is, and undefined where the chain ends elsewhere or a link is type-only, which binds
+   * no value. A variable or parameter that binds a namespace value (`boundValue`) stands for it
+   * where nothing exports the binding.
+   */
+  namespaceOf(symbol: TSSymbol): Answer<TSSymbol | undefined>;
+  /**
+   * Whether an answer resolves to no declaration of the program, so an `eval` callee is the global
+   * one: an unanswered or empty answer, an alias, a symbol with no declaration, or one declared
+   * outside the project's own non-declaration files. A symbol that is not an alias, and whose
+   * declarations are all in the project's own non-declaration files, does not.
+   */
+  undeclared(answer: Answer<TSSymbol | undefined>): boolean;
 }
 
 /**
@@ -105,6 +126,147 @@ export function aliasChains<Brand>(project: ProjectView<Brand>, held: Inventory)
   };
 
   const files = held.symbols.filter((one) => one.kind === "file").map((one) => one.id);
+
+  const endOf = (symbol: TSSymbol): Answer<TSSymbol | undefined> => {
+    const walked = new Set<number>();
+    let at = symbol;
+    while ((at.flags & SymbolFlags.Alias) !== 0) {
+      if (walked.has(at.id)) {
+        return undefined;
+      }
+      walked.add(at.id);
+      const next = stepOf(at);
+      if (next === UNANSWERED || next === undefined) {
+        return next;
+      }
+      at = next;
+    }
+    return at;
+  };
+
+  /** Whether a link of one symbol's alias chain is declared type-only, which binds no value. */
+  const typeOnly = (symbol: TSSymbol): boolean => {
+    const walked = new Set<number>();
+    for (
+      let at: Answer<TSSymbol | undefined> = symbol;
+      typeof at === "object" && (at.flags & SymbolFlags.Alias) !== 0 && !walked.has(at.id);
+      at = stepOf(at)
+    ) {
+      walked.add(at.id);
+      const declared = at.declarations.some((handle) => {
+        const node = ownFiles.has(handle.path) ? project.declarationAt(handle)?.node : undefined;
+        return node !== undefined && declaredTypeOnly(node);
+      });
+      if (declared) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const undeclared = (answer: Answer<TSSymbol | undefined>): boolean =>
+    typeof answer !== "object" ||
+    // An imported `eval` may be the global one.
+    (answer.flags & SymbolFlags.Alias) !== 0 ||
+    answer.declarations.length === 0 ||
+    answer.declarations.some(
+      (handle) => !ownFiles.has(handle.path) || /\.d\.[^/]*ts$/.test(handle.path),
+    );
+
+  /** The symbols the entries of one export table end at, `UNANSWERED` where any entry's end is. */
+  const endsOf = (table: readonly TSSymbol[]): Answer<ReadonlySet<number>> => {
+    const ids = new Set<number>();
+    for (const entry of table) {
+      const end = endOf(entry);
+      if (end === UNANSWERED) {
+        return UNANSWERED;
+      }
+      if (end !== undefined) {
+        ids.add(end.id);
+      }
+    }
+    return ids;
+  };
+
+  const tables = new Map<number, Answer<ReadonlySet<number>>>();
+  /** The symbols one container's export table ends at, its table read once; `UNANSWERED` where any step is. */
+  const exportedBy = (container: TSSymbol): Answer<ReadonlySet<number>> => {
+    const known = tables.get(container.id);
+    if (known !== undefined) {
+      return known;
+    }
+    const table = project.queries.exportsOfModule(container);
+    const ends = table === UNANSWERED ? UNANSWERED : endsOf(table);
+    tables.set(container.id, ends);
+    return ends;
+  };
+
+  /**
+   * Whether a binding a module's or a namespace's top level holds is exported, by its modifier or
+   * by an entry of its container's export table that ends at it; an unanswered table may export it.
+   */
+  const exportedBinding = (symbol: TSSymbol, declaration: Node): boolean => {
+    const statement = declaration.parent.parent;
+    const modifiers = (statement as { readonly modifiers?: readonly Node[] }).modifiers ?? [];
+    if (modifiers.some((one) => one.kind === SyntaxKind.ExportKeyword)) {
+      return true;
+    }
+    const top = statement.parent;
+    const holder = isSourceFile(top)
+      ? top
+      : isModuleBlock(top) && isModuleDeclaration(top.parent)
+        ? top.parent.name
+        : undefined;
+    const container =
+      holder === undefined ? undefined : project.symbolsAt([project.handle(holder)])[0];
+    const ends = typeof container === "object" ? exportedBy(container) : UNANSWERED;
+    return ends === UNANSWERED || ends.has(symbol.id);
+  };
+
+  /**
+   * The namespace a variable or parameter binds (`boundValue`): the namespace its value names, an
+   * import's the module its specifier names, where no export carries the binding on, which leaves
+   * it a holder. The binding has no type of its own, so the checker types it as the value, and a
+   * member read through it resolves to the namespace's member, through a CommonJS module's interop
+   * object too; the type does not decide whether the binding exists.
+   */
+  const boundNamespace = (symbol: TSSymbol): TSSymbol | undefined => {
+    const [handle, ...others] = symbol.declarations;
+    const node =
+      handle !== undefined && others.length === 0 && ownFiles.has(handle.path)
+        ? project.declarationAt(handle)?.node
+        : undefined;
+    const bound = node === undefined ? undefined : boundValue(node);
+    if (node === undefined || bound === undefined) {
+      return undefined;
+    }
+    // A question about the binding left unanswered leaves it a holder, read whole where given.
+    const value = project.symbolsAt([project.handle(bound.node)])[0];
+    const namespace = typeof value === "object" ? namespaceOf(value) : undefined;
+    if (typeof namespace !== "object") {
+      return undefined;
+    }
+    return bound.held && exportedBinding(symbol, node) ? undefined : namespace;
+  };
+
+  const namespaces = new Map<number, Answer<TSSymbol | undefined>>();
+  const namespaceOf = (symbol: TSSymbol): Answer<TSSymbol | undefined> => {
+    if (namespaces.has(symbol.id)) {
+      return namespaces.get(symbol.id);
+    }
+    // A binding bound to itself through others binds nothing.
+    namespaces.set(symbol.id, undefined);
+    const end = typeOnly(symbol) ? undefined : endOf(symbol);
+    // A module and a `namespace` are both value modules.
+    const namespace =
+      end === UNANSWERED || (typeof end === "object" && (end.flags & SymbolFlags.ValueModule) !== 0)
+        ? end
+        : typeof end === "object" && (end.flags & SymbolFlags.Variable) !== 0
+          ? boundNamespace(end)
+          : undefined;
+    namespaces.set(symbol.id, namespace);
+    return namespace;
+  };
 
   /**
    * The declarations an alias whose step went unanswered may stand for: every one the
@@ -194,6 +356,8 @@ export function aliasChains<Brand>(project: ProjectView<Brand>, held: Inventory)
     declarationsOf,
     chainOf,
     nextDeclared,
+    namespaceOf,
+    undeclared,
   };
 }
 

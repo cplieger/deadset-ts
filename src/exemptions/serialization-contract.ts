@@ -1570,7 +1570,7 @@ function inflowReader<Brand>(
         join(info, vertex.inside ? reach.heldBy(type) : stored, !stored.concrete);
       }
       let symbol = one.shorthand
-        ? must(project.shorthandValueAt(project.handle(one.value)))
+        ? must(project.shorthandValueAt(project.handle(one.value.parent)))
         : symbolOf.get(one);
       if (symbol !== undefined && (symbol.flags & SymbolFlags.Alias) !== 0) {
         symbol = must(queries.aliased(symbol));

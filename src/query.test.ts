@@ -1,7 +1,7 @@
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { SyntaxKind, type Expression, type Node } from "@typescript/native/ast";
+import { NodeFlags, SyntaxKind, type Expression, type Node } from "@typescript/native/ast";
 import type {
   APIRequestGenerator,
   Checker,
@@ -307,6 +307,54 @@ describe("questions over many locations", () => {
     queries.contextualTypes(NODES.slice(0, 2) as unknown as readonly Expression[]);
 
     expect(asked).toEqual(["getContextualType /src/a.ts:10", "getContextualType /src/a.ts:20"]);
+  });
+});
+
+describe("a question at a node inside a with body", () => {
+  /** One node of a fake program that a `with` statement's body holds, as the parser flags it. */
+  const blindAt = (pos: number): Node =>
+    // A test fake: the layer reads a node's flags, file and offset.
+    ({ ...nodeAt(pos), flags: NodeFlags.InWithStatement }) as unknown as Node;
+
+  it("goes unanswered without being asked, is recorded, and leaves the rest of its run asked", () => {
+    const asked: number[][] = [];
+    // A test fake: only the accessors the case asks are present.
+    const checker = {
+      getSymbolAtLocation: (nodes: readonly Node[]) => {
+        asked.push(nodes.map((node) => node.pos));
+        return nodes.map(symbolFor);
+      },
+      getSymbolsInScope: () => {
+        asked.push([-1]);
+        return [];
+      },
+      getResolvedSymbol: (node: Node) => {
+        asked.push([node.pos]);
+        return symbolFor(node);
+      },
+    } as unknown as Checker;
+    const log = new UnansweredLog();
+    const queries = queriesOf(checker, "/src/tsconfig.json", runEach, log);
+    const identifier = { ...blindAt(60), kind: SyntaxKind.Identifier } as unknown as Node;
+
+    const answers = queries.symbolsAt([nodeAt(10), blindAt(20), nodeAt(30), blindAt(40)]);
+    const scope = queries.symbolsInScope(blindAt(50), 0);
+    const resolved = queries.resolvedSymbol(identifier);
+
+    expect(answers.map((answer) => (answer === UNANSWERED ? "unanswered" : answer?.name))).toEqual([
+      "at10",
+      "unanswered",
+      "at30",
+      "unanswered",
+    ]);
+    expect([scope, resolved]).toEqual([UNANSWERED, UNANSWERED]);
+    expect(asked, "only the nodes outside the body are asked").toEqual([[10, 30]]);
+    expect(log.questions.map((one) => `${one.accessor} ${one.location}`)).toEqual([
+      "getSymbolAtLocation /src/a.ts:20",
+      "getSymbolAtLocation /src/a.ts:40",
+      "getSymbolsInScope /src/a.ts:50",
+      "getResolvedSymbol /src/a.ts:60",
+    ]);
   });
 });
 

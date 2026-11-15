@@ -140,10 +140,7 @@ describe("every corpus fixture with a TypeScript rendering, answered by every fa
       "redundant-export-keyword",
       ["Published none: pass", "LocalOnly DS1503: pass", "Caller none: pass"],
     ],
-    [
-      "enum-group-conversion",
-      ["TierMid none: pass", "TierHigh none: pass", "ModeWrite DS1005: pass"],
-    ],
+    ["enum-group-conversion", ["TierMid none: pass", "ModeWrite DS1005: pass"]],
     ["test-only-reference", ["OnlyTested DS1102: pass", "Production none: pass"]],
     [
       "test-of-dead-code",
