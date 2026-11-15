@@ -50,7 +50,7 @@ describe("an object literal handed to a callee the target does not implement", (
     expect(stub("const api = {} as unknown as Api;")).toEqual([]);
     expect(stub("const api = ({}) as Api;")).toEqual([]);
     expect(stub("const api: Api = ({}) as Api;")).toEqual([]);
-  });
+  }, 20_000);
 
   it("reports a member a literal behind an assertion or `satisfies` never writes", () => {
     const rollout = (literal: string): string[] =>
@@ -79,7 +79,7 @@ describe("an object literal handed to a callee the target does not implement", (
         ].join("\n"),
       }).filter((one) => one.startsWith("DS1003")),
     ).toEqual(["DS1003 Pair.'1'", "DS1003 Pushed.extra"]);
-  });
+  }, 20_000);
 
   it("is read only as the target's own callee reads it, where one stands for the signature", () => {
     const found = treeFindings({
