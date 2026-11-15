@@ -162,8 +162,8 @@ describe("the intra-function family", () => {
       ).toEqual([
         { code: "DS1401", name: "unread", line: 11 },
         { code: "DS1401", name: "ignored", line: 15 },
-        { code: "DS1403", name: "result", line: 31 },
-        { code: "DS1405", name: "statement", line: 46 },
+        { code: "DS1403", name: "1 of 1 (number)", line: 31 },
+        { code: "DS1405", name: "early", line: 46 },
         { code: "DS1404", name: "value", line: 57 },
         { code: "DS1406", name: '"a"', line: 83 },
       ]);
@@ -190,7 +190,7 @@ describe("the intra-function family", () => {
           kind: "parameter",
           ref: "ts://@example/parts/src/main.ts#partial(unread)",
           message:
-            "parameter unread is never read in the body; also reported by tsc --noUnusedParameters and @typescript-eslint/no-unused-vars",
+            "parameter unread of function partial is never read in the body; also reported by tsc --noUnusedParameters and @typescript-eslint/no-unused-vars",
           overlap: ["tsc --noUnusedParameters", "@typescript-eslint/no-unused-vars"],
           relation: undefined,
           writes: undefined,
@@ -200,7 +200,7 @@ describe("the intra-function family", () => {
           kind: "parameter",
           ref: "ts://@example/parts/src/main.ts#onEvent(ignored)",
           message:
-            "parameter ignored is never read in the body; also reported by tsc --noUnusedParameters and @typescript-eslint/no-unused-vars",
+            "parameter ignored of function onEvent is never read in the body; also reported by tsc --noUnusedParameters and @typescript-eslint/no-unused-vars",
           overlap: ["tsc --noUnusedParameters", "@typescript-eslint/no-unused-vars"],
           relation: undefined,
           writes: undefined,
@@ -209,7 +209,8 @@ describe("the intra-function family", () => {
           code: "DS1403",
           kind: "result",
           ref: "ts://@example/parts/src/main.ts#compute",
-          message: "result is discarded at every call site; no other rule is known to report it",
+          message:
+            "result 1 of 1 (number) of function compute is discarded at every call site; no other rule is known to report it",
           overlap: ["none known"],
           relation: undefined,
           writes: undefined,
@@ -219,7 +220,7 @@ describe("the intra-function family", () => {
           kind: "statement",
           ref: "ts://@example/parts/src/main.ts#early",
           message:
-            "statement is unreachable; also reported by tsc allowUnreachableCode and eslint no-unreachable",
+            "statement of function early is unreachable; also reported by tsc allowUnreachableCode and eslint no-unreachable",
           overlap: ["tsc allowUnreachableCode", "eslint no-unreachable"],
           relation: undefined,
           writes: undefined,
@@ -229,7 +230,7 @@ describe("the intra-function family", () => {
           kind: "store",
           ref: "ts://@example/parts/src/main.ts#overwritten",
           message:
-            "value written to value is never read; also reported by eslint no-useless-assignment and @typescript-eslint/no-unused-vars",
+            "value written to value in function overwritten is never read; also reported by eslint no-useless-assignment and @typescript-eslint/no-unused-vars",
           overlap: ["eslint no-useless-assignment", "@typescript-eslint/no-unused-vars"],
           relation: undefined,
           writes: [57],
@@ -239,7 +240,7 @@ describe("the intra-function family", () => {
           kind: "case",
           ref: "ts://@example/parts/src/main.ts#label",
           message:
-            'case "a" is covered by an earlier case of the same switch; no other rule is known to report it',
+            'case "a" in function label is covered by an earlier case of the same switch; no other rule is known to report it',
           overlap: ["none known"],
           relation: undefined,
           writes: undefined,
@@ -300,8 +301,8 @@ describe("the intra-function family", () => {
       ).map(({ finding }) => `${finding.position.path}: ${finding.message}`);
 
       expect(found.sort()).toEqual([
-        "src/checked.js: parameter unread is never read in the body; also reported by tsc --noUnusedParameters and @typescript-eslint/no-unused-vars",
-        "src/plain.js: parameter unread is never read in the body; also reported by @typescript-eslint/no-unused-vars",
+        "src/checked.js: parameter unread of function checked is never read in the body; also reported by tsc --noUnusedParameters and @typescript-eslint/no-unused-vars",
+        "src/plain.js: parameter unread of function plain is never read in the body; also reported by @typescript-eslint/no-unused-vars",
       ]);
     },
     LOAD_TIMEOUT,
@@ -333,10 +334,10 @@ describe("the intra-function family", () => {
       ).map(({ finding }) => `${finding.position.path}: ${finding.message}`);
 
       expect(found.sort()).toEqual([
-        "src/block.ts: parameter unread is never read in the body; also reported by tsc --noUnusedParameters and @typescript-eslint/no-unused-vars",
-        "src/checked.js: parameter unread is never read in the body; also reported by @typescript-eslint/no-unused-vars",
-        "src/prose.ts: parameter unread is never read in the body; also reported by tsc --noUnusedParameters and @typescript-eslint/no-unused-vars",
-        "src/upper.ts: parameter unread is never read in the body; also reported by @typescript-eslint/no-unused-vars",
+        "src/block.ts: parameter unread of function f is never read in the body; also reported by tsc --noUnusedParameters and @typescript-eslint/no-unused-vars",
+        "src/checked.js: parameter unread of function checked is never read in the body; also reported by @typescript-eslint/no-unused-vars",
+        "src/prose.ts: parameter unread of function f is never read in the body; also reported by tsc --noUnusedParameters and @typescript-eslint/no-unused-vars",
+        "src/upper.ts: parameter unread of function f is never read in the body; also reported by @typescript-eslint/no-unused-vars",
       ]);
     },
     LOAD_TIMEOUT,
@@ -819,7 +820,7 @@ describe("a part of test code", () => {
   );
 });
 
-describe("a result every call discards", () => {
+describe("a 1 of 1 (number) every call discards", () => {
   const LIBRARY = {
     "package.json": '{ "name": "@example/results", "private": true, "type": "module" }\n',
     "src/lib.ts": [
@@ -891,7 +892,7 @@ describe("a result every call discards", () => {
   it(
     "is reported only of a declaration no module exports, a member of an exported class included, while the consumer set is open",
     () => {
-      expect(placed(partsOf(LIBRARY, ENTRY))).toEqual(["DS1403 result src/lib.ts:11"]);
+      expect(placed(partsOf(LIBRARY, ENTRY))).toEqual(["DS1403 1 of 1 (number) src/lib.ts:11"]);
     },
     LOAD_TIMEOUT,
   );
@@ -900,9 +901,9 @@ describe("a result every call discards", () => {
     "is reported of an exported declaration too once the consumer set is declared complete and every declared consumer loaded",
     () => {
       const reported = [
-        "DS1403 result src/lib.ts:1",
-        "DS1403 result src/lib.ts:6",
-        "DS1403 result src/lib.ts:11",
+        "DS1403 1 of 1 (number) src/lib.ts:1",
+        "DS1403 1 of 1 (number) src/lib.ts:6",
+        "DS1403 1 of 1 (number) src/lib.ts:11",
       ];
 
       expect(placed(partsOf(LIBRARY, COMPLETE))).toEqual(reported);
@@ -923,7 +924,7 @@ describe("a result every call discards", () => {
             loaded: ["@example/c"],
           }),
         ),
-      ).toEqual(["DS1403 result src/lib.ts:11"]);
+      ).toEqual(["DS1403 1 of 1 (number) src/lib.ts:11"]);
     },
     LOAD_TIMEOUT,
   );

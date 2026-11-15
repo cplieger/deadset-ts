@@ -11,7 +11,6 @@ import {
   isFunctionLikeDeclaration,
   isIdentifier,
   isMethodDeclaration,
-  isObjectLiteralExpression,
   isParenthesizedExpression,
   isPropertyAssignment,
   isReturnStatement,
@@ -29,6 +28,7 @@ import {
   type ObjectLiteralExpression,
   type SourceFile,
 } from "@typescript/native/ast";
+import { objectLiteralOf } from "../unwrap.ts";
 import { aliasChains } from "../alias-chain.ts";
 import { isGlobalBlock } from "../augmentations.ts";
 import { nodeKey, type Inventory, type InventorySymbol } from "../inventory.ts";
@@ -284,8 +284,9 @@ function returnedValues(body: Node): readonly Expression[] {
 
 /** The object literal one returned value is, written there or as the initializer of a variable `body` declares. */
 function returnedLiteral(value: Expression, body: Node): ObjectLiteralExpression | undefined {
-  if (isObjectLiteralExpression(value)) {
-    return value;
+  const written = objectLiteralOf(value);
+  if (written !== undefined) {
+    return written;
   }
   if (!isIdentifier(value)) {
     return undefined;
@@ -298,15 +299,7 @@ function returnedLiteral(value: Expression, body: Node): ObjectLiteralExpression
       node.name.text === value.text &&
       node.initializer !== undefined
     ) {
-      let at: Expression = node.initializer;
-      while (
-        isAssertionExpression(at) ||
-        isSatisfiesExpression(at) ||
-        isParenthesizedExpression(at)
-      ) {
-        at = at.expression;
-      }
-      found = isObjectLiteralExpression(at) ? at : found;
+      found = objectLiteralOf(node.initializer) ?? found;
     }
     if (!isFunctionLikeDeclaration(node)) {
       node.forEachChild(visit);

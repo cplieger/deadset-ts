@@ -8,7 +8,6 @@
  */
 
 import {
-  isArrayLiteralExpression,
   isCallExpression,
   isExportDeclaration,
   isExpressionStatement,
@@ -18,7 +17,6 @@ import {
   isImportEqualsDeclaration,
   isMetaProperty,
   isNamespaceExport,
-  isObjectLiteralExpression,
   isPropertyAccessExpression,
   isPropertyAssignment,
   isShorthandPropertyAssignment,
@@ -60,7 +58,8 @@ import { sourceFilesOf, type SourceFiles } from "./source-files.ts";
 import { manifestCommands, nodemonTexts } from "./roots/manifest.ts";
 import { writtenName } from "./platform-calls.ts";
 import { callsPlatform } from "./platform-symbols.ts";
-import { parenthesesRemoved } from "./unwrap.ts";
+import { arrayLiteralOf, objectLiteralOf, parenthesesRemoved } from "./unwrap.ts";
+import { UsageError } from "./usage.ts";
 import type { Workflows } from "./entries/workflow-steps.ts";
 import {
   pathsNamed,
@@ -242,15 +241,16 @@ function extendsOf(host: Host, path: string, parse: ParseFile): readonly string[
   const [statement] = parse(path, text).statements;
   const document =
     statement !== undefined && isExpressionStatement(statement) ? statement.expression : undefined;
-  if (document === undefined || !isObjectLiteralExpression(document)) {
+  const object = objectLiteralOf(document);
+  if (object === undefined) {
     return [];
   }
-  const value = document.properties
+  const value = object.properties
     .filter(isPropertyAssignment)
     .findLast(
       (property) => isLiteralText(property.name) && property.name.text === "extends",
     )?.initializer;
-  const entries = value !== undefined && isArrayLiteralExpression(value) ? value.elements : [value];
+  const entries = arrayLiteralOf(value)?.elements ?? [value];
   return entries.flatMap((entry) =>
     entry !== undefined && isLiteralText(entry) ? [entry.text] : [],
   );
@@ -943,6 +943,12 @@ function declaredIn(
     }
     for (const [name, { key }] of membersAt(text, held.value)) {
       const { line, column } = lineAndColumn(text, key);
+      // No package has an empty name, and no reference can spell one.
+      if (name === "") {
+        throw new UsageError(
+          `${path}:${String(line)}:${String(column)}: ${member} declares a dependency under an empty name`,
+        );
+      }
       declared.push({
         dependency: {
           name,

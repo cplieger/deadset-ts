@@ -60,6 +60,8 @@ export interface Candidate {
   readonly productionRefs: number;
   /** The references a test file made to it. */
   readonly testRefs: number;
+  /** How many of those are the exemption evidence a test file carries rather than a name. */
+  readonly testEvidence: number;
   /**
    * Reference counting where the mode counts no reference to the declaration, and
    * reachability otherwise, so a declaration dead under both carries the stronger claim.
@@ -694,6 +696,7 @@ export function sweep(matrix: Matrix, policy: SweepPolicy): Sweep {
       id: symbol.id,
       productionRefs: split.production,
       testRefs: split.test,
+      testEvidence: graph.testEvidence[at] ?? 0,
       // The run that judges a test-file declaration counts its test references.
       relation: unreferenced
         ? split.production + split.test === 0

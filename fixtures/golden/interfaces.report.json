@@ -11,9 +11,9 @@
       "9.0.0"
     ],
     "conformance": {
-      "corpus_version": "6.3.0",
+      "corpus_version": "6.4.0",
       "result": "pass",
-      "digest": "sha256:e026ac4f1a74a2551c6005564a9e97fd29c7622f7742b58f72badd88d4528f02"
+      "digest": "sha256:2f6f18073a6567736906c9ac84ff161e761db32732266e344ab96f988b3442d8"
     }
   },
   "target": {
@@ -68,7 +68,7 @@
       "consumers_loaded": [],
       "fixability": "deletable",
       "severity": "deny",
-      "message": "method is referenced only from declarations that are themselves dead",
+      "message": "method Wire.close is referenced only from declarations that are themselves dead",
       "details": {}
     },
     {
@@ -105,7 +105,7 @@
       "consumers_loaded": [],
       "fixability": "deletable",
       "severity": "deny",
-      "message": "method is referenced only from declarations that are themselves dead",
+      "message": "method Pipe.close is referenced only from declarations that are themselves dead",
       "details": {}
     },
     {
@@ -142,7 +142,7 @@
       "consumers_loaded": [],
       "fixability": "deletable",
       "severity": "deny",
-      "message": "method is referenced only from declarations that are themselves dead",
+      "message": "method Flag.raise is referenced only from declarations that are themselves dead",
       "details": {}
     },
     {
@@ -179,7 +179,7 @@
       "consumers_loaded": [],
       "fixability": "deletable",
       "severity": "deny",
-      "message": "class member is referenced only from declarations that are themselves dead",
+      "message": "class member Arrowed.raise is referenced only from declarations that are themselves dead",
       "details": {}
     },
     {
@@ -216,7 +216,7 @@
       "consumers_loaded": [],
       "fixability": "deletable",
       "severity": "deny",
-      "message": "nothing in the target names the interface as a type",
+      "message": "nothing in the target names interface Unused as a type",
       "details": {
         "implementations": [
           {
@@ -266,7 +266,7 @@
       "consumers_loaded": [],
       "fixability": "deletable",
       "severity": "deny",
-      "message": "the interface is named as a type only from declarations that are themselves dead",
+      "message": "interface OnlyDead is named as a type only from declarations that are themselves dead",
       "details": {
         "implementations": []
       }
@@ -305,7 +305,7 @@
       "consumers_loaded": [],
       "fixability": "deletable",
       "severity": "deny",
-      "message": "unexported function has no reference in the target",
+      "message": "unexported function orphan has no reference in the target",
       "details": {}
     },
     {
@@ -342,7 +342,7 @@
       "consumers_loaded": [],
       "fixability": "manual",
       "severity": "warn",
-      "message": "no call site invokes or selects the method through the interface",
+      "message": "no call site invokes or selects interface method Channel.close through the interface",
       "details": {
         "implementations": [
           {
@@ -402,7 +402,7 @@
       "consumers_loaded": [],
       "fixability": "manual",
       "severity": "warn",
-      "message": "no call site invokes or selects the method through the interface",
+      "message": "no call site invokes or selects interface method Signal.raise through the interface",
       "details": {
         "implementations": [
           {
@@ -462,7 +462,7 @@
       "consumers_loaded": [],
       "fixability": "manual",
       "severity": "warn",
-      "message": "no call site invokes or selects the method through the interface",
+      "message": "no call site invokes or selects interface method Listener.notify through the interface",
       "details": {
         "implementations": []
       }
@@ -501,7 +501,7 @@
       "consumers_loaded": [],
       "fixability": "deletable",
       "severity": "deny",
-      "message": "the interface is named as a type only from test files",
+      "message": "interface Probe is named as a type only from test files",
       "details": {
         "implementations": []
       }
@@ -540,7 +540,7 @@
       "consumers_loaded": [],
       "fixability": "deletable",
       "severity": "deny",
-      "message": "unexported function has no reference in the target",
+      "message": "unexported function resetAll has no reference in the target",
       "details": {}
     },
     {
@@ -577,7 +577,7 @@
       "consumers_loaded": [],
       "fixability": "deletable",
       "severity": "deny",
-      "message": "nothing in the target names the interface as a type",
+      "message": "nothing in the target names interface TestDouble as a type",
       "details": {
         "implementations": []
       }
@@ -616,7 +616,7 @@
       "consumers_loaded": [],
       "fixability": "deletable",
       "severity": "deny",
-      "message": "every target symbol this test references is reported dead",
+      "message": "function testProbe references only target symbols that are reported dead",
       "details": {}
     }
   ],

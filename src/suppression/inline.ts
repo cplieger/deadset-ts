@@ -4,30 +4,27 @@
  * below it, or on its own line where it trails a token there.
  */
 
-import { CODE } from "./contract/contract.generated.ts";
+import { CODE } from "../contract/contract.generated.ts";
 import { SyntaxKind, type Node, type SourceFile } from "@typescript/native/ast";
-import { importBindings } from "./import-bindings.ts";
-import { nodeKey, type Inventory } from "./inventory.ts";
-import { relativePath } from "./paths.ts";
+import type { ImportFact } from "../intra-function-parts.ts";
+import type { Inventory } from "../inventory.ts";
+import { relativePath } from "../paths.ts";
 import {
   byPosition,
   lineEnd,
   positionKey,
   renderPosition,
-  startLine,
   tokenStart,
   type Position,
-} from "./position.ts";
-import { importRef } from "./ref.ts";
-import type { ProjectView } from "./session.ts";
+} from "../position.ts";
+import type { ProjectView } from "../session.ts";
 import {
   isPartKind,
   SuppressionError,
-  siteText,
   type Refusal,
   type SuppressionRecord,
   type Suppressions,
-} from "./suppress.ts";
+} from "./records.ts";
 
 /**
  * The three expressions the grammar applies to the text of each line comment, in this
@@ -157,74 +154,46 @@ function bindingKey(one: Binding): string {
   return `${one.declared?.id ?? ""}\u0000${one.part.id}`;
 }
 
-/** One declaration the inventory places, the declaration that holds its parts, and its lines. */
-interface Placed {
-  readonly one: Declared;
-  readonly holder: Declared;
-  readonly startLines: readonly number[];
-  readonly partLines: readonly number[];
-}
-
-/** The placed declarations of a project by the path of the file each is in. */
-function placedByPath(
+/**
+ * The declarations a directive binds, by file path and then by line, as the inventory
+ * places them: each on its start lines, and the holder of its parts on its part lines. An
+ * import binding is a subject of its own, bound on its statement's lines.
+ */
+function bindingsByLine(
   held: Inventory,
   symbols: ReadonlyMap<string, Declared>,
-): ReadonlyMap<string, readonly Placed[]> {
-  const byPath = new Map<string, Placed[]>();
+  imports: readonly ImportFact[],
+): ReadonlyMap<string, ReadonlyMap<number, readonly Binding[]>> {
+  const byPath = new Map<string, Map<number, Binding[]>>();
+  const add = (path: string, lines: readonly number[], one: Binding): void => {
+    const below = byPath.get(path) ?? new Map<number, Binding[]>();
+    byPath.set(path, below);
+    for (const line of lines) {
+      const at = below.get(line) ?? [];
+      if (!at.some((known) => bindingKey(known) === bindingKey(one))) {
+        at.push(one);
+      }
+      below.set(line, at);
+    }
+  };
   for (const [id, placed] of held.placement) {
     const one = symbols.get(id);
     const holder = symbols.get(placed.holder);
-    if (one === undefined || holder === undefined) {
-      continue;
+    if (one !== undefined && holder !== undefined) {
+      add(one.position.path, placed.startLines, { declared: one, part: holder });
+      add(one.position.path, placed.partLines, { declared: undefined, part: one });
     }
-    const at = byPath.get(one.position.path) ?? [];
-    at.push({ one, holder, startLines: placed.startLines, partLines: placed.partLines });
-    byPath.set(one.position.path, at);
+  }
+  for (const binding of imports) {
+    const { path, line, column } = binding.position;
+    const one = {
+      id: positionKey(binding.position),
+      ref: binding.ref,
+      position: { path, line, column },
+    };
+    add(path, binding.lines, { declared: one, part: one });
   }
   return byPath;
-}
-
-/**
- * The declarations of one file by the line a directive binds each on, as the inventory
- * places them, and each import binding of the file on its statement's lines.
- */
-function declarationLines(
-  file: SourceFile,
-  placed: readonly Placed[],
-  held: Inventory,
-  targetRoot: string,
-): ReadonlyMap<number, readonly Binding[]> {
-  const below = new Map<number, Binding[]>();
-  const add = (line: number, one: Binding): void => {
-    const at = below.get(line) ?? [];
-    if (!at.some((known) => bindingKey(known) === bindingKey(one))) {
-      at.push(one);
-    }
-    below.set(line, at);
-  };
-  for (const { one, holder, startLines, partLines } of placed) {
-    for (const line of startLines) {
-      add(line, { declared: one, part: holder });
-    }
-    for (const line of partLines) {
-      add(line, { declared: undefined, part: one });
-    }
-  }
-  // An import binding is a subject of its own, bound on its line as a declaration is.
-  const fileId = held.declarations.get(nodeKey(file, file));
-  const moduleRef = held.symbols.find((symbol) => symbol.id === fileId)?.ref ?? "";
-  for (const name of moduleRef === "" ? [] : importBindings(file)) {
-    const position = renderPosition(file, targetRoot, name.getStart());
-    const one = { id: positionKey(position), ref: importRef(moduleRef, name.text), position };
-    let statement: Node = name;
-    while (statement.parent.kind !== SyntaxKind.SourceFile) {
-      statement = statement.parent;
-    }
-    for (const at of [statement.pos, name.getStart()]) {
-      add(startLine(file, at), { declared: one, part: one });
-    }
-  }
-  return below;
 }
 
 /**
@@ -252,21 +221,21 @@ export function inlineDirectives<Brand>(
   project: ProjectView<Brand>,
   held: Inventory,
   targetRoot: string,
+  imports: readonly ImportFact[],
 ): readonly InlineDirective[] {
   const symbols = new Map<string, Declared>(
     held.symbols
       .filter((symbol) => symbol.kind !== "file")
       .map((symbol) => [symbol.id, { id: symbol.id, ref: symbol.ref, position: symbol.position }]),
   );
-  const placed = placedByPath(held, symbols);
+  const placed = bindingsByLine(held, symbols, imports);
   const found: InlineDirective[] = [];
   for (const file of project.ownSourceFiles()) {
     const comments = lineComments(file).filter((comment) => CANDIDATE.test(comment.text));
     if (comments.length === 0) {
       continue;
     }
-    const path = relativePath(targetRoot, file.fileName) ?? "";
-    const below = declarationLines(file, placed.get(path) ?? [], held, targetRoot);
+    const below = placed.get(relativePath(targetRoot, file.fileName) ?? "");
     for (const comment of comments) {
       const site = renderPosition(file, targetRoot, comment.offset);
       const target = trails(file, comment.offset) ? site.line : site.line + 1;
@@ -274,7 +243,7 @@ export function inlineDirectives<Brand>(
         site,
         text: comment.text,
         directive: classifyComment(comment.text),
-        bound: [...(below.get(target) ?? [])],
+        bound: [...(below?.get(target) ?? [])],
       });
     }
   }
@@ -314,7 +283,7 @@ export function inlineSuppressions(
       case "none":
         break;
       case "malformed":
-        throw new SuppressionError("inline", siteText(site), JSON.stringify(text), DIRECTIVE_FORM);
+        throw new SuppressionError("inline", site, JSON.stringify(text), DIRECTIVE_FORM);
       case "no-reason":
         for (const code of directive.codes) {
           refusals.push({

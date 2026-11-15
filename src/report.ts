@@ -17,7 +17,7 @@ import type {
 } from "./finding.ts";
 import type { AppliedConvention } from "./entries/conventions.ts";
 import type { PassResult } from "./findings-pass.ts";
-import type { StaleSuppression } from "./findings/self-check.ts";
+import type { StaleSuppression } from "./suppression/ledger.ts";
 import type { TestFileRule } from "./tests/file-class.ts";
 import { bytewise } from "./text/compare.ts";
 import { LANGUAGE, PRODUCT } from "./product.ts";

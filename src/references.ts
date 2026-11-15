@@ -103,6 +103,8 @@ export interface Reference {
   readonly consumer?: string;
   /** Made by a target file no project of the run holds, so it enters as a consumer's reference does. */
   readonly unheld?: true;
+  /** Made by the exemption evidence a test file carries rather than by a name it writes. */
+  readonly evidence?: true;
   /**
    * On a write, the local names of the writing file's import bindings that only the
    * values its file writes into the same declaration use, which deleting the

@@ -4,7 +4,7 @@ import { readFixture } from "../../__test-helpers__/fixtures.ts";
 import { FIXED_SEVERITY_CODES } from "../kinds.ts";
 import type { Finding, Report, StaleSuppressionsEntry } from "../contract/report.generated.ts";
 import { resolve } from "../resolve.ts";
-import { writeBaseline } from "../suppress-file.ts";
+import { writeBaseline } from "../suppression/baseline.ts";
 import type { RenderOptions } from "./reporter.ts";
 import { RENDERINGS } from "./reporters.ts";
 import { KINDS } from "../kinds.ts";

@@ -14,7 +14,6 @@ import {
   isIdentifier,
   isNewExpression,
   isNonNullExpression,
-  isObjectLiteralExpression,
   isOmittedExpression,
   isParameterDeclaration,
   isParenthesizedExpression,
@@ -31,6 +30,7 @@ import {
   type Expression,
   type Node,
 } from "@typescript/native/ast";
+import { arrayLiteralOf, objectLiteralOf, unwrapped } from "../unwrap.ts";
 
 /** The operators of an assignment whose right side is stored into the left side's type. */
 const STORES: ReadonlySet<SyntaxKind> = new Set([
@@ -102,18 +102,17 @@ export interface CarriedValue {
  */
 export function carriedValues(argument: Expression): readonly CarriedValue[] {
   return valuesOf(argument).flatMap((value): readonly CarriedValue[] => {
-    let at = value;
-    while (isAsExpression(at) || isSatisfiesExpression(at)) {
-      at = at.expression;
-    }
+    const at = unwrapped(value);
     if (at !== value) {
       return carriedValues(at);
     }
-    if (isArrayLiteralExpression(value)) {
-      return value.elements.flatMap(carriedValues);
+    const list = arrayLiteralOf(value);
+    if (list !== undefined) {
+      return list.elements.flatMap(carriedValues);
     }
-    if (isObjectLiteralExpression(value)) {
-      return value.properties.flatMap((property): readonly CarriedValue[] => {
+    const object = objectLiteralOf(value);
+    if (object !== undefined) {
+      return object.properties.flatMap((property): readonly CarriedValue[] => {
         if (isPropertyAssignment(property)) {
           return carriedValues(property.initializer);
         }

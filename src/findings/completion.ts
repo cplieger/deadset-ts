@@ -1,31 +1,22 @@
 /**
  * What every finding carries beyond what its emitter decides, read from the run and from
- * the code's row of the issue-kind vocabulary, and the dials that withhold a finding
- * together with every finding that falls with a root they withhold.
+ * the code's row of the issue-kind vocabulary: its subject's sweep facts, its component,
+ * its confidence, its fixability and its severity.
  */
 
-import {
-  CODE,
-  FAMILY_KEY_LENGTH,
-  type Confidence,
-  type Severity,
-  KIND_ROWS,
-  type KindRow,
-} from "../contract/contract.generated.ts";
-import type { RunSweep } from "../analysis.ts";
-import { componentId, type Component } from "../liveness/components.ts";
-import { deadComponents } from "../liveness/sweep.ts";
-import type { Cascade } from "../config.ts";
-import type { CompletedFinding, Finding, FindingComponent, PositionedSymbol } from "../finding.ts";
-import { OUTSIDE, type Graph } from "../liveness/graph.ts";
-import type { SymbolKind } from "../inventory.ts";
+import { CODE, KIND_ROWS, type KindRow } from "../contract/contract.generated.ts";
+import type { CompletedFinding, Finding } from "../finding.ts";
+import { OUTSIDE } from "../liveness/graph.ts";
 import { KINDS } from "../kinds.ts";
-import { byPosition, positionKey } from "../position.ts";
+import { positionKey } from "../position.ts";
 import { declarationKey } from "../ref.ts";
-import { isPartSubject, isRowSubject, type Dials } from "../suppress.ts";
-import type { Candidate } from "../liveness/sweep.ts";
-import type { Boundary } from "./boundary.ts";
+import { isPartSubject, isRowSubject } from "../suppression/records.ts";
+import { claimed, coherent, rootsCeiling } from "./confidence.ts";
+import { severityOf } from "./dials.ts";
+import { namesSubject } from "./draft.ts";
 import type { EmitterInput } from "./emitter.ts";
+import { placementOf } from "./placement.ts";
+import { subjectsOf } from "./subjects.ts";
 
 /**
  * The codes whose subject the run that counts test references holds live, so a test
@@ -38,346 +29,12 @@ const LIVE_SUBJECT: ReadonlySet<string> = new Set(
 /** The fixability grammar/analysis/fixability.md gives a finding about a held declaration. */
 const MANUAL = "manual";
 
-/** The member kinds an object property can declare, which an `in` expression tests by name. */
-const IN_TESTED: ReadonlySet<SymbolKind> = new Set([
-  "class-member",
-  "method",
-  "type-member",
-  "interface-method",
-]);
-
-/** The classes ranked by the claim each makes, the strongest highest. */
-const RANK: Readonly<Record<Confidence, number>> = { certain: 3, probable: 2, possible: 1 };
-
-/** The weaker of two classes, which is a class capped by a ceiling. */
-function capped(found: Confidence, ceiling: Confidence): Confidence {
-  return RANK[found] <= RANK[ceiling] ? found : ceiling;
-}
-
-/** Whether the run loaded every consumer the scope declared, which holds of a scope declaring none. */
-function everyDeclaredLoaded(boundary: Boundary): boolean {
-  const { declared, loaded } = boundary.consumers;
-  return declared.every((id) => loaded.includes(id));
-}
-
-/**
- * The severity the configuration gives one code: the key naming the code, else the key
- * naming its family, else the code's default.
- */
-function severityOf(input: EmitterInput, code: string, fallback: Severity): Severity {
-  const { severity } = input.config;
-  const key = [code, code.slice(0, FAMILY_KEY_LENGTH)].find((one) => Object.hasOwn(severity, one));
-  return key === undefined ? fallback : (severity[key] ?? fallback);
-}
-
-/**
- * The declarations the roots name as a library's published API, each public member of a
- * published type included.
- */
-function publishedIds(union: Graph): ReadonlySet<string> {
-  return new Set(
-    union.rooted
-      .filter((root) => root.kind === "published-api")
-      .flatMap((root) => union.symbols[root.at]?.id ?? []),
-  );
-}
-
-/**
- * The members whose name an `in` expression of a production file tests by a literal: a
- * value narrowed that way is read back by the name, which no type links to the member.
- */
-function testedByIn(input: EmitterInput): ReadonlySet<string> {
-  const names = input.files.inOperands ?? new Set<string>();
-  const union = input.swept.matrix.union;
-  if (names.size === 0) {
-    return names;
-  }
-  return new Set(
-    union.symbols.flatMap((symbol, at) => {
-      const parent = union.symbols[union.parent[at] ?? OUTSIDE];
-      return IN_TESTED.has(symbol.kind) &&
-        parent !== undefined &&
-        symbol.name.startsWith(`${parent.name}.`) &&
-        names.has(symbol.name.slice(parent.name.length + 1))
-        ? [symbol.id]
-        : [];
-    }),
-  );
-}
-
-/**
- * The reachability class of one declaration of the run. A declaration of a library's
- * published API, a public member of a published type included, is `certain` where the
- * run loaded every consumer the scope declared and declared one, `probable` where one did
- * not load, and `possible` where it declared none, whatever the configuration says of the
- * consumer set. A member an `in` expression tests by name, one a function outside the
- * analysis fills, and one {@link possiblyLoaded} names, is `possible`.
- */
-export function reachabilityClasses(input: EmitterInput): (id: string) => Confidence {
-  const tested = testedByIn(input);
-  const filled = input.boundary.filledOutside ?? new Set<string>();
-  const possible = possiblyLoaded(input);
-  const published = publishedIds(input.swept.matrix.union);
-  const { declared } = input.boundary.consumers;
-  const outside: Confidence =
-    declared.length === 0
-      ? "possible"
-      : everyDeclaredLoaded(input.boundary)
-        ? "certain"
-        : "probable";
-  return (id) => {
-    if (tested.has(id) || filled.has(id) || possible.has(id)) {
-      return "possible";
-    }
-    return published.has(id) ? outside : "certain";
-  };
-}
-
-/** The target symbols one test of dead code references, by id: production declarations the sweep judges. */
-function testTargets(union: Graph, id: string): readonly string[] {
-  return (union.out[union.at(id)] ?? []).flatMap((edge) => {
-    const target = union.symbols[edge.to];
-    const testCode = union.test[edge.to] === true || union.support[edge.to] === true;
-    return target !== undefined &&
-      !testCode &&
-      union.ambient[edge.to] !== true &&
-      union.subject[edge.to] === true
-      ? [target.id]
-      : [];
-  });
-}
-
-/**
- * The confidence ceiling of a test of dead code: the lowest reachability class among the
- * target symbols it references, because its deadness is theirs, whether or not they share
- * its component. Every other declaration has none below `certain`.
- */
-function testCeilings(
-  input: EmitterInput,
-  classOf: (id: string) => Confidence,
-): (id: string) => Confidence {
-  const union = input.swept.matrix.union;
-  const tests = new Set(
-    input.swept.sweep.candidates.filter((one) => one.testOfDeadCode).map((one) => one.id),
-  );
-  return (id) =>
-    tests.has(id)
-      ? testTargets(union, id).reduce<Confidence>(
-          (lowest, target) => capped(lowest, classOf(target)),
-          "certain",
-        )
-      : "certain";
-}
-
-/**
- * What only a bundler's retry of an import Node leaves unresolved names (program.38), and each
- * dead declaration that reaches through dead declarations, as confidence.20 reads what only
- * tests reach: each is dead only while no loader the analysis does not see loads the file.
- */
-function possiblyLoaded(input: EmitterInput): ReadonlySet<string> {
-  const seeds = input.boundary.possiblyLoaded ?? new Set<string>();
-  if (seeds.size === 0) {
-    return seeds;
-  }
-  const union = input.swept.matrix.union;
-  const dead = new Set(input.swept.sweep.candidates.map((one) => one.id));
-  const reached = new Set<string>();
-  const pending = union.symbols.flatMap((symbol, at) => (seeds.has(symbol.id) ? [at] : []));
-  for (let at = pending.pop(); at !== undefined; at = pending.pop()) {
-    const symbol = union.symbols[at];
-    if (symbol === undefined || reached.has(symbol.id)) {
-      continue;
-    }
-    reached.add(symbol.id);
-    for (const edge of union.out[at] ?? []) {
-      const to = union.symbols[edge.to];
-      if (to !== undefined && dead.has(to.id)) {
-        pending.push(edge.to);
-      }
-    }
-  }
-  return reached;
-}
-
-/**
- * The subjects dead only because production code only tests use is: each declaration the
- * sweep marks test-used, each `DS1602` file of such code, and each test of dead code every
- * target of which is one. Nothing they hold references a dead declaration outside them, so
- * the rest of a component they share is reported without them.
- */
-function testUsedSubjects(input: EmitterInput): {
-  readonly declarations: ReadonlySet<string>;
-  readonly files: ReadonlySet<string>;
-} {
-  const { matrix, sweep } = input.swept;
-  const union = matrix.union;
-  const used = new Set(sweep.candidates.filter((one) => one.testUsed).map((one) => one.id));
-  for (const test of sweep.candidates.filter((one) => one.testOfDeadCode)) {
-    const targets = testTargets(union, test.id);
-    if (targets.length > 0 && targets.every((target) => used.has(target))) {
-      used.add(test.id);
-    }
-  }
-  const files = new Set(
-    union.symbols.flatMap((symbol, at) =>
-      matrix.testUsed[at] === true ? [symbol.position.path] : [],
-    ),
-  );
-  return { declarations: used, files };
-}
-
-/**
- * The ceiling the roots the run found put on one dead subject: a subject other declarations
- * reference, found dead only because no root reaches them, is `probable` unless the
- * configuration declares the roots complete and no configuration holding the subject loads
- * a module the analysis cannot resolve, because a root the analysis cannot see would make
- * it live; every other declaration has none below `certain`.
- */
-function rootsCeiling(
-  input: EmitterInput,
-  finding: Finding,
-  candidate: Candidate | undefined,
-  configurations: readonly string[],
-): Confidence {
-  const unreachable = candidate?.relation === "reachability" || finding.unreachableOnly === true;
-  const unseen = new Set((input.files.unseenLoads ?? []).map((load) => load.configuration));
-  const complete = input.config.ts.roots_complete && !configurations.some((one) => unseen.has(one));
-  return unreachable && !complete ? "probable" : "certain";
-}
-
-/**
- * The component each dead declaration of the run falls in, and none for a live one, with
- * its members listed in the canonical order where the run lists a component in full.
- */
-function findingComponents(
-  swept: RunSweep,
-  components: readonly Component[],
-  cascade: Cascade,
-): (id: string) => FindingComponent | undefined {
-  const held = new Map<string, Component>();
-  for (const component of components) {
-    for (const member of component.members) {
-      held.set(member, component);
-    }
-  }
-  const listed = membersListed(swept);
-  return (id) => {
-    const component = held.get(id);
-    return component === undefined
-      ? undefined
-      : {
-          id: component.id,
-          root: component.roots.includes(id),
-          symbolCount: component.members.length,
-          deletableLines: component.deletableLines,
-          ...(cascade === "full" ? { members: listed(component.members) } : {}),
-        };
-  };
-}
-
-/** The members of a component as the run lists them, positioned and in the canonical order. */
-function membersListed(
-  swept: RunSweep,
-): (members: readonly string[]) => readonly PositionedSymbol[] {
-  const symbols = new Map(swept.matrix.union.symbols.map((symbol) => [symbol.id, symbol]));
-  return (members) =>
-    members
-      .flatMap((member) => {
-        const symbol = symbols.get(member);
-        return symbol === undefined
-          ? []
-          : [
-              {
-                ref: symbol.ref,
-                name: symbol.name,
-                position: {
-                  ...symbol.position,
-                  endLine: Math.max(symbol.position.line, symbol.endLine),
-                },
-              },
-            ];
-      })
-      .sort((a, b) => byPosition(a.position, b.position));
-}
-
-/**
- * The run's dead components with each file a `DS1602` finding reports dead among them, so
- * the file's declarations fall with it, and with the components each subject that is no
- * declaration falls with joined into one.
- */
-function runComponents(
-  swept: RunSweep,
-  findings: readonly Finding[],
-): {
-  readonly components: readonly Component[];
-  readonly computed: number;
-  readonly files: ReadonlyMap<string, string>;
-} {
-  const union = swept.matrix.union;
-  const reported = new Set(
-    findings.filter((one) => one.code === CODE.fileNeverImported).map((one) => one.position.path),
-  );
-  const files = new Map(
-    union.symbols.flatMap((symbol, at) =>
-      symbol.kind === "file" && reported.has(symbol.position.path) ? [[at, symbol] as const] : [],
-    ),
-  );
-  const computed =
-    files.size === 0
-      ? swept.sweep.components
-      : deadComponents(swept.matrix, swept.sweep, new Set(files.keys()));
-  const place = new Map<string, number>();
-  computed.forEach((component, at) => {
-    for (const member of component.members) {
-      place.set(member, at);
-    }
-  });
-  const leader = computed.map((_component, at) => at);
-  const find = (at: number): number => {
-    let top = at;
-    while ((leader[top] ?? top) !== top) {
-      top = leader[top] ?? top;
-    }
-    return top;
-  };
-  for (const { fallsWith } of findings) {
-    const joined = (fallsWith ?? []).flatMap((id) => place.get(id) ?? []).map(find);
-    const first = Math.min(...joined);
-    for (const one of joined) {
-      leader[one] = first;
-    }
-  }
-  const merged = new Map<number, Component>();
-  computed.forEach((component, at) => {
-    const top = find(at);
-    const into = merged.get(top);
-    merged.set(
-      top,
-      into === undefined
-        ? component
-        : {
-            id: into.id,
-            members: [...into.members, ...component.members],
-            roots: [...into.roots, ...component.roots],
-            deletableLines: into.deletableLines + component.deletableLines,
-            held: into.held && component.held,
-          },
-    );
-  });
-  return {
-    components: [...merged.values()],
-    computed: computed.length,
-    files: new Map([...files.values()].map((symbol) => [symbol.position.path, symbol.id])),
-  };
-}
-
 /**
  * Every finding of the run completed, in the order given. A dead declaration carries its
  * candidate's relation, counts, configurations and component; a live one carries no relation and
  * holds where it is declared; a file or a manifest row carries the class its emitter states,
  * `certain` by default, and holds in every configuration. A subject in no dead component gets one
- * of its own, numbered past the computed ones in finding order so no two families mint one, whose
- * deletion removes no line. `kinds` defaults to the shipped vocabulary.
+ * of its own, whose deletion removes no line. `kinds` defaults to the shipped vocabulary.
  */
 export function completed(
   input: EmitterInput,
@@ -386,34 +43,26 @@ export function completed(
 ): readonly CompletedFinding[] {
   const { swept } = input;
   const union = swept.matrix.union;
+  const s = subjectsOf(input);
   const positions = new Map(
     union.symbols.map((symbol, at) => [declarationKey(symbol.ref, symbol.position.path), at]),
   );
-  const candidates = new Map(swept.sweep.candidates.map((candidate) => [candidate.id, candidate]));
   const fileIds = new Map(
     union.symbols.flatMap((one) => (one.kind === "file" ? [[one.position.path, one.id]] : [])),
   );
-  const classOf = reachabilityClasses(input);
-  const ceilingOf = testCeilings(input, classOf);
-  const testUsed = testUsedSubjects(input);
-  const { components, computed, files } = runComponents(swept, findings);
-  const componentOf = findingComponents(swept, components, input.config.reporters.cascade);
-  const held = new Set(components.filter((one) => one.held).flatMap((one) => one.members));
-  // A join keeps its first component's identifier, so a minted one counts past every computed one.
-  let minted = computed;
-  const dead = new Set(components.map((component) => component.id));
-  const fallingWith = new Map<string, string[]>();
-  for (const { id, heldByTests } of swept.sweep.candidates) {
-    if (heldByTests !== undefined) {
-      fallingWith.set(heldByTests, [...(fallingWith.get(heldByTests) ?? []), id]);
-    }
-  }
-  const listed = membersListed(swept);
+  const testUsed = s.testUsed();
+  const placement = placementOf(swept, findings, input.config.reporters.cascade);
 
   const done = findings.map((finding): CompletedFinding => {
     const row = kinds.get(finding.code);
     if (row === undefined) {
       throw new Error(`${finding.code} names no live row of the issue-kind vocabulary`);
+    }
+    // An annotation or a SARIF result shows the message with no other name.
+    if (!namesSubject(finding.message, finding.symbol.name)) {
+      throw new Error(
+        `${finding.code} does not name ${finding.symbol.name} in its message: ${finding.message}`,
+      );
     }
     // A row's reference may spell a declaration's, as an ignore entry naming one does, and
     // a row is still never the declaration. Two declarations of one file can share a
@@ -431,21 +80,21 @@ export function completed(
     const symbol = union.symbols[at];
     const judged = !part && union.subject[at] === true ? symbol : undefined;
     const candidate =
-      judged === undefined || LIVE_SUBJECT.has(finding.code)
-        ? undefined
-        : candidates.get(judged.id);
+      judged === undefined || LIVE_SUBJECT.has(finding.code) ? undefined : s.candidate(judged.id);
     const fallsWith = finding.fallsWith?.[0];
-    const joined = fallsWith === undefined ? undefined : componentOf(fallsWith);
+    const joined = fallsWith === undefined ? undefined : placement.componentOf(fallsWith);
     const file =
-      finding.code === CODE.fileNeverImported ? files.get(finding.position.path) : undefined;
+      finding.code === CODE.fileNeverImported
+        ? placement.files.get(finding.position.path)
+        : undefined;
     const found =
       joined !== undefined
         ? { ...joined, root: false }
         : file !== undefined
-          ? componentOf(file)
+          ? placement.componentOf(file)
           : symbol === undefined || part
             ? undefined
-            : componentOf(symbol.id);
+            : placement.componentOf(symbol.id);
     // A test file's declaration is a component member only as a test of dead code, and
     // test code keeps the test-support code it references out of every component.
     if (
@@ -456,64 +105,43 @@ export function completed(
     ) {
       throw new Error(`${candidate.id} is judged dead and falls in no dead component`);
     }
-    let component = found;
-    if (component === undefined) {
-      minted += 1;
-      const falling = symbol?.kind === "interface" ? fallingWith.get(symbol.id) : undefined;
-      component = {
-        id: componentId(minted),
-        root: true,
-        symbolCount: falling?.length ?? 1,
-        deletableLines: 0,
-        ...(input.config.reporters.cascade !== "full"
-          ? {}
-          : falling === undefined
-            ? {
-                members: [
-                  {
-                    ref: finding.symbol.ref,
-                    name: finding.symbol.name,
-                    position: finding.position,
-                  },
-                ],
-              }
-            : { members: listed(falling) }),
-      };
-    }
+    const component = found ?? placement.mint(finding, symbol);
     const counts =
       candidate === undefined
         ? union.made[at]
         : { production: candidate.productionRefs, test: candidate.testRefs };
-    const ownClass =
-      judged !== undefined
-        ? classOf(judged.id)
-        : (finding.reachabilityClass ??
-          (finding.code === CODE.fileNeverImported
-            ? classOf(fileIds.get(finding.position.path) ?? "")
-            : "certain"));
-    const used =
-      judged !== undefined
-        ? candidate !== undefined && testUsed.declarations.has(judged.id)
-        : finding.code === CODE.fileNeverImported && testUsed.files.has(finding.position.path);
-    const reachabilityClass = used && candidate?.testOfDeadCode !== true ? "possible" : ownClass;
     const configurations =
       candidate?.configurations ??
       (judged === undefined && !part
         ? swept.matrix.configurations
         : (swept.matrix.heldIn[at] ?? swept.matrix.configurations));
-    const untested = capped(
-      capped(
-        capped(ownClass, row.maxClass),
-        rootsCeiling(input, finding, candidate, configurations),
+    const confidence = claimed({
+      own:
+        judged !== undefined
+          ? s.classOf(judged.id)
+          : (finding.reachabilityClass ??
+            (finding.code === CODE.fileNeverImported
+              ? s.classOf(fileIds.get(finding.position.path) ?? "")
+              : "certain")),
+      kind: row.maxClass,
+      roots: rootsCeiling(
+        input,
+        candidate?.relation === "reachability" || finding.unreachableOnly === true,
+        configurations,
       ),
-      judged === undefined ? "certain" : ceilingOf(judged.id),
-    );
+      tested: judged === undefined ? "certain" : s.testCeiling(judged.id),
+      testUsed:
+        judged !== undefined
+          ? candidate !== undefined && testUsed.declarations.has(judged.id)
+          : finding.code === CODE.fileNeverImported && testUsed.files.has(finding.position.path),
+      testOfDeadCode: candidate?.testOfDeadCode === true,
+    });
     const generated = input.files.generated?.has(finding.position.path) === true;
     const fixability = generated
       ? "none"
       : found !== undefined &&
           symbol !== undefined &&
-          held.has(symbol.id) &&
+          placement.held.has(symbol.id) &&
           row.findingFixabilities?.includes(MANUAL) === true
         ? MANUAL
         : row.fixability;
@@ -531,10 +159,9 @@ export function completed(
       language: "ts",
       position: finding.position,
       symbol: finding.symbol,
-      reachabilityClass,
-      confidence: used ? "possible" : untested,
-      ...(used ? { componentConfidence: untested } : {}),
+      ...confidence,
       ...(candidate === undefined ? {} : { livenessRelation: candidate.relation }),
+      ...(finding.fallsWith === undefined ? {} : { fallsWith: finding.fallsWith }),
       testOnly: judged !== undefined && counts?.production === 0 && counts.test > 0,
       generated,
       component,
@@ -550,89 +177,5 @@ export function completed(
           : { ...finding.details, removesLastUseOf: lastUses },
     };
   });
-  return componentCapped(done, dead);
-}
-
-/**
- * The findings with every finding of a dead component capped by the lowest confidence
- * among the component's root members, so the minimum confidence reports or withholds a
- * component whole but for the findings test-used code lowers on their own.
- */
-function componentCapped(
-  findings: readonly CompletedFinding[],
-  dead: ReadonlySet<string>,
-): readonly CompletedFinding[] {
-  const lowest = new Map<string, Confidence>();
-  for (const finding of findings) {
-    const { id, root } = finding.component;
-    if (root && dead.has(id)) {
-      const held = lowest.get(id);
-      const own = componentConfidenceOf(finding);
-      lowest.set(id, held === undefined ? own : capped(held, own));
-    }
-  }
-  return findings.map((finding) => {
-    const cap = lowest.get(finding.component.id);
-    if (cap === undefined) {
-      return finding;
-    }
-    const own = finding.componentConfidence;
-    return {
-      ...finding,
-      confidence: capped(finding.confidence, cap),
-      ...(own === undefined ? {} : { componentConfidence: capped(own, cap) }),
-    };
-  });
-}
-
-/** The confidence a finding gives its component's cap and the dials. */
-function componentConfidenceOf(finding: CompletedFinding): Confidence {
-  return finding.componentConfidence ?? finding.confidence;
-}
-
-/** Whether the dials withhold a finding by its own severity or confidence. */
-function dialed(
-  finding: Pick<CompletedFinding, "severity" | "confidence">,
-  minConfidence: Confidence,
-): boolean {
-  return finding.severity === "allow" || RANK[finding.confidence] < RANK[minConfidence];
-}
-
-/**
- * The configuration's dials over one run's completed findings. A finding at `allow` or
- * below the minimum confidence is withheld, and so is every finding of the component of a
- * root the dials withhold, because a symbol that falls with a root is dead only through it
- * and its deletion does not compile while the root stays. A withheld finding that is no
- * root withholds itself alone.
- */
-export function dialsOf(
-  input: EmitterInput,
-  findings: readonly CompletedFinding[],
-): Dials<CompletedFinding> {
-  const minConfidence = input.config.analysis.min_confidence;
-  const components = new Set(
-    findings
-      .filter(
-        (finding) =>
-          finding.component.root &&
-          dialed({ ...finding, confidence: componentConfidenceOf(finding) }, minConfidence),
-      )
-      .map((finding) => finding.component.id),
-  );
-  return {
-    allows: (code) => {
-      const row = KINDS.get(code);
-      return row !== undefined && severityOf(input, code, row.defaultSeverity) === "allow";
-    },
-    withholds: (finding) => dialed(finding, minConfidence) || components.has(finding.component.id),
-  };
-}
-
-/** The findings of one run's completed findings that no dial withholds, in the order given. */
-export function reportable(
-  input: EmitterInput,
-  findings: readonly CompletedFinding[],
-): readonly CompletedFinding[] {
-  const dials = dialsOf(input, findings);
-  return findings.filter((finding) => !dials.withholds(finding));
+  return coherent(done, placement.dead);
 }

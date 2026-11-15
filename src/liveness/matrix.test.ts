@@ -444,11 +444,11 @@ describe("a test-file declaration the run that counts test references does not r
       const [alone, caller, once] = explained(UNREACHED, "alone", "caller", "once");
 
       expect(alone).toContain(
-        "  code: DS1002 unused-unexported\n  message: unexported function has no reference in the target\n",
+        "  code: DS1002 unused-unexported\n  message: unexported function alone has no reference in the target\n",
       );
       expect(caller).toContain("  code: DS1002 unused-unexported\n");
       expect(once).toContain(
-        "  message: unexported function is referenced only from declarations that are themselves dead\n",
+        "  message: unexported function once is referenced only from declarations that are themselves dead\n",
       );
     },
     LOAD_TIMEOUT,

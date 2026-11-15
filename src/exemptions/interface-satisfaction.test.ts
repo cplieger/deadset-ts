@@ -495,6 +495,33 @@ describe("a class value reaching an interface through a typed position", () => {
     });
   });
 
+  it("reaches a class an implements entry names as an interface, and not a class the value extends", () => {
+    expect(
+      sweepWritten({
+        "main.ts": [
+          "class Repo {",
+          "  get(): number { return 1; }",
+          "}",
+          "class R2 implements Repo {",
+          "  get(): number { return 2; }",
+          "  spare(): number { return 0; }",
+          "}",
+          "class R3 extends Repo {",
+          "  get(): number { return 3; }",
+          "  spare(): number { return 0; }",
+          "}",
+          "const r: Repo = new R2();",
+          "const s: Repo = new R3();",
+          "console.log(r.get(), s.get());",
+          "",
+        ].join("\n"),
+      }),
+    ).toEqual({
+      retained: ["R2.get satisfies Repo 4"],
+      dead: ["R2.spare", "R3.spare"],
+    });
+  });
+
   it("retains what a constraint requires of a class a generic function reads through its type parameter", () => {
     expect(
       sweepWritten({

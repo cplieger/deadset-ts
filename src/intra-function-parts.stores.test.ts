@@ -691,7 +691,7 @@ describe("a write the next write overwrites on every path", () => {
         "DS1404 value src/main.ts:29",
         "DS1404 value src/main.ts:41",
         "DS1404 value src/main.ts:47",
-        "DS1405 statement src/main.ts:51",
+        "DS1405 taken src/main.ts:51",
       ]);
     },
     LOAD_TIMEOUT,
@@ -744,7 +744,7 @@ describe("a write the next write overwrites on every path", () => {
         ]),
       ).toEqual([
         "DS1404 value src/main.ts:5",
-        "DS1405 statement src/main.ts:5",
+        "DS1405 literal src/main.ts:5",
         "DS1404 value src/main.ts:18",
       ]);
     },

@@ -138,6 +138,21 @@ const RENDERED: readonly { module: Module; fragment: Fragment; input: string }[]
     input: "ts://@example/app/scripts/build.mjs#bundle",
   },
   {
+    module: { package: "@example/app", path: "src/Panel.vue" },
+    fragment: declaration([name("Row"), name("dead")]),
+    input: "ts://@example/app/src/Panel.vue#Row.dead",
+  },
+  {
+    module: { package: "@example/app", path: "src/Card.svelte" },
+    fragment: declaration([name("Tile"), name("hidden")]),
+    input: "ts://@example/app/src/Card.svelte#Tile.hidden",
+  },
+  {
+    module: { package: "@example/app", path: "src/Page.astro" },
+    fragment: { of: "module" },
+    input: "ts://@example/app/src/Page.astro#",
+  },
+  {
     module: { package: "@example/app", path: "src/types.d.ts" },
     fragment: declaration([name("Manifest")]),
     input: "ts://@example/app/src/types.d.ts#Manifest",
@@ -293,6 +308,16 @@ const RENDERED: readonly { module: Module; fragment: Fragment; input: string }[]
     module: { package: ".", path: "static-src/package.json" },
     fragment: { of: "dependency", name: "html-validate", section: "dev-dependency" },
     input: "ts://./static-src/package.json#html-validate:dev-dependency",
+  },
+  {
+    module: { package: "@example/app", path: "package.json" },
+    fragment: { of: "dependency", name: "left~pad", section: "dependency" },
+    input: "ts://@example/app/package.json#left%7Epad:dependency",
+  },
+  {
+    module: { package: "@legacy!/tool", path: "src/main.ts" },
+    fragment: declaration([name("run")]),
+    input: "ts://@legacy%21/tool/src/main.ts#run",
   },
   {
     module: { package: "@example/app", path: "tools/package.json" },

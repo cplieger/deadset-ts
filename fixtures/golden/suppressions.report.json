@@ -11,9 +11,9 @@
       "9.0.0"
     ],
     "conformance": {
-      "corpus_version": "6.3.0",
+      "corpus_version": "6.4.0",
       "result": "pass",
-      "digest": "sha256:e026ac4f1a74a2551c6005564a9e97fd29c7622f7742b58f72badd88d4528f02"
+      "digest": "sha256:2f6f18073a6567736906c9ac84ff161e761db32732266e344ab96f988b3442d8"
     }
   },
   "target": {
@@ -67,7 +67,7 @@
       "consumers_loaded": [],
       "fixability": "none",
       "severity": "deny",
-      "message": "ignore entry for DS1002 names a symbol and no path",
+      "message": "ignore entry for DS1002 on ts://@example/suppressions/src/lib.ts#inBlock names a symbol and no path",
       "details": {
         "mechanism": "ignore",
         "entry": {
@@ -110,7 +110,7 @@
       "consumers_loaded": [],
       "fixability": "narrowable",
       "severity": "warn",
-      "message": "exported function is referenced only inside the file that declares it",
+      "message": "exported function stillUsed is referenced only inside the file that declares it",
       "details": {
         "narrower_visibility": "file"
       }
@@ -149,7 +149,7 @@
       "consumers_loaded": [],
       "fixability": "deletable",
       "severity": "deny",
-      "message": "unexported function has no reference in the target",
+      "message": "unexported function separated has no reference in the target",
       "details": {}
     },
     {
@@ -185,7 +185,7 @@
       "consumers_loaded": [],
       "fixability": "none",
       "severity": "deny",
-      "message": "inline directive for DS1002 carries no reason",
+      "message": "inline directive for DS1002 on ts://@example/suppressions/src/lib.ts# carries no reason",
       "details": {
         "mechanism": "inline",
         "entry": {
@@ -228,7 +228,7 @@
       "consumers_loaded": [],
       "fixability": "deletable",
       "severity": "deny",
-      "message": "unexported function has no reference in the target",
+      "message": "unexported function reasonless has no reference in the target",
       "details": {}
     },
     {
@@ -265,7 +265,7 @@
       "consumers_loaded": [],
       "fixability": "deletable",
       "severity": "deny",
-      "message": "unexported function has no reference in the target",
+      "message": "unexported function inBlock has no reference in the target",
       "details": {}
     }
   ],
@@ -286,7 +286,7 @@
         "column": 5
       },
       "symbol": "ts://@example/suppressions/src/lib.ts#removedLongAgo",
-      "message": "ignore entry for DS1002 matches no current finding"
+      "message": "ignore entry for DS1002 on ts://@example/suppressions/src/lib.ts#removedLongAgo matches no current finding"
     },
     {
       "code": "DS9003",
@@ -303,7 +303,7 @@
         "column": 5
       },
       "symbol": "ts://@example/suppressions/src/lib.ts#entryNamed",
-      "message": "ignore entry for DS1002 matches no current finding"
+      "message": "ignore entry for DS1002 on ts://@example/suppressions/src/lib.ts#entryNamed matches no current finding"
     },
     {
       "code": "DS9003",
@@ -320,7 +320,7 @@
         "column": 1
       },
       "symbol": "ts://@example/suppressions/src/lib.ts#stillUsed",
-      "message": "inline directive for DS1002 matches no current finding, and its declaration reports DS1503"
+      "message": "inline directive for DS1002 on ts://@example/suppressions/src/lib.ts#stillUsed matches no current finding, and its declaration reports DS1503"
     },
     {
       "code": "DS9003",
@@ -337,7 +337,7 @@
         "column": 1
       },
       "symbol": "ts://@example/suppressions/src/lib.ts#wrongCode",
-      "message": "inline directive for DS1001 matches no current finding, and its declaration reports DS1002"
+      "message": "inline directive for DS1001 on ts://@example/suppressions/src/lib.ts#wrongCode matches no current finding, and its declaration reports DS1002"
     },
     {
       "code": "DS9003",
@@ -353,7 +353,7 @@
         "column": 1
       },
       "symbol": "ts://@example/suppressions/src/lib.ts#",
-      "message": "inline directive for DS1002 matches no current finding"
+      "message": "inline directive for DS1002 on ts://@example/suppressions/src/lib.ts# matches no current finding"
     }
   ],
   "declared_gaps": [],

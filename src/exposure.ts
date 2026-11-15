@@ -8,6 +8,7 @@
 import {
   SignatureKind,
   SymbolFlags,
+  TypeFlags,
   type NodeHandle,
   type Symbol as TSSymbol,
   type Type,
@@ -50,6 +51,24 @@ import type { Handle, ProjectView } from "./session.ts";
 
 /** The declarations whose values a reference holds without naming them. */
 const TYPES: ReadonlySet<SymbolKind> = new Set<SymbolKind>(["class", "interface", "type", "enum"]);
+
+/** The type flags of the keys a resolved `keyof` is a union of. */
+const KEYS =
+  TypeFlags.StringLiteral |
+  TypeFlags.NumberLiteral |
+  TypeFlags.String |
+  TypeFlags.Number |
+  TypeFlags.ESSymbol |
+  TypeFlags.UniqueESSymbol;
+
+/** A word of printed type text that can be a type's name. */
+const PRINTED_NAME = /[\p{L}\p{N}_$]+/gu;
+
+/** A string or template literal in printed type text, which spells a key and names no type. */
+const PRINTED_LITERAL = /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`/gu;
+
+/** The type operators printed type text spells as words. */
+const TYPE_OPERATORS: ReadonlySet<string> = new Set(["keyof", "readonly", "typeof", "unique"]);
 
 /** The symbol flags of a type the source spells as a literal, whose members are its own. */
 const LITERAL = SymbolFlags.TypeLiteral | SymbolFlags.ObjectLiteral;
@@ -298,11 +317,38 @@ export function carriersOf<Brand>(project: ProjectView<Brand>, held: Inventory):
     }
     signatures(type, into, seen);
   };
+  const typeNames = new Map<string, string[]>();
+  for (const symbol of held.symbols) {
+    if (TYPES.has(symbol.kind)) {
+      const name = symbol.name.slice(symbol.name.lastIndexOf(".") + 1);
+      typeNames.set(name, [...(typeNames.get(name) ?? []), symbol.id]);
+    }
+  }
+  // The checker resolves `keyof` of a library type to its keys, while the declaration
+  // output prints the union it was resolved from, as `keyof readonly T0[]`, which the API
+  // does not expose: the printed union names the target's types that text spells.
+  const printedKeys = (type: Type, into: Set<string>): void => {
+    const keys = answer(queries.constituents(type), []);
+    if (keys.length === 0 || keys.some((key) => (key.flags & KEYS) === 0)) {
+      return;
+    }
+    const printed = answer(queries.typeToString(type), "");
+    if (/\bkeyof\b/u.test(printed)) {
+      for (const [word] of printed.replace(PRINTED_LITERAL, " ").matchAll(PRINTED_NAME)) {
+        for (const id of TYPE_OPERATORS.has(word) ? [] : (typeNames.get(word) ?? [])) {
+          into.add(id);
+        }
+      }
+    }
+  };
   const walk = (type: Type | undefined, into: Set<string>, seen: Set<number>): void => {
     if (type === undefined || seen.has(type.id)) {
       return;
     }
     seen.add(type.id);
+    if (type.isUnionType()) {
+      printedKeys(type, into);
+    }
     const alias = answer(queries.aliasSymbolOf(type), undefined);
     if (alias !== undefined) {
       for (const id of typesOf(alias)) {

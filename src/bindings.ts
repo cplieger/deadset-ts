@@ -5,9 +5,7 @@
  */
 
 import {
-  isArrayLiteralExpression,
   isArrowFunction,
-  isAsExpression,
   isBinaryExpression,
   isCallExpression,
   isCaseClause,
@@ -24,14 +22,12 @@ import {
   isMethodDeclaration,
   isMethodSignatureDeclaration,
   isNumericLiteral,
-  isObjectLiteralExpression,
   isParenthesizedTypeNode,
   isPrefixUnaryExpression,
   isPropertyAccessExpression,
   isPropertyAssignment,
   isPropertyDeclaration,
   isPropertySignatureDeclaration,
-  isSatisfiesExpression,
   isStringLiteralLikeNode,
   isSwitchStatement,
   isTypeAliasDeclaration,
@@ -46,6 +42,7 @@ import {
   type SwitchStatement,
   type VariableDeclaration,
 } from "@typescript/native/ast";
+import { arrayLiteralOf, objectLiteralOf, unwrapped } from "./unwrap.ts";
 import { GENERATORS } from "./contract/contract.generated.ts";
 import type { GeneratedFact } from "./exemptions/generated-file.ts";
 import { failureExit } from "./failure.ts";
@@ -393,8 +390,8 @@ function protobufEsConsumers(file: SourceFile): Read {
         const enumName = tags.find((one) => one.kind === "enum")?.rest;
         const service = tags.find((one) => one.kind === "service")?.rest;
         const initializer = declaration.initializer;
-        const object = initializer === undefined ? undefined : asConst(initializer);
-        if (enumName !== undefined && object !== undefined && isObjectLiteralExpression(object)) {
+        const object = objectLiteralOf(initializer);
+        if (enumName !== undefined && object !== undefined) {
           const name = fullName(enumName);
           typed.set(fragment, { name, kind: "enum" });
           found.push(
@@ -447,11 +444,6 @@ function protobufEsConsumers(file: SourceFile): Read {
   return { named: found, opaque: [], descriptors };
 }
 
-/** The expression an `as const` or `satisfies` clause holds, or the expression itself. */
-function asConst(node: Node): Node {
-  return isAsExpression(node) || isSatisfiesExpression(node) ? asConst(node.expression) : node;
-}
-
 /** The type arguments one type reference writes. */
 function typeArguments(type: Node | undefined): readonly Node[] {
   return type !== undefined && isTypeReferenceNode(type) ? (type.typeArguments ?? []) : [];
@@ -466,14 +458,15 @@ function nameText(node: Node | undefined): string | undefined {
 
 /** The initializer of the property named `name` an object literal assigns, `as const` removed. */
 function property(object: Node | undefined, name: string): Node | undefined {
-  if (object === undefined || !isObjectLiteralExpression(object)) {
+  const literal = objectLiteralOf(object);
+  if (literal === undefined) {
     return undefined;
   }
-  const found = object.properties.find(
+  const found = literal.properties.find(
     (one) => isPropertyAssignment(one) && nameText(one.name) === name,
   );
   return found !== undefined && isPropertyAssignment(found)
-    ? asConst(found.initializer)
+    ? unwrapped(found.initializer)
     : undefined;
 }
 
@@ -491,9 +484,7 @@ function numberOf(node: Node | undefined): number | undefined {
 
 /** The elements an array literal writes, `as const` removed, or none for any other node. */
 function elementsOf(node: Node | undefined): readonly Node[] {
-  return node !== undefined && isArrayLiteralExpression(node)
-    ? node.elements.map((one) => asConst(one))
-    : [];
+  return arrayLiteralOf(node)?.elements.map((one) => unwrapped(one)) ?? [];
 }
 
 /**
@@ -532,7 +523,7 @@ function staticValue(members: readonly Node[], name: string): Node | undefined {
       nameText(member.name) === name &&
       member.initializer !== undefined
     ) {
-      return asConst(member.initializer);
+      return unwrapped(member.initializer);
     }
   }
   return undefined;
@@ -572,7 +563,7 @@ function protobufEsV1Consumers(file: SourceFile): Read {
       const list = staticValue(statement.members, "fields");
       const [factory] = list !== undefined && isCallExpression(list) ? list.arguments : [];
       const body = factory !== undefined && isArrowFunction(factory) ? factory.body : undefined;
-      for (const entry of elementsOf(body === undefined ? undefined : asConst(body))) {
+      for (const entry of elementsOf(body === undefined ? undefined : unwrapped(body))) {
         const field = nameText(property(entry, "name"));
         const oneof = nameText(property(entry, "oneof"));
         if (field === undefined || numberOf(property(entry, "no")) === undefined) {
@@ -661,7 +652,7 @@ function v1Enum(expression: Node, enums: ReadonlyMap<string, Node>): readonly Na
 /** The consumers one service literal `{ typeName, methods: { <m>: { name } } }` names. */
 function v1Service(declaration: VariableDeclaration): readonly Named[] {
   const object =
-    declaration.initializer === undefined ? undefined : asConst(declaration.initializer);
+    declaration.initializer === undefined ? undefined : unwrapped(declaration.initializer);
   const service = nameText(property(object, "typeName"));
   const methods = property(object, "methods");
   const fragment = spelledName(declaration);
@@ -669,10 +660,10 @@ function v1Service(declaration: VariableDeclaration): readonly Named[] {
     return [];
   }
   const found: Named[] = [{ fragment, name: service, kind: "service", nodes: [declaration] }];
-  for (const method of isObjectLiteralExpression(methods) ? methods.properties : []) {
+  for (const method of objectLiteralOf(methods)?.properties ?? []) {
     const spelled = spelledName(method);
     const rpc = isPropertyAssignment(method)
-      ? nameText(property(asConst(method.initializer), "name"))
+      ? nameText(property(unwrapped(method.initializer), "name"))
       : undefined;
     if (spelled === undefined || rpc === undefined) {
       throw new Undecodable(`a method of ${fragment} names no RPC`);
@@ -770,7 +761,7 @@ function assignedIn(
         isBinaryExpression(parent) &&
         parent.left === node &&
         parent.operatorToken.kind === SyntaxKind.EqualsToken
-          ? nameText(property(asConst(parent.right), "$case"))
+          ? nameText(property(unwrapped(parent.right), "$case"))
           : undefined;
       found = { property: node.name.text, ...(union === undefined ? {} : { union }) };
       return;
@@ -805,7 +796,7 @@ function tsProtoMetadata(file: SourceFile): TsProtoMetadata | undefined {
       types.set(statement.name.text, statement);
     } else if (isVariableStatement(statement)) {
       for (const one of statement.declarationList.declarations) {
-        const object = one.initializer === undefined ? undefined : asConst(one.initializer);
+        const object = one.initializer === undefined ? undefined : unwrapped(one.initializer);
         if (isIdentifier(one.name) && object !== undefined) {
           values.set(one.name.text, one);
           if (property(object, "fileDescriptor") !== undefined) {
@@ -818,22 +809,16 @@ function tsProtoMetadata(file: SourceFile): TsProtoMetadata | undefined {
   }
   const held = property(metadata, "fileDescriptor");
   const [partial] = held !== undefined && isCallExpression(held) ? held.arguments : [];
-  const descriptor = partial === undefined ? held : asConst(partial);
-  const map = property(metadata, "references");
-  if (
-    declaration === undefined ||
-    descriptor === undefined ||
-    !isObjectLiteralExpression(descriptor) ||
-    map === undefined ||
-    !isObjectLiteralExpression(map)
-  ) {
+  const descriptor = objectLiteralOf(partial ?? held);
+  const map = objectLiteralOf(property(metadata, "references"));
+  if (declaration === undefined || descriptor === undefined || map === undefined) {
     return undefined;
   }
   const references = new Map<string, Node>();
   for (const entry of map.properties) {
     const key = isPropertyAssignment(entry) ? nameText(entry.name) : undefined;
     if (key !== undefined && isPropertyAssignment(entry)) {
-      references.set(key.replace(/^\./u, ""), asConst(entry.initializer));
+      references.set(key.replace(/^\./u, ""), unwrapped(entry.initializer));
     }
   }
   return { declaration, descriptor, references, types, values };
@@ -852,10 +837,9 @@ function decoderOf(metadata: TsProtoMetadata, name: string): Node | undefined {
   const value = metadata.references.get(name);
   const constant =
     value !== undefined && isIdentifier(value) ? metadata.values.get(value.text) : undefined;
-  const object = constant?.initializer === undefined ? undefined : asConst(constant.initializer);
-  return object !== undefined && isObjectLiteralExpression(object)
-    ? object.properties.find((one) => isMethodDeclaration(one) && nameText(one.name) === "decode")
-    : undefined;
+  return objectLiteralOf(constant?.initializer)?.properties.find(
+    (one) => isMethodDeclaration(one) && nameText(one.name) === "decode",
+  );
 }
 
 /** Whether one expression is `tag >>> 3`, the field number ts-proto's `decode` switches on. */
@@ -1156,8 +1140,8 @@ function tsProtoConsumers(file: SourceFile): Read {
       }
       continue;
     }
-    const object = asConst(initializer);
-    if (!isObjectLiteralExpression(object)) {
+    const object = objectLiteralOf(initializer);
+    if (object === undefined) {
       continue;
     }
     let service: string | undefined;
@@ -1166,9 +1150,11 @@ function tsProtoConsumers(file: SourceFile): Read {
     const clientConstant = variables.get(clientName);
     for (const property of object.properties) {
       const spelled = spelledName(property);
-      const value = isPropertyAssignment(property) ? asConst(property.initializer) : undefined;
+      const value = isPropertyAssignment(property)
+        ? objectLiteralOf(property.initializer)
+        : undefined;
       const path =
-        value !== undefined && isObjectLiteralExpression(value)
+        value !== undefined
           ? value.properties.find(
               (one) =>
                 isPropertyAssignment(one) &&

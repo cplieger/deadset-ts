@@ -4,7 +4,7 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { emitterInputOf } from "../__test-helpers__/emitter-input.ts";
 import { writeProject } from "../__test-helpers__/projects.ts";
-import { narrowings } from "./findings/visibility-narrowing.ts";
+import { visibilityNarrowing } from "./findings/visibility-narrowing.ts";
 import { resolve } from "./resolve.ts";
 import { openEngine, type Engine } from "./session.ts";
 
@@ -61,6 +61,7 @@ const WRAPS = [
   "function result",
   "conditional branch",
   "keyof",
+  "keyof a key spelled as a type name",
   "unexported alias",
   "unexported interface",
   "unexported base",
@@ -130,6 +131,9 @@ function spelled(one: Row, at: number): { readonly type: string; readonly helper
         return;
       case "keyof":
         type = `keyof { readonly k: ${type} } | keyof Readonly<${type}>`;
+        return;
+      case "keyof a key spelled as a type name":
+        type = `keyof { readonly "T${String(at + 1)}": ${type} } | keyof Readonly<${type}>`;
         return;
       case "unexported alias":
         helpers.push(`type ${helper} = ${type};`);
@@ -282,12 +286,14 @@ describe("a type a published declaration's surface names", () => {
               snapshot.dispose();
             }
             expect(output).toContain("K0");
-            const reported = narrowings(emitterInputOf(root, config, { engine: shared }))
+            const reported = visibilityNarrowing(emitterInputOf(root, config, { engine: shared }))
               .filter((finding) => finding.code === "DS1501")
               .map((finding) => finding.symbol.name)
               .filter((name) => /^T\d+$/u.test(name));
+            // A quoted key spells no type, though it may read as a type's name.
+            const named = output.replace(/"(?:[^"\\]|\\.)*"/gu, " ");
             const expected = rows.flatMap((_one, at) =>
-              new RegExp(`\\bT${String(at)}\\b`, "u").test(output) ? [] : [`T${String(at)}`],
+              new RegExp(`\\bT${String(at)}\\b`, "u").test(named) ? [] : [`T${String(at)}`],
             );
             expect([...reported].sort()).toEqual([...expected].sort());
           } finally {
@@ -296,6 +302,32 @@ describe("a type a published declaration's surface names", () => {
         }),
         {
           numRuns: RUNS,
+          examples: [
+            // A `keyof` of a library type, which the declaration output prints unresolved.
+            [
+              [
+                {
+                  declaration: "inferred",
+                  wraps: ["keyof", "array"],
+                  target: "class",
+                  hidden: false,
+                },
+                { declaration: "parameter", wraps: [], target: "class", hidden: false },
+              ],
+            ],
+            // A key literal spelled as another type's name, which the surface does not name.
+            [
+              [
+                {
+                  declaration: "inferred",
+                  wraps: ["keyof a key spelled as a type name", "array"],
+                  target: "class",
+                  hidden: false,
+                },
+                { declaration: "parameter", wraps: [], target: "class", hidden: true },
+              ],
+            ],
+          ],
           plugins: [fc.interruptAfterTimeLimit(120_000, { failOnInterrupt: true })],
         },
       );

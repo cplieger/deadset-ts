@@ -1084,8 +1084,8 @@ describe("a declaration only dead code references in production", () => {
         'import { fixedNow, now } from "./clock.js";\n\nexport function testClock(): boolean {\n  return now() > fixedNow;\n}\n',
       ),
     ).toEqual([
-      "DS1102 fixedNow: variable is referenced only from test files and from declarations that are themselves dead",
-      "DS1001 stale: exported function has no reference in the target and none from any loaded consumer",
+      "DS1102 fixedNow: variable fixedNow is referenced only from test files and from declarations that are themselves dead",
+      "DS1001 stale: exported function stale has no reference in the target and none from any loaded consumer",
     ]);
   });
 
@@ -1095,9 +1095,9 @@ describe("a declaration only dead code references in production", () => {
         'import { fixedNow } from "./clock.js";\n\nexport function testFixed(): boolean {\n  return fixedNow > 0;\n}\n',
       ),
     ).toEqual([
-      "DS1103 testFixed: every target symbol this test references is reported dead",
-      "DS1001 fixedNow: exported variable is referenced only from declarations that are themselves dead",
-      "DS1001 stale: exported function has no reference in the target and none from any loaded consumer",
+      "DS1103 testFixed: function testFixed references only target symbols that are reported dead",
+      "DS1001 fixedNow: exported variable fixedNow is referenced only from declarations that are themselves dead",
+      "DS1001 stale: exported function stale has no reference in the target and none from any loaded consumer",
     ]);
   });
 });

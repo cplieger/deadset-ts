@@ -387,10 +387,11 @@ describe("configured roots and patterns", () => {
         name: "ts://@example/configured-roots/a/gone.ts#gone",
         sizeLines: 1,
       },
-      message: "configured root matches no symbol of the inventory",
+      message:
+        "configured root ts://@example/configured-roots/a/gone.ts#gone matches no symbol of the inventory",
     });
     expect(CONFIGURED.findings[1]?.message).toBe(
-      "configured root pattern matches no symbol of the inventory",
+      "configured root pattern ts://@example/configured-roots/*#nothing? matches no symbol of the inventory",
     );
   });
 

@@ -1434,9 +1434,16 @@ function nativeUnreached(text: string): number[] {
     "src/main.ts": `${text}\n`,
   });
   try {
-    const { stdout } = spawnSync(process.execPath, [NATIVE_TSC, "-p", ".", "--pretty", "false"], {
-      cwd: root,
-      encoding: "utf8",
+    const { status, stdout, stderr } = spawnSync(
+      process.execPath,
+      [NATIVE_TSC, "-p", ".", "--pretty", "false"],
+      { cwd: root, encoding: "utf8" },
+    );
+    // tsc ends 0 with no error and 2 with errors reported; anything else, or a word on
+    // stderr, is a compiler that did not check the file, whose silence is no answer.
+    expect({ status: status === 0 || status === 2 ? "checked" : status, stderr }).toEqual({
+      status: "checked",
+      stderr: "",
     });
     return [...stdout.matchAll(/^src\/main\.ts\((\d+),\d+\): error TS7027:/gmu)]
       .map((match) => Number(match[1]))

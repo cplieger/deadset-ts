@@ -1,12 +1,12 @@
 /**
  * The interface-satisfaction class: a member is held back when a value of its class
- * reaches a position typed as an interface, or an object type a type alias names, that
- * requires the member: an `implements` entry, a typed initializer, an assignment, an
- * argument, a return, an array element, an object property or an `as` or `satisfies`
- * operand. `this` is a value of its class; a type parameter reaches its constraint. A
- * class installed as a global reaches the instance type the global constructs, whether
- * or not it is assignable to it, because a stub answers only what its caller uses. The
- * contextual lookup has no batch form, so it is asked only of a value of a target class.
+ * reaches a position typed as an interface, a class it does not extend, or an alias's
+ * object type that requires the member: an `implements` entry, a typed initializer, an
+ * assignment, an argument, a return, an array element, an object property or an `as` or
+ * `satisfies` operand. `this` is a value of its class; a type parameter reaches its
+ * constraint. A class installed as a global reaches the type the global constructs,
+ * assignable or not, because a stub answers only what its caller uses. The contextual
+ * lookup has no batch form, so it is asked only of a value of a target class.
  */
 
 import {
@@ -179,14 +179,15 @@ export function interfaceSatisfaction<Brand>(input: DetectorInput<Brand>): reado
       return generic === undefined ? [] : [{ owner: generic, type: part }];
     });
 
-  const interfaceNames = new Map<string, string | undefined>();
+  const interfaceNames = new Map<string, { name: string; ofClass: boolean } | undefined>();
   /**
    * The interface types one position's type is or holds, each with the interface's name:
-   * an interface, or an object type literal a type alias names, directly or as a
-   * constituent of an intersection the alias names.
+   * an interface, a class, which a class can implement as an interface, or an object type
+   * literal a type alias names, directly or as a constituent of an intersection the alias
+   * names.
    */
-  const interfacesOf = (type: Type): readonly { type: Type; name: string }[] =>
-    partsOf(type).flatMap((part): readonly { type: Type; name: string }[] => {
+  const interfacesOf = (type: Type): readonly { type: Type; name: string; ofClass: boolean }[] =>
+    partsOf(type).flatMap((part): readonly { type: Type; name: string; ofClass: boolean }[] => {
       if (part.isTypeParameter()) {
         const constraint = must(queries.constraintOf(part));
         return constraint === undefined ? [] : interfacesOf(constraint);
@@ -196,9 +197,8 @@ export function interfaceSatisfaction<Brand>(input: DetectorInput<Brand>): reado
       if (!interfaceNames.has(key)) {
         const symbol = part.isObjectType() ? must(queries.symbolOfType(part)) : undefined;
         const flags = symbol?.flags ?? 0;
-        interfaceNames.set(
-          key,
-          (flags & SymbolFlags.Interface) !== 0
+        const name =
+          (flags & (SymbolFlags.Interface | SymbolFlags.Class)) !== 0
             ? symbol?.name
             : (flags & SymbolFlags.TypeLiteral) !== 0 &&
                 named !== undefined &&
@@ -207,12 +207,51 @@ export function interfaceSatisfaction<Brand>(input: DetectorInput<Brand>): reado
                   return node !== undefined && isTypeLiteralNode(node);
                 }) === true
               ? must(queries.typeToString(named))
-              : undefined,
+              : undefined;
+        interfaceNames.set(
+          key,
+          name === undefined
+            ? undefined
+            : {
+                name,
+                ofClass: (flags & SymbolFlags.Interface) === 0 && (flags & SymbolFlags.Class) !== 0,
+              },
         );
       }
-      const name = interfaceNames.get(key);
-      return name === undefined ? [] : [{ type: part, name }];
+      const known = interfaceNames.get(key);
+      return known === undefined ? [] : [{ type: part, ...known }];
     });
+
+  const lineage = new Map<number, ReadonlySet<number>>();
+  /** The generic targets of one class type and of every class it extends. */
+  const lineageOf = (type: Type): ReadonlySet<number> => {
+    let known = lineage.get(type.id);
+    if (known === undefined) {
+      const found = new Set<number>();
+      const pending = [type];
+      for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+        const id = next.isObjectType() ? must(queries.targetOf(next)).id : next.id;
+        if (!found.has(id)) {
+          found.add(id);
+          pending.push(...must(queries.baseTypes(next)));
+        }
+      }
+      known = found;
+      lineage.set(type.id, known);
+    }
+    return known;
+  };
+  /**
+   * Whether a class type reaching a position can satisfy it as an interface: always for
+   * an interface, and for a class only where the class neither is nor extends it, since
+   * an extending class's members are read as overrides.
+   */
+  const satisfies = (source: Type, reached: { type: Type; ofClass: boolean }): boolean =>
+    !reached.ofClass ||
+    (reached.type.id !== source.id &&
+      !lineageOf(source).has(
+        reached.type.isObjectType() ? must(queries.targetOf(reached.type)).id : reached.type.id,
+      ));
 
   /**
    * The type an argument's parameter declares in the generic signature a call
@@ -250,7 +289,9 @@ export function interfaceSatisfaction<Brand>(input: DetectorInput<Brand>): reado
       continue;
     }
     for (const reached of interfacesOf(target)) {
-      reach(clause.owner, source, reached.type, reached.name, clause.entry);
+      if (satisfies(source, reached)) {
+        reach(clause.owner, source, reached.type, reached.name, clause.entry);
+      }
     }
   }
 
@@ -272,7 +313,9 @@ export function interfaceSatisfaction<Brand>(input: DetectorInput<Brand>): reado
     for (const type of [position, genericPosition(flow.value)]) {
       for (const reached of type === undefined ? [] : interfacesOf(type)) {
         for (const source of sources) {
-          reach(source.owner, source.type, reached.type, reached.name, flow.value);
+          if (satisfies(source.type, reached)) {
+            reach(source.owner, source.type, reached.type, reached.name, flow.value);
+          }
         }
       }
     }

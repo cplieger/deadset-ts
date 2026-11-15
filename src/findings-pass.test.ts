@@ -21,18 +21,18 @@ import { fixture } from "../__test-helpers__/fixtures.ts";
 import { writeProject } from "../__test-helpers__/projects.ts";
 import { runAnalysis } from "./analysis.ts";
 import { UsageError } from "./usage.ts";
-import {
-  analyzerProvenance,
-  recordedFindings,
-  verdictOf,
-  type PassResult,
-  type RecordableFinding,
-} from "./findings-pass.ts";
+import { analyzerProvenance, verdictOf, type PassResult } from "./findings-pass.ts";
 import { resolve } from "./resolve.ts";
 import { scopeForDir } from "./scope.ts";
-import { isRowSubject, subjectOfCode } from "./suppress.ts";
+import { isRowSubject, subjectOfCode } from "./suppression/records.ts";
 import { openEngine } from "./session.ts";
-import { BASELINE_FILE, otherSchemeRows, writeBaseline } from "./suppress-file.ts";
+import {
+  otherRows,
+  recordedRows,
+  writeBaseline,
+  type RecordableFinding,
+} from "./suppression/baseline.ts";
+import { BASELINE_FILE, baselineRows } from "./suppression/documents.ts";
 import { whole } from "../__test-helpers__/whole.ts";
 
 const SUPPRESSIONS = fixture("projects", "suppressions");
@@ -98,11 +98,11 @@ describe("the suppressions of a target", () => {
 
   it("report every record that withheld nothing at its own site, naming the code its declaration reports", () => {
     expect(stale(result)).toEqual([
-      "src/lib.ts:14:1 inline: inline directive for DS1002 matches no current finding, and its declaration reports DS1503",
-      "src/lib.ts:17:1 inline: inline directive for DS1001 matches no current finding, and its declaration reports DS1002",
-      "src/lib.ts:20:1 inline: inline directive for DS1002 matches no current finding",
-      "deadset-ignore.json:10:5 ignore: ignore entry for DS1002 matches no current finding",
-      "deadset-ignore.json:21:5 ignore: ignore entry for DS1002 matches no current finding",
+      "src/lib.ts:14:1 inline: inline directive for DS1002 on ts://@example/suppressions/src/lib.ts#stillUsed matches no current finding, and its declaration reports DS1503",
+      "src/lib.ts:17:1 inline: inline directive for DS1001 on ts://@example/suppressions/src/lib.ts#wrongCode matches no current finding, and its declaration reports DS1002",
+      "src/lib.ts:20:1 inline: inline directive for DS1002 on ts://@example/suppressions/src/lib.ts# matches no current finding",
+      "deadset-ignore.json:10:5 ignore: ignore entry for DS1002 on ts://@example/suppressions/src/lib.ts#removedLongAgo matches no current finding",
+      "deadset-ignore.json:21:5 ignore: ignore entry for DS1002 on ts://@example/suppressions/src/lib.ts#entryNamed matches no current finding",
     ]);
   });
 
@@ -157,19 +157,19 @@ describe("a record naming a row of a document", () => {
     expect(
       result.findings.filter((one) => one.code === "DS1701").map((one) => one.symbol.name),
     ).toEqual(["right-pad"]);
-    expect(result.ledger.verdicts.filter((one) => one === "in-effect").length).toBeGreaterThan(0);
+    expect(result.totals.suppressionsInEffect).toBeGreaterThan(0);
   });
 
   it("is stale where the row is no dependency row, and its message names the remedy", () => {
     expect(stale(result).filter((one) => one.includes("ignore:"))).toEqual([
-      "deadset-ignore.json:1:169 ignore: ignore entry for DS9004 matches no current finding, because DS9004 reports a record of deadset's own configuration, which no suppression can name; fix what the finding names instead; its declaration reports DS1002",
+      "deadset-ignore.json:1:169 ignore: ignore entry for DS9004 on ts://@example/suppressions/src/lib.ts#entryNamed matches no current finding, because DS9004 reports a record of deadset's own configuration, which no suppression can name; fix what the finding names instead; its declaration reports DS1002",
     ]);
   });
 
   it("is stale inline, and its message names every row code and what its declaration reports", () => {
     expect(stale(result).filter((one) => /^src\/lib\.ts:3[69]:/u.test(one))).toEqual([
-      "src/lib.ts:36:1 inline: inline directive for DS1701 and DS9004 matches no current finding, because DS1701 reports a dependency row, which only an ignore entry or a baseline row can name; DS9004 reports a record of deadset's own configuration, which no suppression can name; fix what the finding names instead; its declaration reports DS1002",
-      "src/lib.ts:39:1 inline: inline directive for DS1001 and DS1701 matches no current finding, because DS1701 reports a dependency row, which only an ignore entry or a baseline row can name; its declaration reports DS1002",
+      "src/lib.ts:36:1 inline: inline directive for DS1701 and DS9004 on ts://@example/suppressions/src/lib.ts#rowsNamed matches no current finding, because DS1701 reports a dependency row, which only an ignore entry or a baseline row can name; DS9004 reports a record of deadset's own configuration, which no suppression can name; fix what the finding names instead; its declaration reports DS1002",
+      "src/lib.ts:39:1 inline: inline directive for DS1001 and DS1701 on ts://@example/suppressions/src/lib.ts#mixedNamed matches no current finding, because DS1701 reports a dependency row, which only an ignore entry or a baseline row can name; its declaration reports DS1002",
     ]);
   });
 
@@ -194,9 +194,9 @@ describe("a suppression whose code the configuration silences", () => {
 
   it("is dormant: neither counted in effect nor stale", () => {
     expect(stale(result)).toEqual([
-      "src/lib.ts:17:1 inline: inline directive for DS1001 matches no current finding, and its declaration reports DS1002",
-      "src/lib.ts:20:1 inline: inline directive for DS1002 matches no current finding",
-      "deadset-ignore.json:10:5 ignore: ignore entry for DS1002 matches no current finding",
+      "src/lib.ts:17:1 inline: inline directive for DS1001 on ts://@example/suppressions/src/lib.ts#wrongCode matches no current finding, and its declaration reports DS1002",
+      "src/lib.ts:20:1 inline: inline directive for DS1002 on ts://@example/suppressions/src/lib.ts# matches no current finding",
+      "deadset-ignore.json:10:5 ignore: ignore entry for DS1002 on ts://@example/suppressions/src/lib.ts#removedLongAgo matches no current finding",
     ]);
     expect(result.totals.suppressionsInEffect).toBe(0);
     expect(result.totals.reasonsRecorded).toBe(7);
@@ -271,8 +271,8 @@ describe("a suppression of a finding only the marked sweep reports", () => {
       JSON.stringify({ target: { kind: "application" }, severity: { DS1001: "allow" } }),
     );
 
-    expect(result.ledger.verdicts).toEqual(["dormant", "in-effect"]);
     expect(result.totals.suppressionsInEffect).toBe(1);
+    expect(result.stale).toEqual([]);
     expect(exit).toBe(EXIT_CLEAN);
   });
 });
@@ -440,7 +440,7 @@ describe("a stale suppression", () => {
 
     expect(named(result)).toEqual([]);
     expect(stale(result)).toEqual([
-      "deadset-ignore.json:1:12 ignore: ignore entry for DS1002 matches no current finding",
+      "deadset-ignore.json:1:12 ignore: ignore entry for DS1002 on ts://@example/dials/src/lib.ts#removed matches no current finding",
     ]);
     expect(exit).toBe(EXIT_FINDINGS);
   });
@@ -506,7 +506,7 @@ describe("a baseline", () => {
   rmSync(join(root, "deadset-ignore.json"));
   const first = passOver(root);
   const written = whole(
-    writeBaseline(recordedFindings(first.result.findings), analyzerProvenance("1.2.3")),
+    writeBaseline(recordedRows(first.result.findings), analyzerProvenance("1.2.3")),
   );
   writeFileSync(join(root, BASELINE_FILE), written);
   const again = passOver(root);
@@ -656,6 +656,7 @@ describe("the published baseline vectors", () => {
   it("are the case set this suite runs", () => {
     expect(baselineCases()).toEqual([
       "backslash-in-a-file-name",
+      "component-file-rows",
       "declarations-and-parts",
       "document-rows-left-out",
       "existing-document-not-a-baseline",
@@ -667,6 +668,7 @@ describe("the published baseline vectors", () => {
       "other-scheme-row-unreadable",
       "other-scheme-rows-kept",
       "own-scheme-row-unreadable",
+      "third-scheme-rows-kept",
       "typescript-parameters",
       "typescript-rows",
     ]);
@@ -684,9 +686,9 @@ describe("the published baseline vectors", () => {
     return () =>
       whole(
         writeBaseline(
-          recordedFindings(report.findings),
+          recordedRows(report.findings),
           { analyzer: report.analyzer.name, version: report.analyzer.version },
-          existing === undefined ? [] : otherSchemeRows(existing, own),
+          existing === undefined ? [] : otherRows(baselineRows(existing), own),
         ),
       );
   };
@@ -710,7 +712,7 @@ describe("the published baseline vectors", () => {
       const want = baselineCase(name, "expected-error.json") as { exit_code: number };
 
       expect(want.exit_code).toBe(EXIT_FAILURE);
-      expect(writeOf(name)).toThrow(/cannot be rewritten/u);
+      expect(writeOf(name)).toThrow(UsageError);
     },
   );
 });
@@ -747,7 +749,7 @@ describe("a suppression of an unused import binding", () => {
     const { result } = passOver(root, JSON.stringify({ target: { kind: "application" } }));
 
     expect(named(result).filter((one) => one.startsWith("DS1004"))).toEqual([]);
-    expect(result.ledger.verdicts).toEqual(["in-effect", "in-effect"]);
+    expect(result.totals.suppressionsInEffect).toBe(2);
     expect(stale(result)).toEqual([]);
   });
 });
@@ -788,7 +790,7 @@ describe("a suppression of a declaration no finding is reported about", () => {
 
     expect(named(result)).toEqual(["DS1301 mode"]);
     expect(stale(result)).toEqual([
-      "src/settings.ts:1:1 inline: inline directive for DS1503 matches no current finding",
+      "src/settings.ts:1:1 inline: inline directive for DS1503 on ts://@example/unreported/src/settings.ts#Mode matches no current finding",
     ]);
   });
 });

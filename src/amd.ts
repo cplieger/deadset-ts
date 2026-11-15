@@ -5,7 +5,6 @@
  */
 
 import {
-  isArrayLiteralExpression,
   isArrowFunction,
   isFunctionExpression,
   isCallExpression,
@@ -17,7 +16,7 @@ import {
   type StringLiteralLikeNode,
 } from "@typescript/native/ast";
 import { hasURLScheme, isAbsolutePath, resolvePath, startsRelativePath } from "./paths.ts";
-import { parenthesesRemoved } from "./unwrap.ts";
+import { arrayLiteralOf, parenthesesRemoved } from "./unwrap.ts";
 
 /** The platform function an AMD call is written as. */
 type AmdPlatform = "define" | "require";
@@ -70,8 +69,8 @@ export function amdLoadOf(node: Node): AmdLoad | undefined {
   }
   const define = callee.text === "define";
   const named = define && isLiteralText(first);
-  const list = written[named ? 1 : 0];
-  if (list !== undefined && isArrayLiteralExpression(list)) {
+  const list = arrayLiteralOf(written[named ? 1 : 0]);
+  if (list !== undefined) {
     const elements = list.elements.map((one) => parenthesesRemoved(one));
     const factory = written[named ? 2 : 1];
     const ids = elements.flatMap((one, at) =>

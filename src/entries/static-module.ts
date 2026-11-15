@@ -63,7 +63,7 @@ import {
 import { commonJSModuleValue, type ModuleValue } from "../inventory/commonjs.ts";
 import { callsPlatformBy, lexicalBinding, writtenName, type BindingOf } from "../platform-calls.ts";
 import { startsRelativePath } from "../paths.ts";
-import { unwrapped } from "../unwrap.ts";
+import { arrayLiteralOf, objectLiteralOf, unwrapped } from "../unwrap.ts";
 
 /** Where a value's text starts in its file, or undefined in a document read with no positions. */
 type At = number | undefined;
@@ -329,10 +329,11 @@ export function writtenValue(node: Node): Value {
   if (held.kind === SyntaxKind.TrueKeyword || held.kind === SyntaxKind.FalseKeyword) {
     return { kind: "boolean", value: held.kind === SyntaxKind.TrueKeyword, at };
   }
-  if (isArrayLiteralExpression(held)) {
+  const list = arrayLiteralOf(held);
+  if (list !== undefined) {
     return {
       kind: "array",
-      elements: held.elements.map((element) =>
+      elements: list.elements.map((element) =>
         element.kind === SyntaxKind.SpreadElement
           ? { kind: "opaque", at: element.getStart() }
           : writtenValue(element),
@@ -340,10 +341,11 @@ export function writtenValue(node: Node): Value {
       at,
     };
   }
-  if (isObjectLiteralExpression(held)) {
+  const object = objectLiteralOf(held);
+  if (object !== undefined) {
     return {
       kind: "object",
-      members: held.properties.map((member): Member => {
+      members: object.properties.map((member): Member => {
         const start = member.getStart();
         if (isSpreadAssignment(member)) {
           return { key: undefined, value: { kind: "opaque", at: start }, at: start };

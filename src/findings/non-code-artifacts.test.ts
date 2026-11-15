@@ -113,7 +113,7 @@ describe("DS1601 under the build matrix", () => {
 
       expect(goldenText(findings)).toBe(
         "unbuilt.ts:1:1-2\tDS1601\tfile\tunbuilt.ts\t2\tts://@example/written/unbuilt.ts#\t" +
-          "no project of the build matrix includes this file (only)\n",
+          "no project of the build matrix includes file unbuilt.ts (only)\n",
       );
     } finally {
       rmSync(root, { recursive: true, force: true });

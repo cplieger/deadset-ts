@@ -23,12 +23,12 @@ import {
   type Node,
   type SourceFile,
 } from "@typescript/native/ast";
-import { TypeFlags, type Type } from "@typescript/native/sync";
 import type { DetectorInput, Evidence } from "./lifecycle.ts";
+import { readsAMapping } from "../element-access.ts";
 import { memberNames } from "../member-names.ts";
 import { renderPosition } from "../position.ts";
 import { isAnswered, UNANSWERED } from "../query.ts";
-import type { ProjectView } from "../session.ts";
+import { parenthesesRemoved } from "../unwrap.ts";
 
 /** The `Reflect` methods whose second argument is a property key. */
 const REFLECT_KEYED: ReadonlySet<string> = new Set(["get", "set", "has"]);
@@ -46,8 +46,9 @@ interface Lookup {
 
 /** The text one key denotes, where it is literal text. */
 function literalText(node: Node | undefined): string | undefined {
-  if (node !== undefined && (isStringLiteral(node) || isNoSubstitutionTemplateLiteral(node))) {
-    return node.text;
+  const key = node === undefined ? undefined : parenthesesRemoved(node);
+  if (key !== undefined && (isStringLiteral(key) || isNoSubstitutionTemplateLiteral(key))) {
+    return key.text;
   }
   return undefined;
 }
@@ -93,19 +94,6 @@ function lookupsOf(file: SourceFile): readonly Lookup[] {
   };
   file.forEachChild(visit);
   return found;
-}
-
-/**
- * Whether a receiver's type is not `any` and declares a string index signature. A type
- * whose index signatures the checker did not answer for is read as declaring none, so
- * the lookup retains what it names.
- */
-function readsAMapping<Brand>(project: ProjectView<Brand>, type: Type): boolean {
-  if ((type.flags & TypeFlags.Any) !== 0) {
-    return false;
-  }
-  const infos = project.queries.indexInfosOf(type);
-  return isAnswered(infos) && infos.some((info) => (info.keyType.flags & TypeFlags.String) !== 0);
 }
 
 /**
@@ -155,7 +143,7 @@ export function reflectiveLookup<Brand>(input: DetectorInput<Brand>): readonly E
       receiver !== undefined &&
       type !== undefined &&
       isAnswered(type) &&
-      readsAMapping(project, type)
+      readsAMapping(project.queries, type)
     ) {
       mapped.add(receiver);
     }

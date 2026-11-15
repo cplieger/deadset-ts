@@ -359,7 +359,7 @@ describe("explain's answer for a reported declaration", () => {
         [
           "answer: reported",
           "  code: DS1602 file-never-imported",
-          "  message: no import reaches this file and no root names it or a declaration in it",
+          "  message: no import reaches file src/orphan.ts and no root names it or a declaration in it",
           "  class: certain",
           "  confidence: certain",
           "  configurations: tsconfig.json",

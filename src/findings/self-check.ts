@@ -1,18 +1,10 @@
-import { CODE, REMEDIES, type Subject } from "../contract/contract.generated.ts";
+import { CODE } from "../contract/contract.generated.ts";
 import { REPOSITORY_DOCUMENT } from "../config.ts";
 import type { Finding, FindingDetails, SuppressionEntry } from "../finding.ts";
-import type { InventorySymbol } from "../inventory.ts";
-import { FIXED_SEVERITY_CODES } from "../kinds.ts";
+import { displayName, type InventorySymbol } from "../inventory.ts";
 import type { Position } from "../position.ts";
-import {
-  names,
-  subjectOfCode,
-  type Mechanism,
-  type Refusal,
-  type SuppressionRecord,
-} from "../suppress.ts";
+import { WRITTEN, type Refusal } from "../suppression/records.ts";
 import type { Emitter } from "./emitter.ts";
-import { bytewise } from "../text/compare.ts";
 
 /** The subject kind of a finding about a configured declaration. */
 const DECLARATION_SUBJECT = "configured-declaration";
@@ -25,13 +17,6 @@ const ROOT_SUBJECT = "root";
 
 /** The fixed position of a finding about a document rather than about a line of one. */
 const DOCUMENT_POSITION = 1;
-
-/** One record no finding matched, and the codes its declaration reports instead. */
-export interface StaleRecord {
-  readonly record: SuppressionRecord;
-  /** The codes the bound declaration would report, none of them the record's own. */
-  readonly reports: readonly string[];
-}
 
 /** What the configuration family reads: the run's refused suppressions and its configured roots. */
 export interface SelfCheckFacts {
@@ -55,13 +40,6 @@ interface UnmatchedDeclaration {
   readonly document: string;
 }
 
-/** The words a message names a mechanism by. */
-const WRITTEN: Readonly<Record<Mechanism, string>> = {
-  inline: "inline directive",
-  ignore: "ignore entry",
-  baseline: "baseline row",
-};
-
 /** The file references of a run's declarations, by path. */
 export function fileRefsOf(symbols: readonly InventorySymbol[]): FileRefs {
   const byPath = new Map(
@@ -70,51 +48,6 @@ export function fileRefsOf(symbols: readonly InventorySymbol[]): FileRefs {
       .map((symbol) => [symbol.position.path, symbol.ref]),
   );
   return (path) => byPath.get(path);
-}
-
-/**
- * Why a record of `mechanism` naming `codes` can match nothing, one clause per subject whose
- * findings kinds.json's remedies table lets no record of that mechanism name, in subject order.
- */
-function unnameable(codes: readonly string[], mechanism: Mechanism): readonly string[] {
-  return (Object.keys(REMEDIES) as Subject[]).flatMap((subject) => {
-    const named = codes.filter((code) => subjectOfCode(code) === subject);
-    if (named.length === 0 || names(subject, mechanism)) {
-      return [];
-    }
-    const { names: what, suppressions } = REMEDIES[subject];
-    const reports = `${spelled(named)} ${named.length === 1 ? "reports" : "each report"} ${what}`;
-    if (suppressions.length > 0) {
-      const records = suppressions.map((one) => articled(WRITTEN[one]));
-      return [`${reports}, which only ${spelledOr(records)} can name`];
-    }
-    const settable = named.filter((code) => !FIXED_SEVERITY_CODES.includes(code));
-    const remedy =
-      settable.length === 0
-        ? "fix what the finding names instead"
-        : `fix what the finding names or set the severity of ${spelled(settable)} instead`;
-    return [`${reports}, which no suppression can name; ${remedy}`];
-  });
-}
-
-/** A record's written name with its indefinite article. */
-function articled(name: string): string {
-  return `${/^[aeiou]/u.test(name) ? "an" : "a"} ${name}`;
-}
-
-/** A list as a sentence names alternatives. */
-function spelledOr(items: readonly string[]): string {
-  return items.length < 2
-    ? items.join("")
-    : `${items.slice(0, -1).join(", ")} or ${items.at(-1) ?? ""}`;
-}
-
-/** A list of codes as a sentence names them. */
-function spelled(codes: readonly string[]): string {
-  if (codes.length < 2) {
-    return codes.join("");
-  }
-  return `${codes.slice(0, -1).join(", ")} and ${codes.at(-1) ?? ""}`;
 }
 
 /** A finding about one suppression, at the suppression's own site. */
@@ -128,7 +61,7 @@ function aboutSuppression(
   return {
     code,
     position: { ...site, endLine: site.line },
-    symbol: { ref, kind: SUPPRESSION_SUBJECT, name: ref, sizeLines: 1 },
+    symbol: { ref, kind: SUPPRESSION_SUBJECT, name: displayName(ref), sizeLines: 1 },
     message,
     details,
   };
@@ -154,86 +87,25 @@ type FileRefs = (path: string) => string | undefined;
  * The reference a finding about a suppression names: the symbol it names or bound, else
  * the file form of the document that holds it, else that document's path.
  */
-function suppressionRef(symbol: string, path: string, files: FileRefs): string {
+export function suppressionRef(symbol: string, path: string, files: FileRefs): string {
   return symbol === "" ? (files(path) ?? path) : symbol;
 }
 
 /** One finding per refused suppression: the grammar's reason refusal and its scope refusal. */
 function refusedSuppressions(refusals: readonly Refusal[], files: FileRefs): readonly Finding[] {
-  return refusals.map((refused) =>
-    aboutSuppression(
+  return refusals.map((refused) => {
+    const ref = suppressionRef(refused.symbol, refused.path, files);
+    return aboutSuppression(
       refused.reported,
-      suppressionRef(refused.symbol, refused.path, files),
+      ref,
       refused.site,
-      `${WRITTEN[refused.mechanism]} for ${refused.code} ${
+      `${WRITTEN[refused.mechanism]} for ${refused.code} on ${displayName(ref)} ${
         refused.reported === CODE.suppressionWithoutReason
           ? "carries no reason"
           : "names a symbol and no path"
       }`,
       { mechanism: refused.mechanism, entry: writtenEntry(refused) },
-    ),
-  );
-}
-
-/** One stale suppression as the report's stale-suppression record carries it. */
-export interface StaleSuppression {
-  readonly code: typeof CODE.staleSuppression;
-  readonly mechanism: Mechanism;
-  readonly entry: {
-    readonly code: string;
-    readonly symbol?: string;
-    readonly path: string;
-    readonly reason: string;
-  };
-  readonly position: Position;
-  readonly symbol: string;
-  readonly message: string;
-}
-
-/**
- * One record per site at which a suppression matched nothing, whatever the number of
- * codes or declarations written there: the first record names the entry, and the message
- * names every code the site's records named and every code the declaration reports
- * instead, so the maintainer corrects the code rather than hunting for it.
- */
-export function staleSuppressions(
-  stale: readonly StaleRecord[],
-  files: FileRefs,
-): readonly StaleSuppression[] {
-  const bySite = new Map<string, { first: SuppressionRecord; records: StaleRecord[] }>();
-  for (const one of stale) {
-    const { site, mechanism } = one.record;
-    const key = `${mechanism}\u0000${site.path}\u0000${String(site.line)}\u0000${String(site.column)}`;
-    const held = bySite.get(key) ?? { first: one.record, records: [] };
-    held.records.push(one);
-    bySite.set(key, held);
-  }
-  return [...bySite.values()].map(({ first, records }) => {
-    const codes = [...new Set(records.map((one) => one.record.code))].sort(bytewise);
-    const reports = [...new Set(records.flatMap((one) => one.reports))]
-      .filter((code) => !codes.includes(code))
-      .sort(bytewise);
-    const declared = reports.length === 0 ? "" : `its declaration reports ${spelled(reports)}`;
-    const because = unnameable(codes, first.mechanism);
-    const instead =
-      because.length > 0
-        ? `, because ${because.join("; ")}${declared === "" ? "" : `; ${declared}`}`
-        : declared === ""
-          ? ""
-          : `, and ${declared}`;
-    return {
-      code: CODE.staleSuppression,
-      mechanism: first.mechanism,
-      entry: {
-        code: first.code,
-        ...(first.symbol === "" ? {} : { symbol: first.symbol }),
-        path: first.path,
-        reason: first.reason,
-      },
-      position: first.site,
-      symbol: suppressionRef(first.symbol, first.path, files),
-      message: `${WRITTEN[first.mechanism]} for ${spelled(codes)} matches no current finding${instead}`,
-    };
+    );
   });
 }
 
@@ -254,12 +126,15 @@ function documentPosition(document: string): Finding["position"] {
 function unmatchedDeclarationFindings(
   unmatched: readonly UnmatchedDeclaration[],
 ): readonly Finding[] {
-  return unmatched.map((one) => ({
-    code: CODE.unmatchedConfiguredDeclaration,
-    position: documentPosition(one.document),
-    symbol: { ref: one.ref, kind: DECLARATION_SUBJECT, name: one.ref, sizeLines: 1 },
-    message: `${one.key} entry names no declaration in any project`,
-  }));
+  return unmatched.map((one) => {
+    const name = displayName(one.ref);
+    return {
+      code: CODE.unmatchedConfiguredDeclaration,
+      position: documentPosition(one.document),
+      symbol: { ref: one.ref, kind: DECLARATION_SUBJECT, name, sizeLines: 1 },
+      message: `${one.key} entry ${name} names no declaration in any project`,
+    };
+  });
 }
 
 /**
@@ -274,23 +149,22 @@ export function unmatchedRootFindings(
   document: string,
 ): readonly Finding[] {
   const position = documentPosition(document);
-  return sources.map((source) => ({
-    code: CODE.unmatchedRoot,
-    position,
-    symbol: { ref: source, kind: ROOT_SUBJECT, name: source, sizeLines: 1 },
-    message:
-      source.includes("*") || source.includes("?")
-        ? "configured root pattern matches no symbol of the inventory"
-        : "configured root matches no symbol of the inventory",
-  }));
+  return sources.map((source) => {
+    const name = displayName(source);
+    return {
+      code: CODE.unmatchedRoot,
+      position,
+      symbol: { ref: source, kind: ROOT_SUBJECT, name, sizeLines: 1 },
+      message: `configured root ${source.includes("*") || source.includes("?") ? "pattern " : ""}${name} matches no symbol of the inventory`,
+    };
+  });
 }
 
 /**
  * The findings of the configuration family, `DS9000` to `DS9099`: a suppression refused for
  * carrying no reason or naming no path, and a configured root or declaration that named
- * nothing. A
- * suppression that matched nothing is a record of the report's stale suppressions, which
- * {@link staleSuppressions} builds, and a stale cross-language edge is the merge's to report.
+ * nothing. A suppression that matched nothing is a record of the report's stale
+ * suppressions, and a stale cross-language edge is the merge's to report.
  */
 export const selfCheck: Emitter = ({ selfCheck: facts, swept }) => [
   ...refusedSuppressions(facts.refusals, fileRefsOf(swept.matrix.union.symbols)),

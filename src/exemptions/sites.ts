@@ -87,17 +87,11 @@ function storeOf(node: Node): StoreSite | undefined {
   if (isPropertyAccessExpression(left) && isIdentifier(left.name)) {
     return { store: node, receiver: left.expression, key: left.name.text, value: node.right };
   }
-  if (
-    isElementAccessExpression(left) &&
-    (isStringLiteral(left.argumentExpression) ||
-      isNoSubstitutionTemplateLiteral(left.argumentExpression))
-  ) {
-    return {
-      store: node,
-      receiver: left.expression,
-      key: left.argumentExpression.text,
-      value: node.right,
-    };
+  if (isElementAccessExpression(left)) {
+    const key = parenthesesRemoved(left.argumentExpression);
+    if (isStringLiteral(key) || isNoSubstitutionTemplateLiteral(key)) {
+      return { store: node, receiver: left.expression, key: key.text, value: node.right };
+    }
   }
   return undefined;
 }

@@ -34,7 +34,7 @@ const CLASS_DECLARATIONS: ReadonlySet<SyntaxKind> = new Set([
 const OVERRIDABLE: ReadonlySet<string> = new Set(["method", "class-member"]);
 
 /** The node naming the class one `extends` entry names. */
-function nameOf(entry: HeritageClauseElement): Node {
+function extendedName(entry: HeritageClauseElement): Node {
   if (isExpressionWithTypeArguments(entry)) {
     return isPropertyAccessExpression(entry.expression) ? entry.expression.name : entry.expression;
   }
@@ -67,7 +67,7 @@ export const overrides: ReadRule = {
           );
           const base = clause?.types[0];
           if (base !== undefined) {
-            extending.push({ node, file, base: nameOf(base) });
+            extending.push({ node, file, base: extendedName(base) });
           }
         }
       },

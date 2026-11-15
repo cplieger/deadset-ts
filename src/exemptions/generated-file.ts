@@ -314,7 +314,11 @@ function retentionDetail(fact: GeneratedFact): string {
   }
 }
 
-/** The generated-file detector, recording each file's first line. */
+/**
+ * The generated-file detector, recording each file's first line. A declaration a declared
+ * edge side names is left to its references, because the edge stands for a use only the
+ * other language decides.
+ */
 export function generatedFile<Brand>(input: DetectorInput<Brand>): readonly Evidence[] {
   const generated = input.generated;
   if (generated === undefined || generated.size === 0) {
@@ -322,7 +326,7 @@ export function generatedFile<Brand>(input: DetectorInput<Brand>): readonly Evid
   }
   return input.held.symbols.flatMap((symbol): Evidence[] => {
     const fact = generated.get(symbol.position.path);
-    return symbol.kind === "file" || fact === undefined
+    return symbol.kind === "file" || fact === undefined || input.edgeNamed?.has(symbol.ref) === true
       ? []
       : [
           {

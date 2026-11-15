@@ -425,8 +425,18 @@ describe("a parameter property", () => {
         ),
       ]),
     ).toEqual([
-      ["DS1301", "class-member", "member Box.label is written once and never read", ["3:22"]],
-      ["DS1301", "class-member", "member Box.spare is written once and never read", ["5:22"]],
+      [
+        "DS1301",
+        "class-member",
+        "private class member Box.label is written once and never read",
+        ["3:22"],
+      ],
+      [
+        "DS1301",
+        "class-member",
+        "private class member Box.spare is written once and never read",
+        ["5:22"],
+      ],
     ]);
   });
 });
@@ -485,7 +495,7 @@ describe("what deleting a write-only declaration with its writes takes with it",
     });
 
     expect(found.map((finding) => `${finding.code} ${finding.message}`)).toEqual([
-      "DS1301 member Box.held is written once and never read, and deleting it with its writes deletes type parameter Box<T> too",
+      "DS1301 private class member Box.held is written once and never read, and deleting it with its writes deletes type parameter Box<T> too",
     ]);
   });
 
@@ -644,5 +654,129 @@ describe("an enum member only a test file names", () => {
         }),
       ),
     ).toEqual(["DS1005 Mode.Gone"]);
+  });
+});
+
+describe("a variable an element access stores through", () => {
+  it.each([
+    [
+      "an inner function's own `let`",
+      [
+        "let b = { id: 1 } as Record<string, number>;",
+        "function shadow(): void {",
+        "  let b = 0;",
+        "  b = 1;",
+        "}",
+        'b["z"] = 2;',
+        "void shadow;",
+      ],
+    ],
+    [
+      "a block's own `let`",
+      [
+        "let b = { id: 1 } as Record<string, number>;",
+        "{",
+        "  let b = 0;",
+        "  b = 1;",
+        "  void b;",
+        "}",
+        'b["z"] = 2;',
+      ],
+    ],
+    [
+      "a parameter of the same name",
+      [
+        "let b = { id: 1 } as Record<string, number>;",
+        "function shadow(b: number): number {",
+        "  b = 1;",
+        "  return b;",
+        "}",
+        'b["z"] = 2;',
+        "void shadow;",
+      ],
+    ],
+  ])("still reports a `let` collection a store reaches where %s is assigned", (_form, main) => {
+    const found = applicationFindings({
+      "package.json": COMMAND,
+      "src/main.ts": [...main, ""].join("\n"),
+    });
+
+    expect(found.map((finding) => `${finding.code} ${finding.symbol.name}`)).toContain("DS1301 b");
+  });
+
+  it.each([
+    ["a literal key", 'b["id"] = 5;'],
+    ["a key from data", "b[JSON.parse('\"id\"') as string] = 5;"],
+    ["a compound assignment", 'b["id"] += 5;'],
+    ["an increment", 'b["id"]++;'],
+  ])("reads a variable holding another name's value through %s", (_form, store) => {
+    const found = applicationFindings({
+      "package.json": COMMAND,
+      "src/main.ts": [
+        "const s: Record<string, number> = { id: 1 };",
+        "const b = s;",
+        store,
+        "console.log(JSON.stringify(s));",
+        "",
+      ].join("\n"),
+    });
+
+    expect(found.map((finding) => `${finding.code} ${finding.symbol.name}`)).toEqual([]);
+  });
+
+  it("still reports a collection a `const` literal holds that only stores reach", () => {
+    const found = applicationFindings({
+      "package.json": COMMAND,
+      "src/main.ts": ["const slots: number[] = [];", "slots[0] = 1;", ""].join("\n"),
+    });
+
+    expect(found.map((finding) => `${finding.code} ${finding.symbol.name}`)).toEqual([
+      "DS1301 slots",
+    ]);
+  });
+
+  it.each([
+    ["`as`", "const b = { id: 1 } as Record<string, number>;"],
+    ["`satisfies`", "const b = { id: 1 } satisfies Record<string, number>;"],
+    ["an angle assertion", "const b = <Record<string, number>>{ id: 1 };"],
+    ["parentheses around `as`", "const b = ({ id: 1 } as Record<string, number>);"],
+    ["a non-null assertion", "const b = ({ id: 1 } as Record<string, number> | undefined)!;"],
+    ["a `let` assigned nowhere else", "let b: Record<string, number> = { id: 1 };"],
+  ])(
+    "still reports a collection a literal behind %s holds that only stores reach",
+    (_form, declaration) => {
+      const found = applicationFindings({
+        "package.json": COMMAND,
+        "src/main.ts": [declaration, 'b["z"] = 2;', ""].join("\n"),
+      });
+
+      expect(found.map((finding) => `${finding.code} ${finding.symbol.name}`)).toEqual([
+        "DS1301 b",
+      ]);
+    },
+  );
+
+  it.each([
+    [
+      "read",
+      ["const b = { id: 1 } as Record<string, number>;", 'b["z"] = 2;', 'console.log(b["z"]);'],
+    ],
+    [
+      "a `let` given another name's value",
+      [
+        "const s: Record<string, number> = { id: 1 };",
+        "let b: Record<string, number> = {};",
+        "b = s;",
+        'b["id"] = 5;',
+        "console.log(JSON.stringify(s));",
+      ],
+    ],
+  ])("reads a collection behind a wrapper that is %s", (_form, lines) => {
+    const found = applicationFindings({
+      "package.json": COMMAND,
+      "src/main.ts": [...lines, ""].join("\n"),
+    });
+
+    expect(found.map((finding) => `${finding.code} ${finding.symbol.name}`)).toEqual([]);
   });
 });

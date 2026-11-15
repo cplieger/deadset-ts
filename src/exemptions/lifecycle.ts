@@ -79,6 +79,8 @@ export interface DetectorInput<Brand> {
   readonly consumers: readonly string[];
   /** The project's generated files, by path below the target root, each with what decided it. */
   readonly generated?: ReadonlyMap<string, GeneratedFact>;
+  /** The references a declared edge side of this language names, judged by their references wherever they are declared. */
+  readonly edgeNamed?: ReadonlySet<string>;
 }
 
 /**
@@ -255,6 +257,7 @@ export function settle(projects: readonly ProjectRecords[], run: Settling): read
             use: "read",
             resolution: "syntax",
             test: true,
+            evidence: true,
           });
         }
       } else {

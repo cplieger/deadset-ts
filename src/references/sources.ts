@@ -50,6 +50,7 @@ import {
 import { callsPlatform, isPlatformGlobal, startsThread } from "../platform-symbols.ts";
 import { isComponentFile, type Position } from "../position.ts";
 import { UNANSWERED, type Answer } from "../query.ts";
+import { heldLiteral } from "../unwrap.ts";
 import type { Resolution } from "../references.ts";
 import { computedLoadsOf, type ComputedLoad } from "../roots/unseen-loads.ts";
 import type { ProjectView } from "../session.ts";
@@ -803,7 +804,7 @@ const names: ReferenceSource = {
         : [site.node, ...(site.through === undefined ? [] : [site.through])],
     ),
   emit({ file, uses }, answered, pass) {
-    const { sink, chains, named, targetsOf, throughAliases, candidates } = pass;
+    const { project, sink, chains, named, targetsOf, throughAliases, candidates } = pass;
     const wholeUses: WholeUse[] = [];
     for (const site of uses) {
       const receiver =
@@ -859,10 +860,35 @@ const names: ReferenceSource = {
       const use = receives && resolved ? "read" : site.use;
       const value = use === "write" ? storedValue(site.node) : undefined;
       sink.add(file, site.node, site.from, targets, use, direct, value);
+      if (site.receiver === true && !holdsOwnCollection(project, symbol)) {
+        sink.add(file, site.node, site.from, targets, "read", direct);
+      }
     }
     readWholes(file, wholeUses, pass);
   },
 };
+
+/**
+ * Whether a name an element access stores through holds a collection no other name can:
+ * one declared with the literal it holds for its whole life, as `heldLiteral` reads it.
+ * Any other value can be one that another name reads, so the store reads the name.
+ */
+function holdsOwnCollection<Brand>(
+  project: ProjectView<Brand>,
+  symbol: Answer<TSSymbol | undefined>,
+): boolean {
+  if (symbol === UNANSWERED || symbol === undefined) {
+    return false;
+  }
+  const target =
+    (symbol.flags & SymbolFlags.Alias) !== 0 ? project.queries.aliased(symbol) : symbol;
+  if (target === UNANSWERED || target.declarations.length !== 1) {
+    return false;
+  }
+  const [handle] = target.declarations;
+  const node = handle === undefined ? undefined : project.declarationAt(handle)?.node;
+  return node !== undefined && heldLiteral(node) !== undefined;
+}
 
 /** The symbol one site resolves to, asking only the accessor the site's form names. */
 function symbolFor<Brand>(

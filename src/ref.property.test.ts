@@ -82,6 +82,65 @@ describe("the stable symbol reference", () => {
   }, 120_000);
 });
 
+/** RFC 3986's encoding of every byte outside the grammar's set: `encodeURIComponent` leaves six more. */
+function uriEncoded(part: string): string | undefined {
+  try {
+    return encodeURIComponent(part).replace(
+      /[!'()*~]/gu,
+      (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
+    );
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * A manifest may declare a dependency, and a package may name itself, under any non-empty
+ * string npm once installed or a hand edit wrote, so the package component spells every one.
+ */
+describe("the package component", () => {
+  const MANIFEST: Module = { package: "@example/app", path: "package.json" };
+  const dependency = (name: string): string =>
+    renderRef(MANIFEST, { of: "dependency", name, section: "dependency" });
+  const spelled = (name: string): string =>
+    dependency(name).slice("ts://@example/app/package.json#".length, -":dependency".length);
+
+  it("spells every name the grammar accepts, two names apart, and as RFC 3986 encodes it", () => {
+    fc.assert(
+      fc.property(
+        fc.string({ unit: "binary", minLength: 1, maxLength: 12 }),
+        fc.string({ unit: "binary", minLength: 1, maxLength: 12 }),
+        (one, other) => {
+          expect(isRef(dependency(one)), dependency(one)).toBe(true);
+          expect(isRef(renderRef({ package: one, path: "src/main.ts" }, { of: "module" }))).toBe(
+            true,
+          );
+          if (one !== other) {
+            expect(dependency(one)).not.toBe(dependency(other));
+          }
+          const expected = one.startsWith("@") ? undefined : uriEncoded(one);
+          if (expected !== undefined) {
+            expect(spelled(one)).toBe(expected);
+          }
+        },
+      ),
+      { numRuns: 500 },
+    );
+  });
+
+  it.each([
+    ["a character outside the basic plane", "a\u{1F600}", "a%F0%9F%98%80"],
+    ["a lone surrogate, by the value it holds", "\uD800", "%ED%A0%80"],
+    ["a percent sign", "50%", "50%25"],
+    ["a slash outside a scope", "a/b", "a%2Fb"],
+    ["an at sign alone", "@", "%40"],
+    ["a scope with an empty name", "@scope/", "%40scope%2F"],
+    ["a scoped name, its at sign and slash kept", "@old~scope/x!", "@old%7Escope/x%21"],
+  ])("spells %s", (_, name, expected) => {
+    expect(spelled(name)).toBe(expected);
+  });
+});
+
 /**
  * Property dead-code-suite/P28: for any pair of symbols with the same name in the two
  * languages, their identifiers differ and each finding names its language.

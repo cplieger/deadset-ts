@@ -25,6 +25,7 @@ import type { AppliedConvention } from "./entries/conventions.ts";
 import { readSources, type SourceFacts } from "./entries/sources.ts";
 import { readWorkflows, type Workflows } from "./entries/workflow-steps.ts";
 import { readEdgeSides } from "./edges.ts";
+import type { EdgeSide } from "./findings/boundary.ts";
 import {
   bindingsOf,
   distinctBindings,
@@ -39,7 +40,7 @@ import { DETECTORS, detection } from "./exemptions/detectors.ts";
 import { exemptionsOf, settle, type Detectors, type Exemption } from "./exemptions/lifecycle.ts";
 import { heldByInclusion, sourcePaths, sourceTree } from "./file-facts.ts";
 import type { Finding } from "./finding.ts";
-import { findingsPass, recordedFindings, rowKey, type PassResult } from "./findings-pass.ts";
+import { findingsPass, type PassResult } from "./findings-pass.ts";
 import type { EmitterInput } from "./findings/emitter.ts";
 import { unmatchedRootFindings, type SelfCheckFacts } from "./findings/self-check.ts";
 import type { Host } from "./host.ts";
@@ -94,9 +95,14 @@ import {
 import { testSupportFiles, type TestEvidence } from "./tests/support.ts";
 import type { Engine, ProjectView } from "./session.ts";
 import { accessorsOf, storesOf } from "./stores.ts";
-import { isPartKind, type SuppressionRecord, type Suppressions, type Verdict } from "./suppress.ts";
-import { bindRows, readBaseline, readIgnoreFile, type Recorded } from "./suppress-file.ts";
-import { inlineDirectives, inlineSuppressions, type InlineDirective } from "./suppress-inline.ts";
+import { bindRows, fixpoint, recordedRows, type Recorded } from "./suppression/baseline.ts";
+import { readBaseline, readIgnoreFile } from "./suppression/documents.ts";
+import {
+  inlineDirectives,
+  inlineSuppressions,
+  type InlineDirective,
+} from "./suppression/inline.ts";
+import { isPartKind, type Suppressions } from "./suppression/records.ts";
 import { sweep, type Sweep, type SweepPolicy } from "./liveness/sweep.ts";
 import type { Mode } from "./tests/file-class.ts";
 import { bytewise } from "./text/compare.ts";
@@ -487,6 +493,8 @@ interface ReadProject<Extra> {
 /** What a run read of its projects before any sweep: the matrix, its exemptions, and each project's answers. */
 interface ReadRun<Extra> {
   readonly matrix: Matrix;
+  /** Every side of a declared cross-language edge that names a symbol of this language. */
+  readonly edges: readonly EdgeSide[];
   readonly exempt: readonly Exemption[];
   /** The declarations of the run an unanswered question could have kept live, each once. */
   readonly unansweredHeld: readonly string[];
@@ -587,7 +595,8 @@ function readRun<Extra>(
 ): ReadRun<Extra> {
   const targetRoot = scope.target.path;
   const consumers = scope.consumers.map((consumer) => consumer.path);
-  const detect = detection(host, targetRoot, config, consumers, detectors);
+  const edges = readEdgeSides(host, targetRoot);
+  const detect = detection(host, targetRoot, config, consumers, detectors, edges);
   const directories = runDirectories(host, targetRoot, (fileName, text) =>
     engine.parseSourceFile(fileName, text),
   );
@@ -781,6 +790,7 @@ function readRun<Extra>(
   );
   return {
     matrix: matrixOf(projects.map((one) => one.configured)),
+    edges,
     exempt: exemptionsOf(projects.flatMap((one) => one.exempt)),
     unansweredHeld: [
       ...new Set([
@@ -938,33 +948,36 @@ export function readEmitterRun(
     config,
     mode,
     detectors,
-    (project, read, references, testFiles, unseenLoads) => ({
-      deprecation: deprecatedDeclarations(project, read.held),
-      accessors: accessorsOf(project, read.held),
-      needs: projectNeeds(
-        project,
-        read.held,
-        host,
-        targetRoot,
-        (fileName, text) => engine.parseSourceFile(fileName, text),
-        read.sources.configuration,
-        read.sources.workflows,
-      ),
-      implementations: implementations(project, read.held),
-      heldByInclusion: heldByInclusion(project, targetRoot),
-      generated: read.generated,
-      bindings: read.bindings,
-      inOperands: inOperandNames(project, targetRoot, testFiles),
-      rooted: read.rooted,
-      directives: inlineDirectives(project, read.held, targetRoot).filter(
-        (directive) => !read.referenceOnly.includes(directive.site.path),
-      ),
-      declarationsNamed: declarationsNamed(project, read.held, configuredDeclarations(config)),
-      parts: projectParts(project, read.held, references, targetRoot),
-      unseenLoads,
-      // Only a closed world reports an unnecessary export, which is all the carriers decide.
-      carriers: config.consumers.complete ? carriersOf(project, read.held) : NO_CARRIERS,
-    }),
+    (project, read, references, testFiles, unseenLoads) => {
+      const parts = projectParts(project, read.held, references, targetRoot);
+      return {
+        deprecation: deprecatedDeclarations(project, read.held),
+        accessors: accessorsOf(project, read.held),
+        needs: projectNeeds(
+          project,
+          read.held,
+          host,
+          targetRoot,
+          (fileName, text) => engine.parseSourceFile(fileName, text),
+          read.sources.configuration,
+          read.sources.workflows,
+        ),
+        implementations: implementations(project, read.held),
+        heldByInclusion: heldByInclusion(project, targetRoot),
+        generated: read.generated,
+        bindings: read.bindings,
+        inOperands: inOperandNames(project, targetRoot, testFiles),
+        rooted: read.rooted,
+        directives: inlineDirectives(project, read.held, targetRoot, parts.imports).filter(
+          (directive) => !read.referenceOnly.includes(directive.site.path),
+        ),
+        declarationsNamed: declarationsNamed(project, read.held, configuredDeclarations(config)),
+        parts,
+        unseenLoads,
+        // Only a closed world reports an unnecessary export, which is all the carriers decide.
+        carriers: config.consumers.complete ? carriersOf(project, read.held) : NO_CARRIERS,
+      };
+    },
   );
   // Whether a declaration carries the marker decides its code, so one whose answer went
   // unread is reported by nothing.
@@ -1084,7 +1097,7 @@ export function emitterInputOver(
         loaded: read.consumers.map((consumer) => consumer.id),
       },
       encapsulated: readManifest(host, targetRoot).declaresExports,
-      edges: readEdgeSides(host, targetRoot),
+      edges: read.edges,
       filledOutside: new Set(projects.flatMap((one) => one.filledOutside)),
       possiblyLoaded: new Set(projects.flatMap((one) => one.possiblyLoaded)),
       carriers: {
@@ -1417,9 +1430,8 @@ interface BaselineWrite {
 
 /**
  * The fixpoint a baseline write records. The first round reads no baseline; each later
- * round reads the rows recorded so far, records a row for each recordable finding no row
- * already names, and removes every row it reports stale. A removed row is not recorded
- * again, so the write ends.
+ * round reads the rows recorded so far, and records a row for each recordable finding and
+ * reports each row whose every record is stale.
  */
 export function runBaselineWrite(
   engine: Engine,
@@ -1432,42 +1444,17 @@ export function runBaselineWrite(
   detectors: Detectors = DETECTORS,
 ): BaselineWrite {
   const reader = readAnalysis(engine, host, scope, config, provenance, mode, detectors);
-  const first = analysisOf(reader, reader.inputsUnder({ records: [], refusals: [] }));
-  let rows: readonly Recorded[] = [];
-  const removed = new Set<string>();
-  let result = first.result;
-  let stale: ReadonlySet<string> = new Set<string>();
-  for (;;) {
-    const held = new Set(rows.map(rowKey));
-    const added = recordedFindings(result.findings).filter(
-      (row) => !held.has(rowKey(row)) && !removed.has(rowKey(row)),
-    );
-    if (added.length === 0 && stale.size === 0) {
-      return { first, rows };
-    }
-    for (const key of stale) {
-      removed.add(key);
-    }
-    rows = [...rows.filter((row) => !stale.has(rowKey(row))), ...added];
-    const inputs = reader.inputsUnder(bindRows(rows, reason, reader.symbols));
-    result = findingsPass(inputs);
-    stale = staleRows(inputs.suppressions.records, result.ledger.verdicts);
-  }
-}
-
-/** The baseline rows a round reports stale: every record a row binds to matched nothing. */
-function staleRows(
-  records: readonly SuppressionRecord[],
-  verdicts: readonly Verdict[],
-): ReadonlySet<string> {
-  const live = new Set<string>();
-  const stale = new Set<string>();
-  records.forEach((record, at) => {
-    if (record.mechanism !== "baseline") {
-      return;
-    }
-    const key = rowKey(record);
-    (verdicts[at] === "stale" ? stale : live).add(key);
+  let first: RunAnalysis | undefined;
+  const rows = fixpoint((read) => {
+    const analysis = analysisOf(reader, reader.inputsUnder(bindRows(read, reason, reader.symbols)));
+    first ??= analysis;
+    return {
+      recorded: recordedRows(analysis.result.findings),
+      stale: analysis.result.stale.filter((record) => record.mechanism === "baseline"),
+    };
   });
-  return new Set([...stale].filter((key) => !live.has(key)));
+  if (first === undefined) {
+    throw new Error("a baseline write ran no round");
+  }
+  return { first, rows };
 }

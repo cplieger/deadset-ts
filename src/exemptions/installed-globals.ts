@@ -9,7 +9,6 @@
 import {
   isIdentifier,
   isNoSubstitutionTemplateLiteral,
-  isObjectLiteralExpression,
   isPropertyAssignment,
   isShorthandPropertyAssignment,
   isStringLiteral,
@@ -28,7 +27,7 @@ import { packageOfPath } from "../dependencies.ts";
 import type { Inventory } from "../inventory.ts";
 import { must } from "../query.ts";
 import type { ProjectView } from "../session.ts";
-import { parenthesesRemoved, unwrapped } from "../unwrap.ts";
+import { objectLiteralOf, parenthesesRemoved, unwrapped } from "../unwrap.ts";
 import { spansOf } from "./argument-places.ts";
 import { classesCarried } from "./calls.ts";
 import type { ProjectSites } from "./sites.ts";
@@ -100,8 +99,8 @@ function named(name: Node): boolean {
 
 /** The value a property descriptor written as an object literal gives. */
 function describedValue(node: Expression | undefined): Expression | undefined {
-  const descriptor = node === undefined ? undefined : parenthesesRemoved(node);
-  if (descriptor === undefined || !isObjectLiteralExpression(descriptor)) {
+  const descriptor = objectLiteralOf(node);
+  if (descriptor === undefined) {
     return undefined;
   }
   for (const property of descriptor.properties) {

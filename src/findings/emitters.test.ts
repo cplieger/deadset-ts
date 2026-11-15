@@ -3,9 +3,9 @@ import { emitterInputOf } from "../../__test-helpers__/emitter-input.ts";
 import { fixture } from "../../__test-helpers__/fixtures.ts";
 import { positionKey } from "../position.ts";
 import { resolve } from "../resolve.ts";
-import type { SuppressionRecord } from "../suppress.ts";
+import type { SuppressionRecord } from "../suppression/records.ts";
 import type { EmitterInput } from "./emitter.ts";
-import { decidedFindings } from "./emitters.ts";
+import { decidedFindings } from "../findings-pass.ts";
 
 describe("decidedFindings", () => {
   /** A library with no consumer declared, decided under the given configuration document. */

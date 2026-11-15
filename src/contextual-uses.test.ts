@@ -151,7 +151,7 @@ describe("the uses a contextual type makes", () => {
           'interface Key {\n  order: number;\n}\ninterface Tab {\n  order: number;\n  title: string;\n}\nfunction byOrder(a: Key, b: Key): number;\nfunction byOrder(a: string, b: string): number;\nfunction byOrder(a: any, b: any): number {\n  return a.order - b.order;\n}\nconst tabs: Tab[] = [{ order: 2, title: "b" }];\nconsole.log([...tabs].sort(byOrder).length);\n',
       }),
     ).toEqual([
-      "DS1003 Key.order 2: type member has no reference in the target",
+      "DS1003 Key.order 2: type member Key.order has no reference in the target",
       "DS1301 Tab.title 6: type member Tab.title is written once and never read",
     ]);
   });
@@ -175,8 +175,8 @@ describe("the uses a contextual type makes", () => {
           "interface Wide {\n  shared: number;\n  label?: string;\n}\ninterface Narrow {\n  shared: number;\n  label?: string;\n}\nfunction size(options: Wide | Narrow): number {\n  return options.shared;\n}\nconst wide: Wide = { shared: 1 };\nconsole.log(size(wide));\n",
       }),
     ).toEqual([
-      "DS1003 Wide.label 3: type member has no reference in the target",
-      "DS1003 Narrow.label 7: type member has no reference in the target",
+      "DS1003 Wide.label 3: type member Wide.label has no reference in the target",
+      "DS1003 Narrow.label 7: type member Narrow.label has no reference in the target",
     ]);
   });
 
@@ -225,7 +225,7 @@ describe("a value reaching a position of another type", () => {
           "interface Holder {\n  tick(): void;\n}\ninterface View {\n  tick(): void;\n  idle(): void;\n}\nfunction hold(holder: Holder): void {\n  holder.tick();\n}\nexport function mount(view: View): void {\n  hold(view);\n}\n",
       }),
     ).toEqual([
-      "DS1202 View.idle 6: no call site invokes or selects the method through the interface",
+      "DS1202 View.idle 6: no call site invokes or selects interface method View.idle through the interface",
     ]);
   });
 
@@ -236,8 +236,8 @@ describe("a value reaching a position of another type", () => {
           "interface Result {\n  code?: string;\n  extra?: string;\n}\ninterface Reply {\n  code?: string;\n}\ninterface Holder {\n  tick(): void;\n}\ninterface View {\n  tick(): void;\n  idle(): void;\n}\nexport async function send(result: Result, views: readonly View[]): Promise<void> {\n  const answer: () => Promise<Reply | null> = () => Promise.resolve(result);\n  console.log((await answer())?.code);\n  for (const holder of new Set<Holder>(views)) {\n    holder.tick();\n  }\n}\n",
       }),
     ).toEqual([
-      "DS1003 Result.extra 3: type member has no reference in the target",
-      "DS1202 View.idle 13: no call site invokes or selects the method through the interface",
+      "DS1003 Result.extra 3: type member Result.extra has no reference in the target",
+      "DS1202 View.idle 13: no call site invokes or selects interface method View.idle through the interface",
     ]);
   });
 });
@@ -268,9 +268,9 @@ describe("an object spread", () => {
           'class Counter {\n  count = 1;\n  #hidden = 2;\n  get stale(): number {\n    return 3;\n  }\n  reset(): number {\n    return 0;\n  }\n}\nconst copied = { kind: "ok", ...new Counter() };\nconsole.log(copied.kind);\n',
       }),
     ).toEqual([
-      "DS1003 Counter.#hidden 3: private class member has no reference in the target",
-      "DS1003 Counter.stale 4: class member has no reference in the target",
-      "DS1003 Counter.reset 7: method has no reference in the target",
+      "DS1003 Counter.#hidden 3: private class member Counter.#hidden has no reference in the target",
+      "DS1003 Counter.stale 4: class member Counter.stale has no reference in the target",
+      "DS1003 Counter.reset 7: method Counter.reset has no reference in the target",
     ]);
   });
 
@@ -289,7 +289,9 @@ describe("an object spread", () => {
         "src/main.ts":
           'class Counter {\n  count = 1;\n  get stale(): number {\n    return 3;\n  }\n}\nconst frozen: Readonly<Counter> = new Counter();\nconst copied = { kind: "ok", ...frozen };\nconsole.log(copied.kind);\n',
       }),
-    ).toEqual(["DS1003 Counter.stale 3: class member has no reference in the target"]);
+    ).toEqual([
+      "DS1003 Counter.stale 3: class member Counter.stale has no reference in the target",
+    ]);
   });
 
   it("reads an accessor an interface declares, and no method signature a type literal declares", () => {
@@ -335,7 +337,7 @@ describe("the members a literal writes", () => {
         ),
       }),
     ).toEqual([
-      "DS1202 View.idle 3: no call site invokes or selects the method through the interface",
+      "DS1202 View.idle 3: no call site invokes or selects interface method View.idle through the interface",
     ]);
   });
 });
@@ -354,7 +356,7 @@ describe("the members a value reaching a position reads", () => {
           'console.log(size("abc"));',
         ),
       }),
-    ).toEqual(["DS1003 Sized.length 2: type member has no reference in the target"]);
+    ).toEqual(["DS1003 Sized.length 2: type member Sized.length has no reference in the target"]);
   });
 
   it("are a value's type members, though its type inherits a class's too", () => {
@@ -379,7 +381,7 @@ describe("the members a value reaching a position reads", () => {
         ),
       }),
     ).toEqual([
-      "DS1301 Base.tag 2: member Base.tag is written once and never read",
+      "DS1301 Base.tag 2: class member Base.tag is written once and never read",
       "DS1301 Source.extra 6: type member Source.extra is written once and never read",
     ]);
   });
@@ -401,7 +403,7 @@ describe("the members a value reaching a position reads", () => {
           'report(new Failure("x"));',
         ),
       }),
-    ).toEqual(["DS1003 Problem.code 3: type member has no reference in the target"]);
+    ).toEqual(["DS1003 Problem.code 3: type member Problem.code has no reference in the target"]);
   });
 
   it("are read through the result of a function the position calls", () => {
@@ -484,8 +486,8 @@ describe("the members a value reaching a position reads", () => {
         ),
       }),
     ).toEqual([
-      "DS1003 Wide.label 3: type member has no reference in the target",
-      "DS1003 Extra.label 6: type member has no reference in the target",
+      "DS1003 Wide.label 3: type member Wide.label has no reference in the target",
+      "DS1003 Extra.label 6: type member Extra.label has no reference in the target",
     ]);
   });
 
@@ -505,7 +507,7 @@ describe("the members a value reaching a position reads", () => {
           "console.log(take(f));",
         ),
       }),
-    ).toEqual(["DS1003 Item.id 2: type member has no reference in the target"]);
+    ).toEqual(["DS1003 Item.id 2: type member Item.id has no reference in the target"]);
   });
 });
 

@@ -11,9 +11,9 @@
       "9.0.0"
     ],
     "conformance": {
-      "corpus_version": "6.3.0",
+      "corpus_version": "6.4.0",
       "result": "pass",
-      "digest": "sha256:e026ac4f1a74a2551c6005564a9e97fd29c7622f7742b58f72badd88d4528f02"
+      "digest": "sha256:2f6f18073a6567736906c9ac84ff161e761db32732266e344ab96f988b3442d8"
     }
   },
   "target": {
@@ -68,7 +68,7 @@
       "consumers_loaded": [],
       "fixability": "deletable",
       "severity": "deny",
-      "message": "unexported namespace is referenced only from declarations that are themselves dead",
+      "message": "unexported namespace '*.css' is referenced only from declarations that are themselves dead",
       "details": {}
     },
     {
@@ -104,7 +104,7 @@
       "consumers_loaded": [],
       "fixability": "deletable",
       "severity": "deny",
-      "message": "no import reaches this file and no root names it or a declaration in it",
+      "message": "no import reaches file src/dead-importer.ts and no root names it or a declaration in it",
       "details": {}
     },
     {
@@ -141,7 +141,7 @@
       "consumers_loaded": [],
       "fixability": "deletable",
       "severity": "deny",
-      "message": "exported function has no reference in the target and none from any loaded consumer",
+      "message": "exported function deadImporter has no reference in the target and none from any loaded consumer",
       "details": {}
     },
     {
@@ -178,7 +178,7 @@
       "consumers_loaded": [],
       "fixability": "deletable",
       "severity": "deny",
-      "message": "unexported namespace has no reference in the target",
+      "message": "unexported namespace global has no reference in the target",
       "details": {}
     },
     {
@@ -215,7 +215,7 @@
       "consumers_loaded": [],
       "fixability": "deletable",
       "severity": "deny",
-      "message": "nothing in the target names the interface as a type",
+      "message": "nothing in the target names interface global.DeadsetProbe as a type",
       "details": {
         "implementations": []
       }
@@ -253,7 +253,7 @@
       "consumers_loaded": [],
       "fixability": "deletable",
       "severity": "deny",
-      "message": "only code that is itself dead imports this file, and no root names it or a declaration in it",
+      "message": "only code that is itself dead imports file src/imported-by-dead.ts, and no root names it or a declaration in it",
       "details": {}
     },
     {
@@ -290,7 +290,7 @@
       "consumers_loaded": [],
       "fixability": "deletable",
       "severity": "deny",
-      "message": "exported function is referenced only from declarations that are themselves dead",
+      "message": "exported function imported is referenced only from declarations that are themselves dead",
       "details": {}
     },
     {
@@ -326,7 +326,7 @@
       "consumers_loaded": [],
       "fixability": "deletable",
       "severity": "deny",
-      "message": "no import reaches this file and no root names it or a declaration in it",
+      "message": "no import reaches file src/lone.ts and no root names it or a declaration in it",
       "details": {}
     },
     {
@@ -362,7 +362,7 @@
       "consumers_loaded": [],
       "fixability": "deletable",
       "severity": "deny",
-      "message": "no import reaches this file and no root names it or a declaration in it",
+      "message": "no import reaches file src/orphan.ts and no root names it or a declaration in it",
       "details": {}
     },
     {
@@ -399,7 +399,7 @@
       "consumers_loaded": [],
       "fixability": "deletable",
       "severity": "deny",
-      "message": "exported function has no reference in the target and none from any loaded consumer",
+      "message": "exported function orphan has no reference in the target and none from any loaded consumer",
       "details": {}
     },
     {
@@ -436,7 +436,7 @@
       "consumers_loaded": [],
       "fixability": "deletable",
       "severity": "deny",
-      "message": "unexported function is referenced only from declarations that are themselves dead",
+      "message": "unexported function double is referenced only from declarations that are themselves dead",
       "details": {}
     },
     {
@@ -473,7 +473,7 @@
       "consumers_loaded": [],
       "fixability": "deletable",
       "severity": "deny",
-      "message": "exported variable has no reference in the target and none from any loaded consumer",
+      "message": "exported variable referenced has no reference in the target and none from any loaded consumer",
       "details": {}
     }
   ],

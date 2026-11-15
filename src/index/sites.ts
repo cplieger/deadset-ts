@@ -26,6 +26,7 @@ import {
   isNamespaceExport,
   isNewExpression,
   isNoSubstitutionTemplateLiteral,
+  isNumericLiteral,
   isObjectLiteralExpression,
   isParenthesizedExpression,
   isPostfixUnaryExpression,
@@ -62,7 +63,7 @@ import type { Use } from "../references.ts";
 import { isLoadCall, type LoadCall } from "../roots/unseen-loads.ts";
 import { spellsNoUse } from "../spelled-names.ts";
 import { keyNameOf, type KeyedAccess } from "../symbol-keys.ts";
-import { parenthesesRemoved } from "../unwrap.ts";
+import { objectLiteralOf, parenthesesRemoved } from "../unwrap.ts";
 import { handedOn, valuesOf } from "./values.ts";
 
 /**
@@ -121,6 +122,17 @@ function valueDiscarded(node: Node): boolean {
     parent.operatorToken.kind === SyntaxKind.CommaToken &&
     parent.left === child
   );
+}
+
+/** Whether a written name is the receiver of the element access it is written through. */
+function isStoredThrough(node: Node): boolean {
+  let child = node;
+  let parent = node.parent;
+  while (isParenthesizedExpression(parent)) {
+    child = parent;
+    parent = parent.parent;
+  }
+  return isElementAccessExpression(parent) && parent.expression === child;
 }
 
 /** Whether one node is an identifier or a private name, the two forms a name takes. */
@@ -250,6 +262,8 @@ export interface Site {
    * of the `import()` whose value it indexes, read only where it is one.
    */
   readonly through?: Node;
+  /** Whether the name is the receiver an element access stores through. */
+  readonly receiver?: true;
 }
 
 /**
@@ -424,11 +438,8 @@ export const WORKER_CONSTRUCTORS: ReadonlySet<string> = new Set(["Worker", "Shar
 
 /** Whether an options argument is an object literal whose `eval` member is written as anything but `false`. */
 function evaluatesCode(options: Node | undefined): boolean {
-  const at = options === undefined ? undefined : parenthesesRemoved(options);
   return (
-    at !== undefined &&
-    isObjectLiteralExpression(at) &&
-    at.properties.some(
+    objectLiteralOf(options)?.properties.some(
       (property) =>
         (isShorthandPropertyAssignment(property) &&
           isIdentifier(property.name) &&
@@ -437,7 +448,7 @@ function evaluatesCode(options: Node | undefined): boolean {
           (isIdentifier(property.name) || isStringLiteral(property.name)) &&
           property.name.text === "eval" &&
           parenthesesRemoved(property.initializer).kind !== SyntaxKind.FalseKeyword),
-    )
+    ) === true
   );
 }
 
@@ -771,7 +782,11 @@ export function sitesOf(
       if (!declared.has(node.pos) && !(isIdentifier(node) && spellsNoUse(node))) {
         const site = { node, shorthand: shorthands.get(node.pos), from: enclosing };
         if (writes.has(node.pos)) {
-          found.push({ ...site, use: "write" });
+          found.push(
+            isStoredThrough(node)
+              ? { ...site, use: "write", receiver: true }
+              : { ...site, use: "write" },
+          );
         }
         if (!writes.has(node.pos) || alsoRead.has(node.pos)) {
           found.push({ ...site, use: "read" });
@@ -781,6 +796,22 @@ export function sitesOf(
     }
     markNames(node);
     markStores(node, writes, alsoRead, accesses);
+    // A numeric index names the member of its text, which the checker resolves it to; a
+    // string index is read by the element-access rule, and reflective-lookup retains what
+    // that rule leaves.
+    const index = isElementAccessExpression(node)
+      ? parenthesesRemoved(node.argumentExpression)
+      : undefined;
+    if (index !== undefined && isNumericLiteral(index)) {
+      const site = { node: index, shorthand: undefined, from: enclosing };
+      const written = accesses.written.has(node);
+      if (written) {
+        found.push({ ...site, use: "write" });
+      }
+      if (!written || accesses.read.has(node)) {
+        found.push({ ...site, use: "read" });
+      }
+    }
     const key = isElementAccessExpression(node) ? keyNameOf(node.argumentExpression) : undefined;
     if (key !== undefined && isElementAccessExpression(node)) {
       const written = accesses.written.has(node);

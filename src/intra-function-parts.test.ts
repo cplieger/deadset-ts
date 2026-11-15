@@ -34,7 +34,7 @@ describe("an unreachable statement", () => {
           "",
           "console.log(inBlock(), bothBranches(true), thenOnly(true));",
         ]),
-      ).toEqual(["DS1405 statement src/main.ts:6", "DS1405 statement src/main.ts:15"]);
+      ).toEqual(["DS1405 inBlock src/main.ts:6", "DS1405 bothBranches src/main.ts:15"]);
     },
     LOAD_TIMEOUT,
   );
@@ -60,7 +60,7 @@ describe("an unreachable statement", () => {
           "",
           "console.log(twice(), nested(true));",
         ]),
-      ).toEqual(["DS1405 statement src/main.ts:3", "DS1405 statement src/main.ts:9"]);
+      ).toEqual(["DS1405 twice src/main.ts:3", "DS1405 nested src/main.ts:9"]);
     },
     LOAD_TIMEOUT,
   );
@@ -96,12 +96,12 @@ describe("an unreachable statement", () => {
       ).toEqual([
         "DS1404 spare src/main.ts:3",
         "DS1404 set src/main.ts:8",
-        "DS1405 statement src/main.ts:8",
+        "DS1405 initializedVar src/main.ts:8",
         "DS1404 first src/main.ts:13",
-        "DS1405 statement src/main.ts:13",
+        "DS1405 partlyInitialized src/main.ts:13",
         "DS1404 second src/main.ts:14",
         "DS1404 later src/main.ts:19",
-        "DS1405 statement src/main.ts:19",
+        "DS1405 blockScoped src/main.ts:19",
       ]);
     },
     LOAD_TIMEOUT,
@@ -125,8 +125,8 @@ describe("an unreachable statement", () => {
         ]),
       ).toEqual([
         "DS1401 unused src/main.ts:1",
-        "DS1403 result src/main.ts:1",
-        "DS1405 statement src/main.ts:7",
+        "DS1403 1 of 1 (number) src/main.ts:1",
+        "DS1405 early src/main.ts:7",
       ]);
     },
     LOAD_TIMEOUT,
@@ -159,7 +159,7 @@ describe("an unreachable statement", () => {
           "",
           'console.log(silenced("a"));',
         ]),
-      ).toEqual(["DS1405 statement src/main.ts:4"]);
+      ).toEqual(["DS1405 silenced src/main.ts:4"]);
     },
     LOAD_TIMEOUT,
   );
@@ -510,7 +510,7 @@ describe("a result every call discards", () => {
           "branchOnly(true);",
           "outer();",
         ]),
-      ).toEqual(["DS1403 result src/main.ts:6", "DS1403 result src/main.ts:8"]);
+      ).toEqual(["DS1403 1 of 1 (number) src/main.ts:6", "DS1403 1 of 1 (number) src/main.ts:8"]);
     },
     LOAD_TIMEOUT,
   );
@@ -686,9 +686,9 @@ describe("an unreachable statement the compiler finds", () => {
           "console.log(finished(), bothLeave(), finallyLeaves(), caught());",
         ]),
       ).toEqual([
-        "DS1405 statement src/main.ts:7",
-        "DS1405 statement src/main.ts:16",
-        "DS1405 statement src/main.ts:25",
+        "DS1405 finished src/main.ts:7",
+        "DS1405 bothLeave src/main.ts:16",
+        "DS1405 finallyLeaves src/main.ts:25",
       ]);
     },
     LOAD_TIMEOUT,
@@ -737,7 +737,7 @@ describe("an unreachable statement the compiler finds", () => {
           "",
           "console.log(forever(), broken(), chosen(1), partial(1));",
         ]),
-      ).toEqual(["DS1405 statement src/main.ts:5", "DS1405 statement src/main.ts:22"]);
+      ).toEqual(["DS1405 forever src/main.ts:5", "DS1405 chosen src/main.ts:22"]);
     },
     LOAD_TIMEOUT,
   );
@@ -757,9 +757,9 @@ describe("an unreachable statement the compiler finds", () => {
           "console.log(twice());",
         ]),
       ).toEqual([
-        "DS1405 statement src/main.ts:3",
+        "DS1405 twice src/main.ts:3",
         "DS1404 helper src/main.ts:4",
-        "DS1405 statement src/main.ts:5",
+        "DS1405 twice src/main.ts:5",
       ]);
     },
     LOAD_TIMEOUT,
@@ -799,11 +799,11 @@ describe("an unreachable statement the compiler finds", () => {
           },
         });
       const unreached = [
-        "DS1405 statement src/main.ts:7",
-        "DS1405 statement src/main.ts:11",
-        "DS1405 statement src/main.ts:12",
-        "DS1405 statement src/main.ts:13",
-        "DS1405 statement src/main.ts:17",
+        "DS1405 stopped src/main.ts:7",
+        "DS1405 branches src/main.ts:11",
+        "DS1405 branches src/main.ts:12",
+        "DS1405 branches src/main.ts:13",
+        "DS1405 branches src/main.ts:17",
       ];
       expect(found()).toEqual(unreached);
       expect(found(false)).toEqual(unreached);
@@ -943,7 +943,7 @@ describe("an unreachable statement the compiler finds", () => {
           "",
           "export const results = [tap(1), condType(1), new Box(1).get(), (v: never) => exhaustive(v)];",
         ]),
-      ).toEqual(["DS1405 statement src/main.ts:67", "DS1405 statement src/main.ts:72"]);
+      ).toEqual(["DS1405 stopped src/main.ts:67", "DS1405 stoppedGeneric src/main.ts:72"]);
     },
     LOAD_TIMEOUT,
   );
@@ -1138,23 +1138,23 @@ describe("an unreachable statement the compiler finds", () => {
           { files: { "src/lib.d.ts": "export declare function fromDts(): never;\n" } },
         ),
       ).toEqual([
-        "DS1405 statement src/main.ts:55",
-        "DS1405 statement src/main.ts:59",
-        "DS1405 statement src/main.ts:63",
-        "DS1405 statement src/main.ts:67",
-        "DS1405 statement src/main.ts:71",
-        "DS1405 statement src/main.ts:76",
-        "DS1405 statement src/main.ts:125",
-        "DS1405 statement src/main.ts:130",
-        "DS1405 statement src/main.ts:135",
-        "DS1405 statement src/main.ts:140",
-        "DS1405 statement src/main.ts:145",
-        "DS1405 statement src/main.ts:150",
-        "DS1405 statement src/main.ts:155",
-        "DS1405 statement src/main.ts:160",
-        "DS1405 statement src/main.ts:165",
-        "DS1405 statement src/main.ts:170",
-        "DS1405 statement src/main.ts:176",
+        "DS1405 Derived.viaThis src/main.ts:55",
+        "DS1405 Derived.viaSuper src/main.ts:59",
+        "DS1405 Derived.viaPrivate src/main.ts:63",
+        "DS1405 Derived.viaStatic src/main.ts:67",
+        "DS1405 Derived.viaArrow src/main.ts:71",
+        "DS1405 viaThisParameter src/main.ts:76",
+        "DS1405 viaTyped src/main.ts:125",
+        "DS1405 viaHeld src/main.ts:130",
+        "DS1405 viaDeclared src/main.ts:135",
+        "DS1405 viaWrappedName src/main.ts:140",
+        "DS1405 viaDts src/main.ts:145",
+        "DS1405 viaNamespace src/main.ts:150",
+        "DS1405 viaStaticName src/main.ts:155",
+        "DS1405 viaNever src/main.ts:160",
+        "DS1405 viaCheckFalse src/main.ts:165",
+        "DS1405 viaCheckAnd src/main.ts:170",
+        "DS1405 viaForOf src/main.ts:176",
       ]);
     },
     LOAD_TIMEOUT,
@@ -1225,12 +1225,12 @@ describe("an unreachable statement the compiler finds", () => {
           "export const held = [Base, Derived, Box];",
         ]),
       ).toEqual([
-        "DS1405 statement src/main.ts:12",
-        "DS1405 statement src/main.ts:16",
-        "DS1405 statement src/main.ts:33",
-        "DS1405 statement src/main.ts:37",
-        "DS1405 statement src/main.ts:47",
-        "DS1405 statement src/main.ts:51",
+        "DS1405 Base.viaBase src/main.ts:12",
+        "DS1405 Base.viaThis src/main.ts:16",
+        "DS1405 Base.viaStatic src/main.ts:33",
+        "DS1405 Base.viaStaticName src/main.ts:37",
+        "DS1405 Box.viaInstance src/main.ts:47",
+        "DS1405 Box.viaThis src/main.ts:51",
       ]);
     },
     LOAD_TIMEOUT,
@@ -1281,9 +1281,9 @@ describe("an unreachable statement the compiler finds", () => {
           "export const held = [Accessors];",
         ]),
       ).toEqual([
-        "DS1405 statement src/main.ts:10",
-        "DS1405 statement src/main.ts:17",
-        "DS1405 statement src/main.ts:31",
+        "DS1405 Accessors.unpaired src/main.ts:10",
+        "DS1405 Accessors.paired src/main.ts:17",
+        "DS1405 Accessors.settable src/main.ts:31",
       ]);
     },
     LOAD_TIMEOUT,
@@ -1381,9 +1381,9 @@ describe("an unreachable statement the compiler finds", () => {
           "}",
         ]),
       ).toEqual([
-        "DS1405 statement src/main.ts:73",
-        "DS1405 statement src/main.ts:77",
-        "DS1405 statement src/main.ts:81",
+        "DS1405 acyclic src/main.ts:73",
+        "DS1405 acyclic src/main.ts:77",
+        "DS1405 acyclic src/main.ts:81",
       ]);
     },
     LOAD_TIMEOUT,
@@ -1451,9 +1451,9 @@ describe("an unreachable statement the compiler finds", () => {
           },
         ),
       ).toEqual([
-        "DS1405 statement src/legacy.js:15",
-        "DS1405 statement src/legacy.js:19",
-        "DS1405 statement src/main.ts:14",
+        "DS1405 viaDoc src/legacy.js:15",
+        "DS1405 viaTyped src/legacy.js:19",
+        "DS1405 viaExpando src/main.ts:14",
       ]);
     },
     LOAD_TIMEOUT,
@@ -1473,8 +1473,8 @@ describe("an unreachable statement the compiler finds", () => {
       const found = (options: Readonly<Record<string, unknown>>): string[] =>
         partsOf(enums, { files: { "tsconfig.json": tsconfigWith(options) } });
       expect(found({})).toEqual([]);
-      expect(found({ isolatedModules: true })).toEqual(["DS1405 statement src/main.ts:3"]);
-      expect(found({ verbatimModuleSyntax: true })).toEqual(["DS1405 statement src/main.ts:3"]);
+      expect(found({ isolatedModules: true })).toEqual(["DS1405 enums src/main.ts:3"]);
+      expect(found({ verbatimModuleSyntax: true })).toEqual(["DS1405 enums src/main.ts:3"]);
     },
     LOAD_TIMEOUT * 3,
   );
@@ -1499,7 +1499,7 @@ describe("an unreachable statement the compiler finds", () => {
           "  export const other = 2;",
           "}",
         ]),
-      ).toEqual(["DS1405 statement src/main.ts:12"]);
+      ).toEqual(["DS1405 src/main.ts src/main.ts:12"]);
     },
     LOAD_TIMEOUT,
   );
@@ -1545,7 +1545,7 @@ describe("an unreachable statement the compiler finds", () => {
           "before();",
           "elsewhere();",
         ]),
-      ).toEqual(["DS1405 statement src/main.ts:22", "DS1405 statement src/main.ts:28"]);
+      ).toEqual(["DS1405 before src/main.ts:22", "DS1405 elsewhere src/main.ts:28"]);
     },
     LOAD_TIMEOUT,
   );
@@ -1641,7 +1641,7 @@ describe("an unreachable statement the compiler finds", () => {
           "afterReturn();",
           "returnInArrow();",
         ]),
-      ).toEqual(["DS1405 statement src/main.ts:65", "DS1405 statement src/main.ts:72"]);
+      ).toEqual(["DS1405 afterReturn src/main.ts:65", "DS1405 returnInArrow src/main.ts:72"]);
     },
     LOAD_TIMEOUT,
   );
@@ -1710,10 +1710,10 @@ describe("an unreachable statement the compiler finds", () => {
           "insideStatic();",
         ]),
       ).toEqual([
-        "DS1405 statement src/main.ts:7",
-        "DS1405 statement src/main.ts:30",
-        "DS1405 statement src/main.ts:37",
-        "DS1405 statement src/main.ts:46",
+        "DS1405 thrownInIife src/main.ts:7",
+        "DS1405 loopInStatic src/main.ts:30",
+        "DS1405 insideIife src/main.ts:37",
+        "DS1405 insideStatic src/main.ts:46",
       ]);
     },
     LOAD_TIMEOUT,
