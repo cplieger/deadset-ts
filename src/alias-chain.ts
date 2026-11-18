@@ -23,6 +23,7 @@ import { isParameterProperty, nodeKey, type Inventory } from "./inventory.ts";
 import { boundValue, declaredTypeOnly } from "./namespace-objects.ts";
 import { must, UNANSWERED, type Answer } from "./query.ts";
 import type { ProjectView } from "./session.ts";
+import { canonicalDeclarations } from "./canonical-order.ts";
 
 /** One declaration a chain reaches, and whether a step along an alias reached it. */
 export interface ChainTarget {
@@ -88,7 +89,7 @@ export function aliasChains<Brand>(project: ProjectView<Brand>, held: Inventory)
 
   const declarationsOf = (symbol: TSSymbol): string[] => {
     const ids: string[] = [];
-    for (const handle of symbol.declarations) {
+    for (const handle of canonicalDeclarations(symbol)) {
       if (!ownFiles.has(handle.path)) {
         continue;
       }
@@ -231,7 +232,7 @@ export function aliasChains<Brand>(project: ProjectView<Brand>, held: Inventory)
    * object too; the type does not decide whether the binding exists.
    */
   const boundNamespace = (symbol: TSSymbol): TSSymbol | undefined => {
-    const [handle, ...others] = symbol.declarations;
+    const [handle, ...others] = canonicalDeclarations(symbol);
     const node =
       handle !== undefined && others.length === 0 && ownFiles.has(handle.path)
         ? project.declarationAt(handle)?.node
@@ -276,7 +277,7 @@ export function aliasChains<Brand>(project: ProjectView<Brand>, held: Inventory)
   const sameNamed = (alias: TSSymbol): readonly ChainTarget[] => {
     const names = new Set([alias.name]);
     let module = false;
-    for (const handle of alias.declarations) {
+    for (const handle of canonicalDeclarations(alias)) {
       const node = ownFiles.has(handle.path) ? project.declarationAt(handle)?.node : undefined;
       if (node === undefined) {
         continue;

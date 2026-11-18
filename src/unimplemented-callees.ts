@@ -39,6 +39,7 @@ import {
 import { SymbolFlags, type Symbol as TSSymbol, type Type } from "@typescript/native/sync";
 import { UNANSWERED } from "./query.ts";
 import type { Read, ReadRule } from "./references/read-rule.ts";
+import { canonicalDeclarations } from "./canonical-order.ts";
 
 /** One call or construction passing an object literal, and the declaration that writes it. */
 interface Passing {
@@ -198,7 +199,7 @@ export const unimplementedCallees: ReadRule = {
           return target === UNANSWERED ? undefined : target;
         };
         const declarationsOf = (symbol: TSSymbol | undefined): readonly Node[] =>
-          (symbol?.declarations ?? []).flatMap((handle) => {
+          canonicalDeclarations(symbol).flatMap((handle) => {
             const node = project.declarationAt(handle)?.node;
             return node === undefined ? [] : [node];
           });

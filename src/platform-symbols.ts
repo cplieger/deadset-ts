@@ -27,6 +27,7 @@ import { boundExports, NAMESPACE } from "./entries/static-module.ts";
 import { isAmbient } from "./inventory.ts";
 import { callsPlatformBy, carriedNames, type BindingOf, type Bound } from "./platform-calls.ts";
 import { unwrapped } from "./unwrap.ts";
+import { canonicalDeclarations } from "./canonical-order.ts";
 
 /** The symbol one symbol names through its aliases, or the symbol itself where it is none. */
 function dealiased<Brand>(project: ProjectView<Brand>, symbol: TSSymbol): Answer<TSSymbol> {
@@ -39,7 +40,7 @@ function dealiased<Brand>(project: ProjectView<Brand>, symbol: TSSymbol): Answer
 /** Each declaration of `symbol` in a file of the target, read in this project's program. */
 function ownDeclarations<Brand>(project: ProjectView<Brand>, symbol: TSSymbol): readonly Node[] {
   const own = project.ownPaths();
-  return symbol.declarations.flatMap((handle) => {
+  return canonicalDeclarations(symbol).flatMap((handle) => {
     const node = own.has(handle.path) ? project.declarationAt(handle)?.node : undefined;
     return node === undefined ? [] : [node];
   });

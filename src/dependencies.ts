@@ -71,6 +71,7 @@ import { heldNames } from "./text/named-files.ts";
 import { bytewise } from "./text/compare.ts";
 import { isRecord } from "./json-document.ts";
 import { inInstalledPackages, INSTALLED_PACKAGES, MANIFEST, readDocument } from "./fs/manifest.ts";
+import { canonicalDeclarations } from "./canonical-order.ts";
 
 const MODULES_SEGMENT = `/${INSTALLED_PACKAGES}/`;
 const TYPES_SCOPE = "@types/";
@@ -661,7 +662,7 @@ function fileNeeds<Brand>(
     if (symbol === undefined) {
       automatic.modules.get(specifier.text)?.forEach((one) => named.add(one));
     }
-    for (const declaration of typeof symbol === "object" ? symbol.declarations : []) {
+    for (const declaration of typeof symbol === "object" ? canonicalDeclarations(symbol) : []) {
       const byPath = packageOfPath(declaration.path);
       if (byPath !== undefined) {
         named.add(byPath);

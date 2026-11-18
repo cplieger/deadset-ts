@@ -47,6 +47,7 @@ import { must } from "../query.ts";
 import type { ProjectView } from "../session.ts";
 import { checkedTypes, ERASED } from "./value-reach.ts";
 import { parenthesesRemoved } from "../unwrap.ts";
+import { canonicalDeclarations } from "../canonical-order.ts";
 
 /** The array methods whose arguments become elements of the array they are called on. */
 const ELEMENT_STORES: ReadonlySet<string> = new Set(["push", "unshift"]);
@@ -505,7 +506,7 @@ export function erasedStores<Brand>(project: ProjectView<Brand>): ErasedStores {
   const symbols = queries.symbolsAt(targets).map(must);
   const slots = new Set(slotVariables);
   const declarationOf = (symbol: (typeof symbols)[number]): Node | undefined => {
-    const handle = symbol?.valueDeclaration ?? symbol?.declarations[0];
+    const handle = symbol?.valueDeclaration ?? canonicalDeclarations(symbol)[0];
     return handle === undefined ? undefined : project.declarationAt(handle)?.node;
   };
   const assignedTypes = storedTypes(assigned);

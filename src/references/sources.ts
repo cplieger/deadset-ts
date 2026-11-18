@@ -58,6 +58,7 @@ import type { SourceFiles } from "../source-files.ts";
 import { computedKeyNames, keyedUses } from "../symbol-keys.ts";
 import type { PropertyTables } from "../query.ts";
 import { storedValue, type Sink, type Target } from "./sink.ts";
+import { canonicalDeclarations } from "../canonical-order.ts";
 
 /** One walked file of the side, its sites, and what the pass read of it before the batch. */
 interface WalkedFile extends FileSites {
@@ -885,7 +886,7 @@ function holdsOwnCollection<Brand>(
   if (target === UNANSWERED || target.declarations.length !== 1) {
     return false;
   }
-  const [handle] = target.declarations;
+  const [handle] = canonicalDeclarations(target);
   const node = handle === undefined ? undefined : project.declarationAt(handle)?.node;
   return node !== undefined && heldLiteral(node) !== undefined;
 }

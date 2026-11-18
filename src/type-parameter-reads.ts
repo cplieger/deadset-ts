@@ -24,6 +24,7 @@ import {
 import { SymbolFlags, type Type } from "@typescript/native/sync";
 import { isAnswered, UNANSWERED } from "./query.ts";
 import type { Read as RuleRead, ReadRule } from "./references/read-rule.ts";
+import { canonicalDeclarations } from "./canonical-order.ts";
 
 /** How deep a parameter's type is matched against the type a call passes: `readonly T[]` is one level. */
 const MATCH_DEPTH = 3;
@@ -120,7 +121,7 @@ export const typeParameterReads: ReadRule = {
           const declaration =
             symbol === undefined
               ? undefined
-              : symbol.declarations
+              : canonicalDeclarations(symbol)
                   .map((handle) => project.declarationAt(handle)?.node)
                   .find((node) => node !== undefined && isTypeParameterDeclaration(node));
           const generic = declaration?.parent as Generic | undefined;

@@ -48,6 +48,7 @@ import { nodeKey, type Inventory, type InventorySymbol, type SymbolKind } from "
 import { isAnswered, type Answer } from "./query.ts";
 import { typeNamesOf } from "./roots/published-reach.ts";
 import type { Handle, ProjectView } from "./session.ts";
+import { canonicalDeclarations } from "./canonical-order.ts";
 
 /** The declarations whose values a reference holds without naming them. */
 const TYPES: ReadonlySet<SymbolKind> = new Set<SymbolKind>(["class", "interface", "type", "enum"]);
@@ -272,7 +273,7 @@ export function carriersOf<Brand>(project: ProjectView<Brand>, held: Inventory):
   const own = project.ownPaths();
   let meeting = new Map<string, NodeHandle>();
   const meet = (symbol: TSSymbol): void => {
-    for (const handle of symbol.declarations) {
+    for (const handle of canonicalDeclarations(symbol)) {
       if (own.has(handle.path)) {
         meeting.set(`${handle.path}#${String(handle.index)}`, handle);
       }

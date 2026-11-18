@@ -76,21 +76,21 @@ const CLASSES = {
   ),
 };
 
-describe("the members of a class's instances", () => {
+describe("the members of a class's instances, in the canonical order of their declarations", () => {
   it("are its own and those it inherits from the target, an override the subclass's own, for the classes asked of at any depth", () => {
     expect(membersOf(CLASSES, ["Derived", "Local", "Space.Inner"], "instance")).toEqual([
-      "Derived: Derived.run Base.shared",
+      "Derived: Base.shared Derived.run",
       "Local: Local.own",
       "Space.Inner: Space.Inner.value",
     ]);
   });
 });
 
-describe("the members of a class itself", () => {
+describe("the members of a class itself, in the canonical order of their declarations", () => {
   it("are its static members and those it inherits, without the prototype, for each class asked of", () => {
     expect(membersOf(CLASSES, ["Base", "Derived", "Space.Inner"], "static")).toEqual([
       "Base: Base.make",
-      "Derived: Derived.build Base.make",
+      "Derived: Base.make Derived.build",
       "Space.Inner: Space.Inner.count",
     ]);
   });

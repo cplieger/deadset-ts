@@ -429,12 +429,8 @@ function composed(one: Drawn, at: number, commonjs: boolean, panics = false): Co
   }
   // A holder given a namespace value holds it whole, as does every read but the three forms by
   // name; an exported `const` in the reader's `namespace` is one, a local `const` binds the value.
-  // A CommonJS file's `import()` is typed apart from the module's namespace, so it binds nothing.
-  let escapes =
-    holds ||
-    nested ||
-    (commonjs && (imported === "dynamic" || imported === "then")) ||
-    (imported === "then" && one.callback !== "arrow");
+  // A CommonJS file's `import()` binds it too, whatever type its interop object has (.4).
+  let escapes = holds || nested || (imported === "then" && one.callback !== "arrow");
   const read = (property: string, how: Step, last: boolean): void => {
     escapes ||= !BY_NAME.has(how) || (PATTERNS.has(how) && !last);
     local += 1;
@@ -889,8 +885,12 @@ describe("a namespace object read through a chain of re-exports", () => {
       ),
       {
         numRuns: RUNS,
-        // A function callback read by name, which holds the value, beside an arrow, which binds it.
-        examples: [[[{ ...PLAIN, callback: "function" }, PLAIN], false, null]],
+        // A function callback read by name, which holds the value, beside an arrow, which binds it;
+        // a CommonJS file's awaited `import()` read by name.
+        examples: [
+          [[{ ...PLAIN, callback: "function" }, PLAIN], false, null],
+          [[{ ...PLAIN, imported: "dynamic" }], true, null],
+        ],
         plugins: [fc.interruptAfterTimeLimit(240_000, { failOnInterrupt: true })],
       },
     );

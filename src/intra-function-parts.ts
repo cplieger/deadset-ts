@@ -133,6 +133,7 @@ import type { ProjectView } from "./session.ts";
 import { signatureOf, type SignatureNode } from "./signatures.ts";
 import { spellsNoBinding } from "./spelled-names.ts";
 import { parenthesesRemoved } from "./unwrap.ts";
+import { canonicalDeclarations } from "./canonical-order.ts";
 
 /** The subject kind of each part this module reads. */
 export type PartKind = "parameter" | "result" | "statement" | "store" | "case";
@@ -648,8 +649,8 @@ function neverReturning<Brand>(
       return undefined;
     }
     const other = getter ? isSetAccessorDeclaration : isGetAccessorDeclaration;
-    const pair = symbolAt(container.name)
-      ?.declarations.map(nodeOf)
+    const pair = canonicalDeclarations(symbolAt(container.name))
+      .map(nodeOf)
       .find((one): one is AccessorDeclaration => one !== undefined && other(one));
     const first = pair?.parameters[0];
     return first !== undefined &&

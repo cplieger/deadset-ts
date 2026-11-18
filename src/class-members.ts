@@ -9,6 +9,7 @@ import type { Symbol as TSSymbol, SymbolFlags, Type } from "@typescript/native/s
 import { nodeKey, type Inventory, type InventorySymbol } from "./inventory.ts";
 import { must } from "./query.ts";
 import type { ProjectView } from "./session.ts";
+import { canonicalDeclarations } from "./canonical-order.ts";
 
 /** One member of a class's value that the target declares. */
 export interface ClassMember {
@@ -75,7 +76,8 @@ function sideTypes<Brand>(
 }
 
 /**
- * The members one side of each class carries that the target declares, by the class.
+ * The members one side of each class carries that the target declares, by the class, in
+ * canonical order (canonical-order.ts).
  * A member declared in a file outside the project's own, and the `prototype` a class
  * carries on its static side, are not declarations of the target and are left out.
  */
@@ -100,7 +102,7 @@ export function classMembers<Brand>(
     }
     const found: ClassMember[] = [];
     for (const property of must(project.queries.propertiesOf(type))) {
-      for (const handle of property.declarations) {
+      for (const handle of canonicalDeclarations(property)) {
         if (!own.has(handle.path)) {
           continue;
         }

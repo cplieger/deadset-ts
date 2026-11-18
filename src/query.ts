@@ -21,6 +21,7 @@ import {
   type Symbol as TSSymbol,
   type Type,
 } from "@typescript/native/sync";
+import { canonicalSymbols, canonicalTable, canonicalTypes } from "./canonical-order.ts";
 
 /**
  * The greatest number of locations one batched request asks about. A batch is
@@ -36,6 +37,11 @@ export const UNANSWERED: unique symbol = Symbol("unanswered");
 
 /** A checker's answer, or {@link UNANSWERED} where the server panicked on the question. */
 export type Answer<T> = T | typeof UNANSWERED;
+
+/** An answer put in an order deadset-ts defines, {@link UNANSWERED} as it is. */
+function ordered<T, U>(answer: Answer<T>, order: (value: T) => U): Answer<U> {
+  return isAnswered(answer) ? order(answer) : UNANSWERED;
+}
 
 /** Whether one answer is an answer. */
 export function isAnswered<T>(answer: Answer<T>): answer is T {
@@ -173,12 +179,13 @@ export interface Queries {
     location: Node | undefined,
     excludeGlobals: boolean,
   ): Answer<TSSymbol | undefined>;
+  /** A module's exports, in canonical order (canonical-order.ts), as every symbol list here is. */
   exportsOfModule(module: TSSymbol): Answer<readonly TSSymbol[]>;
   /** Every symbol of `meaning` visible at one node, globals included. */
   symbolsInScope(node: Node, meaning: SymbolFlags): Answer<readonly TSSymbol[]>;
-  /** One symbol's member table. */
+  /** One symbol's member table, its entries in canonical order. */
   membersOf(symbol: TSSymbol): Answer<ReadonlyMap<string, TSSymbol>>;
-  /** One symbol's export table. */
+  /** One symbol's export table, its entries in canonical order. */
   exportsOf(symbol: TSSymbol): Answer<ReadonlyMap<string, TSSymbol>>;
   /** The symbol that declares one symbol as a member. */
   parentOf(symbol: TSSymbol): Answer<TSSymbol | undefined>;
@@ -193,6 +200,7 @@ export interface Queries {
   declaredTypeOf(symbol: TSSymbol): Answer<Type>;
   /** The type each value position expects. */
   contextualTypes(nodes: readonly Expression[], cap?: number): Answer<Type | undefined>[];
+  /** A type's properties, in canonical order. */
   propertiesOf(type: Type): Answer<readonly TSSymbol[]>;
   indexInfosOf(type: Type): Answer<readonly IndexInfo[]>;
   /** The type arguments of a type reference; none for another type. */
@@ -201,7 +209,7 @@ export interface Queries {
   isArray(type: Type): Answer<boolean>;
   /** Whether each source is assignable to its target. */
   assignableEach(pairs: readonly Assignability[], cap?: number): Answer<boolean>[];
-  /** The base types of a class or an interface; none for another type. */
+  /** The base types of a class or an interface, in canonical order; none for another type. */
   baseTypes(type: Type): Answer<readonly Type[]>;
   /** The constituents of a union or an intersection; the type itself for another type. */
   constituents(type: Type): Answer<readonly Type[]>;
@@ -487,30 +495,42 @@ export function queriesOf(
             () => checker.resolveName(name, meaning, location, excludeGlobals),
           ),
     exportsOfModule: (module) =>
-      one(
-        "getExportsOfModule",
-        () => symbolLocation(module),
-        () => checker.getExportsOfModule(module),
+      ordered(
+        one(
+          "getExportsOfModule",
+          () => symbolLocation(module),
+          () => checker.getExportsOfModule(module),
+        ),
+        canonicalSymbols,
       ),
     symbolsInScope: (node, meaning) =>
       blind("getSymbolsInScope", node)
         ? UNANSWERED
-        : one(
-            "getSymbolsInScope",
-            () => nodeLocation(node),
-            () => checker.getSymbolsInScope(node, meaning),
+        : ordered(
+            one(
+              "getSymbolsInScope",
+              () => nodeLocation(node),
+              () => checker.getSymbolsInScope(node, meaning),
+            ),
+            canonicalSymbols,
           ),
     membersOf: (symbol) =>
-      one(
-        "getMembers",
-        () => symbolLocation(symbol),
-        () => symbol.getMembers(),
+      ordered(
+        one(
+          "getMembers",
+          () => symbolLocation(symbol),
+          () => symbol.getMembers(),
+        ),
+        canonicalTable,
       ),
     exportsOf: (symbol) =>
-      one(
-        "getExports",
-        () => symbolLocation(symbol),
-        () => symbol.getExports(),
+      ordered(
+        one(
+          "getExports",
+          () => symbolLocation(symbol),
+          () => symbol.getExports(),
+        ),
+        canonicalTable,
       ),
     parentOf: (symbol) =>
       one(
@@ -567,10 +587,13 @@ export function queriesOf(
         ),
       ),
     propertiesOf: (type) =>
-      one(
-        "getPropertiesOfType",
-        () => typeLocation(type),
-        () => checker.getPropertiesOfType(type),
+      ordered(
+        one(
+          "getPropertiesOfType",
+          () => typeLocation(type),
+          () => checker.getPropertiesOfType(type),
+        ),
+        canonicalSymbols,
       ),
     indexInfosOf: (type) =>
       one(
@@ -609,10 +632,21 @@ export function queriesOf(
       ),
     baseTypes: (type) =>
       type.isClassOrInterface()
-        ? one(
-            "getBaseTypes",
-            () => typeLocation(type),
-            () => checker.getBaseTypes(type),
+        ? ordered(
+            one(
+              "getBaseTypes",
+              () => typeLocation(type),
+              () => checker.getBaseTypes(type),
+            ),
+            (bases) =>
+              canonicalTypes(bases, (base) => {
+                const symbol = one(
+                  "getSymbol",
+                  () => typeLocation(base),
+                  () => base.getSymbol(),
+                );
+                return symbol === UNANSWERED ? undefined : symbol;
+              }),
           )
         : [],
     constituents: (type) =>

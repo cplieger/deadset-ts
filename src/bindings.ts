@@ -248,6 +248,7 @@ function discriminantOf(literal: Node, name: string): string | undefined {
     if (
       isPropertySignatureDeclaration(member) &&
       nameText(member.name) === name &&
+      member.type !== undefined &&
       isLiteralTypeNode(member.type) &&
       isStringLiteralLikeNode(member.type.literal)
     ) {

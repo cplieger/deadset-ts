@@ -19,6 +19,7 @@ import { aliasChains } from "../alias-chain.ts";
 import { nodeKey, type Inventory } from "../inventory.ts";
 import { must, Unanswerable } from "../query.ts";
 import type { ProjectView } from "../session.ts";
+import { canonicalDeclarations } from "../canonical-order.ts";
 
 /** What one run knows about how its interfaces are implemented. */
 export interface Implementations {
@@ -121,7 +122,7 @@ function typesAt<Brand>(project: ProjectView<Brand>, nodes: readonly Node[]): Ma
 export function emptyImplementation<Brand>(project: ProjectView<Brand>, member: TSSymbol): boolean {
   const own = project.ownPaths();
   let bodies = 0;
-  for (const handle of member.declarations) {
+  for (const handle of canonicalDeclarations(member)) {
     // A body outside the target is one this analysis cannot read, so it is not empty.
     if (!own.has(handle.path)) {
       return false;
