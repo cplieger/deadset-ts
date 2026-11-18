@@ -29,6 +29,7 @@ import { sourceFilesOf, type SourceFiles } from "./source-files.ts";
 import { bytewise } from "./text/compare.ts";
 import type { TestFile } from "./tests/file-class.ts";
 import { typeQueryAliases } from "./type-query-alias.ts";
+import { canonicalDeclarations } from "./canonical-order.ts";
 
 /**
  * How one reference uses the declaration it names. An `evaluation` names a file: the
@@ -560,7 +561,7 @@ export function references<Brand>(
       return known;
     }
     const found: ChainTarget[] = [];
-    for (const handle of writtenBy.size === 0 ? [] : symbol.declarations) {
+    for (const handle of writtenBy.size === 0 ? [] : canonicalDeclarations(symbol)) {
       if (!LITERAL_PROPERTY_KINDS.has(handle.kind) || !ownPaths.has(handle.path)) {
         continue;
       }

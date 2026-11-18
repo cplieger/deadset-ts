@@ -33,6 +33,7 @@ import type { AliasChains } from "./alias-chain.ts";
 import type { Inventory, SymbolKind } from "./inventory.ts";
 import { isAnswered, type PropertyTables } from "./query.ts";
 import type { ProjectView } from "./session.ts";
+import { canonicalDeclarations } from "./canonical-order.ts";
 
 /** The member kinds a contextual type writes and reads: data members and the members of object types. */
 const MEMBER_KINDS: ReadonlySet<SymbolKind> = new Set(["type-member", "class-member"]);
@@ -202,10 +203,10 @@ export function contextualUses<Brand>(
           .declarationsOf(property)
           .filter((id) => kinds.get(id) === "interface-method"),
         handles: new Set(
-          property.declarations.map((handle) => `${handle.path}#${String(handle.index)}`),
+          canonicalDeclarations(property).map((handle) => `${handle.path}#${String(handle.index)}`),
         ),
         own: property.declarations.some((handle) => ownPaths.has(handle.path)),
-        declarations: property.declarations.filter((handle) => ownPaths.has(handle.path)),
+        declarations: canonicalDeclarations(property).filter((handle) => ownPaths.has(handle.path)),
       });
     }
     tables.set(type.id, table);

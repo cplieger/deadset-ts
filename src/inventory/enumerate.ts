@@ -18,6 +18,7 @@ import type { Handle, ProjectView } from "../session.ts";
 import { declarationOf } from "../entries/static-module.ts";
 import { commonJS, type Resolved } from "./commonjs.ts";
 import { SYNTAX } from "./syntax.ts";
+import { canonicalDeclarations } from "../canonical-order.ts";
 
 /**
  * Every declaration one project's own files hold, in rendered position order.
@@ -63,7 +64,7 @@ function resolvedIn<Brand>(project: ProjectView<Brand>): Resolved {
         ? project.shorthandValueAt(project.handle(occurrence.parent))
         : symbols[index];
       return typeof symbol === "object"
-        ? symbol.declarations.flatMap(
+        ? canonicalDeclarations(symbol).flatMap(
             (declaration) => project.declarationAt(declaration)?.node ?? [],
           )
         : [];
@@ -123,7 +124,7 @@ function readTables<Brand>(
       continue;
     }
     for (const [, exported] of table) {
-      for (const declaration of exported.declarations) {
+      for (const declaration of canonicalDeclarations(exported)) {
         const held = project.declarationAt(declaration);
         const record = held === undefined ? undefined : into.recordAt(held.node);
         if (record !== undefined) {
@@ -141,7 +142,7 @@ function readTables<Brand>(
     areStatic: boolean,
   ): void => {
     for (const [, member] of table) {
-      const declarations = member.declarations.flatMap(
+      const declarations = canonicalDeclarations(member).flatMap(
         (handle) => project.declarationAt(handle) ?? [],
       );
       // A member with no declaration is the language's own (a class's `prototype`), and a

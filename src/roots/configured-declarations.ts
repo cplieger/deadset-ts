@@ -23,6 +23,7 @@ import { declaredComponent, type Inventory } from "../inventory.ts";
 import { must, Unanswerable } from "../query.ts";
 import { nameComponent } from "../ref.ts";
 import type { ProjectView } from "../session.ts";
+import { canonicalDeclarations } from "../canonical-order.ts";
 
 /** The meanings a name of the global scope is looked up under: any of them. */
 const ANY_MEANING: SymbolFlags = SymbolFlags.Value | SymbolFlags.Type | SymbolFlags.Namespace;
@@ -278,7 +279,7 @@ export function resolveEntries<Brand>(
     const declared = walkPath(project, start, rest, isStatic);
     return {
       entry,
-      handles: new Set(declared?.declarations.map(handleKey) ?? []),
+      handles: new Set(canonicalDeclarations(declared).map(handleKey)),
       ids: new Set<string>(),
     };
   });

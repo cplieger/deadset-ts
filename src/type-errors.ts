@@ -17,6 +17,7 @@ import { relativePath } from "./paths.ts";
 import { isAnswered } from "./query.ts";
 import type { TypeErrorSkip } from "./report.ts";
 import type { ProjectView } from "./session.ts";
+import { canonicalDeclarations } from "./canonical-order.ts";
 
 /** The lines of one file a skip withholds every finding on. */
 export interface SkippedUnit {
@@ -140,7 +141,7 @@ export function skippedRoots<Brand>(
     for (const part of isAnswered(parts) ? parts : []) {
       const properties = project.queries.propertiesOf(part);
       for (const property of isAnswered(properties) ? properties : ([] as TSSymbol[])) {
-        for (const handle of property.declarations) {
+        for (const handle of canonicalDeclarations(property)) {
           const node = own.has(handle.path) ? project.declarationAt(handle)?.node : undefined;
           const id =
             node === undefined

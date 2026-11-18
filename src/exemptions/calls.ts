@@ -41,6 +41,7 @@ import { must } from "../query.ts";
 import type { ProjectView } from "../session.ts";
 import { arrayLiteralOf, parenthesesRemoved, unwrapped } from "../unwrap.ts";
 import type { ProjectSites } from "./sites.ts";
+import { canonicalDeclarations } from "../canonical-order.ts";
 
 /** One class of the target a call passes or a decorator is attached to, and where. */
 interface ClassUse {
@@ -272,7 +273,7 @@ export function classesCarried<Brand>(
       sites.calls.map((one) => one.call),
       invoked,
     );
-    return symbol.declarations.flatMap((handle) => calling?.get(keyOf(handle)) ?? []);
+    return canonicalDeclarations(symbol).flatMap((handle) => calling?.get(keyOf(handle)) ?? []);
   };
   const classesOf = (value: CarriedValue, seen: Set<number>): readonly string[] => {
     const { named, typed } = heldBy(project, value, targets);
@@ -289,7 +290,7 @@ export function classesCarried<Brand>(
     seen.add(symbol.id);
     const through = (written: Expression): readonly string[] =>
       carriedValues(written).flatMap((value) => classesOf(value, seen));
-    return symbol.declarations.flatMap((handle) => {
+    return canonicalDeclarations(symbol).flatMap((handle) => {
       const node = project.declarationAt(handle)?.node;
       if (node === undefined) {
         return [];
@@ -402,7 +403,7 @@ function callsByDeclaration<Brand>(
       return known ?? [];
     }
     seen.add(symbol.id);
-    const keys = symbol.declarations
+    const keys = canonicalDeclarations(symbol)
       .filter((handle) => own.has(handle.path))
       .flatMap((handle) => {
         const node = project.declarationAt(handle)?.node;

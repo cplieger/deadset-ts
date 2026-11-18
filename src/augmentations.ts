@@ -19,6 +19,7 @@ import type { Reference } from "./references.ts";
 import type { ProjectView } from "./session.ts";
 import type { SourceFiles } from "./source-files.ts";
 import type { NodeHandle } from "@typescript/native/sync";
+import { canonicalDeclarations } from "./canonical-order.ts";
 
 /** Whether one declaration is a module-level `declare global` block (`InventorySymbol.block`). */
 export function isGlobalBlock(symbol: InventorySymbol, files: ReadonlySet<string>): boolean {
@@ -144,7 +145,7 @@ export function mergedGlobalInterfaces<Brand>(
     const symbol = answers[at];
     const outside =
       typeof symbol === "object"
-        ? symbol.declarations.filter((handle) => !files.byName.has(handle.path))
+        ? canonicalDeclarations(symbol).filter((handle) => !files.byName.has(handle.path))
         : [];
     if (outside.length === 0) {
       return;

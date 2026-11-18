@@ -27,6 +27,7 @@ import type { InventorySymbol } from "./inventory.ts";
 import { isAnswered, UNANSWERED, type PropertyTables } from "./query.ts";
 import type { Read, ReadRule } from "./references/read-rule.ts";
 import type { ProjectView } from "./session.ts";
+import { canonicalDeclarations } from "./canonical-order.ts";
 
 /** One element access whose key is a name, and how the access uses the member it selects. */
 export interface KeyedAccess {
@@ -135,7 +136,7 @@ export function keyedUses<Brand>(
     const found: { property: TSSymbol; key: Node }[] = [];
     const read = properties.of(type);
     for (const property of isAnswered(read.properties) ? read.properties : []) {
-      const handle = property.declarations.find((one) => ownPaths.has(one.path));
+      const handle = canonicalDeclarations(property).find((one) => ownPaths.has(one.path));
       const node = handle === undefined ? undefined : project.declarationAt(handle)?.node;
       const name = (node as { readonly name?: Node } | undefined)?.name;
       if (name !== undefined && isComputedPropertyName(name) && !isLiteralKey(name.expression)) {
@@ -236,7 +237,7 @@ export const iteration: ReadRule = {
           const properties = queries.propertiesOf(type);
           const keyed: { name: string; ids: readonly string[] }[] = [];
           for (const property of isAnswered(properties) ? properties : []) {
-            for (const handle of property.declarations) {
+            for (const handle of canonicalDeclarations(property)) {
               const node = ownPaths.has(handle.path)
                 ? project.declarationAt(handle)?.node
                 : undefined;

@@ -116,6 +116,7 @@ import {
   type Reached,
   type ValueReach,
 } from "./value-reach.ts";
+import { canonicalDeclarations } from "../canonical-order.ts";
 
 /** The serializer every run reads, whatever the configuration names. */
 const JSON_STRINGIFY: DeclarationEntry = { global: "JSON.stringify" };
@@ -563,14 +564,14 @@ function destinations<Brand>(
     const signature =
       declaration === undefined ? undefined : project.declarationAt(declaration)?.node;
     if (declaration === undefined || signature === undefined) {
-      return target.declarations;
+      return canonicalDeclarations(target);
     }
-    const containing = target.declarations.filter((handle) => {
+    const containing = canonicalDeclarations(target).filter((handle) => {
       const node =
         handle.path === declaration.path ? project.declarationAt(handle)?.node : undefined;
       return node !== undefined && node.pos <= signature.pos && signature.end <= node.end;
     });
-    return containing.length === 0 ? target.declarations : containing;
+    return containing.length === 0 ? canonicalDeclarations(target) : containing;
   };
   /**
    * Whether a type names a type parameter as itself, an alias argument, a constituent, a
@@ -1575,7 +1576,7 @@ function inflowReader<Brand>(
       if (symbol !== undefined && (symbol.flags & SymbolFlags.Alias) !== 0) {
         symbol = must(queries.aliased(symbol));
       }
-      for (const handle of symbol?.declarations ?? []) {
+      for (const handle of canonicalDeclarations(symbol)) {
         let node = project.declarationAt(handle)?.node;
         while (node !== undefined && isBindingElement(node)) {
           node = node.parent.parent;
@@ -1804,7 +1805,7 @@ function parameterBinder<Brand>(
       }
       seen.add(key);
       const symbol = must(queries.symbolOfType(parameter));
-      const [handle] = symbol?.declarations ?? [];
+      const [handle] = canonicalDeclarations(symbol);
       const declaration = handle === undefined ? undefined : project.declarationAt(handle)?.node;
       const owner = declaration?.parent;
       const detail = `passed to ${destination.callee} through the type parameter ${symbol?.name ?? ""}`;

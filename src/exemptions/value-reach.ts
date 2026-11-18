@@ -30,6 +30,7 @@ import { classNames, typesAt } from "../class-members.ts";
 import type { Inventory } from "../inventory.ts";
 import { isAnswered, must } from "../query.ts";
 import type { ProjectView } from "../session.ts";
+import { canonicalDeclarations } from "../canonical-order.ts";
 
 /**
  * The object types whose members the walk reads whatever declares them. A reverse-mapped
@@ -795,7 +796,7 @@ export function valueReach<Brand>(
           : must(queries.propertiesOf(type)).find(
               (property) => property.name === SERIALIZED_CONVERSION,
             );
-      return conversion?.declarations ?? [];
+      return canonicalDeclarations(conversion);
     },
     every,
   };

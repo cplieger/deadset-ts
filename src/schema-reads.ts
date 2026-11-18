@@ -62,6 +62,7 @@ import { isAnswered, UNANSWERED, type Answer } from "./query.ts";
 import type { Reference } from "./references.ts";
 import type { ProjectView } from "./session.ts";
 import { parenthesesRemoved } from "./unwrap.ts";
+import { canonicalDeclarations } from "./canonical-order.ts";
 
 /** Hand-code evidence that lowers a consumer's schema finding to possible (`bindings.16`). */
 export type Cap = "persistence" | "descriptor-exposure";
@@ -710,7 +711,9 @@ export function schemaFacts<Brand>(
     if (!isAnswered(target)) {
       return undefined;
     }
-    return target.declarations.flatMap((handle) => project.declarationAt(handle)?.node ?? []);
+    return canonicalDeclarations(target).flatMap(
+      (handle) => project.declarationAt(handle)?.node ?? [],
+    );
   };
   const idOf = (node: Node): string | undefined =>
     held.declarations.get(nodeKey(node.getSourceFile(), node));

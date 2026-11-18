@@ -57,6 +57,7 @@ import { nodeKey } from "./inventory.ts";
 import { UNANSWERED } from "./query.ts";
 import type { Read, ReadRule } from "./references/read-rule.ts";
 import { typeQueryAliases } from "./type-query-alias.ts";
+import { canonicalDeclarations } from "./canonical-order.ts";
 
 /** A declaration that declares type parameters, by the kinds of node that can. */
 type Generic = Node & {
@@ -514,7 +515,7 @@ export const indexedAccess: ReadRule = {
           if (symbol === UNANSWERED || symbol === undefined) {
             return [];
           }
-          return symbol.declarations.flatMap((handle) => {
+          return canonicalDeclarations(symbol).flatMap((handle) => {
             const declared = project.declarationAt(handle)?.node;
             return declared !== undefined &&
               isTypeAliasDeclaration(declared) &&
@@ -543,7 +544,7 @@ export const indexedAccess: ReadRule = {
           if (target === UNANSWERED) {
             return [];
           }
-          return target.declarations.flatMap((handle) => {
+          return canonicalDeclarations(target).flatMap((handle) => {
             const node = project.declarationAt(handle)?.node;
             const generic = node === undefined ? undefined : genericOf(node);
             return generic === undefined ? [] : [generic];
@@ -574,7 +575,7 @@ export const indexedAccess: ReadRule = {
           if (symbol === UNANSWERED || symbol === undefined) {
             return operand;
           }
-          for (const handle of symbol.declarations) {
+          for (const handle of canonicalDeclarations(symbol)) {
             const node = project.declarationAt(handle)?.node;
             const holder =
               node !== undefined &&

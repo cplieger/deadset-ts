@@ -1002,6 +1002,8 @@ describe("a name spelled without being a reference", () => {
           },
           ENTRY,
         ).map(({ code, name, line }) => `${code} ${name} ${String(line)}`),
+        // A class may not be named `arguments` (TS1210; a class is strict code under
+        // ECMA-262), so the type error skips `classed` and its unread `first`.
       ).toEqual([
         "DS1401 first 9",
         "DS1401 first 15",
@@ -1010,7 +1012,6 @@ describe("a name spelled without being a reference", () => {
         "DS1401 unused 29",
         "DS1404 kept 37",
         "DS1401 first 45",
-        "DS1401 first 51",
       ]);
     },
     LOAD_TIMEOUT,

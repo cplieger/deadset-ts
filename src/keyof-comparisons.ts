@@ -26,6 +26,7 @@ import { SymbolFlags, type Type } from "@typescript/native/sync";
 import { UNANSWERED } from "./query.ts";
 import type { Read, ReadRule } from "./references/read-rule.ts";
 import { parenthesesRemoved } from "./unwrap.ts";
+import { canonicalDeclarations } from "./canonical-order.ts";
 
 /** The operators that compare their operands for equality. */
 const EQUALITIES: ReadonlySet<SyntaxKind> = new Set([
@@ -136,7 +137,7 @@ export const keyofComparisons: ReadRule = {
           if (symbol === undefined) {
             return [];
           }
-          const operands = symbol.declarations.flatMap((handle) => {
+          const operands = canonicalDeclarations(symbol).flatMap((handle) => {
             const declared = (
               project.declarationAt(handle)?.node as { readonly type?: TypeNode } | undefined
             )?.type;
