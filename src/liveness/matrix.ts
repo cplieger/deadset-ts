@@ -17,6 +17,8 @@ export interface Configured {
   readonly symbols: readonly InventorySymbol[];
   readonly references: readonly Reference[];
   readonly roots: readonly Root[];
+  /** The roots only the run that counts test references reads. */
+  readonly testRoots?: readonly Root[] | undefined;
   /** The paths the reference pass classified as test files. */
   readonly testFiles: readonly string[];
   /** The paths of the test-support files, which only test code imports. */
@@ -153,7 +155,15 @@ export function matrixOf(per: readonly Configured[]): Matrix {
       [...new Set(per.flatMap((one) => one.testFiles))],
       [...new Set(per.flatMap((one) => one.supportFiles ?? []))],
       new Set(per.flatMap((one) => [...(one.ambient ?? [])])),
-      { unjudged, configurations: makers },
+      {
+        unjudged,
+        configurations: makers,
+        testRoots: [
+          ...new Map(
+            per.flatMap((one) => one.testRoots ?? []).map((root) => [root.id, root]),
+          ).values(),
+        ],
+      },
     ),
     heldIn: symbols.map((symbol) => holders.get(symbol.id) ?? []),
     testUsed: symbols.map((symbol) => testUsed.has(symbol.position.path)),

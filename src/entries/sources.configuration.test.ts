@@ -158,7 +158,7 @@ describe("a file a configuration file names", () => {
 
 describe("a file the platform or a workflow runs", () => {
   it(
-    "is rooted with its exports by a module script of an HTML file",
+    "is rooted with its exports by the src of a module script of an HTML file",
     () => {
       expect(
         rootsBelow("src/", {
@@ -168,6 +168,45 @@ describe("a file the platform or a workflow runs", () => {
       ).toEqual([
         "src/page.ts#\thtml-entry\t./src/page.ts",
         "src/page.ts#value\thtml-entry\t./src/page.ts",
+      ]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "is rooted with every export it holds by an import or a re-export of an inline module script of an HTML file",
+    () => {
+      expect(
+        rootsBelow("src/", {
+          "src/named.ts": "export const read = 1;\nexport const unread = 2;\nexport default 3;\n",
+          "src/all.ts": "export const one = 1;\nexport const two = 2;\n",
+          "src/again.ts": "export const again = 1;\n",
+          "src/listed.ts": "export const kept = 1;\nexport const dropped = 2;\n",
+          "src/effects.ts": "export const effect = 1;\n",
+          "index.html": [
+            '<script type="module">import base, { read } from "./src/named.ts";',
+            'import * as all from "./src/all.ts";',
+            'export * from "./src/again.ts";',
+            'export { kept as alias } from "./src/listed.ts";',
+            'import "./src/effects.ts";</script>',
+            "",
+          ].join("\n"),
+        }),
+      ).toEqual([
+        "src/again.ts#\thtml-import\t./src/again.ts",
+        "src/again.ts#again\thtml-import\t./src/again.ts",
+        "src/all.ts#\thtml-import\t./src/all.ts",
+        "src/all.ts#one\thtml-import\t./src/all.ts",
+        "src/all.ts#two\thtml-import\t./src/all.ts",
+        "src/effects.ts#\thtml-import\t./src/effects.ts",
+        "src/effects.ts#effect\thtml-import\t./src/effects.ts",
+        "src/listed.ts#\thtml-import\t./src/listed.ts",
+        "src/listed.ts#kept\thtml-import\t./src/listed.ts",
+        "src/listed.ts#dropped\thtml-import\t./src/listed.ts",
+        "src/named.ts#\thtml-import\t./src/named.ts",
+        "src/named.ts#read\thtml-import\t./src/named.ts",
+        "src/named.ts#unread\thtml-import\t./src/named.ts",
+        "src/named.ts#default:alias\thtml-import\t./src/named.ts",
       ]);
     },
     LOAD_TIMEOUT,

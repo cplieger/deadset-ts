@@ -86,7 +86,7 @@ describe("a value of the polymorphic `this` type reaching a serializer", () => {
     () => {
       const run = swept(
         main(
-          "export class Record {",
+          "class Record {",
           '  key = "";',
           "  latest(): this { return this; }",
           "  save(): string { return JSON.stringify(this.latest()); }",

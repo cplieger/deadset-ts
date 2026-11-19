@@ -225,11 +225,61 @@ describe("explain's answer for a declaration no finding names", () => {
   );
 
   it(
+    "names the entry reach of a member a value an entry file exports holds",
+    () => {
+      const got = explain(
+        {
+          "package.json": '{ "name": "@example/app", "private": true, "type": "module" }\n',
+          "deadset.json":
+            '{ "target": { "kind": "application" }, "ts": { "entry_files": ["main.ts"] } }\n',
+          "main.ts":
+            "class Held {\n  run(): void {}\n}\n\nexport const plugins = [{ held: Held }];\n",
+        },
+        "--target=.",
+        "--why=Held.run",
+      ).out;
+
+      expect(got).toContain("answer: live\n");
+      expect(got).toContain("  root: entry-reach\n");
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
     "counts a reference two configurations make once",
     () => {
       expect(explain(LIBRARY, "--target=.", "--why-not=deadTwo").out).toContain(
         "  references: 1\n  reference: lib.ts:4:10\tread\tfrom lib.ts:3:10\n  component:",
       );
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "counts the test reach of a test file two configurations hold once",
+    () => {
+      const got = explain(
+        {
+          "package.json": '{ "name": "@example/app", "private": true, "type": "module" }\n',
+          "deadset.json":
+            '{ "target": { "kind": "application" }, "ts": { "entry_files": ["src/main.ts"], "test_files": ["tests/run.test.ts"] } }\n',
+          "tsconfig.json":
+            '{ "files": [], "references": [{ "path": "./tsconfig.a.json" }, { "path": "./tsconfig.b.json" }] }\n',
+          "tsconfig.a.json":
+            '{ "compilerOptions": { "strict": true, "module": "nodenext", "moduleResolution": "nodenext", "noEmit": true, "allowImportingTsExtensions": true, "composite": true }, "include": ["src/**/*.ts", "tests/**/*.ts"] }\n',
+          "tsconfig.b.json":
+            '{ "compilerOptions": { "strict": true, "module": "nodenext", "moduleResolution": "nodenext", "noEmit": true, "allowImportingTsExtensions": true, "composite": true }, "include": ["src/**/*.ts", "tests/**/*.ts"] }\n',
+          "src/main.ts": "console.log(1);\n",
+          "tests/support.ts":
+            "export class Fx {\n  go(): void {}\n}\nexport function fixture() {\n  return { fx: Fx };\n}\n",
+          "tests/run.test.ts":
+            'import { fixture } from "./support.ts";\nexport function load() {\n  return fixture();\n}\n',
+        },
+        "--target=.",
+        "--why=Fx.go",
+      ).out;
+
+      expect(got).toContain("with 0 production and 1 test references");
     },
     LOAD_TIMEOUT,
   );

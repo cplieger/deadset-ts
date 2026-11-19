@@ -2,7 +2,7 @@
   "corpus_version": "6.4.0",
   "product": { "name": "deadset-ts", "version": "0.1.0", "language": "ts" },
   "result": "pass",
-  "totals": { "fixtures": 393, "pass": 391, "gap": 0, "fail": 0, "pending": 2 },
+  "totals": { "fixtures": 394, "pass": 392, "gap": 0, "fail": 0, "pending": 2 },
   "fixtures": [
     {
       "fixture": "abstract-member-through-this",
@@ -3613,6 +3613,126 @@
       "fixture": "entry-file-declaring-nothing",
       "result": "pass",
       "expectations": [{ "symbol": "Entry", "result": "pass", "actual": { "report": "none" } }],
+      "unexpected": []
+    },
+    {
+      "fixture": "entry-file-exports-reach-member-types",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "CiReporter.inject", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "CiReporter.onMutantTested", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "CiReporter.onMutationTestReportReady",
+          "result": "pass",
+          "actual": { "report": "none" }
+        },
+        {
+          "symbol": "CiReporter.onMutationTestingPlanReady",
+          "result": "pass",
+          "actual": { "report": "none" }
+        },
+        {
+          "symbol": "Job.run",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "Kit.made",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "confidence": "possible",
+            "reachability_class": "possible"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "Kit.run",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "confidence": "possible",
+            "reachability_class": "possible"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "Lookalike.onMutantTested",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "Lookalike.used", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Page.draw",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "Panel.draw", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Plugin.apply", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Plugin.id", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Route.draft",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "Route.render", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "Route.segment", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "Seeder.plant",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "Tool.go",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "View.draw", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "helper", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "kit",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "variable",
+            "confidence": "possible",
+            "reachability_class": "possible"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        { "symbol": "launch", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "local", "result": "pass", "actual": { "report": "none" } }
+      ],
       "unexpected": []
     },
     {

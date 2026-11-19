@@ -285,7 +285,7 @@ describe("serialization-contract over checked values and ambient callees", () =>
 describe("serialization-contract over conversions declared as accessors", () => {
   const found = treeFindings({
     "main.ts": [
-      "export class Odd {",
+      "class Odd {",
       "  id = 1;",
       "  get toJSON(): () => number {",
       "    return () => this.id;",

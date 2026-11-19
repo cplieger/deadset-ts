@@ -11,18 +11,12 @@ import { OUTSIDE, type Graph } from "../liveness/graph.ts";
 import type { Candidate } from "../liveness/sweep.ts";
 import { positionKey } from "../position.ts";
 import { declarationKey } from "../ref.ts";
-import type { RootKind } from "../roots/root-set.ts";
+import { PUBLISHING, type RootKind } from "../roots/root-set.ts";
 import type { FindingPosition } from "../finding.ts";
 import type { EmitterInput } from "./emitter.ts";
 
 /** How far the references to one declaration reach, from the narrowest. */
 type Reach = "file" | "package" | "outside";
-
-/** The root kinds by which a consumer importing the package reaches a declaration. */
-export const PUBLISHING: ReadonlySet<RootKind> = new Set<RootKind>([
-  "manifest-entry",
-  "published-api",
-]);
 
 /** Whether one of the root kinds publishes the declaration they name. */
 export function publishes(kinds: ReadonlySet<RootKind> | undefined): boolean {
@@ -210,6 +204,10 @@ function visibilityOf(graph: Graph): Visibility {
     }
   });
   const named = graph.made.map((counts) => counts.production + counts.test);
+  // A test root's count names the declaration from no file, so it widens no reach.
+  for (const one of graph.testRooted) {
+    named[one.at] = (named[one.at] ?? 1) - 1;
+  }
   named.forEach((count, at) => {
     if (count > (inGraph[at] ?? 0)) {
       reach[at] = "outside";

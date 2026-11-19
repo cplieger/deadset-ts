@@ -26,9 +26,10 @@ import { heldWords, type HeldText } from "../commands/held.ts";
 import { spelledFiles } from "../text/named-files.ts";
 import type { Workflows } from "../entries/workflow-steps.ts";
 import { extensionOf, OUTPUT_EXTENSIONS } from "../extensions.ts";
-import { publishedAPI, releaseTagged } from "./published-reach.ts";
+import { publishedAPI, reachedTypes, releaseTagged } from "./published-reach.ts";
 import { skippedRoots, type Skip } from "../type-errors.ts";
 import { mergedGlobalInterfaces } from "../augmentations.ts";
+import { runnerCalls } from "../liveness/sweep.ts";
 
 /** Why one declaration is a root. */
 export type RootKind =
@@ -47,6 +48,10 @@ export type RootKind =
   | "type-query-alias"
   /** A declaration a consumer of a library target can name. */
   | "published-api"
+  /** A declaration the types of a value an entry file exports reach, which the code loading it may name. */
+  | "entry-reach"
+  /** A declaration the types of a value a test file's runner-called export reach: a test reference only. */
+  | "test-reach"
   /** A declaration an exact reference from the configuration names. */
   | "configured"
   /** A declaration a pattern from the configuration names. */
@@ -57,6 +62,36 @@ export type RootKind =
   | "global-augmentation"
   /** A file a tool or the platform enters by its own convention, and what it exports where the tool reads it. */
   | EntryRule;
+
+/** The root kinds by which a consumer importing the package reaches a declaration. */
+export const PUBLISHING: ReadonlySet<RootKind> = new Set<RootKind>([
+  "manifest-entry",
+  "published-api",
+]);
+
+/**
+ * The root kinds that name a file without entering it by its exports: a configuration
+ * string, a script token of any command string, a manifest's `bin` and the `src` of an
+ * HTML file's script run the file, and no tool reads a name it exports.
+ */
+const RUN_ONLY: ReadonlySet<RootKind> = new Set<RootKind>([
+  "configuration-string",
+  "script",
+  "workflow-step",
+  "manifest-binary",
+  "html-entry",
+]);
+
+/**
+ * Whether a root of one kind enters its file or its declaration by the names the code that
+ * loads it may read, as the precondition of `DS1503` reads an entry file. A publishing root
+ * supposes a consumer instead, and an entry reach enters no file.
+ */
+export function entersByExports(kind: RootKind): boolean {
+  return (
+    !PUBLISHING.has(kind) && !RUN_ONLY.has(kind) && kind !== "entry-reach" && kind !== "test-reach"
+  );
+}
 
 /** One declaration the analysis keeps live under reachability, and why. */
 export interface Root {
@@ -80,6 +115,12 @@ export interface Roots {
    * rooted for several reasons appears once per reason, so an explanation names each.
    */
   readonly liveUnderReachability: readonly Root[];
+  /**
+   * Every declaration the types of a value a test file's runner-called export reach, of kind
+   * `test-reach`: the runner holds the value (references-ts.43), and test code's reach is a
+   * test reference (tests.3), so only the run that counts test references reads these.
+   */
+  readonly reachedByTests: readonly Root[];
   /**
    * Every configured root and pattern that named no declaration of this project, in
    * configuration order and each once. It is per project, and a finding is per run:
@@ -168,6 +209,7 @@ const READ_BACK_RULES: ReadonlySet<EntryRule> = new Set([
   "configuration-file",
   "configuration-string",
   "html-entry",
+  "html-import",
 ]);
 
 /** The extension a source file's name drops. */
@@ -589,6 +631,12 @@ export function rootSet<Brand>(
     ...published,
     ...heldFiles,
   ]);
+  const handedOut = new Set<string>();
+  const publishedNames = new Set(published.map((file) => file.fileName));
+  // A test file hands out only what its runner calls, as test reach, whatever entry list names it.
+  const testNames = new Set(
+    entered.filter((entry) => entry.kind === "test-runner").map((entry) => entry.file.fileName),
+  );
   for (const entry of entered) {
     const id = fileIds.get(entry.file.fileName);
     if (id === undefined) {
@@ -603,9 +651,33 @@ export function rootSet<Brand>(
           : entry.names.flatMap((name) => byName.get(name) ?? []);
       for (const one of exported) {
         add(one, entry.kind, entry.source);
+        if (
+          entersByExports(entry.kind) &&
+          !publishedNames.has(entry.file.fileName) &&
+          !testNames.has(entry.file.fileName)
+        ) {
+          handedOut.add(one);
+        }
       }
     }
   }
+  // The code loading an entry file may name any member of what its exports hold
+  // (references-ts.43); an enum's members are no such names.
+  const reach =
+    handedOut.size > 0
+      ? reachedTypes(project, held, files.byPath, [...handedOut])
+      : { ids: [], guessed: [] };
+  const enumMembers = new Set(
+    held.symbols.filter((one) => one.kind === "enum-member").map((one) => one.id),
+  );
+  for (const id of reach.ids) {
+    if (!handedOut.has(id) && !enumMembers.has(id)) {
+      add(id, "entry-reach", "");
+    }
+  }
+  const tested = testReach(project, held, files, entered, fileIds).filter(
+    (id) => !enumMembers.has(id),
+  );
 
   const tagged = releaseTagged(held, files).filter(
     (id) =>
@@ -629,9 +701,13 @@ export function rootSet<Brand>(
 
   return {
     liveUnderReachability: orderedRoots(found.values(), held),
+    reachedByTests: orderedRoots(
+      tested.map((id) => ({ id, kind: "test-reach", source: "" })),
+      held,
+    ),
     unmatched,
     unanswered: [
-      ...(answered ? api.guessed : held.symbols.map((symbol) => symbol.id)),
+      ...(answered ? [...api.guessed, ...reach.guessed] : held.symbols.map((symbol) => symbol.id)),
       // A command runs a held file and may read any export of it, so the file, which reaches its
       // top level, and its exports are held; a declaration neither reaches is still dead.
       ...heldFiles.flatMap((file) => {
@@ -642,6 +718,39 @@ export function rootSet<Brand>(
     unmappedEntries,
     heldScripts,
   };
+}
+
+/**
+ * What the types of each test file's runner-called export reach, the exports themselves
+ * excluded: a test file hands out only the exports its runner calls (references-ts.43).
+ */
+function testReach<Brand>(
+  project: ProjectView<Brand>,
+  held: Inventory,
+  files: SourceFiles,
+  entered: readonly Entered[],
+  fileIds: ReadonlyMap<string, string>,
+): readonly string[] {
+  const tests = entered.filter((entry) => entry.kind === "test-runner").map((one) => one.file);
+  if (tests.length === 0) {
+    return [];
+  }
+  const { tables } = exportTables(project, held, tests);
+  const owners = new Set(tests.flatMap((file) => fileIds.get(file.fileName) ?? []));
+  const called = new Set(
+    held.symbols
+      .filter(
+        (symbol) =>
+          owners.has(symbol.parent) &&
+          runnerCalls(symbol) &&
+          tests.some((file) => tables.get(file.fileName)?.includes(symbol.id) === true),
+      )
+      .map((symbol) => symbol.id),
+  );
+  if (called.size === 0) {
+    return [];
+  }
+  return reachedTypes(project, held, files.byPath, [...called]).ids.filter((id) => !called.has(id));
 }
 
 /**

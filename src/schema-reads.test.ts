@@ -1447,8 +1447,8 @@ describe("the schema reads of protobuf-es v2 hand code", () => {
       const AWAITED =
         'async function f(): Promise<void> {\n  const m = await import("./gen/v1/a_pb.js");\n  console.log(m);\n}\nvoid f();\n';
       const TOP = `${GEN}const space = gen;\nconsole.log(space);\n`;
-      // The holder's read may be a whole use of the object, so it reads every export (P-J14-3
-      // point 2, references-ts.5, .34), as the answered read does.
+      // The holder's read may be a whole use of the object, so it reads every export
+      // (references-ts.5, .34), as the answered read does.
       const whole = { Item: "live descriptor-exposure", Envelope: "live descriptor-exposure" };
       for (const main of [LOCAL, AWAITED, TOP]) {
         for (const unanswered of [false, true]) {

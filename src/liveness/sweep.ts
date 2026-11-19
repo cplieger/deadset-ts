@@ -259,10 +259,10 @@ function flagged(graph: Graph, ids: Iterable<string>): boolean[] {
 
 /**
  * Per declaration of the graph, whether the run that counts test references reaches it.
- * That run's roots are the graph's own and, of each test file, its top level and every
- * function it exports, which a test runner may call, and every export of a manual mock,
- * which the runner reads; any other export of a test file, and test-support code, which
- * runs where a test imports it, are judged as any file's are. `held` seeds it as a mark
+ * That run's roots are the graph's own, its test roots and, of each test file, its top
+ * level and every function it exports, which a test runner may call, and every export of
+ * a manual mock, which the runner reads; any other export of a test file, and test-support
+ * code, which runs where a test imports it, are judged as any file's are. `held` seeds it as a mark
  * seeds a sweep; with `namespaces` false a file read reaches none of the file's exports.
  */
 export function reachedWithTheTests(
@@ -280,7 +280,7 @@ export function reachedWithTheTests(
       : [];
   });
   return reach(
-    { ...graph, rooted: [...graph.rooted, ...tests] },
+    { ...graph, rooted: [...graph.rooted, ...graph.testRooted, ...tests] },
     {
       held: markSeeds(flagged(graph, held)),
       gated: new Map(),

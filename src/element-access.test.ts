@@ -161,13 +161,14 @@ describe("an element access whose index the compiler types as literals", () => {
     const found = treeFindings({
       "main.ts": [
         "interface Fields { title: string; body: string; extra: string }",
-        'export function chained<J extends "title", K extends J>(of: Fields, key: K): string {',
+        'function chained<J extends "title", K extends J>(of: Fields, key: K): string {',
         "  return of[key];",
         "}",
         "interface Open { left: string; right: string }",
-        "export function open<K extends string>(of: Open & Record<K, string>, key: K): string {",
+        "function open<K extends string>(of: Open & Record<K, string>, key: K): string {",
         "  return of[key];",
         "}",
+        "console.log(chained, open);",
         "",
       ].join("\n"),
     });

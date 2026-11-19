@@ -41,8 +41,10 @@ export type EntryRule =
   | "test-runner"
   /** A file an applied convention row's globs match. */
   | "convention"
-  /** A file a module script of an HTML file below the target root loads. */
+  /** A file the `src` of a script of an HTML file below the target root names. */
   | "html-entry"
+  /** A file an import or a re-export of an inline module script of an HTML file below the target root names. */
+  | "html-import"
   /** A file a `run:` step of a workflow in the target root's `.github/workflows` names. */
   | "workflow-step"
   /** A file an import line of a Markdown or MDX document below the target root names. */
@@ -172,9 +174,9 @@ const conventionSource: EntrySource = ({ files, conventions }) =>
       }));
 
 const htmlSource: EntrySource = ({ host, targetRoot, files, parse }) =>
-  htmlEntries(host, targetRoot, files, parse).map(({ file, source }) => ({
+  htmlEntries(host, targetRoot, files, parse).map(({ file, source, form }) => ({
     file,
-    rule: "html-entry",
+    rule: form === "src" ? "html-entry" : "html-import",
     source,
     exports: true,
   }));

@@ -281,10 +281,7 @@ describe("the graph of a run", () => {
       [],
     );
 
-    expect(
-      graph.exportsOf,
-      "P-J14-11 point 1: a whole read takes in merged statics and enum members",
-    ).toEqual([
+    expect(graph.exportsOf, "a whole read takes in merged statics and enum members").toEqual([
       [1, 4, 6, 8, 10, 12, 14],
       [2, 5],
       [],
