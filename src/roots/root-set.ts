@@ -633,6 +633,10 @@ export function rootSet<Brand>(
   ]);
   const handedOut = new Set<string>();
   const publishedNames = new Set(published.map((file) => file.fileName));
+  // A test file hands out only what its runner calls, as test reach, whatever entry list names it.
+  const testNames = new Set(
+    entered.filter((entry) => entry.kind === "test-runner").map((entry) => entry.file.fileName),
+  );
   for (const entry of entered) {
     const id = fileIds.get(entry.file.fileName);
     if (id === undefined) {
@@ -647,7 +651,11 @@ export function rootSet<Brand>(
           : entry.names.flatMap((name) => byName.get(name) ?? []);
       for (const one of exported) {
         add(one, entry.kind, entry.source);
-        if (entersByExports(entry.kind) && !publishedNames.has(entry.file.fileName)) {
+        if (
+          entersByExports(entry.kind) &&
+          !publishedNames.has(entry.file.fileName) &&
+          !testNames.has(entry.file.fileName)
+        ) {
           handedOut.add(one);
         }
       }

@@ -581,3 +581,88 @@ describe("a class a test file's runner-called export holds", () => {
     ]);
   });
 });
+
+describe("a test file an entry list names too", () => {
+  it("hands out only what its runner calls, as a test reference", () => {
+    const report = analyzed({
+      "package.json": JSON.stringify({ name: "@example/app", private: true, type: "module" }),
+      "deadset.json": JSON.stringify({
+        target: { kind: "application" },
+        ts: {
+          entry_files: ["src/main.ts", "tests/run.test.ts"],
+          test_files: ["tests/run.test.ts"],
+        },
+      }),
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: {
+          strict: true,
+          module: "NodeNext",
+          moduleResolution: "nodenext",
+          noEmit: true,
+          allowImportingTsExtensions: true,
+        },
+        include: ["**/*.ts"],
+      }),
+      "src/held.ts": [
+        "export class Held {",
+        "  run(): void {}",
+        "  stop(): void {}",
+        "}",
+        "export class Other {",
+        "  run(): void {}",
+        "}",
+        "",
+      ].join("\n"),
+      "src/main.ts":
+        'import { Held, Other } from "./held.ts";\nconsole.log(new Held(), new Other());\n',
+      "tests/run.test.ts":
+        'import { Held } from "../src/held.ts";\nexport function load() {\n  return { held: Held };\n}\n',
+    });
+
+    expect(lines(report).filter((line) => /\b(?:Held|Other)\./u.test(line))).toEqual([
+      "DS1102 Held.run certain",
+      "DS1102 Held.stop certain",
+      "DS1003 Other.run certain",
+    ]);
+  });
+});
+
+describe("a declaration a test file's runner-called export reaches", () => {
+  it("keeps its narrowing finding, since a test reach names it from no other file", () => {
+    const report = analyzed({
+      "package.json": JSON.stringify({ name: "@example/app", private: true, type: "module" }),
+      "deadset.json": JSON.stringify({
+        target: { kind: "application" },
+        ts: { entry_files: ["src/main.ts"], test_files: ["tests/run.test.ts"] },
+      }),
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: {
+          strict: true,
+          module: "NodeNext",
+          moduleResolution: "nodenext",
+          noEmit: true,
+          allowImportingTsExtensions: true,
+        },
+        include: ["**/*.ts"],
+      }),
+      "src/make.ts": [
+        "export class Kept {",
+        "  run(): void {}",
+        "}",
+        "export function make() {",
+        "  return { kept: Kept };",
+        "}",
+        "console.log(new Kept());",
+        "",
+      ].join("\n"),
+      "src/main.ts": 'import { make } from "./make.ts";\nconsole.log(make);\n',
+      "tests/run.test.ts":
+        'import { make } from "../src/make.ts";\nexport function load() {\n  return make();\n}\n',
+    });
+
+    expect(lines(report).filter((line) => line.includes("Kept"))).toEqual([
+      "DS1503 Kept certain",
+      "DS1102 Kept.run certain",
+    ]);
+  });
+});

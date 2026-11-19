@@ -256,6 +256,35 @@ describe("explain's answer for a declaration no finding names", () => {
   );
 
   it(
+    "counts the test reach of a test file two configurations hold once",
+    () => {
+      const got = explain(
+        {
+          "package.json": '{ "name": "@example/app", "private": true, "type": "module" }\n',
+          "deadset.json":
+            '{ "target": { "kind": "application" }, "ts": { "entry_files": ["src/main.ts"], "test_files": ["tests/run.test.ts"] } }\n',
+          "tsconfig.json":
+            '{ "files": [], "references": [{ "path": "./tsconfig.a.json" }, { "path": "./tsconfig.b.json" }] }\n',
+          "tsconfig.a.json":
+            '{ "compilerOptions": { "strict": true, "module": "nodenext", "moduleResolution": "nodenext", "noEmit": true, "allowImportingTsExtensions": true, "composite": true }, "include": ["src/**/*.ts", "tests/**/*.ts"] }\n',
+          "tsconfig.b.json":
+            '{ "compilerOptions": { "strict": true, "module": "nodenext", "moduleResolution": "nodenext", "noEmit": true, "allowImportingTsExtensions": true, "composite": true }, "include": ["src/**/*.ts", "tests/**/*.ts"] }\n',
+          "src/main.ts": "console.log(1);\n",
+          "tests/support.ts":
+            "export class Fx {\n  go(): void {}\n}\nexport function fixture() {\n  return { fx: Fx };\n}\n",
+          "tests/run.test.ts":
+            'import { fixture } from "./support.ts";\nexport function load() {\n  return fixture();\n}\n',
+        },
+        "--target=.",
+        "--why=Fx.go",
+      ).out;
+
+      expect(got).toContain("with 0 production and 1 test references");
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
     "takes a root's path over a loaded consumer's of the same length",
     () => {
       const got = explain(

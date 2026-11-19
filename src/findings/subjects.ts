@@ -204,6 +204,10 @@ function visibilityOf(graph: Graph): Visibility {
     }
   });
   const named = graph.made.map((counts) => counts.production + counts.test);
+  // A test root's count names the declaration from no file, so it widens no reach.
+  for (const one of graph.testRooted) {
+    named[one.at] = (named[one.at] ?? 1) - 1;
+  }
   named.forEach((count, at) => {
     if (count > (inGraph[at] ?? 0)) {
       reach[at] = "outside";

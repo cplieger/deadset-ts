@@ -155,7 +155,15 @@ export function matrixOf(per: readonly Configured[]): Matrix {
       [...new Set(per.flatMap((one) => one.testFiles))],
       [...new Set(per.flatMap((one) => one.supportFiles ?? []))],
       new Set(per.flatMap((one) => [...(one.ambient ?? [])])),
-      { unjudged, configurations: makers, testRoots: per.flatMap((one) => one.testRoots ?? []) },
+      {
+        unjudged,
+        configurations: makers,
+        testRoots: [
+          ...new Map(
+            per.flatMap((one) => one.testRoots ?? []).map((root) => [root.id, root]),
+          ).values(),
+        ],
+      },
     ),
     heldIn: symbols.map((symbol) => holders.get(symbol.id) ?? []),
     testUsed: symbols.map((symbol) => testUsed.has(symbol.position.path)),
