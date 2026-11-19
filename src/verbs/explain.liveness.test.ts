@@ -225,6 +225,27 @@ describe("explain's answer for a declaration no finding names", () => {
   );
 
   it(
+    "names the entry reach of a member a value an entry file exports holds",
+    () => {
+      const got = explain(
+        {
+          "package.json": '{ "name": "@example/app", "private": true, "type": "module" }\n',
+          "deadset.json":
+            '{ "target": { "kind": "application" }, "ts": { "entry_files": ["main.ts"] } }\n',
+          "main.ts":
+            "class Held {\n  run(): void {}\n}\n\nexport const plugins = [{ held: Held }];\n",
+        },
+        "--target=.",
+        "--why=Held.run",
+      ).out;
+
+      expect(got).toContain("answer: live\n");
+      expect(got).toContain("  root: entry-reach\n");
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
     "counts a reference two configurations make once",
     () => {
       expect(explain(LIBRARY, "--target=.", "--why-not=deadTwo").out).toContain(

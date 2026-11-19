@@ -433,7 +433,7 @@ describe("a module augmentation of a dependency's class", () => {
     "main.ts": [
       'import "./aug.js";',
       'import { Base } from "base-pkg";',
-      "export class C extends Base {",
+      "class C extends Base {",
       "  run(): void {}",
       "  extra(): void {}",
       "  own(): void {}",

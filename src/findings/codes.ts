@@ -10,11 +10,11 @@ import { CODE } from "../contract/contract.generated.ts";
 import type { InventorySymbol, SymbolKind } from "../inventory.ts";
 import { OUTSIDE } from "../liveness/graph.ts";
 import { runnerCalls, type Candidate } from "../liveness/sweep.ts";
-import type { RootKind } from "../roots/root-set.ts";
+import { entersByExports, type RootKind } from "../roots/root-set.ts";
 import { exposedTypes, exposes } from "../exposure.ts";
 import { declarationKey } from "../ref.ts";
 import type { EmitterInput } from "./emitter.ts";
-import { PUBLISHING, publishes, subjectsOf, type Subjects } from "./subjects.ts";
+import { publishes, subjectsOf, type Subjects } from "./subjects.ts";
 
 /** The codes a table gives one run's declarations, by declaration id. */
 interface Codes {
@@ -42,12 +42,6 @@ function isSignature(kind: SymbolKind | undefined): boolean {
 }
 
 /**
- * The root kinds that name a file without entering it by its exports: a configuration
- * string or a script token runs the file, and no tool reads a name it exports.
- */
-const RUN_ONLY: ReadonlySet<RootKind> = new Set<RootKind>(["configuration-string", "script"]);
-
-/**
  * The root kinds whose root of a file enters no export by name: a document's import roots
  * each export it imports, so an export it does not import is judged as in any file.
  */
@@ -55,7 +49,7 @@ const PER_NAME: ReadonlySet<RootKind> = new Set<RootKind>(["document-import"]);
 
 /** Whether a root makes its file an entry file, or its declaration an entry, which a tool may read by name. */
 function entersByName(kinds: ReadonlySet<RootKind> | undefined): boolean {
-  return [...(kinds ?? [])].some((kind) => !PUBLISHING.has(kind) && !RUN_ONLY.has(kind));
+  return [...(kinds ?? [])].some(entersByExports);
 }
 
 /**
@@ -67,7 +61,7 @@ function fileEntersByName(
   symbol: InventorySymbol,
 ): boolean {
   const entering = [...(kinds ?? [])].filter(
-    (kind) => !PUBLISHING.has(kind) && !RUN_ONLY.has(kind) && !PER_NAME.has(kind),
+    (kind) => entersByExports(kind) && !PER_NAME.has(kind),
   );
   return (
     entering.some((kind) => kind !== "test-runner") || (entering.length > 0 && runnerCalls(symbol))

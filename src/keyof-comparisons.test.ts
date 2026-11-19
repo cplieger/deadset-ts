@@ -7,7 +7,7 @@ describe("a literal compared with a value declared as a key of a type", () => {
       "main.ts": [
         "interface Payloads { ordinary: string; changed: undefined; switched: number; idle: boolean }",
         "interface Frame { type: keyof Payloads }",
-        "export function deliver(evt: Frame): string {",
+        "function deliver(evt: Frame): string {",
         '  if (evt.type === "changed") {',
         '    return "refetch";',
         "  }",
@@ -17,6 +17,7 @@ describe("a literal compared with a value declared as a key of a type", () => {
         "  }",
         '  return "dispatch";',
         "}",
+        "console.log(deliver);",
         "",
       ].join("\n"),
     });

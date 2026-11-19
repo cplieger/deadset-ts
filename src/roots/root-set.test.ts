@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { nodeHost } from "../../bin/node-host.ts";
 import { fixture, readFixture } from "../../__test-helpers__/fixtures.ts";
 import {
@@ -354,6 +354,165 @@ describe("the published API of a library target", () => {
     });
 
     expect(rootLines(application).filter((line) => line.endsWith(" published-api"))).toEqual([]);
+  });
+});
+
+describe("the types a value an entry file exports reaches", () => {
+  const holding = (name: string): string =>
+    [
+      `class ${name} {`,
+      "  static made = 1;",
+      "  run(): number {",
+      `    return ${name}.made;`,
+      "  }",
+      "  protected guarded(): void {}",
+      "  #spare(): void {}",
+      "}",
+      "",
+    ].join("\n");
+  const root = writeProject({
+    "package.json": `${JSON.stringify({
+      name: "@example/app",
+      private: true,
+      type: "module",
+      workspaces: ["packages/*"],
+      dependencies: { next: "16.0.0" },
+      scripts: { build: "next build", seed: "node scripts/seed.ts" },
+    })}\n`,
+    "deadset.json": `${JSON.stringify({
+      target: { kind: "application" },
+      ts: { entry_files: ["scripts/reporter.ts"] },
+    })}\n`,
+    "node_modules/next/package.json":
+      '{ "name": "next", "version": "16.0.0", "bin": { "next": "./cli.js" } }\n',
+    "node_modules/next/cli.js": "",
+    "scripts/reporter.ts": `${holding("Reporter")}export const plugins = [{ kind: "Reporter", injectableClass: Reporter }];\n`,
+    "app/page.ts": `${holding("Route")}export const route = { handler: Route };\n`,
+    "tool.config.ts": `${holding("Plugin")}export default { plugins: [new Plugin()] };\n`,
+    "docs/guide.mdx": 'import { widget } from "../src/widget.ts";\n\n<widget.View />\n',
+    "src/widget.ts": `${holding("View")}export const widget = { View };\n`,
+    "scripts/seed.ts": `${holding("Seeder")}export const seeder = { make: Seeder };\n`,
+    ".toolrc.json": '{ "plugin": "./src/strung.ts" }\n',
+    "src/strung.ts": `${holding("Strung")}export const strung = { make: Strung };\n`,
+    "packages/kit/package.json":
+      '{ "name": "@example/kit", "type": "module", "exports": { ".": "./src/index.ts" } }\n',
+    "packages/kit/src/index.ts": `${holding("Kit")}export const kit = { factory: Kit };\n`,
+  });
+  const reached = (kind: string): string[] =>
+    runOver(root)
+      .roots.filter((one) => one.kind === kind)
+      .map((one) => one.ref.slice(one.ref.indexOf("#") + 1))
+      .sort();
+
+  afterAll(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("roots the static, public and protected members of a class an entry-file, a convention, a configuration-file or a document-import export holds", () => {
+    expect(reached("entry-reach")).toEqual([
+      "Plugin",
+      "Plugin.guarded",
+      "Plugin.made:static",
+      "Plugin.run",
+      "Reporter",
+      "Reporter.guarded",
+      "Reporter.made:static",
+      "Reporter.run",
+      "Route",
+      "Route.guarded",
+      "Route.made:static",
+      "Route.run",
+      "View",
+      "View.guarded",
+      "View.made:static",
+      "View.run",
+    ]);
+  });
+
+  it("roots nothing a file only a script or a configuration string names exports, and reaches a published file's as published API", () => {
+    expect(reached("entry-reach").filter((ref) => /Seeder|Strung|Kit/u.test(ref))).toEqual([]);
+    expect(reached("published-api").filter((ref) => ref.startsWith("Kit"))).toEqual([
+      "Kit",
+      "Kit.guarded",
+      "Kit.made:static",
+      "Kit.run",
+    ]);
+  });
+});
+
+describe("the files an entry file's export reaches from", () => {
+  const held = (name: string): string => `class ${name} {\n  run(): void {}\n}\n`;
+  const root = writeProject({
+    "package.json": `${JSON.stringify({
+      name: "@example/app",
+      private: true,
+      type: "module",
+      bin: { tool: "./bin/tool.ts" },
+    })}\n`,
+    "deadset.json": `${JSON.stringify({ target: { kind: "application" } })}\n`,
+    ".github/workflows/ci.yaml":
+      "on: push\njobs:\n  job:\n    runs-on: ubuntu-latest\n    steps:\n      - run: node scripts/job.ts\n",
+    "index.html": [
+      '<script type="module" src="./src/page.ts"></script>',
+      '<script type="module">import { panels } from "./src/panels.ts";</script>',
+      "",
+    ].join("\n"),
+    "bin/tool.ts": `${held("Tool")}export const tool = { make: Tool };\n`,
+    "scripts/job.ts": `${held("Job")}export const job = { make: Job };\n`,
+    "src/page.ts": `${held("Page")}export const page = { make: Page };\n`,
+    "src/panels.ts": [
+      held("Panel"),
+      "export const panels = [{ widget: Panel }];",
+      held("Spare"),
+      "export const spare = { widget: Spare };",
+      "",
+    ].join("\n"),
+  });
+  let roots: string[] | undefined;
+  const reached = (pattern: RegExp): string[] => {
+    roots ??= runOver(root)
+      .roots.filter((one) => one.kind === "entry-reach")
+      .map((one) => one.ref.slice(one.ref.indexOf("#") + 1))
+      .sort();
+    return roots.filter((ref) => pattern.test(ref));
+  };
+
+  afterAll(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("reaches nothing a file only a manifest's bin, a workflow step or an HTML script's src names exports", () => {
+    expect(reached(/^(?:Tool|Job|Page)/u)).toEqual([]);
+  });
+
+  it("reaches what each export of a file an inline module script of an HTML file imports holds", () => {
+    expect(reached(/^(?:Panel|Spare)/u)).toEqual(["Panel", "Panel.run", "Spare", "Spare.run"]);
+  });
+});
+
+describe("the results of a function an entry file's default export is", () => {
+  const root = writeProject({
+    "package.json": `${JSON.stringify({ name: "@example/app", private: true, type: "module" })}\n`,
+    "deadset.json": `${JSON.stringify({
+      target: { kind: "application" },
+      ts: { entry_files: ["arrow.ts", "wrapped.ts"] },
+    })}\n`,
+    "arrow.ts": "class Arrowed {\n  run(): void {}\n}\nexport default () => ({ held: Arrowed });\n",
+    "wrapped.ts":
+      "class Wrapped {\n  run(): void {}\n}\nexport default (function () {\n  return { held: Wrapped };\n});\n",
+  });
+
+  afterAll(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("reaches the class each literal it returns holds, inside parentheses too", () => {
+    expect(
+      runOver(root)
+        .roots.filter((one) => one.kind === "entry-reach")
+        .map((one) => one.ref.slice(one.ref.indexOf("#") + 1))
+        .sort(),
+    ).toEqual(["Arrowed", "Arrowed.run", "Wrapped", "Wrapped.run"]);
   });
 });
 

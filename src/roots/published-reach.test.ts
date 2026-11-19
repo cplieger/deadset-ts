@@ -432,3 +432,152 @@ describe("a value a published function returns", () => {
     ).toEqual(["DS1003 Full.version possible", "DS1003 Full.date possible"]);
   });
 });
+
+describe("a class a published object or array literal holds", () => {
+  it("publishes its static and public members, through an array, a nested literal and a default export", () => {
+    const report = analyzed({
+      "package.json": JSON.stringify({
+        name: "@example/lib",
+        type: "module",
+        exports: "./src/index.ts",
+      }),
+      "deadset.json": JSON.stringify({ target: { kind: "library" } }),
+      "src/index.ts": [
+        "class Held {",
+        "  static make(): Held {",
+        "    return new Held();",
+        "  }",
+        "  run(): void {}",
+        "  #spare(): void {}",
+        "}",
+        "class Listed {",
+        "  run(): void {}",
+        "}",
+        "class Nested {",
+        "  run(): void {}",
+        "}",
+        "class Defaulted {",
+        "  run(): void {}",
+        "}",
+        "class Unheld {",
+        "  run(): void {}",
+        "}",
+        "export const object = { held: Held };",
+        "export const list = [{ held: Listed }];",
+        "export const nested = { inner: { held: Nested } };",
+        "export default { held: Defaulted };",
+        "",
+      ].join("\n"),
+    });
+
+    expect(lines(report).filter((line) => !line.startsWith("DS1001 "))).toEqual([
+      "DS1003 Held.make possible",
+      "DS1003 Held.run possible",
+      "DS1003 Held.#spare certain",
+      "DS1003 Listed.run possible",
+      "DS1003 Nested.run possible",
+      "DS1003 Defaulted.run possible",
+      "DS1002 Unheld certain",
+    ]);
+  });
+
+  it("publishes what a default-exported arrow returns", () => {
+    const report = analyzed({
+      "package.json": JSON.stringify({
+        name: "@example/lib",
+        type: "module",
+        exports: "./src/index.ts",
+      }),
+      "deadset.json": JSON.stringify({ target: { kind: "library" } }),
+      "src/index.ts": [
+        "class Arrowed {",
+        "  run(): void {}",
+        "}",
+        "export default () => ({ held: Arrowed });",
+        "",
+      ].join("\n"),
+    });
+
+    expect(lines(report).filter((line) => !line.startsWith("DS1001 "))).toEqual([
+      "DS1003 Arrowed.run possible",
+    ]);
+  });
+
+  it("reaches a type's arguments where a literal holds the type at the depth bound and a shallower declaration holds it too", () => {
+    const report = analyzed({
+      "package.json": JSON.stringify({
+        name: "@example/lib",
+        type: "module",
+        exports: "./src/index.ts",
+      }),
+      "deadset.json": JSON.stringify({ target: { kind: "library" } }),
+      "src/index.ts": [
+        "class Held {",
+        "  run(): void {}",
+        "}",
+        "interface Box<T> {",
+        "  v: T;",
+        "}",
+        "declare const box: Box<Held>;",
+        "export const deep = { a: { b: { c: { d: box } } } };",
+        "export function get() {",
+        "  return box;",
+        "}",
+        "",
+      ].join("\n"),
+    });
+
+    expect(lines(report).filter((line) => line.includes("Held"))).toEqual([
+      "DS1003 Held.run possible",
+    ]);
+  });
+});
+
+describe("a class a test file's runner-called export holds", () => {
+  it("keeps the class's members by test evidence only, and nothing another export of the test file holds", () => {
+    const report = analyzed({
+      "package.json": JSON.stringify({ name: "@example/app", private: true, type: "module" }),
+      "deadset.json": JSON.stringify({
+        target: { kind: "application" },
+        ts: { entry_files: ["src/main.ts"], test_files: ["tests/run.test.ts"] },
+      }),
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: {
+          strict: true,
+          module: "NodeNext",
+          moduleResolution: "nodenext",
+          noEmit: true,
+          allowImportingTsExtensions: true,
+        },
+        include: ["**/*.ts"],
+      }),
+      "src/held.ts": [
+        "export class Held {",
+        "  run(): void {}",
+        "}",
+        "export class Other {",
+        "  run(): void {}",
+        "}",
+        "",
+      ].join("\n"),
+      "src/main.ts": [
+        'import { Held, Other } from "./held.ts";',
+        "console.log(new Held(), new Other());",
+        "",
+      ].join("\n"),
+      "tests/run.test.ts": [
+        'import { Held, Other } from "../src/held.ts";',
+        "export function load() {",
+        "  return { held: Held };",
+        "}",
+        "export const plugins = { held: Other };",
+        "",
+      ].join("\n"),
+    });
+
+    expect(lines(report).filter((line) => /\b(?:Held|Other)\./u.test(line))).toEqual([
+      "DS1102 Held.run certain",
+      "DS1003 Other.run certain",
+    ]);
+  });
+});

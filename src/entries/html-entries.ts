@@ -25,10 +25,23 @@ import type { SourceFiles } from "../source-files.ts";
 import { filesBelow } from "../fs/tree.ts";
 import { holdsManifest } from "../fs/manifest.ts";
 
-/** One file a script loads, and the value or specifier that named it. */
+/** One file a script loads, the value or specifier that named it, and the form that named it. */
 interface HTMLEntry {
   readonly file: SourceFile;
   readonly source: string;
+  readonly form: ScriptForm;
+}
+
+/**
+ * How a script names a file: by a `src` value, which runs the file and reads no export, or
+ * by an import or a re-export of an inline module script.
+ */
+type ScriptForm = "src" | "import";
+
+/** One value a script names a file by, and the form it is written in. */
+interface ScriptValue {
+  readonly value: string;
+  readonly form: ScriptForm;
 }
 
 /** A `<script` start tag, its attribute text captured. */
@@ -72,20 +85,24 @@ function specifiersOf(parse: ParseFile, fileName: string, content: string): read
  * module script or of a classic one, or each specifier an inline module script imports or
  * re-exports that starts with `/`, `./` or `../`.
  */
-function scriptValues(parse: ParseFile | undefined, path: string, text: string): readonly string[] {
-  const values: string[] = [];
+function scriptValues(
+  parse: ParseFile | undefined,
+  path: string,
+  text: string,
+): readonly ScriptValue[] {
+  const values: ScriptValue[] = [];
   for (const match of text.matchAll(SCRIPT_TAG)) {
     const held = attributes(match[1] ?? "");
     const type = held.get("type");
     const src = held.get("src");
     if (type !== "module") {
       if (src !== undefined && (type === undefined || CLASSIC_TYPES.has(type.toLowerCase()))) {
-        values.push(src);
+        values.push({ value: src, form: "src" });
       }
       continue;
     }
     if (src !== undefined) {
-      values.push(src);
+      values.push({ value: src, form: "src" });
       continue;
     }
     if (parse === undefined) {
@@ -96,7 +113,9 @@ function scriptValues(parse: ParseFile | undefined, path: string, text: string):
     const end = rest.search(SCRIPT_END);
     const content = end === -1 ? rest : rest.slice(0, end);
     values.push(
-      ...specifiersOf(parse, `${path}.${String(start)}.ts`, content).filter(isExplicitPath),
+      ...specifiersOf(parse, `${path}.${String(start)}.ts`, content)
+        .filter(isExplicitPath)
+        .map((value) => ({ value, form: "import" as const })),
     );
   }
   return values;
@@ -131,7 +150,7 @@ export function htmlEntries(
       continue;
     }
     const dir = dirnamePath(path);
-    for (const value of scriptValues(parse, path, text)) {
+    for (const { value, form } of scriptValues(parse, path, text)) {
       // A value with a scheme, or one starting `//`, names a resource on another origin.
       if (value.startsWith("//") || hasURLScheme(value)) {
         continue;
@@ -141,7 +160,7 @@ export function htmlEntries(
       const reached = resolveRelativeSpecifier(host, base, relative);
       const file = reached === undefined ? undefined : files.byName.get(reached);
       if (file !== undefined) {
-        found.push({ file, source: value });
+        found.push({ file, source: value, form });
         continue;
       }
       const served = isAbsolutePath(value)
@@ -151,7 +170,7 @@ export function htmlEntries(
         files.named(resolvePath(against, relative)),
       );
       for (const one of new Set(emitting)) {
-        found.push({ file: one, source: value });
+        found.push({ file: one, source: value, form });
       }
     }
   }

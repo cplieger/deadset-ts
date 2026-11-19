@@ -7,6 +7,7 @@
 import {
   isArrowFunction,
   isAssertionExpression,
+  isExportAssignment,
   isExpressionWithTypeArguments,
   isFunctionLikeDeclaration,
   isIdentifier,
@@ -24,6 +25,7 @@ import {
   isVariableStatement,
   SyntaxKind,
   type Expression,
+  type FunctionLikeDeclaration,
   type Node,
   type ObjectLiteralExpression,
   type SourceFile,
@@ -34,7 +36,7 @@ import { isGlobalBlock } from "../augmentations.ts";
 import { nodeKey, type Inventory, type InventorySymbol } from "../inventory.ts";
 import { UNANSWERED } from "../query.ts";
 import type { ProjectView } from "../session.ts";
-import type { Symbol as TSSymbol, Type } from "@typescript/native/sync";
+import { SymbolFlags, type Symbol as TSSymbol, type Type } from "@typescript/native/sync";
 
 /** A release tag of a documentation comment: `@` and its name, between white space or the ends. */
 const RELEASE_TAG = /(?:^|\s)@(?:public|beta|alpha)(?=\s|$)/u;
@@ -100,6 +102,49 @@ export function publishedAPI<Brand>(
 ): { readonly ids: readonly string[]; readonly guessed: readonly string[] } {
   const byId = new Map(held.symbols.map((symbol) => [symbol.id, symbol]));
   const children = childrenOf(held);
+  const files = new Set(held.symbols.filter((one) => one.kind === "file").map((one) => one.id));
+  const blocks = held.symbols.filter((one) => isGlobalBlock(one, files));
+  const fileOf = (id: string): string | undefined => {
+    let at = byId.get(id);
+    while (at !== undefined && at.kind !== "file") {
+      at = byId.get(at.parent);
+    }
+    return at?.id;
+  };
+  const publishedFiles = published.flatMap(
+    (file) => held.declarations.get(nodeKey(file, file)) ?? [],
+  );
+  const seeds = [...tagged, ...published.flatMap((file) => exportsOf.get(file.fileName) ?? [])];
+  return reachedTypes(project, held, byPath, seeds, (reached, reach) => {
+    const typed = new Set([...publishedFiles, ...[...reached].flatMap((id) => fileOf(id) ?? [])]);
+    for (const block of blocks.filter((one) => typed.has(one.parent))) {
+      reach(block.id);
+      for (const member of children.get(block.id) ?? []) {
+        if (member.kind !== "type-parameter") {
+          reach(member.id);
+        }
+      }
+    }
+  });
+}
+
+/**
+ * Every declaration a value of the `seeds` carries to code that holds it, the seeds
+ * included and a file excluded: a namespace's or a file's exported members and any other
+ * declaration's public and protected ones; a declaration one reached writes as a type or
+ * the compiler infers for it; and, as `guessed`, each declaration spelled as a type name
+ * the checker leaves unanswered. `grow`, called each time the walk runs out, may reach
+ * more, and the walk goes on while it does.
+ */
+export function reachedTypes<Brand>(
+  project: ProjectView<Brand>,
+  held: Inventory,
+  byPath: ReadonlyMap<string, SourceFile>,
+  seeds: readonly string[],
+  grow?: (reached: ReadonlySet<string>, reach: (id: string) => void) => void,
+): { readonly ids: readonly string[]; readonly guessed: readonly string[] } {
+  const byId = new Map(held.symbols.map((symbol) => [symbol.id, symbol]));
+  const children = childrenOf(held);
   const nodes = declarationNodes(held, byPath);
   const chains = aliasChains(project, held);
   const reached = new Set<string>();
@@ -113,38 +158,12 @@ export function publishedAPI<Brand>(
       pending.push(id);
     }
   };
-  for (const id of tagged) {
+  for (const id of seeds) {
     reach(id);
   }
-  for (const file of published) {
-    for (const id of exportsOf.get(file.fileName) ?? []) {
-      reach(id);
-    }
-  }
-  const files = new Set(held.symbols.filter((one) => one.kind === "file").map((one) => one.id));
-  const blocks = held.symbols.filter((one) => isGlobalBlock(one, files));
-  const fileOf = (id: string): string | undefined => {
-    let at = byId.get(id);
-    while (at !== undefined && at.kind !== "file") {
-      at = byId.get(at.parent);
-    }
-    return at?.id;
-  };
-  const publishedFiles = published.flatMap(
-    (file) => held.declarations.get(nodeKey(file, file)) ?? [],
-  );
-  const globalsReached = (): boolean => {
-    const typed = new Set([...publishedFiles, ...[...reached].flatMap((id) => fileOf(id) ?? [])]);
-    const before = pending.length;
-    for (const block of blocks.filter((one) => typed.has(one.parent))) {
-      reach(block.id);
-      for (const member of children.get(block.id) ?? []) {
-        if (member.kind !== "type-parameter") {
-          reach(member.id);
-        }
-      }
-    }
-    return pending.length > before;
+  const grown = (): boolean => {
+    grow?.(reached, reach);
+    return pending.length > 0;
   };
   do {
     while (pending.length > 0) {
@@ -198,7 +217,7 @@ export function publishedAPI<Brand>(
         }
       });
     }
-  } while (globalsReached());
+  } while (grown());
   return { ids: [...reached], guessed: [...guessed] };
 }
 
@@ -243,7 +262,10 @@ function declarationNodes(
   };
 }
 
-/** How deep the type arguments and constituents of an inferred type are followed. */
+/** The symbols of an anonymous object type a literal or a type literal writes. */
+const LITERAL_SYMBOLS = SymbolFlags.ObjectLiteral | SymbolFlags.TypeLiteral;
+
+/** How deep the type arguments, constituents and literal property types of an inferred type are followed. */
 const INFERRED_DEPTH = 4;
 
 /**
@@ -336,33 +358,50 @@ function returnedThroughLiterals(body: Node, depth = 0): readonly Expression[] {
 }
 
 /**
+ * The function a declaration is or holds: its own, a variable's initializer or a default
+ * export's expression inside its parentheses.
+ */
+function functionOf(node: Node): FunctionLikeDeclaration | undefined {
+  let held: Node | undefined = isFunctionLikeDeclaration(node)
+    ? node
+    : isVariableDeclaration(node)
+      ? node.initializer
+      : isExportAssignment(node)
+        ? node.expression
+        : undefined;
+  while (held !== undefined && isParenthesizedExpression(held)) {
+    held = held.expression;
+  }
+  return held !== undefined && isFunctionLikeDeclaration(held) ? held : undefined;
+}
+
+/**
  * The declarations of the types the compiler infers where a declaration writes none, and
  * of the values a function returns: the type of a variable or a property with no
- * annotation, the result of a function or a method with no result annotation, and the type
- * of each value its body returns, each with the types its type arguments and its union or
- * intersection constituents name, to a fixed depth; and as `members` the properties of each
- * returned value's type. A question the checker leaves unanswered names nothing.
+ * annotation or of a default export's expression, the result of a function or a method
+ * with no result annotation, and the type of each value its body returns, each with the
+ * types its type arguments, its union or intersection constituents and, for an object or
+ * array literal's type, its properties name, to a fixed depth, so a class a literal holds
+ * is reached by its constructor type; and as `members` the properties of each returned
+ * value's type. A question the checker leaves unanswered names nothing.
  */
 function inferredTypeSymbols<Brand>(
   project: ProjectView<Brand>,
   declarations: readonly Node[],
 ): { readonly types: readonly TSSymbol[]; readonly members: readonly TSSymbol[] } {
   const { queries } = project;
-  const valued: Node[] = declarations.flatMap((node) =>
-    (isVariableDeclaration(node) || isPropertyDeclaration(node)) &&
-    node.type === undefined &&
-    !isFunctionLikeDeclaration(node.initializer ?? node)
+  const valued = declarations.flatMap((node): readonly Node[] => {
+    if (isExportAssignment(node)) {
+      return functionOf(node) === undefined ? [node.expression] : [];
+    }
+    return (isVariableDeclaration(node) || isPropertyDeclaration(node)) &&
+      node.type === undefined &&
+      !isFunctionLikeDeclaration(node.initializer ?? node)
       ? [node.name]
-      : [],
-  );
+      : [];
+  });
   const returned = declarations.flatMap((node) => {
-    const signature = isFunctionLikeDeclaration(node)
-      ? node
-      : isVariableDeclaration(node) &&
-          node.initializer !== undefined &&
-          isFunctionLikeDeclaration(node.initializer)
-        ? node.initializer
-        : undefined;
+    const signature = functionOf(node);
     return signature?.body === undefined ? [] : returnedThroughLiterals(signature.body);
   });
   const types: Type[] = [];
@@ -374,14 +413,8 @@ function inferredTypeSymbols<Brand>(
   });
   types.push(...returnedTypes);
   for (const node of declarations) {
-    const signature = isFunctionLikeDeclaration(node)
-      ? node
-      : isVariableDeclaration(node) &&
-          node.type === undefined &&
-          node.initializer !== undefined &&
-          isFunctionLikeDeclaration(node.initializer)
-        ? node.initializer
-        : undefined;
+    const signature =
+      isVariableDeclaration(node) && node.type !== undefined ? undefined : functionOf(node);
     if (signature === undefined || signature.type !== undefined || signature.body === undefined) {
       continue;
     }
@@ -393,12 +426,14 @@ function inferredTypeSymbols<Brand>(
     }
   }
   const found = new Map<number, TSSymbol>();
-  const seen = new Set<Type>();
+  // Each type keeps the shallowest depth it was met at: a literal can meet a type at the
+  // bound before a shallower path does, and that path must still follow its parts.
+  const seen = new Map<Type, number>();
   const visit = (type: Type, depth: number): void => {
-    if (depth > INFERRED_DEPTH || seen.has(type)) {
+    if (depth > INFERRED_DEPTH || (seen.get(type) ?? INFERRED_DEPTH + 1) <= depth) {
       return;
     }
-    seen.add(type);
+    seen.set(type, depth);
     const symbol = queries.symbolOfType(type);
     if (symbol !== UNANSWERED && symbol !== undefined) {
       found.set(symbol.id, symbol);
@@ -408,9 +443,24 @@ function inferredTypeSymbols<Brand>(
     for (const next of [
       ...(parts === UNANSWERED || (parts.length === 1 && parts[0] === type) ? [] : parts),
       ...(args === UNANSWERED ? [] : args),
+      ...propertyTypes(type, symbol),
     ]) {
       visit(next, depth + 1);
     }
+  };
+  // An anonymous literal type has no declaration of its own to reach, so its properties'
+  // types are read here; a named type's properties are its members, which the walk reaches.
+  const propertyTypes = (type: Type, symbol: TSSymbol | undefined | typeof UNANSWERED): Type[] => {
+    if (symbol === UNANSWERED || symbol === undefined || (symbol.flags & LITERAL_SYMBOLS) === 0) {
+      return [];
+    }
+    const properties = queries.propertiesOf(type);
+    if (properties === UNANSWERED) {
+      return [];
+    }
+    return queries
+      .typesOfSymbols(properties)
+      .flatMap((one) => (one === UNANSWERED || one === undefined ? [] : [one]));
   };
   types.forEach((type) => {
     visit(type, 0);

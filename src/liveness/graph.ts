@@ -40,11 +40,11 @@ const SWEPT: Readonly<Record<SymbolKind, boolean>> = {
 
 /**
  * Whether a root of each kind names a caller, which holds it live under both relations: a
- * tool reads what it loads and what its strings name, a runtime runs a test or setup
- * file, a page's module script, a command, a script or a workflow step, the manifest
- * names what enters the package, an alias global stands for its export, an outside
- * declaration names a global interface merging into it, and an entry file, a configured root
- * and a pattern assert a caller. A published API supposes a consumer: reachability alone.
+ * tool reads what it loads and its strings name, a runtime runs a test or setup file, a
+ * page's module script, a command, a script or a workflow step, the manifest names what
+ * enters the package, an alias global stands for its export, an outside declaration names
+ * a merging global interface, an entry file's loader may name what its exports carry, and
+ * an entry file, a configured root and a pattern assert a caller. A published API does not.
  */
 const NAMES_A_CALLER: Readonly<Record<RootKind, boolean>> = {
   "entry-file": true,
@@ -53,6 +53,8 @@ const NAMES_A_CALLER: Readonly<Record<RootKind, boolean>> = {
   "manifest-binary": true,
   script: true,
   "published-api": false,
+  "entry-reach": true,
+  "test-reach": true,
   configured: true,
   pattern: true,
   "type-error": true,
@@ -63,6 +65,7 @@ const NAMES_A_CALLER: Readonly<Record<RootKind, boolean>> = {
   "bundler-entry": true,
   "test-runner": true,
   "html-entry": true,
+  "html-import": true,
   "workflow-step": true,
   "document-import": true,
 };
@@ -162,6 +165,8 @@ export interface Graph {
   readonly exportsOf: readonly (readonly number[])[];
   /** Every root naming a declaration the inventory holds, in the order the root set gives them. */
   readonly rooted: readonly Rooted[];
+  /** Every root a test runner holds, which only the run that counts test references seeds, each counted as a test reference. */
+  readonly testRooted: readonly Rooted[];
   /**
    * Every reference a loaded consumer, an unheld file or a declaration no configuration
    * judges makes to a declaration the inventory holds, in the order given. Such code is a
@@ -183,6 +188,8 @@ interface Sources {
   readonly unjudged?: ReadonlySet<string>;
   /** Per reference, in the order given, the configurations that make it. */
   readonly configurations?: readonly (readonly string[])[];
+  /** The roots only the run that counts test references reads ({@link Graph.testRooted}). */
+  readonly testRoots?: readonly Root[];
 }
 
 /** Whether one declaration is a value `namespace`, rather than a module block or a global augmentation. */
@@ -325,11 +332,18 @@ export function graphOf(
   const parent = symbols.map((symbol) => at(symbol.parent));
   const exportsOf = wholeReads(symbols, parent);
 
-  const rooted: Rooted[] = [];
-  for (const root of roots) {
-    const position = at(root.id);
-    if (position !== OUTSIDE) {
-      rooted.push({ at: position, kind: root.kind, source: root.source });
+  const placed = (list: readonly Root[]): Rooted[] =>
+    list.flatMap((root) => {
+      const position = at(root.id);
+      return position === OUTSIDE ? [] : [{ at: position, kind: root.kind, source: root.source }];
+    });
+  const rooted = placed(roots);
+  const testRooted = placed(sources.testRoots ?? []);
+  // The test runner holding the value names what it reaches, which is a test reference (tests.3).
+  for (const one of testRooted) {
+    const counts = made[one.at];
+    if (counts !== undefined) {
+      count(counts, true, false);
     }
   }
 
@@ -348,6 +362,7 @@ export function graphOf(
     subject: symbols.map((symbol) => swept(symbol.kind)),
     exportsOf,
     rooted,
+    testRooted,
     consumed,
     at,
   };

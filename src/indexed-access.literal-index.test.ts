@@ -9,7 +9,8 @@ describe("a member a literal index names", () => {
         'type ByString = Payload["a"];',
         'type ByUnion = Payload[("b" | "c")];',
         "type ByNumber = Payload[0];",
-        'export const read: [ByString, ByUnion, ByNumber] = ["a", 1, "0"];',
+        'const read: [ByString, ByUnion, ByNumber] = ["a", 1, "0"];',
+        "console.log(read);",
         "",
       ].join("\n"),
     });
@@ -25,7 +26,7 @@ describe("a member a literal index names", () => {
       "main.ts": [
         "declare function createStore<M>(): { get<K extends keyof M>(key: K): M[K] };",
         "interface ByIndex { 0: string; 1: string }",
-        "export const first = createStore<ByIndex>().get(0);",
+        "console.log(createStore<ByIndex>().get(0));",
         "",
       ].join("\n"),
     });

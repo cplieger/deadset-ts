@@ -741,6 +741,9 @@ function readRun<Extra>(
       symbols: projectRead.held.symbols,
       references: made,
       roots: projectRead.rooted.liveUnderReachability,
+      ...(projectRead.rooted.reachedByTests.length === 0
+        ? {}
+        : { testRoots: projectRead.rooted.reachedByTests }),
       testFiles: [...one.testFiles, ...supportFiles],
       ...(supportFiles.length === 0 ? {} : { supportFiles }),
       ...(testUsedFiles.length === 0 ? {} : { testUsedFiles }),
