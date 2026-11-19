@@ -31,7 +31,7 @@ function findings(files: Readonly<Record<string, string>>): string[] {
 }
 
 const READ_BACK =
-  "interface Partial {\n  uploaded: string[];\n  skipped: string[];\n}\nexport const make = (u: string[]): unknown => ({ uploaded: u, skipped: u }) satisfies Partial;\n";
+  "interface Partial {\n  uploaded: string[];\n  skipped: string[];\n}\nexport const make = (u: string[]): Partial => ({ uploaded: u, skipped: u }) satisfies Partial;\n";
 
 describe("a member an in expression tests by name", () => {
   it("is reported at possible at most, and a member no in expression names is not", () => {

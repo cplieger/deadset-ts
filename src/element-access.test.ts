@@ -145,7 +145,7 @@ describe("an element access whose index the compiler types as literals", () => {
     const found = treeFindings({
       "main.ts": [
         "interface Doc { title: string; author: string; draft: string }",
-        "function field<T>(of: T, key: keyof T): unknown {",
+        "function field<T>(of: T, key: keyof T): T[keyof T] {",
         "  return of[key];",
         "}",
         'const doc: Doc = { title: "t", author: "a", draft: "d" };',

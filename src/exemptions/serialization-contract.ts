@@ -2,7 +2,8 @@
  * The serialization-contract class: the data members and `toJSON` of every type a value's
  * static type reaches, where the value reaches `JSON.stringify` or a call `ts.serializers`
  * names, and `toString` too where it reaches an erased parameter of a function outside the
- * analysis, or an erased property of a type the program does not declare. A function of
+ * analysis, or an erased property of a type the program does not declare, or where the
+ * program converts it, or a part of its type, to `unknown` or `any`. A function of
  * the project handing such a parameter to a destination is one, to a fixpoint, and a
  * function invoked through `call`, `apply` or `bind` is the callee.
  */
@@ -15,6 +16,7 @@ import {
   isBinaryExpression,
   isBindingElement,
   isCallExpression,
+  isConditionalExpression,
   isClassDeclaration,
   isClassExpression,
   isElementAccessExpression,
@@ -871,6 +873,186 @@ function inner(value: Expression): Expression {
   return at;
 }
 
+/**
+ * How many steps the walk from a value's type into its position's reads at most, through
+ * call signatures' results and type arguments.
+ */
+const WIDENING_DEPTH = 4;
+
+/**
+ * One value a position typed `unknown` or `any` takes out of the analysis's sight: the
+ * value whole, where the position's own type erases it, or each part of its type the
+ * position's type erases deeper, such as a function value's result where the position's
+ * call signature returns `unknown`.
+ */
+interface Widened {
+  readonly value: Expression;
+  /** The class `this` stands for, where the value is `this` inside an instance member. */
+  readonly self: string | undefined;
+  /** The type the position erases the value to. */
+  readonly erased: "unknown" | "any";
+  /** The types of the parts of the value the position erases, or none where it erases the value whole. */
+  readonly parts: readonly Type[] | undefined;
+}
+
+/**
+ * Whether a value is the operand of a type assertion or a `satisfies` check, through the
+ * parentheses and the operators it is read through, which convert no value: a `satisfies`
+ * check keeps the operand's type, and an assertion is no position (`references-ts.11`).
+ */
+function assertedOperand(value: Expression): boolean {
+  let up = value.parent;
+  while (
+    isParenthesizedExpression(up) ||
+    isNonNullExpression(up) ||
+    isConditionalExpression(up) ||
+    isBinaryExpression(up)
+  ) {
+    up = up.parent;
+  }
+  return isAsExpression(up) || isSatisfiesExpression(up) || isTypeAssertion(up);
+}
+
+/**
+ * Whether a value is an argument of a call or a `new` expression, or an element of an
+ * array literal or a spread one is, through the parentheses and the operators it is read
+ * through: the destinations of this class read what a call's parameter keeps, a function
+ * of the project's by what its body does with it.
+ */
+function passedValue(value: Expression): boolean {
+  let at: Node = value;
+  let up = value.parent;
+  while (
+    isParenthesizedExpression(up) ||
+    isNonNullExpression(up) ||
+    isConditionalExpression(up) ||
+    isBinaryExpression(up) ||
+    isArrayLiteralExpression(up) ||
+    isSpreadElement(up)
+  ) {
+    at = up;
+    up = up.parent;
+  }
+  return (isCallExpression(up) || isNewExpression(up)) && up.expression !== at;
+}
+
+/**
+ * The values the project hands to a position whose type erases them to `unknown` or
+ * `any`, as `references-ts.11` to `references-ts.13` read a position: the value whole,
+ * where the position's type is `unknown` or `any`, and otherwise each part of the value's
+ * type that reaches one, through each pair of call signatures' results and the type
+ * arguments of two instantiations by place. A value whose own type is `unknown` or `any`
+ * hands over nothing it carries, and neither does an operand of an assertion. An argument
+ * converts only what its call signatures' results reach: what the parameter keeps of it
+ * whole, or through its elements, is the call's destinations' to read.
+ */
+function widenedValues<Brand>(
+  project: ProjectView<Brand>,
+  flows: ProjectSites["flows"],
+): readonly Widened[] {
+  const queries = project.queries;
+  const asked = flows.filter((flow) => !assertedOperand(flow.value));
+  const types = typesAt(
+    project,
+    asked.map((flow) => flow.value),
+  );
+  const carrying = asked.flatMap((flow, at) => {
+    const type = types[at];
+    return type === undefined ||
+      (type.flags & (ERASED | TypeFlags.Primitive | TypeFlags.Never)) !== 0
+      ? []
+      : [{ flow, type }];
+  });
+  const positions = queries.contextualTypes(carrying.map((one) => one.flow.value)).map(must);
+  const constituents = new Map<number, readonly Type[]>();
+  const partsOf = (type: Type): readonly Type[] => {
+    let known = constituents.get(type.id);
+    if (known === undefined) {
+      known = type.isUnionType() ? must(queries.constituents(type)) : [type];
+      constituents.set(type.id, known);
+    }
+    return known;
+  };
+  const results = new Map<number, readonly Type[]>();
+  const resultsOf = (type: Type): readonly Type[] => {
+    let known = results.get(type.id);
+    if (known === undefined) {
+      known = must(queries.signaturesOf(type, SignatureKind.Call)).flatMap(
+        (signature) => must(queries.returnTypeOf(signature)) ?? [],
+      );
+      results.set(type.id, known);
+    }
+    return known;
+  };
+  const argumentsOf = new Map<number, readonly Type[]>();
+  const typeArgumentsOf = (type: Type): readonly Type[] => {
+    let known = argumentsOf.get(type.id);
+    if (known === undefined) {
+      known = must(queries.typeArguments(type));
+      argumentsOf.set(type.id, known);
+    }
+    return known;
+  };
+  const erasure = (type: Type): Widened["erased"] =>
+    (type.flags & TypeFlags.Any) !== 0 ? "any" : "unknown";
+  const found: Widened[] = [];
+  carrying.forEach(({ flow, type }, at) => {
+    const position = positions[at];
+    if (position === undefined) {
+      return;
+    }
+    const passed = passedValue(flow.value);
+    if ((position.flags & ERASED) !== 0) {
+      if (!passed) {
+        found.push({ ...flow, erased: erasure(position), parts: undefined });
+      }
+      return;
+    }
+    const parts: Type[] = [];
+    let erased: Widened["erased"] = "unknown";
+    const seen = new Set<string>();
+    const walk = (source: Type, target: Type, depth: number): void => {
+      if ((source.flags & ERASED) !== 0 || source.id === target.id) {
+        return;
+      }
+      if ((target.flags & ERASED) !== 0) {
+        parts.push(source);
+        erased = erasure(target);
+        return;
+      }
+      const key = `${String(source.id)}>${String(target.id)}`;
+      if (depth >= WIDENING_DEPTH || seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      for (const from of partsOf(source)) {
+        for (const to of partsOf(target)) {
+          const given = passed && depth === 0 ? [] : typeArgumentsOf(to);
+          typeArgumentsOf(from)
+            .slice(0, given.length)
+            .forEach((argument, index) => {
+              const place = given[index];
+              if (place !== undefined) {
+                walk(argument, place, depth + 1);
+              }
+            });
+          const returned = resultsOf(to);
+          for (const result of returned.length === 0 ? [] : resultsOf(from)) {
+            for (const other of returned) {
+              walk(result, other, depth + 1);
+            }
+          }
+        }
+      }
+    };
+    walk(type, position, 0);
+    if (parts.length > 0) {
+      found.push({ ...flow, erased, parts });
+    }
+  });
+  return found;
+}
+
 /** The value of an argument, a spread's operand for a spread. */
 function spreadless(argument: Expression): Expression {
   return isSpreadElement(argument) ? argument.expression : argument;
@@ -1174,6 +1356,7 @@ function flowsOf<Brand>(
   to: Destinations,
   stores: ErasedStores,
   reach: ValueReach,
+  widened: readonly Widened[],
 ): readonly Flow[] {
   const arguments_ = sites.flatMap((site) =>
     to.mayReceive(site.call)
@@ -1277,35 +1460,59 @@ function flowsOf<Brand>(
     return (isCallExpression(at) || isNewExpression(at)) && to.outside(at);
   };
 
+  /**
+   * What one value carries, read at `types`, those of its value or of the part of it a
+   * place takes, with `self` its class where it is `this`: a `new` expression's class is
+   * exactly its type's, and a value code outside the analysis made is not described by
+   * its type, so `outside` reads it as not concrete.
+   */
+  const readValue = (
+    value: Expression,
+    types: readonly Type[],
+    self: Reached,
+    outside: boolean,
+  ): Reached => {
+    const made = isNewExpression(inner(value));
+    const read = types.reduce<Reached>(
+      (all, part) => joined(all, made ? reach.exactly(part) : reach.reachedFrom(part)),
+      self,
+    );
+    return outside ? { ...read, concrete: false } : read;
+  };
+  /** The types one value is read at: its own, those it is checked against, and those stored in the variable it names. */
+  const typesOfValue = (
+    value: Expression,
+    type: Type | undefined,
+    checked: readonly Type[],
+  ): readonly Type[] => [
+    ...(type === undefined ? [] : [type]),
+    ...checked,
+    ...(stores.ofVariable(value) ?? []),
+  ];
+  // A value a destination of its own receives is left to that destination.
+  const destined = new Set<Expression>();
+
   arguments_.forEach((one, index) => {
-    const type = typeOf.get(one.value);
-    const types = [
-      ...(type === undefined ? [] : [type]),
-      ...(checked[index] ?? []),
-      ...(stores.ofVariable(one.value) ?? []),
-    ];
+    const types = typesOfValue(one.value, typeOf.get(one.value), checked[index] ?? []);
     const outside = fromOutside(one.value) && !primitive(project, types);
     for (const { element, types: parts } of partsOf(one, types)) {
       const self =
         element === undefined && ofClass(one) && one.site.self !== undefined
           ? reach.instanceOf(one.site.self)
           : NOTHING;
-      const made = isNewExpression(inner(one.value));
-      const read = parts.reduce<Reached>(
-        (all, part) => joined(all, made ? reach.exactly(part) : reach.reachedFrom(part)),
-        self,
-      );
-      const reached = outside ? { ...read, concrete: false } : read;
+      const reached = readValue(one.value, parts, self, outside);
       const destination =
         carries(reached) || !reached.concrete
           ? to.at(one.site.call, one.argument, element)
           : undefined;
       if (destination !== undefined) {
+        destined.add(one.value);
         place(one.value, reached, destination, `passed to ${destination.callee}`, one.value);
       }
     }
   });
   for (const store of stores.outside) {
+    destined.add(store.value);
     const read = reach.reachedFrom(store.type);
     place(
       store.value,
@@ -1317,6 +1524,44 @@ function flowsOf<Brand>(
       store.value,
     );
   }
+  // A value converted to `unknown` or `any` has left the analysis as one passed to such a
+  // parameter of a function outside it has: whole, read as an argument is, or each part
+  // of its type the position erases, such as what a function value returns.
+  const unseen = widened.filter((one) => !destined.has(one.value));
+  const unseenTypes = typesAt(
+    project,
+    unseen.map((one) => one.value),
+  );
+  const unseenChecked = checkedTypes(
+    project,
+    unseen.map((one) => one.value),
+  );
+  unseen.forEach((one, index) => {
+    const destination: Destination = { reach: "conversions", callee: one.erased };
+    if (one.parts !== undefined) {
+      const reached = one.parts.reduce<Reached>(
+        (all, part) => joined(all, reach.reachedFrom(part)),
+        NOTHING,
+      );
+      place(
+        one.value,
+        reached,
+        destination,
+        `converted to ${one.erased} as part of its value`,
+        undefined,
+      );
+      return;
+    }
+    const types = typesOfValue(one.value, unseenTypes[index], unseenChecked[index] ?? []);
+    const self = one.self === undefined ? NOTHING : reach.instanceOf(one.self);
+    const reached = readValue(
+      one.value,
+      one.self === undefined ? types : [],
+      self,
+      fromOutside(one.value) && !primitive(project, types),
+    );
+    place(one.value, reached, destination, `converted to ${one.erased}`, one.value);
+  });
   const calls = functionCalls(project, sites, to);
   const read = inflowReader(project, reach, to, pending, stores, calls);
   const bind = parameterBinder(project, reach, to, place, stores, calls);
@@ -2242,7 +2487,14 @@ export function serializationContract<Brand>(input: DetectorInput<Brand>): reado
   const chains = aliasChains(project, held);
   const stores = erasedStores(project);
   const reach = valueReach(project, held, stores.inside);
-  const flows = flowsOf(project, sites.calls, destinations(input, chains, reach), stores, reach);
+  const flows = flowsOf(
+    project,
+    sites.calls,
+    destinations(input, chains, reach),
+    stores,
+    reach,
+    widenedValues(project, sites.flows),
+  );
   if (flows.length === 0) {
     return [];
   }

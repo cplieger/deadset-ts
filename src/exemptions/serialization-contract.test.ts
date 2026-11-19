@@ -216,7 +216,10 @@ describe("serialization-contract over checked values and ambient callees", () =>
   });
 
   it("reads the members of a `satisfies` target where the checked literal is stored in what a destination walks", () => {
-    expect(serialized(swept, "Boxed", "Assigned")).toEqual([
+    // The stores into slots typed unknown convert the values too, which a test of their own reads.
+    expect(
+      serialized(swept, "Boxed", "Assigned").filter((line) => line.includes(" passed to ")),
+    ).toEqual([
       "Boxed.size src/main.ts:82:29 passed to JSON.stringify",
       "Assigned.step src/main.ts:82:56 passed to JSON.stringify",
     ]);
@@ -1352,6 +1355,8 @@ describe("a value a generic function serializes through its type parameter", () 
           ],
           { "outside.ts": `export ${args}\nexport declare function emit(...args: Args): void;\n` },
         )
+          // The list's elements are stored where its type holds unknown, which converts them too.
+          .filter((line) => line.includes(" passed to "))
           .map((line) => line.replace(/ \d+:\d+ /u, " "))
           .sort(),
       ).toEqual(["Parcel.id passed to emit", "Parcel.toString passed to emit"]);
