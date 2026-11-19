@@ -780,3 +780,156 @@ describe("a variable an element access stores through", () => {
     expect(found.map((finding) => `${finding.code} ${finding.symbol.name}`)).toEqual([]);
   });
 });
+
+/** The findings of this family, by code and name, of a project whose one source file is the lines given. */
+function namedIn(kind: "library" | "application", lines: readonly string[]): readonly string[] {
+  const manifest =
+    kind === "library"
+      ? {
+          name: "@example/widened",
+          version: "1.0.0",
+          type: "module",
+          exports: { ".": "./src/index.ts" },
+        }
+      : { name: "@example/widened", private: true, type: "module", bin: "./src/index.ts" };
+  const root = writeProject({
+    "package.json": `${JSON.stringify(manifest)}\n`,
+    "src/index.ts": `${lines.join("\n")}\n`,
+  });
+  try {
+    return named(findingsOf(root, JSON.stringify({ target: { kind } })));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+const NOTE = ["interface Note {", "  readonly id: string;", "}", ""];
+
+const DECODE_NOTE = [
+  "function decodeNote(v: unknown): Note {",
+  "  return { id: String(v) };",
+  "}",
+  "",
+];
+
+describe("a value whose static type widens to unknown or any", () => {
+  it("has every member read where a published function value's return type widens it", () => {
+    expect(
+      namedIn("library", [
+        ...NOTE,
+        ...DECODE_NOTE,
+        "export const endpoints: Readonly<Record<string, { decode: (v: unknown) => unknown }>> = {",
+        "  read: { decode: decodeNote },",
+        "};",
+      ]),
+    ).toEqual([]);
+  });
+
+  it("has every member read where a function value's return type widens it", () => {
+    expect(
+      namedIn("application", [
+        ...NOTE,
+        ...DECODE_NOTE,
+        "const decoders: Record<string, (v: unknown) => unknown> = { note: decodeNote };",
+        "decoders.note?.(1);",
+      ]),
+    ).toEqual([]);
+  });
+
+  it("has every member read where a function value's return type is any, through a promise", () => {
+    expect(
+      namedIn("application", [
+        ...NOTE,
+        "async function load(v: unknown): Promise<Note> {",
+        "  return { id: String(v) };",
+        "}",
+        "",
+        "const loaders: ((v: unknown) => Promise<any>)[] = [load];",
+        "void loaders[0]?.(1);",
+      ]),
+    ).toEqual([]);
+  });
+
+  it("has every member read where an assignment widens it", () => {
+    expect(
+      namedIn("application", [
+        ...NOTE,
+        "let held: unknown;",
+        'const note: Note = { id: "a" };',
+        "held = note;",
+        "if (held === undefined) {",
+        '  throw new Error("unset");',
+        "}",
+      ]),
+    ).toEqual([]);
+  });
+
+  it("has every member read where an argument to an unknown parameter of a function outside the analysis widens it", () => {
+    expect(
+      namedIn("application", [
+        ...NOTE,
+        "declare function send(value: unknown): void;",
+        "",
+        'const note: Note = { id: "a" };',
+        "send(note);",
+      ]),
+    ).toEqual([]);
+  });
+
+  it("keeps a member written and never read where the program's own callback takes the value and reads nothing", () => {
+    expect(
+      namedIn("application", [
+        ...NOTE,
+        "function emit(send: (value: unknown) => void): void {",
+        '  const note: Note = { id: "a" };',
+        "  send(note);",
+        "}",
+        "",
+        "emit(() => undefined);",
+      ]),
+    ).toEqual(["DS1301 Note.id"]);
+  });
+
+  it("has every member read where a return through an unknown result widens it", () => {
+    expect(
+      namedIn("application", [
+        ...NOTE,
+        "function read(): unknown {",
+        '  const note: Note = { id: "a" };',
+        "  return note;",
+        "}",
+        "",
+        "read();",
+      ]),
+    ).toEqual([]);
+  });
+
+  it("has every member read where a property typed unknown holds it", () => {
+    expect(
+      namedIn("application", [
+        ...NOTE,
+        'const note: Note = { id: "a" };',
+        "const box: { readonly value: unknown } = { value: note };",
+        "if (box.value === undefined) {",
+        '  throw new Error("unset");',
+        "}",
+      ]),
+    ).toEqual([]);
+  });
+
+  it("keeps a member written and never read where no position widens the value", () => {
+    expect(
+      namedIn("application", [
+        ...NOTE,
+        ...DECODE_NOTE,
+        "function keep(note: Note): number {",
+        "  return note === undefined ? 0 : 1;",
+        "}",
+        "",
+        "keep(decodeNote(1));",
+        "const decoders: Record<string, (v: unknown) => Note> = { note: decodeNote };",
+        "decoders.note?.(1);",
+      ]),
+    ).toEqual(["DS1301 Note.id"]);
+  });
+});

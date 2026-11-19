@@ -2,7 +2,7 @@
   "corpus_version": "6.4.0",
   "product": { "name": "deadset-ts", "version": "0.1.0", "language": "ts" },
   "result": "pass",
-  "totals": { "fixtures": 392, "pass": 390, "gap": 0, "fail": 0, "pending": 2 },
+  "totals": { "fixtures": 393, "pass": 391, "gap": 0, "fail": 0, "pending": 2 },
   "fixtures": [
     {
       "fixture": "abstract-member-through-this",
@@ -11146,6 +11146,55 @@
       "unexpected": []
     },
     {
+      "fixture": "value-converted-to-unknown-or-any",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "KeptCount",
+          "result": "pass",
+          "actual": {
+            "report": "DS1301",
+            "symbol_kind": "type-member",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "LabelText",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "NoteId",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "ReplyName",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        },
+        {
+          "symbol": "SignalKind",
+          "result": "pass",
+          "actual": {
+            "report": "DS1301",
+            "symbol_kind": "type-member",
+            "confidence": "certain",
+            "reachability_class": "certain"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "TrackTitle",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
+        }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "value-stored-in-an-unknown-property-of-a-dependency-type",
       "result": "pass",
       "expectations": [
@@ -11162,13 +11211,7 @@
         {
           "symbol": "UnsentLabel",
           "result": "pass",
-          "actual": {
-            "report": "DS1301",
-            "symbol_kind": "type-member",
-            "confidence": "certain",
-            "reachability_class": "certain"
-          },
-          "suppression": { "suppressed": true, "stale": false }
+          "actual": { "report": "none", "retained_by": ["serialization-contract"] }
         }
       ],
       "unexpected": []

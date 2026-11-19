@@ -472,10 +472,10 @@ describe("the schema reads of protobuf-es v2 hand code", () => {
           [
             'import { create } from "@bufbuild/protobuf";',
             'import { EnvelopeSchema, type Envelope } from "./gen/v1/a_pb.js";',
-            "function choice(envelope: Envelope): unknown {",
+            'function choice(envelope: Envelope): Envelope["choice"] {',
             `  ${read}`,
             "}",
-            "console.log(choice(create(EnvelopeSchema)));",
+            "console.log(choice(create(EnvelopeSchema)).case);",
             "",
           ].join("\n"),
         );

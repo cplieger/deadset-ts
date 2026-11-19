@@ -83,11 +83,11 @@ describe("a value stored where a serialized type holds unknown", () => {
     expect(found.filter((one) => /Derived|Other/u.test(one))).toEqual([]);
   });
 
-  it("is not serialized where the container holding it is never serialized", () => {
+  it("is not serialized where the container holding it at its own type is never serialized", () => {
     const found = treeFindings({
       "main.ts": [
         "interface Kept { note: string }",
-        "interface Bag { [key: string]: unknown }",
+        "interface Bag { [key: string]: Kept }",
         'const kept: Kept = { note: "k" };',
         "const scratch: Bag = {};",
         'scratch["kept"] = kept;',
