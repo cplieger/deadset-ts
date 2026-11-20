@@ -32,6 +32,7 @@
         "Identifier",
         "ImportDeclaration",
         "ImportEqualsDeclaration",
+        "IntersectionTypeNode",
         "MethodDeclaration",
         "ModifierFlags",
         "NewExpression",
