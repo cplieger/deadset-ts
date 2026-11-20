@@ -42,6 +42,14 @@ describe("the first refusal", () => {
     expect(firstRefusal(PER_LANGUAGE, { ts: "application" })).toBeUndefined();
   });
 
+  it("states a value and a pattern holding invisible characters past ASCII as one visible line", () => {
+    const schema: Schema = { type: "string", pattern: "^[^\u0085\u00a0\u2028\u3000\ufeff]é+$" };
+
+    expect(firstRefusal(schema, "a\u2028b\u{E0001}")?.reason).toBe(
+      String.raw`"a\u2028b\udb40\udc01" does not match ^[^\u{85}\u{A0}\u{2028}\u{3000}\u{FEFF}]é+$`,
+    );
+  });
+
   it("names an object's own refusal before any inside it", () => {
     const schema: Schema = {
       type: "object",

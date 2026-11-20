@@ -6,6 +6,7 @@
 
 import { jsonChunks } from "../json-chunks.ts";
 import type { InventorySymbol } from "../inventory.ts";
+import { reportedPath } from "../ref.ts";
 import { bytewise } from "../text/compare.ts";
 import { BASELINE_FILE } from "./documents.ts";
 import { bind, namesKind, OWN_SCHEME, type Entry, type Suppressions } from "./records.ts";
@@ -47,7 +48,11 @@ export function recordedRows(findings: readonly RecordableFinding[]): readonly R
     if (!namesKind(finding.symbol.kind, "baseline")) {
       continue;
     }
-    const row = { code: finding.code, symbol: finding.symbol.ref, path: finding.position.path };
+    const row = {
+      code: finding.code,
+      symbol: finding.symbol.ref,
+      path: reportedPath(finding.position.path),
+    };
     rows.set(rowKey(row), rows.get(rowKey(row)) ?? row);
   }
   return [...rows.values()];

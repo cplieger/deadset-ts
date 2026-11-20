@@ -10,6 +10,7 @@ import { FACTS_VERSION } from "./contract/contract.generated.ts";
 import type { BindingRecord } from "./bindings.ts";
 import { carry } from "./liveness/carrier.ts";
 import { LANGUAGE, PRODUCT } from "./product.ts";
+import { reportedPath } from "./ref.ts";
 import type { Mode } from "./tests/file-class.ts";
 import { bytewise } from "./text/compare.ts";
 
@@ -42,7 +43,12 @@ function evaluated(analysis: RunAnalysis, options: FactsOptions): readonly Bindi
       live.add(bound.symbol);
     }
   }
-  return run.bindings.map((record) => {
+  return run.bindings.map((bound) => {
+    const record = {
+      ...bound,
+      schema_file: reportedPath(bound.schema_file),
+      generated_file: reportedPath(bound.generated_file),
+    };
     if (record.role !== "consumer") {
       return record;
     }
@@ -69,7 +75,7 @@ export function factsDocument(
     generated: [...analysis.run.generated]
       .sort(([a], [b]) => bytewise(a, b))
       .map(([path, fact]) => ({
-        path,
+        path: reportedPath(path),
         line: fact.line,
         evidence: fact.evidence,
         detail: fact.detail,
@@ -82,7 +88,7 @@ export function factsDocument(
                   ? {}
                   : { version: fact.generator.version }),
               },
-              schema_files: fact.generator.schemaFiles,
+              schema_files: fact.generator.schemaFiles.map(reportedPath),
             }),
       })),
     bindings: evaluated(analysis, options),

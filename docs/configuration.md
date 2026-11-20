@@ -4,7 +4,7 @@ This page lists where deadset-ts reads its settings, every setting it reads, the
 
 ## Where settings live
 
-deadset-ts reads up to three JSON documents. A command-line option wins over `deadset.json` at the target root, which wins over a central configuration that `--central=FILE` names. `--config=FILE` reads another file in place of `deadset.json`. A document larger than 1 MiB is refused with exit code 2, and so is one that a file option names and that cannot be read. So is a `deadset.json` that is a link resolving outside the target root, or anything but a regular file. A key the Contract does not declare, or a value of the wrong type, is refused with exit code 2. So is an `exemptions.disabled` entry that names no exemption class, and an `analysis.template_dirs` entry that is not a directory below the target. So is a `ts.disabled_conventions` entry that names no convention row.
+deadset-ts reads up to three JSON documents. A command-line option wins over `deadset.json` at the target root, which wins over a central configuration that `--central=FILE` names. `--config=FILE` reads another file in place of `deadset.json`. A document larger than 16 MiB is refused with exit code 2, and so is one that a file option names and that cannot be read. So is a `deadset.json` that is a link resolving outside the target root, or anything but a regular file. A key the Contract does not declare, or a value of the wrong type, is refused with exit code 2. So is an `exemptions.disabled` entry that names no exemption class, and an `analysis.template_dirs` entry that is not a directory below the target. So is a `ts.disabled_conventions` entry that names no convention row.
 
 `print-config` prints the resolved configuration and the source of each setting.
 
@@ -28,7 +28,7 @@ deadset-ts reads up to three JSON documents. A command-line option wins over `de
 | `analysis.template_dirs` | `[]` | Directories below the target whose templates the `template-field` exemption reads for member names |
 | `analysis.template_delimiters` | `{{` and `}}` | The action delimiters those templates use, as `left` and `right` |
 | `consumers.complete` | `false` | Declares that the scope document lists every consumer of a library's published API |
-| `roots.patterns` | `[]` | Symbol references, or patterns over them, kept live without a reference. An entry that matches nothing is `DS9004` and fails the run |
+| `roots.patterns` | `[]` | Symbol references as findings spell them, path segments percent-encoded, or patterns over them, kept live without a reference. An entry that matches nothing is `DS9004` and fails the run |
 | `severity` | `{}` | A severity per code (`DS1501`) or family (`DS18`): `allow`, `warn` or `deny` |
 | `exemptions.disabled` | `[]` | Exemption classes switched off, to test whether one hides a defect |
 | `reporters.formats` | `["text"]` | The renderings `analyze` writes beside the report |
@@ -36,8 +36,8 @@ deadset-ts reads up to three JSON documents. A command-line option wins over `de
 | `reporters.cascade` | `roots` | `roots` lists the root members of a dead group with a count, `full` lists every member |
 | `reporters.max_findings` | `0` | The most findings a rendering prints. `0` prints every finding |
 | `reporters.fail_on` | `deny` | The lowest severity that fails the run: `allow`, `warn` or `deny` |
-| `ts.test_files` | `["**/*.test.{ts,tsx,mts,cts,js,jsx,mjs,cjs}", "**/*.test-d.{ts,tsx,mts,cts}", "**/*.spec-d.{ts,tsx,mts,cts}", "**/*.spec.*", "**/__tests__/**", "**/__mocks__/**", "**/test-d/**"]` | Globs naming the test files |
-| `ts.entry_files` | `[]` | Globs naming files whose exports are roots, beside the entry points the manifest names |
+| `ts.test_files` | `["**/*.test.{ts,tsx,mts,cts,js,jsx,mjs,cjs}", "**/*.test-d.{ts,tsx,mts,cts}", "**/*.spec-d.{ts,tsx,mts,cts}", "**/*.spec.*", "**/__tests__/**", "**/__mocks__/**", "**/test-d/**"]` | Globs naming the test files. An entry longer than 1,024 characters, or whose brace lists expand it to more than 256 globs, is a usage error (exit code 2) |
+| `ts.entry_files` | `[]` | Globs naming files whose exports are roots, beside the entry points the manifest names. An entry longer than 1,024 characters, or whose brace lists expand it to more than 256 globs, is a usage error (exit code 2) |
 | `ts.disabled_conventions` | `[]` | [Convention rows](how-it-works.md#the-roots) switched off, so they root no file. Name the files to keep in `ts.entry_files` |
 | `ts.component_extensions` | `[".vue", ".svelte", ".astro"]` | Extensions of component files, whose script blocks and frontmatter are read as one module. `[]` reads none |
 | `ts.injection_registrations` | `[]` | Declarations whose call registers a class with a dependency-injection container |
@@ -53,10 +53,10 @@ The Contract's [configuration schema](https://github.com/cplieger/deadset-spec) 
 Three mechanisms keep a finding out of a run. Each one needs a reason.
 
 - An inline directive on the line above the declaration, or after the code on the line where the declaration begins: `// deadset:ignore DS1001 -- kept for the next release`. Several codes are written `DS1001,DS1003`. A directive with no reason is reported as `DS9001`.
-- `deadset-ignore.json` at the target root, whose `ignore` array a maintainer writes. Each entry names `code`, `symbol`, `path` and `reason`. An entry that names no path is reported as `DS9002`. An entry can also keep a `DS1701` dependency, named by the `symbol.ref` and `position.path` its finding carries. An entry whose `symbol` starts with `go://` is left to the Go analyzer.
+- `deadset-ignore.json` at the target root, whose `ignore` array a maintainer writes. Each entry names `code`, `symbol`, `path` and `reason`. An entry that names no path is reported as `DS9002`. An entry can also keep a `DS1701` dependency, named by the `symbol.ref` and `position.path` its finding carries. The `symbol` spells each segment of the file's path as the finding does, percent-encoded where the Contract's reference grammar says, so `src/my file.ts` is `ts://./src/my%20file.ts#…` while `path` stays `src/my file.ts`. An entry whose `symbol` starts with `go://` is left to the Go analyzer. Every entry's `symbol` must still be in the shape the grammar gives every document, or the run ends with exit code 2.
 - `deadset-baseline.json` at the target root, whose `baseline` rows `analyze --baseline-write` writes. A row has the same four members, so it moves into the ignore file by gaining a maintainer's reason.
 
-An ignore file or a baseline larger than 1 MiB is refused with exit code 2. One that is a link resolving outside the target root, anything but a regular file, or unreadable ends the run with exit code 3 and the line `setup failure: unreadable-document:` naming it, and nothing is read from it.
+An ignore file or a baseline larger than 16 MiB is refused with exit code 2. One that is a link resolving outside the target root, anything but a regular file, or unreadable ends the run with exit code 3 and the line `setup failure: unreadable-document:` naming it, and nothing is read from it.
 
 ```json
 {
@@ -90,4 +90,4 @@ Each consumer's compiler configurations open in the same session as the target's
 
 ## Cross-language edges
 
-`deadset-edges.json` at the target root declares edges between a TypeScript declaration and a declaration in another language, such as a generated client type and the Go server type it stands for. Its `edges` object holds each edge under its identifier, which names one edge, with `provides`, `used_by` and an optional `because`. deadset-ts never decides the other side. When the TypeScript side of an edge is dead, its finding is pending, and the run exits 4 until the [deadset](https://github.com/cplieger/deadset) merge reads both sides. The document is refused with exit code 2 when it is larger than 1 MiB, and the run ends with exit code 3 and an `unreadable-document` setup failure when it is a link resolving outside the target root, anything but a regular file, or unreadable.
+`deadset-edges.json` at the target root declares edges between a TypeScript declaration and a declaration in another language, such as a generated client type and the Go server type it stands for. Its `edges` object holds each edge under its identifier, which names one edge, with `provides`, `used_by` and an optional `because`. deadset-ts never decides the other side. When the TypeScript side of an edge is dead, its finding is pending, and the run exits 4 until the [deadset](https://github.com/cplieger/deadset) merge reads both sides. The document is refused with exit code 2 when it is larger than 16 MiB, and the run ends with exit code 3 and an `unreadable-document` setup failure when it is a link resolving outside the target root, anything but a regular file, or unreadable.

@@ -4,11 +4,11 @@ export function one(): number {
   return 1;
 }
 
-// A class whose one member is named by a character outside the basic plane, which a
-// pattern's `?` stands for exactly one of.
+// A class whose one member is named by an identifier character outside the basic plane,
+// which a pattern's `?` stands for exactly one of.
 
 export class Keyed {
-  "🚀"(): number {
+  𝑥(): number {
     return 1;
   }
 }

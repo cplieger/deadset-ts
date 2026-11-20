@@ -12,6 +12,7 @@ export {
   computedComponent,
   isRef,
   nameComponent,
+  readPathSegment,
   REF_EXPRESSIONS,
   renderRef,
   type Component,

@@ -50,7 +50,7 @@ import type { Cap } from "./schema-reads.ts";
 import { componentOf, modifiersOf, nameNodeOf, nodeKey } from "./inventory.ts";
 import { PRODUCT } from "./product.ts";
 import { tokenStart } from "./position.ts";
-import { nameComponent, spell } from "./ref.ts";
+import { nameComponent, quotedComponent, spell } from "./ref.ts";
 import { bytewise } from "./text/compare.ts";
 
 /** One binding record of the facts document, as `facts.schema.json` spells it. */
@@ -265,7 +265,7 @@ function caseOf(literal: Node): string | undefined {
 
 /** The case-constituent fragment of one oneof member, below its property's fragment. */
 function caseFragment(property: string, discriminant: string): string {
-  return `${property}.'${discriminant.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}':case`;
+  return `${property}.${quotedComponent(discriminant)}:case`;
 }
 
 /** The discriminant of one constituent of the oneof property `holder` declares. */
@@ -577,7 +577,12 @@ function protobufEsV1Consumers(file: SourceFile): Read {
         if (member === undefined) {
           throw new Undecodable(`${fragment} declares no property ${holder}`);
         }
-        const at = `${fragment}.${nameComponent(holder)}`;
+        // A property with no spelling has no reference, as the inventory gives it none.
+        const spelled = spelledName(member);
+        if (spelled === undefined) {
+          continue;
+        }
+        const at = `${fragment}.${spelled}`;
         if (oneof === undefined) {
           found.push({ fragment: at, name: `${name}.${field}`, kind: "field", nodes: [member] });
           continue;
@@ -587,8 +592,9 @@ function protobufEsV1Consumers(file: SourceFile): Read {
         if (constituent === undefined) {
           throw new Undecodable(`${at} declares no constituent of case ${local}`);
         }
+        const caseAt = caseFragment(at, local);
         found.push({
-          fragment: caseFragment(at, local),
+          fragment: caseAt,
           name: `${name}.${field}`,
           kind: "field",
           nodes: [constituent],
@@ -979,8 +985,9 @@ function tsProtoSchemaConsumers(file: SourceFile): Read {
       if (constituent === undefined) {
         throw new Undecodable(`${at} declares no constituent of $case ${assigned.union}`);
       }
+      const caseAt = caseFragment(at, assigned.union);
       found.push({
-        fragment: caseFragment(at, assigned.union),
+        fragment: caseAt,
         name: `${name}.${field}`,
         kind: "field",
         nodes: [constituent],

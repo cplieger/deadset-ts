@@ -82,7 +82,7 @@ The package exports the command line as a function, and the helpers that spell t
 - `run` runs the command line and returns its exit code, without exiting the process. `Writer` is its output stream, and `SETTING_OPTIONS` maps each option to the setting it sets.
 - `Host`, `DirectoryEntry` and `PathKind` describe the filesystem, working directory and version a run reads.
 - `renderPosition`, `positionKey`, `byPosition`, `PositionError` and `Position` render and order positions.
-- `renderRef`, `nameComponent`, `computedComponent`, `isRef`, `REF_EXPRESSIONS`, `Module`, `Component`, `Fragment` and `DependencySection` spell stable symbol references.
+- `renderRef`, `nameComponent`, `computedComponent`, `isRef`, `REF_EXPRESSIONS`, `Module`, `Component`, `Fragment` and `DependencySection` spell stable symbol references, and `readPathSegment` reads back the bytes one percent-encoded segment of a reference's source path spells.
 - `DECLINED_CONVENTIONS` and `DeclinedConvention` list the entry-point conventions of other tools the analysis does not read.
 - `CONTRACT_VERSION` is the version of the [deadset Contract](https://github.com/cplieger/deadset-spec) this analyzer implements.
 

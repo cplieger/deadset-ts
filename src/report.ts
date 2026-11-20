@@ -19,6 +19,7 @@ import type { AppliedConvention } from "./entries/conventions.ts";
 import type { PassResult } from "./findings-pass.ts";
 import type { StaleSuppression } from "./suppression/ledger.ts";
 import type { TestFileRule } from "./tests/file-class.ts";
+import { reportedPath } from "./ref.ts";
 import { bytewise } from "./text/compare.ts";
 import { LANGUAGE, PRODUCT } from "./product.ts";
 
@@ -129,7 +130,7 @@ function componentsOf(
 
 function wirePosition(position: FindingPosition): wire.Position {
   return {
-    path: position.path,
+    path: reportedPath(position.path),
     line: position.line,
     column: position.column,
     end_line: position.endLine,
@@ -165,7 +166,7 @@ function wireDetails(details: FindingDetails): wire.Details {
           entry: {
             code: entry.code,
             ...(entry.symbol === undefined ? {} : { symbol: entry.symbol }),
-            ...(entry.path === undefined ? {} : { path: entry.path }),
+            ...(entry.path === undefined ? {} : { path: reportedPath(entry.path) }),
             ...(entry.reason === undefined ? {} : { reason: entry.reason }),
           },
         }),
@@ -229,11 +230,11 @@ function wireStale(stale: StaleSuppression): wire.StaleSuppressionsEntry {
     entry: {
       code: stale.entry.code,
       ...(stale.entry.symbol === undefined ? {} : { symbol: stale.entry.symbol }),
-      path: stale.entry.path,
+      path: reportedPath(stale.entry.path),
       reason: stale.entry.reason,
     },
     position: {
-      path: stale.position.path,
+      path: reportedPath(stale.position.path),
       line: stale.position.line,
       column: stale.position.column,
     },
@@ -338,7 +339,7 @@ export function buildReport(input: ReportInput): wire.Report {
     .map((one) => ({ id: one.id, role: "consumer" as const, reason: one.reason }));
   const loaded = [...input.loaded]
     .sort((a, b) => bytewise(a.id, b.id) || bytewise(a.path, b.path))
-    .map((one) => ({ id: one.id, role: "consumer" as const, path: one.path }));
+    .map((one) => ({ id: one.id, role: "consumer" as const, path: reportedPath(one.path) }));
   return {
     schema_version: SCHEMA_VERSION,
     contract_version: input.contractVersion,
@@ -353,13 +354,17 @@ export function buildReport(input: ReportInput): wire.Report {
         digest: input.conformance.digest,
       },
     },
-    target: { kind: input.target.kind, root: input.target.root, identity: input.target.identity },
+    target: {
+      kind: input.target.kind,
+      root: reportedPath(input.target.root),
+      identity: input.target.identity,
+    },
     configurations: [...input.configurations]
       .sort((a, b) => bytewise(a.id, b.id))
-      .map((one) => ({ id: one.id, project: one.project })),
+      .map((one) => ({ id: one.id, project: reportedPath(one.project) })),
     configurations_not_built: [...input.notBuilt]
       .sort((a, b) => bytewise(a.id, b.id))
-      .map((one) => ({ id: one.id, project: one.project, error: one.error })),
+      .map((one) => ({ id: one.id, project: reportedPath(one.project), error: one.error })),
     consumers: { declared: loaded.length + unavailable.length, loaded, unavailable },
     findings,
     ...(input.listsComponents === true
@@ -379,14 +384,21 @@ export function buildReport(input: ReportInput): wire.Report {
     type_error_skips: [
       ...new Map(
         input.typeErrorSkips.map((one) => {
-          const skip = { path: one.path, line: one.line, message: one.message };
+          const skip = { path: reportedPath(one.path), line: one.line, message: one.message };
           return [JSON.stringify(skip), skip] as const;
         }),
       ),
     ]
       .sort(([a, x], [b, y]) => bytewise(x.path, y.path) || x.line - y.line || bytewise(a, b))
       .map(([, skip]) => skip),
-    notes: [...new Map((input.notes ?? []).map((one) => [JSON.stringify(one), one])).entries()]
+    notes: [
+      ...new Map(
+        (input.notes ?? []).map((one) => {
+          const note = { ...one, path: reportedPath(one.path) };
+          return [JSON.stringify(note), note] as const;
+        }),
+      ).entries(),
+    ]
       .sort(
         ([a, x], [b, y]) => bytewise(x.kind, y.kind) || bytewise(x.path, y.path) || bytewise(a, b),
       )
@@ -406,7 +418,7 @@ export function buildReport(input: ReportInput): wire.Report {
       name: one.name,
       package: one.package,
       version: one.version,
-      manifest: one.manifest,
+      manifest: reportedPath(one.manifest),
     })),
     totals: totalsOf(findings, input.result),
   };

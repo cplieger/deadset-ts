@@ -8,13 +8,13 @@
 import type { Host } from "../host.ts";
 import type { InventorySymbol } from "../inventory.ts";
 import { readTargetDocument } from "../fs/document.ts";
+import { hasRefShape } from "../ref.ts";
 import { isRecord, positionAt, readStrict, StrictJSONError } from "../json-document.ts";
 import type { Position } from "../position.ts";
 import {
   bind,
   CODE_FORM,
   isEntryPath,
-  REFERENCE_FORM,
   SuppressionError,
   type Entry,
   type Mechanism,
@@ -57,7 +57,8 @@ const BASELINE_SHAPE: Shape = {
 const ENTRY_KEYS: ReadonlySet<string> = new Set(["code", "symbol", "path", "reason"]);
 
 const CODE_WANT = "DS followed by four digits";
-const SYMBOL_WANT = "a stable symbol reference, <scheme>://<reference>";
+const SYMBOL_WANT =
+  "a stable symbol reference in the shape every document checks, <scheme>://<scope>#<fragment>";
 const PATH_WANT = "a path relative to the target root, with the solidus as separator";
 
 /** The document itself, for a defect no entry position describes. */
@@ -69,7 +70,7 @@ function documentSite(shape: Shape): Position {
  * One entry or row as written, refusing every defect that ends the run: a value that is
  * no object, a member the grammar does not declare or that holds no string, a missing
  * code or symbol, and a code, a reference or a path outside its form. A reference is held
- * only to the form every scheme shares; the analyzer of its language holds it to its own.
+ * only to the shape every scheme shares; the analyzer of its language holds it to its form.
  */
 function entryOf(value: unknown, site: Position, shape: Shape): Entry {
   const refuse = (text: string, want: string): never => {
@@ -102,7 +103,7 @@ function entryOf(value: unknown, site: Position, shape: Shape): Entry {
   if (!CODE_FORM.test(code)) {
     return refuse(JSON.stringify(code), CODE_WANT);
   }
-  if (!REFERENCE_FORM.test(symbol)) {
+  if (!hasRefShape(symbol)) {
     return refuse(JSON.stringify(symbol), SYMBOL_WANT);
   }
   if (path !== undefined && path !== "" && !isEntryPath(path)) {

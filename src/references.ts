@@ -15,7 +15,13 @@ import { destructuring } from "./destructuring.ts";
 import type { RunDirectories } from "./entries/run-directories.ts";
 import { bindingsOf } from "./import-bindings.ts";
 import { sitesOf } from "./index/sites.ts";
-import { nameNodeOf, nodeKey, type Inventory, type InventorySymbol } from "./inventory.ts";
+import {
+  heldName,
+  nameNodeOf,
+  nodeKey,
+  type Inventory,
+  type InventorySymbol,
+} from "./inventory.ts";
 import { OUTSIDE, wholeReads } from "./liveness/graph.ts";
 import { relativePath } from "./paths.ts";
 import type { Position } from "./position.ts";
@@ -460,7 +466,7 @@ export function references<Brand>(
    * a use of any file.
    */
   const named = (node: Node): readonly ChainTarget[] => {
-    const text = node.getText();
+    const text = heldName(node);
     const imported = bindingsOf(node.getSourceFile()).filter(
       (binding) => binding.name.text === text,
     );
@@ -598,7 +604,7 @@ export function references<Brand>(
       const visit = (node: Node): void => {
         const name = (node as { readonly name?: Node }).name;
         if (name !== undefined && boundValue(node) !== undefined) {
-          found.add(name.getText());
+          found.add(heldName(name));
         }
         node.forEachChild(visit);
       };
@@ -646,7 +652,7 @@ export function references<Brand>(
       }
       const file = node.getSourceFile();
       // A namespace binding may be any module or namespace, which a file candidate stands for.
-      return bindingNames(file).has(node.getText()) ? [...ids, declaredAt(file) ?? ""] : undefined;
+      return bindingNames(file).has(heldName(node)) ? [...ids, declaredAt(file) ?? ""] : undefined;
     },
     binding,
     shorthandValue: (assignment) => {

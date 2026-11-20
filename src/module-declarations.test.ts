@@ -340,12 +340,23 @@ const CONFIG_MAIN = 'import { mode } from "config";\n\nconsole.log(mode);\n';
 const CONFIG_SHIM =
   'declare module "config" {\n  export const mode: string;\n  export const other: string;\n}\n';
 
-function specifierReads(unanswered: readonly string[]): string[] {
+const ALIAS_MAIN = 'import { chosen } from "config";\n\nconsole.log(chosen);\n';
+const ALIAS_SHIM =
+  'declare module "config" {\n  const mode: string;\n  export { mode as chosen };\n}\n';
+
+function specifierReads(
+  unanswered: readonly string[],
+  shim: { readonly file: string; readonly text: string; readonly main: string } = {
+    file: "shims.d.ts",
+    text: CONFIG_SHIM,
+    main: CONFIG_MAIN,
+  },
+): string[] {
   const analyzed = analyzeProject(
     {
       "package.json": '{ "name": "@example/app", "type": "module" }\n',
-      "shims.d.ts": CONFIG_SHIM,
-      "main.ts": CONFIG_MAIN,
+      [shim.file]: shim.text,
+      "main.ts": shim.main,
     },
     {
       references: { testFiles: [] },
@@ -388,5 +399,14 @@ describe("the reads an import of an ambient module makes at its specifier", () =
       "shims.d.ts:1:16 syntax",
       "shims.d.ts:2:16 syntax",
     ]);
+  });
+
+  it("are the export alias imported, by name, whatever the declaring file's name holds", () => {
+    const at = `/main.ts:${String(ALIAS_MAIN.indexOf(' "config"'))}`;
+    const reads = (file: string): string[] =>
+      specifierReads([at], { file, text: ALIAS_SHIM, main: ALIAS_MAIN });
+
+    expect(reads("shims.d.ts")).toEqual(["shims.d.ts:1:16 syntax", "shims.d.ts:3:20 syntax"]);
+    expect(reads("a#shims.d.ts")).toEqual(["a#shims.d.ts:1:16 syntax", "a#shims.d.ts:3:20 syntax"]);
   });
 });

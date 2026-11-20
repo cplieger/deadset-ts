@@ -41,9 +41,13 @@ interface StrictDocument {
  */
 const MAX_DEPTH = 1000;
 
-const SPACE = /[ \t\n\r]*/uy;
-const STRING =
-  /"(?:[ !#$%&'()*+,\-./0-9:;<=>?@A-Z[\]-\u{10FFFF}]|\\(?:["\\/bfnrt]|u[0-9A-Fa-f]{4}))*"/uy;
+/** The characters JSON reads as whitespace between tokens: space, tab, LF, CR. */
+const WHITESPACE: ReadonlySet<number> = new Set([0x20, 0x09, 0x0a, 0x0d]);
+/** What follows a backslash in a string token as a one-character escape: `"`, `\`, `/`, b, f, n, r, t. */
+const SHORT_ESCAPES: ReadonlySet<number> = new Set([
+  0x22, 0x5c, 0x2f, 0x62, 0x66, 0x6e, 0x72, 0x74,
+]);
+const HEX_DIGITS = /^[0-9A-Fa-f]{4}$/u;
 const NUMBER = /-?(?:0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?/uy;
 const LITERALS: ReadonlyMap<string, unknown> = new Map<string, unknown>([
   ["true", true],
@@ -117,7 +121,7 @@ class Reader {
 
   read(): unknown {
     const value = this.value(0);
-    this.match(SPACE);
+    this.skipSpace();
     if (this.at < this.text.length) {
       this.fail("data follows the document's value");
     }
@@ -132,15 +136,48 @@ class Reader {
     );
   }
 
-  private match(pattern: RegExp): string | undefined {
-    pattern.lastIndex = this.at;
-    const found = pattern.exec(this.text)?.[0];
-    this.at = found === undefined ? this.at : pattern.lastIndex;
-    return found;
+  /**
+   * The string token at the reader's place, read past, or undefined where none starts
+   * there: scanned by hand, because a backtracking expression's stack grows with the
+   * token's length and a document under the Contract's bound holds one of 16 Mi units.
+   */
+  private string(): string | undefined {
+    const start = this.at;
+    if (this.text.charCodeAt(start) !== 0x22) {
+      return undefined;
+    }
+    for (let at = start + 1; at < this.text.length;) {
+      const unit = this.text.charCodeAt(at);
+      if (unit === 0x22) {
+        this.at = at + 1;
+        return this.text.slice(start, this.at);
+      }
+      if (unit < 0x20) {
+        return undefined;
+      }
+      if (unit !== 0x5c) {
+        at += 1;
+      } else if (SHORT_ESCAPES.has(this.text.charCodeAt(at + 1))) {
+        at += 2;
+      } else if (this.text[at + 1] === "u" && HEX_DIGITS.test(this.text.slice(at + 2, at + 6))) {
+        at += 6;
+      } else {
+        return undefined;
+      }
+    }
+    return undefined;
+  }
+
+  /** Moves the reader past the run of JSON whitespace at its place: space, tab, LF and CR. */
+  private skipSpace(): void {
+    for (let unit = this.text.charCodeAt(this.at); WHITESPACE.has(unit);) {
+      this.at += 1;
+      unit = this.text.charCodeAt(this.at);
+    }
   }
 
   private expect(char: string, what: string): void {
-    this.match(SPACE);
+    this.skipSpace();
     if (this.text[this.at] !== char) {
       this.fail(`${what} is expected`);
     }
@@ -148,7 +185,7 @@ class Reader {
   }
 
   private value(depth: number): unknown {
-    this.match(SPACE);
+    this.skipSpace();
     if (depth > MAX_DEPTH) {
       this.fail(`values nest deeper than ${String(MAX_DEPTH)} levels`);
     }
@@ -159,7 +196,7 @@ class Reader {
     if (char === "[") {
       return this.array(depth);
     }
-    const string = this.match(STRING);
+    const string = this.string();
     if (string !== undefined) {
       return JSON.parse(string) as string;
     }
@@ -186,15 +223,15 @@ class Reader {
   private object(depth: number): Record<string, unknown> {
     const held: Record<string, unknown> = {};
     this.at += 1;
-    this.match(SPACE);
+    this.skipSpace();
     if (this.text[this.at] === "}") {
       this.at += 1;
       return held;
     }
     for (;;) {
-      this.match(SPACE);
+      this.skipSpace();
       const offset = this.at;
-      const spelled = this.match(STRING);
+      const spelled = this.string();
       if (spelled === undefined) {
         return this.fail("a member name is expected");
       }
@@ -208,7 +245,7 @@ class Reader {
       }
       this.expect(":", "a colon after the member name");
       if (depth === 1 && this.path[0] === this.records) {
-        this.match(SPACE);
+        this.skipSpace();
         this.starts.set(name, this.at);
       }
       this.path.push(name);
@@ -219,7 +256,7 @@ class Reader {
         configurable: true,
       });
       this.path.pop();
-      this.match(SPACE);
+      this.skipSpace();
       const next = this.text[this.at];
       this.at += 1;
       if (next === "}") {
@@ -236,20 +273,20 @@ class Reader {
     const held: unknown[] = [];
     const records = depth === 1 && this.path[0] === this.records;
     this.at += 1;
-    this.match(SPACE);
+    this.skipSpace();
     if (this.text[this.at] === "]") {
       this.at += 1;
       return held;
     }
     for (;;) {
-      this.match(SPACE);
+      this.skipSpace();
       if (records) {
         this.starts.set(held.length, this.at);
       }
       this.path.push(held.length);
       held.push(this.value(depth + 1));
       this.path.pop();
-      this.match(SPACE);
+      this.skipSpace();
       const next = this.text[this.at];
       this.at += 1;
       if (next === "]") {

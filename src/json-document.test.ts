@@ -128,6 +128,25 @@ describe("a strict read of one document", () => {
     expect(() => readStrict(`${"[".repeat(1000)}${"]".repeat(1000)}`)).not.toThrow();
   });
 
+  it("reads a string of 16 Mi characters, the longest a document under the Contract's bound holds", () => {
+    const long = "x".repeat((16 << 20) - 100);
+    const escaped = `\\u00e9\\n${"\\\\".repeat(1 << 20)}é😀\ud800`;
+
+    expect(readStrict(`{"a": "${long}"}`).value).toEqual({ a: long });
+    expect(readStrict(`{"${long}": 1}`).value).toEqual({ [long]: 1 });
+    expect(readStrict(`["${escaped}"]`).value).toEqual([JSON.parse(`"${escaped}"`)]);
+  });
+
+  it.each([
+    ["a control character inside a string", '["a\u0001b"]'],
+    ["an escape JSON does not define", '["a\\qb"]'],
+    ["a \\u escape with three digits", '["\\u00e"]'],
+    ["a string the document ends inside", '["abc'],
+    ["a string ending on its backslash", '["abc\\'],
+  ])("refuses %s as no string", (_, text) => {
+    expect(refusal(text).message).toBe("a value is expected");
+  });
+
   it("states a fault with the line and column it is at", () => {
     const text = '{\n  "a": 1,\n  "a": 2\n}';
 

@@ -25,6 +25,8 @@ import { FIXED_SEVERITY_CODES } from "./kinds.ts";
 import { LANGUAGE } from "./product.ts";
 import { firstRefusal, type SchemaRefusal } from "./schema.ts";
 import { bytewise } from "./text/compare.ts";
+import { expression } from "./text/expression.ts";
+import { globOverBound } from "./text/glob.ts";
 import { UsageError } from "./usage.ts";
 
 const ROWS: ReadonlyMap<string, SettingRow> = new Map(SETTINGS.map((row) => [row.key, row]));
@@ -39,6 +41,9 @@ const OBJECT = { type: "object" };
 const OWN_VOCABULARIES: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   ["ts.disabled_conventions", new Set(CONVENTION_ROWS.map((row) => row.name))],
 ]);
+
+/** The settings whose entries are globs, each held to the bound of `analysis.2`. */
+const GLOB_SETTINGS: ReadonlySet<string> = new Set(["ts.test_files", "ts.entry_files"]);
 
 function malformed(label: string, path: string, detail: string): UsageError {
   return new UsageError(path === "" ? `${label}: ${detail}` : `${label}: ${path}: ${detail}`);
@@ -159,6 +164,14 @@ class Walk {
         `holds ${text}, want an integer written as an optional minus sign and digits alone`,
       );
     }
+    if (GLOB_SETTINGS.has(row.key)) {
+      (value as readonly string[]).forEach((glob, at) => {
+        const over = globOverBound(glob);
+        if (over !== undefined) {
+          throw malformed(this.label, `${row.key}[${String(at)}]`, over);
+        }
+      });
+    }
     const own = OWN_VOCABULARIES.get(row.key);
     if (own !== undefined) {
       const names = value as readonly string[];
@@ -177,7 +190,7 @@ class Walk {
   private keyed(row: SettingRow, value: unknown): Readonly<Record<string, unknown>> {
     this.refuse(row.key.split("."), value, firstRefusal(OBJECT, value));
     const members = value as Readonly<Record<string, unknown>>;
-    const shape = new RegExp(row.keyPattern ?? "", "u");
+    const shape = expression(row.keyPattern ?? "");
     for (const name of Object.keys(members).sort(bytewise)) {
       const at = `${row.key}.${name}`;
       if (!shape.test(name)) {

@@ -100,6 +100,17 @@ function written(): string {
       "  *[Symbol.iterator](): Iterator<number> {}",
       '  ["c.d"](): void {}',
       "}",
+      "export class Hidden {",
+      "  #p = 1;",
+      "  read(): number {",
+      "    return this.#p;",
+      "  }",
+      "}",
+      "export class Shown {",
+      '  "#s" = 1;',
+      String.raw`  "a\u0062" = 2;`,
+      "  0x10 = 3;",
+      "}",
       'export const label = String("@example/lazy");',
       "",
     ].join("\n"),
@@ -302,6 +313,37 @@ describe("the declarations a configuration names", () => {
       "Registry.add",
       "'a.b'.'it\\'s.x'",
     ]);
+  });
+
+  it("name a private member by its number sign, a string key of that text quoted, and a key by its value", () => {
+    const named = [
+      "Hidden.#p",
+      "Hidden.'#p'",
+      "Shown.'#s'",
+      "Shown.#s",
+      "Shown.ab",
+      "Shown.'a\\u0062'",
+      "Shown.'16'",
+      "Shown.'0x10'",
+    ];
+    const found = inProject((project, held) =>
+      declarationsNamed(
+        project,
+        held,
+        named.map((name) => ({ key: "ts.serializers", entry: { module: "./local.ts", name } })),
+      ),
+    );
+
+    expect(Object.fromEntries(named.map((name, index) => [name, found[index]]))).toEqual({
+      "Hidden.#p": true,
+      "Hidden.'#p'": false,
+      "Shown.'#s'": true,
+      "Shown.#s": false,
+      "Shown.ab": true,
+      "Shown.'a\\u0062'": false,
+      "Shown.'16'": true,
+      "Shown.'0x10'": false,
+    });
   });
 
   it("each count as naming one where the checker leaves a question of the resolution unanswered", () => {

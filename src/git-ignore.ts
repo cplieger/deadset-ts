@@ -18,14 +18,42 @@ interface Rule {
   readonly expression: RegExp;
 }
 
-/** The rules one ignore file's text writes, in order. */
+/**
+ * One line less the trailing spaces git ignores: the run of U+0020 at its end that no
+ * backslash escapes, a backslash escaping the character after it, as git's
+ * `trim_trailing_spaces` reads it. A tab or other whitespace stays part of the pattern.
+ */
+function trailingSpacesTrimmed(line: string): string {
+  let spaces = -1;
+  for (let at = 0; at < line.length; at += 1) {
+    if (line[at] === " ") {
+      spaces = spaces < 0 ? at : spaces;
+    } else if (line[at] === "\\") {
+      at += 1;
+      if (at === line.length) {
+        return line;
+      }
+      spaces = -1;
+    } else {
+      spaces = -1;
+    }
+  }
+  return spaces < 0 ? line : line.slice(0, spaces);
+}
+
+/**
+ * The rules one ignore file's text writes, in order. As git's `add_patterns_from_buffer`
+ * does, each line, the last one included, loses one carriage return that ends it before its
+ * trailing spaces are trimmed.
+ */
 function rulesOf(text: string): readonly Rule[] {
   const rules: Rule[] = [];
-  for (const raw of text.split(/\r?\n/u)) {
-    let line = raw.replace(/(?<!\\)\s+$/u, "");
+  for (const raw of text.split("\n")) {
+    let line = trailingSpacesTrimmed(raw.endsWith("\r") ? raw.slice(0, -1) : raw);
     if (line === "" || line.startsWith("#")) {
       continue;
     }
+    const written = line;
     const negated = line.startsWith("!");
     line = negated ? line.slice(1) : line;
     const directoryOnly = line.endsWith("/");
@@ -40,7 +68,7 @@ function rulesOf(text: string): readonly Rule[] {
     rules.push({
       negated,
       directoryOnly,
-      expression: gitignoreExpression(anchored ? pattern : `**/${pattern}`),
+      expression: gitignoreExpression(written, anchored ? pattern : `**/${pattern}`),
     });
   }
   return rules;

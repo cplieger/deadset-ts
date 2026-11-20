@@ -352,7 +352,14 @@ export const SETTINGS: readonly SettingRow[] = [
             type: "object",
             additionalProperties: false,
             required: ["symbol"],
-            properties: { symbol: { type: "string", pattern: "^ts://" } },
+            properties: {
+              symbol: {
+                type: "string",
+                pattern:
+                  "^[a-z][a-z0-9]*://(?:[^\\x00-\\x20\\x7F-\\xA0                　﻿؜‎‏‪‫‬‭‮⁦⁧⁨⁩#%*]|%[0-9A-F]{2})+#(?:(?:[^\\x00-\\x20\\x7F-\\xA0                　﻿؜‎‏‪‫‬‭‮⁦⁧⁨⁩'\\[\\]*%]|%[0-9A-F]{2})|'(?:[^'\\\\\\x00-\\x08\\x0A-\\x1F\\x7F-\\x9F؜‎‏‪‫‬‭‮⁦⁧⁨⁩  ]|\\\\['\\\\nr]|\\\\u\\{(?:[0-8BCEF]|1[0-9A-F]|7F|[89][0-9A-F]|61C|200[EF]|202[89A-E]|206[6-9]|D[89A-F][0-9A-F]{2})\\})*'|\\[[^\\]\\x00-\\x20\\x7F-\\xA0                　﻿؜‎‏‪‫‬‭‮⁦⁧⁨⁩]+\\])*$",
+                allOf: [{ pattern: "^ts://" }],
+              },
+            },
           },
           {
             type: "object",
@@ -397,7 +404,14 @@ export const SETTINGS: readonly SettingRow[] = [
                   type: "object",
                   additionalProperties: false,
                   required: ["symbol"],
-                  properties: { symbol: { type: "string", pattern: "^ts://" } },
+                  properties: {
+                    symbol: {
+                      type: "string",
+                      pattern:
+                        "^[a-z][a-z0-9]*://(?:[^\\x00-\\x20\\x7F-\\xA0                　﻿؜‎‏‪‫‬‭‮⁦⁧⁨⁩#%*]|%[0-9A-F]{2})+#(?:(?:[^\\x00-\\x20\\x7F-\\xA0                　﻿؜‎‏‪‫‬‭‮⁦⁧⁨⁩'\\[\\]*%]|%[0-9A-F]{2})|'(?:[^'\\\\\\x00-\\x08\\x0A-\\x1F\\x7F-\\x9F؜‎‏‪‫‬‭‮⁦⁧⁨⁩  ]|\\\\['\\\\nr]|\\\\u\\{(?:[0-8BCEF]|1[0-9A-F]|7F|[89][0-9A-F]|61C|200[EF]|202[89A-E]|206[6-9]|D[89A-F][0-9A-F]{2})\\})*'|\\[[^\\]\\x00-\\x20\\x7F-\\xA0                　﻿؜‎‏‪‫‬‭‮⁦⁧⁨⁩]+\\])*$",
+                      allOf: [{ pattern: "^ts://" }],
+                    },
+                  },
                 },
                 {
                   type: "object",
@@ -425,7 +439,14 @@ export const SETTINGS: readonly SettingRow[] = [
                   type: "object",
                   additionalProperties: false,
                   required: ["symbol"],
-                  properties: { symbol: { type: "string", pattern: "^ts://" } },
+                  properties: {
+                    symbol: {
+                      type: "string",
+                      pattern:
+                        "^[a-z][a-z0-9]*://(?:[^\\x00-\\x20\\x7F-\\xA0                　﻿؜‎‏‪‫‬‭‮⁦⁧⁨⁩#%*]|%[0-9A-F]{2})+#(?:(?:[^\\x00-\\x20\\x7F-\\xA0                　﻿؜‎‏‪‫‬‭‮⁦⁧⁨⁩'\\[\\]*%]|%[0-9A-F]{2})|'(?:[^'\\\\\\x00-\\x08\\x0A-\\x1F\\x7F-\\x9F؜‎‏‪‫‬‭‮⁦⁧⁨⁩  ]|\\\\['\\\\nr]|\\\\u\\{(?:[0-8BCEF]|1[0-9A-F]|7F|[89][0-9A-F]|61C|200[EF]|202[89A-E]|206[6-9]|D[89A-F][0-9A-F]{2})\\})*'|\\[[^\\]\\x00-\\x20\\x7F-\\xA0                　﻿؜‎‏‪‫‬‭‮⁦⁧⁨⁩]+\\])*$",
+                      allOf: [{ pattern: "^ts://" }],
+                    },
+                  },
                 },
                 {
                   type: "object",
@@ -468,7 +489,14 @@ export const SETTINGS: readonly SettingRow[] = [
             type: "object",
             additionalProperties: false,
             required: ["symbol"],
-            properties: { symbol: { type: "string", pattern: "^ts://" } },
+            properties: {
+              symbol: {
+                type: "string",
+                pattern:
+                  "^[a-z][a-z0-9]*://(?:[^\\x00-\\x20\\x7F-\\xA0                　﻿؜‎‏‪‫‬‭‮⁦⁧⁨⁩#%*]|%[0-9A-F]{2})+#(?:(?:[^\\x00-\\x20\\x7F-\\xA0                　﻿؜‎‏‪‫‬‭‮⁦⁧⁨⁩'\\[\\]*%]|%[0-9A-F]{2})|'(?:[^'\\\\\\x00-\\x08\\x0A-\\x1F\\x7F-\\x9F؜‎‏‪‫‬‭‮⁦⁧⁨⁩  ]|\\\\['\\\\nr]|\\\\u\\{(?:[0-8BCEF]|1[0-9A-F]|7F|[89][0-9A-F]|61C|200[EF]|202[89A-E]|206[6-9]|D[89A-F][0-9A-F]{2})\\})*'|\\[[^\\]\\x00-\\x20\\x7F-\\xA0                　﻿؜‎‏‪‫‬‭‮⁦⁧⁨⁩]+\\])*$",
+                allOf: [{ pattern: "^ts://" }],
+              },
+            },
           },
           {
             type: "object",
@@ -514,7 +542,7 @@ export const SETTINGS: readonly SettingRow[] = [
 ];
 
 /** The bound on a configuration document, in bytes. */
-export const CONFIG_MAX_BYTES = 1048576;
+export const CONFIG_MAX_BYTES = 16777216;
 
 /** The scope document's schema, as the validator reads it. */
 export const SCOPE_SCHEMA = {
@@ -574,13 +602,8 @@ export const EDGES_SCHEMA = {
   $defs: {
     reference: {
       type: "string",
-      allOf: [
-        { pattern: "^[a-z][a-z0-9]*://[^ \\t\\r\\n#]+#[^ \\t\\r\\n]*$" },
-        {
-          pattern:
-            "^(?:[^'\\[*]|'(?:[^'\\\\]|\\\\[^\\r\\n])*'|\\[[^\\]]*\\])*(?:'(?:[^'\\\\]|\\\\[^\\r\\n])*\\\\?|\\[[^\\]]*)?$",
-        },
-      ],
+      pattern:
+        "^[a-z][a-z0-9]*://(?:[^\\x00-\\x20\\x7F-\\xA0                　﻿؜‎‏‪‫‬‭‮⁦⁧⁨⁩#%*]|%[0-9A-F]{2})+#(?:(?:[^\\x00-\\x20\\x7F-\\xA0                　﻿؜‎‏‪‫‬‭‮⁦⁧⁨⁩'\\[\\]*%]|%[0-9A-F]{2})|'(?:[^'\\\\\\x00-\\x08\\x0A-\\x1F\\x7F-\\x9F؜‎‏‪‫‬‭‮⁦⁧⁨⁩  ]|\\\\['\\\\nr]|\\\\u\\{(?:[0-8BCEF]|1[0-9A-F]|7F|[89][0-9A-F]|61C|200[EF]|202[89A-E]|206[6-9]|D[89A-F][0-9A-F]{2})\\})*'|\\[[^\\]\\x00-\\x20\\x7F-\\xA0                　﻿؜‎‏‪‫‬‭‮⁦⁧⁨⁩]+\\])*$",
     },
     edge_identifier: { type: "string", pattern: "^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$" },
   },

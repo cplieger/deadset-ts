@@ -173,7 +173,7 @@ const ARMS: ReadonlyMap<SyntaxKind, Arm> = new Map([
         }
         for (const { element, name } of patternElements(declaration.name)) {
           into.declare(element, owner, "variable", name, {
-            component: { text: name.text, computed: false },
+            component: { text: name.text, kind: "key" },
             localName: undefined,
           });
         }
@@ -205,7 +205,7 @@ const ARMS: ReadonlyMap<SyntaxKind, Arm> = new Map([
     arm(isExportAssignment, (node, owner, into) => {
       if (!node.isExportEquals) {
         into.declare(node, owner, "export-alias", undefined, {
-          component: { text: "default", computed: false },
+          component: { text: "default", kind: "key" },
           localName: undefined,
         });
       }

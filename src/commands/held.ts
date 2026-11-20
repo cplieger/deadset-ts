@@ -15,7 +15,7 @@ import {
   type Word as ShellWord,
 } from "../vendor/unbash/parser.ts";
 import { expressionsAsParts, heldTextsOf, parseLine, PART, wordOf, type Word } from "./shell.ts";
-import { fileOperands, outputOf } from "./tools.ts";
+import { fileOperands, outputOf, type Replacer } from "./tools.ts";
 
 /** One text layer 3 reads. */
 export interface HeldText {
@@ -283,7 +283,7 @@ function commandsOf(
 ): ReturnType<typeof fileOperands> {
   const places = new Set<number>();
   const lines = new Map<number, string>();
-  const replaced = new Map<number, RegExp>();
+  const replaced = new Map<number, Replacer>();
   const joined: (readonly [number, number])[] = [];
   const texts: string[] = [];
   let unwritten = false;
@@ -483,7 +483,7 @@ function scriptWords(
 ): void {
   const runs = new Set<SyntaxNode>();
   const lines = new Map<SyntaxNode, string>();
-  const replaced = new Map<SyntaxNode, RegExp>();
+  const replaced = new Map<SyntaxNode, Replacer>();
   const handed = new Map<SyntaxNode, Stdin>();
   const inputs = new Map<SyntaxNode, Stdin>();
   inputsOf(script, stdin, inputs);

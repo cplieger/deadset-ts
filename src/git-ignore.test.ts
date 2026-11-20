@@ -46,6 +46,48 @@ describe("the files a tree's .gitignore files ignore", () => {
     ).toEqual(["dist/index.d.ts", "packages/a/dist/index.d.ts", "src/debug.log"]);
   });
 
+  it.each([1022, 1024])(
+    "matches an unanchored line of %i characters at any depth, the bound measured on the line",
+    (length) => {
+      const name = "a".repeat(length);
+
+      expect(ignoredOf({ ".gitignore": `${name}\n` }, [name, `src/${name}`, "src/b"])).toEqual([
+        name,
+        `src/${name}`,
+      ]);
+    },
+  );
+
+  it("names nothing with a line past the bound, its negation and its slashes counted, and not its trailing spaces", () => {
+    const name = "a".repeat(1024);
+
+    expect(ignoredOf({ ".gitignore": `${name}a\n` }, [`${name}a`, `src/${name}a`])).toEqual([]);
+    expect(ignoredOf({ ".gitignore": `/${name}\n` }, [name])).toEqual([]);
+    expect(ignoredOf({ ".gitignore": `${name}/\n` }, [`${name}/x.ts`])).toEqual([]);
+    expect(ignoredOf({ ".gitignore": `*\n!${name.slice(1)}\n` }, [name.slice(1)])).toEqual([]);
+    expect(ignoredOf({ ".gitignore": `*\n!${name}\n` }, [name])).toEqual([name]);
+    expect(ignoredOf({ ".gitignore": `${name}   \n` }, [name])).toEqual([name]);
+  });
+
+  it("trims only the unescaped spaces that end a line, as git does, never a tab", () => {
+    expect(ignoredOf({ ".gitignore": "name\t\n" }, ["name", "name\t"])).toEqual(["name\t"]);
+    expect(ignoredOf({ ".gitignore": "name  \n" }, ["name", "name "])).toEqual(["name"]);
+    expect(ignoredOf({ ".gitignore": "name\\ \n" }, ["name", "name "])).toEqual(["name "]);
+    expect(ignoredOf({ ".gitignore": "name\\  \n" }, ["name", "name "])).toEqual(["name "]);
+    expect(ignoredOf({ ".gitignore": "name\u00a0\n" }, ["name", "name\u00a0"])).toEqual([
+      "name\u00a0",
+    ]);
+  });
+
+  it("drops one carriage return that ends a line, the last line included, before the spaces", () => {
+    expect(ignoredOf({ ".gitignore": "dist\r" }, ["dist/a.js", "dist\r/a.js"])).toEqual([
+      "dist/a.js",
+    ]);
+    expect(ignoredOf({ ".gitignore": "x\nbuild \r" }, ["build/b.js"])).toEqual(["build/b.js"]);
+    expect(ignoredOf({ ".gitignore": "a\r\nb\r\n" }, ["a", "b", "a\r"])).toEqual(["a", "b"]);
+    expect(ignoredOf({ ".gitignore": "a\r\r\n" }, ["a", "a\r"])).toEqual(["a\r"]);
+  });
+
   it("anchors a pattern with a separator to its own file's directory", () => {
     expect(
       ignoredOf({ ".gitignore": "/build\npackages/*/out\n", "packages/b/.gitignore": "lib\n" }, [

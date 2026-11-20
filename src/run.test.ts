@@ -319,14 +319,17 @@ describe("a key only another product reads", () => {
 });
 
 describe("a configuration document above the Contract's bound", () => {
+  /** x-max-bytes of config.schema.json. */
+  const DOCUMENT_BOUND = 16 << 20;
+
   it("is refused with the usage code before it is decoded", () => {
     const got = invoke([
       "print-config",
-      `--target=${configuredTree({ target: { kind: "library" }, roots: { patterns: ["a".repeat(1 << 20)] } })}`,
+      `--target=${configuredTree({ target: { kind: "library" }, roots: { patterns: ["a".repeat(DOCUMENT_BOUND)] } })}`,
     ]);
 
     expect(got.code).toBe(2);
-    expect(got.err).toContain("holds more than 1048576 bytes");
+    expect(got.err).toContain(`holds more than ${String(DOCUMENT_BOUND)} bytes`);
   });
 
   it("is read no further than one byte past the bound, from every source", () => {
@@ -348,7 +351,7 @@ describe("a configuration document above the Contract's bound", () => {
     expect(invoke(["print-config", `--target=${root}`, `--central=${document}`], host).code).toBe(
       0,
     );
-    expect(limits).toEqual([1048577, 1048577, 1048577, 1048577]);
+    expect(limits).toEqual(Array<number>(4).fill(DOCUMENT_BOUND + 1));
   });
 
   /** A document of exactly `bytes` bytes, its padding two-byte characters. */
@@ -359,9 +362,9 @@ describe("a configuration document above the Contract's bound", () => {
   }
 
   it.each([
-    [1048576, 0],
-    [1048577, 2],
-    [1048578, 2],
+    [DOCUMENT_BOUND, 0],
+    [DOCUMENT_BOUND + 1, 2],
+    [DOCUMENT_BOUND + 2, 2],
   ])("of %i bytes of two-byte characters exits %i", (bytes, code) => {
     const root = configuredTree({});
     writeFileSync(join(root, "deadset.json"), sized(bytes));
@@ -370,7 +373,9 @@ describe("a configuration document above the Contract's bound", () => {
     expect(Buffer.byteLength(sized(bytes))).toBe(bytes);
     expect(got.code, got.err).toBe(code);
     expect(got.err.split("\n")[0]).toBe(
-      code === 0 ? "" : `deadset-ts: ${join(root, "deadset.json")}: holds more than 1048576 bytes`,
+      code === 0
+        ? ""
+        : `deadset-ts: ${join(root, "deadset.json")}: holds more than ${String(DOCUMENT_BOUND)} bytes`,
     );
   });
 });

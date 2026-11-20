@@ -195,6 +195,70 @@ describe("a document at the target root", () => {
   );
 
   it.each([EDGES_FILE, IGNORE_FILE, BASELINE_FILE, "deadset.json"])(
+    "named %s of exactly the Contract's bound of 16 MiB is read",
+    (name) => {
+      const { top, target } = tree();
+      writeFileSync(join(target, name), (VALID[name] ?? "").padEnd(16 << 20));
+
+      const got = analyze(top, target);
+
+      expect(got.code, got.err).toBe(0);
+      expect(got.read).toContain(join(target, name));
+    },
+  );
+
+  /** Each document at the bound, its bytes nearly all one string a pattern or the reader meets. */
+  const ONE_LONG_STRING: Readonly<Record<string, (long: string) => string>> = {
+    [EDGES_FILE]: (long) => `{"description": "${long}", "edges": {}}`,
+    [IGNORE_FILE]: (long) => `{"description": "${long}", "ignore": []}`,
+    [BASELINE_FILE]: (long) => `{"description": "${long}", "baseline": []}`,
+    "deadset.json": (long) =>
+      `{"target": {"kind": "library"}, "provenance": {"target.kind": "repository: ${long}"}}`,
+  };
+
+  it.each(Object.keys(ONE_LONG_STRING))(
+    "named %s at the Contract's bound, holding one string of nearly 16 Mi characters, is read",
+    (name) => {
+      const { top, target } = tree();
+      const shape = ONE_LONG_STRING[name] ?? ((long: string) => long);
+      const long = "x".repeat((16 << 20) - shape("").length);
+      writeFileSync(join(target, name), shape(long));
+
+      const got = analyze(top, target);
+
+      expect(got.code, got.err).toBe(0);
+      expect(got.read).toContain(join(target, name));
+    },
+  );
+
+  it.each([
+    [
+      EDGES_FILE,
+      (long: string) =>
+        `{"edges": {"wire/a": {"provides": "go://example.com/app#${long}", "used_by": "ts://./a.ts#a"}}}`,
+    ],
+    [
+      IGNORE_FILE,
+      (long: string) =>
+        `{"ignore": [{"code": "DS1001", "symbol": "go://example.com/app#${long}", "path": "a.go", "reason": "kept"}]}`,
+    ],
+    [
+      IGNORE_FILE,
+      (long: string) =>
+        `{"ignore": [{"code": "DS1001", "symbol": "ts://./${long}.ts#a", "path": "${long}.ts", "reason": "kept"}]}`,
+    ],
+  ] as const)("named %s whose reference is 8 Mi characters long reads it", (name, shape) => {
+    const { top, target } = tree();
+    writeFileSync(join(target, name), shape("A".repeat(8 << 20)));
+
+    const got = analyze(top, target);
+
+    expect(got.code, got.err).not.toBe(3);
+    expect(got.err).not.toContain("Maximum call stack size exceeded");
+    expect(got.read).toContain(join(target, name));
+  });
+
+  it.each([EDGES_FILE, IGNORE_FILE, BASELINE_FILE, "deadset.json"])(
     "named %s past the Contract's bound is refused with the usage code, read one byte past it",
     (name) => {
       const { top, target } = tree();

@@ -186,7 +186,7 @@ function memberDirectories(
   const excluded: (readonly string[])[] = [];
   for (const written of patterns) {
     const negated = written.startsWith("!");
-    for (const pattern of braceExpanded(negated ? written.slice(1) : written)) {
+    for (const pattern of braceExpanded(negated ? written.slice(1) : written, written)) {
       const segments = segmentsOf(pattern);
       if (segments === undefined) {
         continue;
@@ -218,7 +218,7 @@ function namesDirectory(root: string, patterns: readonly string[], dir: string):
   let named = false;
   for (const written of patterns) {
     const negated = written.startsWith("!");
-    const matched = braceExpanded(negated ? written.slice(1) : written).some((pattern) => {
+    const matched = braceExpanded(negated ? written.slice(1) : written, written).some((pattern) => {
       const segments = segmentsOf(pattern);
       return segments !== undefined && pathMatches(segments, path);
     });

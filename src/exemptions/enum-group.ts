@@ -31,7 +31,7 @@ import { parenthesesRemoved } from "../unwrap.ts";
 import { TypeFlags, type Type } from "@typescript/native/sync";
 import { aliasChains } from "../alias-chain.ts";
 import type { DetectorInput, Evidence } from "./lifecycle.ts";
-import { nodeKey } from "../inventory.ts";
+import { heldName, nodeKey } from "../inventory.ts";
 import { renderPosition } from "../position.ts";
 import { isAnswered, UNANSWERED, type Answer } from "../query.ts";
 import type { ProjectView } from "../session.ts";
@@ -197,7 +197,7 @@ export function enumGroup<Brand>(input: DetectorInput<Brand>): readonly Evidence
       if (isEnumDeclaration(node)) {
         const id = held.declarations.get(nodeKey(file, node));
         if (id !== undefined) {
-          enums.set(id, node.name.getText());
+          enums.set(id, heldName(node.name));
         }
       }
       node.forEachChild(visit);
@@ -220,7 +220,7 @@ export function enumGroup<Brand>(input: DetectorInput<Brand>): readonly Evidence
       return;
     }
     if (symbol === UNANSWERED) {
-      const ids = enumsNamed(site.name.getText());
+      const ids = enumsNamed(heldName(site.name));
       if (ids.length > 0) {
         named.set(site, ids);
       }

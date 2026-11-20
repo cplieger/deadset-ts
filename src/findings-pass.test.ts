@@ -24,6 +24,7 @@ import { UsageError } from "./usage.ts";
 import { analyzerProvenance, verdictOf, type PassResult } from "./findings-pass.ts";
 import { resolve } from "./resolve.ts";
 import { scopeForDir } from "./scope.ts";
+import { reportedPath } from "./ref.ts";
 import { isRowSubject, subjectOfCode } from "./suppression/records.ts";
 import { openEngine } from "./session.ts";
 import {
@@ -540,6 +541,65 @@ describe("a baseline", () => {
       "DS1002 addedSince",
     ]);
     expect(exit).toBe(EXIT_FINDINGS);
+  });
+});
+
+describe("a baseline row's path", () => {
+  const paths = [
+    "src/a\u001bb.ts",
+    "src/a\u009bb.ts",
+    "src/a\u202eb.ts",
+    "src/a\u2028b.ts",
+    "src/a b.ts",
+    "src/100%.ts",
+    "src/a#b.ts",
+  ];
+  const findings: RecordableFinding[] = paths.map((path, at) => ({
+    code: "DS1002",
+    symbol: { ref: `ts://@example/target/src/f${String(at)}.ts#unused`, kind: "function" },
+    position: { path },
+  }));
+  const row = (at: number, path: string): string =>
+    [
+      "    {",
+      `      "code": "DS1002",`,
+      `      "symbol": "ts://@example/target/src/f${String(at)}.ts#unused",`,
+      `      "path": "${path}",`,
+      `      "reason": "recorded by deadset-ts 1.2.3"`,
+      "    }",
+    ].join("\n");
+
+  it("is the path the report carries, spelled as the file name holds it", () => {
+    expect(recordedRows(findings).map((recorded) => recorded.path)).toEqual(
+      paths.map(reportedPath),
+    );
+  });
+
+  it("is written as the file name holds it, with JSON's escapes and U+2028 escaped as Go writes it", () => {
+    const written = whole(
+      writeBaseline(recordedRows(findings), { analyzer: "deadset-ts", version: "1.2.3" }),
+    );
+    const spelled = [
+      "src/a\\u001bb.ts",
+      "src/a\u009bb.ts",
+      "src/a\u202eb.ts",
+      "src/a\\u2028b.ts",
+      "src/a b.ts",
+      "src/100%.ts",
+      "src/a#b.ts",
+    ];
+
+    expect(written).toBe(
+      [
+        "{",
+        `  "description": "Recorded findings: a run fails only on a finding this document does not hold. Every reason is the analyzer that recorded the row, never an adjudication.",`,
+        `  "baseline": [`,
+        spelled.map((path, at) => row(at, path)).join(",\n"),
+        "  ]",
+        "}",
+        "",
+      ].join("\n"),
+    );
   });
 });
 

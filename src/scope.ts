@@ -1,4 +1,5 @@
 import { SCOPE_SCHEMA } from "./contract/config.generated.ts";
+import { readBoundedDocument, refuseOverBound } from "./fs/document.ts";
 import type { Host } from "./host.ts";
 import { dotted, locatedFault, placeIn, readStrict, StrictJSONError } from "./json-document.ts";
 import { dirnamePath, isAbsolutePath, joinPath, resolvePath } from "./paths.ts";
@@ -7,18 +8,6 @@ import { failureExit } from "./failure.ts";
 import { message } from "./product.ts";
 import { firstRefusal } from "./schema.ts";
 import { UsageError } from "./usage.ts";
-
-/**
- * A scope document above this length is refused rather than decoded. It names one
- * target and its consumers, so a larger file is not one.
- */
-const MAX_DOCUMENT_LENGTH = 1 << 20;
-
-/**
- * The bytes read of a scope document. A UTF-16 unit decodes from at most three bytes,
- * so a document past the bound is past it within these.
- */
-const MAX_DOCUMENT_BYTES = 3 * (MAX_DOCUMENT_LENGTH + 1);
 
 /**
  * One module the run reads: the target or a declared consumer. The role a document
@@ -56,13 +45,11 @@ export function readScope(host: Host, file: string): Scope {
   const absolute = resolvePath(host.workingDirectory(), file);
   let text: string;
   try {
-    text = host.readFile(absolute, MAX_DOCUMENT_BYTES);
+    text = readBoundedDocument(host, absolute);
   } catch (error: unknown) {
     throw new UsageError(`scope: ${file}: ${message(error)}`);
   }
-  if (text.length > MAX_DOCUMENT_LENGTH) {
-    throw new UsageError(`scope: ${file} is longer than ${String(MAX_DOCUMENT_LENGTH)} characters`);
-  }
+  refuseOverBound(`scope: ${file}`, text);
   let value: unknown;
   try {
     value = readStrict(text).value;

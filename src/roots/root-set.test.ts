@@ -524,7 +524,7 @@ describe("configured roots and patterns", () => {
       CONFIGURED.roots.map((root) => `${root.ref} ${root.kind} ${root.configurations.join(",")}`),
     ).toEqual([
       "ts://@example/configured-roots/a/one.ts#one configured a/tsconfig.json",
-      "ts://@example/configured-roots/a/one.ts#Keyed.🚀 pattern a/tsconfig.json",
+      "ts://@example/configured-roots/a/one.ts#Keyed.𝑥 pattern a/tsconfig.json",
       "ts://@example/configured-roots/b/nested/deep.ts#deep pattern b/tsconfig.json",
     ]);
   });

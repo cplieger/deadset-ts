@@ -108,13 +108,29 @@ function holdsReference(node: unknown): boolean {
   return Object.hasOwn(node, "$ref") || Object.values(node).some(holdsReference);
 }
 
+/** The definition name a reference into another Contract document's `$defs` names, if it names one. */
+function definitionNamed(ref: unknown): string | undefined {
+  if (typeof ref !== "string" || ref.startsWith("#")) {
+    return undefined;
+  }
+  return /^[^#]*#\/\$defs\/([^/]+)$/u.exec(ref)?.[1];
+}
+
 /**
  * A Contract schema with each reference into another Contract document turned into one to
  * a copy, under the schema's own `$defs`, of the definition it names, so the validator
- * reads the schema as one document.
+ * reads the schema as one document. A definition of the schema's own that is a reference to
+ * the definition of its name in another document is that definition, so the copy takes its
+ * place.
  */
 export function bundled(schema: Schema, read: Reader): Schema {
-  const defs: Record<string, unknown> = { ...(schema["$defs"] as Schema | undefined) };
+  const { $defs: ownDefs, ...body } = schema as Schema & { $defs?: Schema };
+  const isAlias = ([name, definition]: [string, unknown]): boolean =>
+    definitionNamed((definition as Schema | null)?.["$ref"]) === name;
+  const entries = Object.entries(ownDefs ?? {});
+  const own = entries.filter((entry) => !isAlias(entry));
+  const owned = new Set(own.map(([name]) => name));
+  const copies: Record<string, unknown> = {};
   const copiedFrom = new Map<string, string>();
   const local = (value: unknown): unknown => {
     if (Array.isArray(value)) {
@@ -126,9 +142,9 @@ export function bundled(schema: Schema, read: Reader): Schema {
     const held = value as Schema;
     const ref = held["$ref"];
     if (typeof ref === "string" && !ref.startsWith("#")) {
-      const [file = "", pointer = ""] = ref.split("#");
-      const name = /^\/\$defs\/([^/]+)$/u.exec(pointer)?.[1];
-      if (name === undefined || (Object.hasOwn(defs, name) && copiedFrom.get(name) !== ref)) {
+      const [file = ""] = ref.split("#");
+      const name = definitionNamed(ref);
+      if (name === undefined || owned.has(name) || (copiedFrom.get(name) ?? ref) !== ref) {
         throw new Error(`${ref}: not a definition the schema can hold under its own name`);
       }
       if (!copiedFrom.has(name)) {
@@ -144,14 +160,19 @@ export function bundled(schema: Schema, read: Reader): Schema {
         if (!whole) {
           throw new Error(`${ref}: names no definition the schema can copy whole`);
         }
-        defs[name] = definition;
+        copies[name] = definition;
         copiedFrom.set(name, ref);
       }
       return { ...held, $ref: `#/$defs/${name}` };
     }
     return Object.fromEntries(Object.entries(held).map(([key, child]) => [key, local(child)]));
   };
-  return { ...(local(schema) as Schema), $defs: defs };
+  for (const [, alias] of entries.filter(isAlias)) {
+    local(alias);
+  }
+  const localBody = local(body) as Schema;
+  const localDefs = Object.fromEntries(own.map(([name, definition]) => [name, local(definition)]));
+  return { ...localBody, $defs: { ...localDefs, ...copies } };
 }
 
 /** The generated configuration module's text, formatted as the repository formats every file. */

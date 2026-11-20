@@ -35,7 +35,7 @@ import {
 import { objectLiteralOf } from "../unwrap.ts";
 import { aliasChains } from "../alias-chain.ts";
 import { isGlobalBlock } from "../augmentations.ts";
-import { nodeKey, type Inventory, type InventorySymbol } from "../inventory.ts";
+import { heldName, nodeKey, type Inventory, type InventorySymbol } from "../inventory.ts";
 import { UNANSWERED } from "../query.ts";
 import type { ProjectView } from "../session.ts";
 import {
@@ -240,7 +240,8 @@ export function reachedTypes<Brand>(
       }
       project.symbolsAt(named.map((node) => project.handle(node))).forEach((symbol, index) => {
         if (symbol === UNANSWERED) {
-          for (const id of held.byName.get(named[index]?.getText() ?? "") ?? []) {
+          const node = named[index];
+          for (const id of node === undefined ? [] : (held.byName.get(heldName(node)) ?? [])) {
             guessed.add(id);
             reach(id);
           }

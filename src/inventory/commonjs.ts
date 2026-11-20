@@ -293,7 +293,7 @@ interface Table {
   readonly membersOpen: boolean;
 }
 
-const DEFAULT: Component = { text: "default", computed: false };
+const DEFAULT: Component = { text: "default", kind: "key" };
 
 /** The table one file's top-level unconditional statements write, in order. */
 function readTable(

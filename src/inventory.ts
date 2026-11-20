@@ -9,11 +9,14 @@ import {
   isInterfaceDeclaration,
   isMethodDeclaration,
   isMethodSignatureDeclaration,
+  isNoSubstitutionTemplateLiteral,
+  isNumericLiteral,
   isParameterDeclaration,
   isPrivateIdentifier,
   isPropertyDeclaration,
   isPropertySignatureDeclaration,
   isSetAccessorDeclaration,
+  isStringLiteral,
   isTypeAliasDeclaration,
   ModifierFlags,
   SyntaxKind,
@@ -21,7 +24,14 @@ import {
   type SourceFile,
 } from "@typescript/native/ast";
 import { byPosition, positionKey, renderPosition, startLine, type Position } from "./position.ts";
-import { renderRef, spell, type Component, type Module } from "./ref.ts";
+import {
+  hasComputedSpelling,
+  isIdentifierName,
+  renderRef,
+  spell,
+  type Component,
+  type Module,
+} from "./ref.ts";
 import { signatureOf } from "./signatures.ts";
 
 /**
@@ -310,7 +320,7 @@ export class Builder {
       parentChain: [],
       // A file's reference names its module, so no component of it is ever spelled; the
       // path is what a text line renders for it.
-      component: { text: path, computed: false },
+      component: { text: path, kind: "key" },
       localName: path,
       parent: undefined,
     });
@@ -481,7 +491,7 @@ export class Builder {
   #declareTypeParameters(node: Node, owner: Building): void {
     for (const parameter of typeParametersOf(node)) {
       const name = nameNodeOf(parameter);
-      if (name === undefined) {
+      if (name === undefined || !isIdentifier(name)) {
         continue;
       }
       this.#keep(owner.file, parameter, name.getStart(), {
@@ -491,7 +501,7 @@ export class Builder {
         component: owner.component,
         parent: owner,
         static: owner.static,
-        typeParameter: name.getText(),
+        typeParameter: name.text,
       });
     }
   }
@@ -529,9 +539,11 @@ export function nameNodeOf(node: Node): Node | undefined {
 }
 
 /**
- * The reference component one declaration name node spells, and undefined for a name the
- * grammar does not represent: a binding pattern, and a computed key whose source text
- * carries a closing bracket.
+ * The reference component one declaration name node spells, from the name the compiler
+ * holds rather than the source text, so `"a\u0062"` and `ab` are one key and `0x10` is
+ * `16`; undefined for a name the grammar does not represent: a binding pattern, a
+ * computed key with no spelling, a bigint key, which names no member, and a private name
+ * the parser recovered from an error.
  */
 export function componentOf(name: Node | undefined): Component | undefined {
   if (name === undefined) {
@@ -539,17 +551,20 @@ export function componentOf(name: Node | undefined): Component | undefined {
   }
   if (isComputedPropertyName(name)) {
     const text = name.expression.getText();
-    return text.includes("]") ? undefined : { text, computed: true };
+    return hasComputedSpelling(text) ? { text, kind: "computed" } : undefined;
   }
-  if (isIdentifier(name) || isPrivateIdentifier(name)) {
-    return { text: name.getText(), computed: false };
+  if (isPrivateIdentifier(name)) {
+    return isIdentifierName(name.text.slice(1)) ? { text: name.text, kind: "private" } : undefined;
   }
-  const text = name.getText();
-  if (text.startsWith('"') || text.startsWith("'") || text.startsWith("`")) {
-    // A string key's own text carries its quotes; the reference carries the value.
-    return { text: text.slice(1, -1), computed: false };
+  if (
+    isIdentifier(name) ||
+    isStringLiteral(name) ||
+    isNoSubstitutionTemplateLiteral(name) ||
+    isNumericLiteral(name)
+  ) {
+    return { text: name.text, kind: "key" };
   }
-  return /^[0-9]/u.test(text) ? { text, computed: false } : undefined;
+  return undefined;
 }
 
 /**
@@ -565,12 +580,15 @@ export function exportedAs(
   if ((modifiersOf(node) & ModifierFlags.Default) === 0) {
     return { component: declared, localName: undefined };
   }
-  return { component: { text: "default", computed: false }, localName: declared?.text };
+  return { component: { text: "default", kind: "key" }, localName: declared?.text };
 }
 
-/** One member's identity inside its container: its component, and its side of a class. */
+/**
+ * One member's identity inside its container: its side of a class and its component, the
+ * text last, so no text can make two identities one.
+ */
 export function memberKey(component: Component, isStatic: boolean): string {
-  return `${component.computed ? "[" : ""}${component.text}${isStatic ? ":static" : ""}`;
+  return `${isStatic ? "static" : "instance"} ${component.kind} ${component.text}`;
 }
 
 /** The visibility one member declaration's modifiers and name give it. */
@@ -746,6 +764,21 @@ function namesOf(records: readonly Building[]): ReadonlyMap<string, readonly str
     }
   }
   return byName;
+}
+
+/**
+ * The name one use node spells as the compiler holds it, the string {@link namesOf} indexes
+ * a declaration by: an identifier, a private name, a string or a number by its value, so
+ * `\u0061b` is `ab`, and any other node by its source text.
+ */
+export function heldName(node: Node): string {
+  return isIdentifier(node) ||
+    isPrivateIdentifier(node) ||
+    isStringLiteral(node) ||
+    isNoSubstitutionTemplateLiteral(node) ||
+    isNumericLiteral(node)
+    ? node.text
+    : node.getText();
 }
 
 /** The chain of components that names one declaration, read from the module inward. */

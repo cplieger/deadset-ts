@@ -3,7 +3,6 @@
  * rows, bundler entries, workspace member patterns) has `*` and `?` within a segment, `**`
  * across segments and brace lists. A `.gitignore` line has git's form: bracket expressions
  * and backslash escapes, no brace lists (https://git-scm.com/docs/gitignore#_pattern_format).
- * A configured root is not a glob: it names a symbol reference, and is read where it is used.
  */
 
 type GlobForm = "configured" | "gitignore";
@@ -145,8 +144,71 @@ function source(pattern: string, form: GlobForm): string {
   return text;
 }
 
-/** A pattern with every brace list expanded into its alternatives; a lone `{` stands for itself. */
-export function braceExpanded(pattern: string): readonly string[] {
+// The bound `analysis.2` sets on one glob's length in code points and on its brace expansions.
+const GLOB_MAX_CHARACTERS = 1024;
+const GLOB_MAX_EXPANSIONS = 256;
+
+/** Why one glob is past the bound of `analysis.2`, or undefined where it is within it. */
+export function globOverBound(pattern: string): string | undefined {
+  return (
+    lengthOverBound(pattern) ??
+    (expansions(pattern, new Map()) > GLOB_MAX_EXPANSIONS
+      ? `its brace lists expand it to more than ${String(GLOB_MAX_EXPANSIONS)} globs`
+      : undefined)
+  );
+}
+
+/** Why a pattern is longer than `analysis.2` allows, counted in code points. */
+function lengthOverBound(pattern: string): string | undefined {
+  let characters = 0;
+  for (let at = 0; at < pattern.length; at += (pattern.codePointAt(at) ?? 0) > 0xffff ? 2 : 1) {
+    characters += 1;
+  }
+  return characters > GLOB_MAX_CHARACTERS
+    ? `holds ${String(characters)} characters, past the bound of ${String(GLOB_MAX_CHARACTERS)}`
+    : undefined;
+}
+
+/** How many globs `expanded` writes for a pattern, counted without writing them up to the bound. */
+function expansions(pattern: string, counted: Map<string, number>): number {
+  const held = counted.get(pattern);
+  if (held !== undefined) {
+    return held;
+  }
+  const open = pattern.indexOf("{");
+  const close = open < 0 ? -1 : pattern.indexOf("}", open);
+  if (close < 0) {
+    return 1;
+  }
+  const after = pattern.slice(close + 1);
+  let total = 0;
+  for (const member of pattern.slice(open + 1, close).split(",")) {
+    total += member.includes("{")
+      ? expansions(member + after, counted)
+      : expansions(after, counted);
+    if (total > GLOB_MAX_EXPANSIONS) {
+      break;
+    }
+  }
+  counted.set(pattern, total);
+  return total;
+}
+
+/**
+ * A pattern with every brace list expanded into its alternatives; a lone `{` stands for itself.
+ * `written` is the text its author wrote, before the caller rewrote it into `pattern`, and one
+ * past the bound of `analysis.2` expands to none.
+ */
+export function braceExpanded(pattern: string, written = pattern): readonly string[] {
+  // A directory a caller put in is read as glob text, so its brace lists could expand the
+  // pattern past what was written: past the bound it expands to none, never without limit.
+  return globOverBound(written) === undefined &&
+    expansions(pattern, new Map()) <= GLOB_MAX_EXPANSIONS
+    ? expanded(pattern)
+    : [];
+}
+
+function expanded(pattern: string): readonly string[] {
   const open = pattern.indexOf("{");
   const close = open < 0 ? -1 : pattern.indexOf("}", open);
   if (close < 0) {
@@ -157,21 +219,96 @@ export function braceExpanded(pattern: string): readonly string[] {
   return pattern
     .slice(open + 1, close)
     .split(",")
-    .flatMap((member) => braceExpanded(before + member + after));
+    .flatMap((member) => expanded(before + member + after));
 }
 
-/** The expression one whole-path pattern of the configured form denotes. */
-export function globExpression(pattern: string): RegExp {
-  const alternatives = braceExpanded(pattern).map((one) => source(one, "configured"));
-  return new RegExp(`^(?:${alternatives.join("|")})$`, "u");
+/** A compiled glob: whether it matches one path. */
+export interface Glob {
+  test(path: string): boolean;
 }
 
-/** The expression one `.gitignore` pattern denotes over a path below its file's directory. */
-export function gitignoreExpression(pattern: string): RegExp {
-  return new RegExp(`^${source(pattern, "gitignore")}$`, "u");
+/**
+ * The matcher one whole-path pattern of the configured form denotes, and one matching no
+ * path, not even the empty one, past the bound of `analysis.2`.
+ */
+export function globExpression(pattern: string): Glob {
+  return compiled(pattern, pattern, "u");
 }
 
-const SEGMENTS = new Map<string, RegExp>();
+/** The matcher of {@link globExpression} with case not compared. */
+export function caselessGlobExpression(pattern: string): Glob {
+  return compiled(pattern, pattern, "iu");
+}
+
+/**
+ * The matcher of a glob the caller rewrote before it is compiled, by putting a `**` segment,
+ * a directory or a `<rootDir>` path in it: `written` is the text its author wrote, which the
+ * bound of `analysis.2` measures, and `pattern` the rewritten glob, which is compiled.
+ */
+export function rewrittenGlobExpression(written: string, pattern: string, caseless = false): Glob {
+  return compiled(written, pattern, caseless ? "iu" : "u");
+}
+
+/** What a glob past the bound matches: no path. */
+const NEVER: Glob = { test: () => false };
+
+/**
+ * Past this much source the expansions compile one expression each rather than one joined
+ * expression: V8 refuses one of about 32,000 characters as too large.
+ */
+const JOINED_MAX = 16_384;
+
+function compiled(written: string, pattern: string, flags: string): Glob {
+  const sources = braceExpanded(pattern, written).map((one) => source(one, "configured"));
+  const joined =
+    sources.length > 0 && sources.reduce((total, one) => total + one.length + 1, 0) <= JOINED_MAX
+      ? compiledNow(`^(?:${sources.join("|")})$`, flags)
+      : undefined;
+  if (joined !== undefined) {
+    return joined;
+  }
+  const alternatives = sources.flatMap((one) => compiledNow(`^${one}$`, flags) ?? []);
+  return alternatives.length === 0
+    ? NEVER
+    : { test: (path) => alternatives.some((one) => one.test(path)) };
+}
+
+/**
+ * One regular expression compiled before it is used, and undefined where its source is not one
+ * or V8 refuses it as too large. V8 compiles at the first match, apart for a Latin-1 subject and
+ * a wider one, so a match of each here moves either refusal to construction. Within the bound of
+ * `analysis.2` only a directory a caller puts in makes one that large, longer than any path the
+ * host names (PATH_MAX, 4,096 bytes on Linux), so a caller reads it as matching no path.
+ */
+export function compiledNow(text: string, flags: string): RegExp | undefined {
+  try {
+    const expression = new RegExp(text, flags);
+    expression.test("");
+    expression.test("\u0100");
+    return expression;
+  } catch (error: unknown) {
+    if (error instanceof SyntaxError) {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
+/**
+ * The expression one `.gitignore` pattern denotes over a path below its file's directory.
+ * `line` is the line the file writes, less the trailing spaces git ignores, which the bound
+ * of `analysis.2` measures, and one past it matches nothing, as does one V8 cannot hold.
+ * Git's form has no brace lists, so its braces count toward no expansion.
+ */
+export function gitignoreExpression(line: string, pattern: string): RegExp {
+  return (
+    (lengthOverBound(line) === undefined
+      ? compiledNow(`^${source(pattern, "gitignore")}$`, "u")
+      : undefined) ?? new RegExp(NOTHING, "u")
+  );
+}
+
+const SEGMENTS = new Map<string, Glob>();
 
 /**
  * Whether one directory name matches one segment of a workspace's member pattern, its brace
