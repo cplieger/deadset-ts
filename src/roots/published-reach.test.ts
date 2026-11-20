@@ -666,3 +666,157 @@ describe("a declaration a test file's runner-called export reaches", () => {
     ]);
   });
 });
+
+/** A compiler configuration whose imports name `.ts` files. */
+const TS_IMPORTS = JSON.stringify({
+  compilerOptions: {
+    strict: true,
+    module: "NodeNext",
+    moduleResolution: "nodenext",
+    noEmit: true,
+    allowImportingTsExtensions: true,
+  },
+  include: ["**/*.ts"],
+});
+
+describe("a primitive intersected with object types, which carries only the primitive's members", () => {
+  it("keeps a brand's directive in effect where a test helper's export converts a value holding the brand to unknown", () => {
+    const report = analyzed({
+      "package.json": JSON.stringify({
+        name: "@example/lib",
+        version: "1.0.0",
+        type: "module",
+        exports: { ".": "./src/index.ts" },
+      }),
+      "deadset.json": JSON.stringify({
+        target: { kind: "library" },
+        ts: { test_files: ["**/*.test.ts", "src/**/test-helpers/**"] },
+      }),
+      "tsconfig.json": TS_IMPORTS,
+      "src/index.ts": [
+        "export type TabAlias = string & {",
+        "  // deadset:ignore DS1003 -- the brand only makes TabAlias nominal; nothing reads it",
+        '  readonly __brand: "TabAlias";',
+        "};",
+        "export interface SessionFact {",
+        "  readonly id: string;",
+        "  readonly alias: TabAlias | undefined;",
+        "}",
+        "export interface TabsModel {",
+        "  readonly sessions: ReadonlyMap<string, SessionFact>;",
+        "}",
+        "export function parseTabAlias(s: string): TabAlias | undefined {",
+        "  return /^[a-z]+$/u.test(s) ? (s as TabAlias) : undefined;",
+        "}",
+        "export function modelOf(ids: readonly string[]): TabsModel {",
+        "  return { sessions: new Map(ids.map((id) => [id, { id, alias: parseTabAlias(id) }])) };",
+        "}",
+        "",
+      ].join("\n"),
+      "src/test-helpers/world.ts": [
+        'import type { TabsModel } from "../index.ts";',
+        "export function c2(m: TabsModel): unknown {",
+        "  return m.sessions;",
+        "}",
+        "",
+      ].join("\n"),
+      "src/index.test.ts": [
+        'import { modelOf } from "./index.ts";',
+        'import { c2 } from "./test-helpers/world.ts";',
+        'if (c2(modelOf(["a"])) === undefined) {',
+        '  throw new Error("no sessions");',
+        "}",
+        "",
+      ].join("\n"),
+    }) as ReturnType<typeof analyzed> & {
+      stale_suppressions: unknown[];
+      totals: { suppressions_in_effect: number };
+    };
+
+    expect(report.stale_suppressions).toEqual([]);
+    expect(report.totals.suppressions_in_effect).toBe(1);
+  });
+
+  it("reaches none of the object types' members through a test file's export, in a union, an array, a property and a map, and reaches a plain object type's members", () => {
+    const report = analyzed({
+      "package.json": JSON.stringify({ name: "@example/app", private: true, type: "module" }),
+      "deadset.json": JSON.stringify({
+        target: { kind: "application" },
+        ts: { entry_files: ["src/main.ts"], test_files: ["tests/**"] },
+      }),
+      "tsconfig.json": TS_IMPORTS,
+      "src/model.ts": [
+        "interface Branded {",
+        '  readonly __named: "Named";',
+        "}",
+        'export type Inline = string & { readonly __inline: "Inline" };',
+        "export type Named = number & Branded;",
+        'export type Flag = boolean & { readonly __flag: "Flag" };',
+        "export interface Tag {",
+        "  readonly label?: string;",
+        "}",
+        "export interface Fact {",
+        "  readonly alias?: Inline | undefined;",
+        "  readonly counts?: readonly Named[];",
+        "  readonly flag?: Flag;",
+        "  readonly tag?: Tag;",
+        "}",
+        "export interface Model {",
+        "  readonly facts: ReadonlyMap<string, Fact>;",
+        "}",
+        "export const model: Model = { facts: new Map() };",
+        "",
+      ].join("\n"),
+      "src/main.ts": [
+        'import { model } from "./model.ts";',
+        "for (const fact of model.facts.values()) {",
+        "  console.log(fact.alias, fact.counts, fact.flag, fact.tag);",
+        "}",
+        "",
+      ].join("\n"),
+      "tests/world.ts": [
+        'import type { Model } from "../src/model.ts";',
+        "export function facts(m: Model): unknown {",
+        "  return m.facts;",
+        "}",
+        "",
+      ].join("\n"),
+    });
+
+    expect(lines(report).filter((line) => line.includes("."))).toEqual([
+      "DS1003 Branded.__named certain",
+      "DS1003 Inline.__inline certain",
+      "DS1003 Flag.__flag certain",
+      "DS1102 Tag.label certain",
+    ]);
+  });
+
+  it("publishes none of the object types' members through a published function's result, and publishes a plain object type's members", () => {
+    const report = analyzed({
+      "package.json": JSON.stringify({
+        name: "@example/lib",
+        type: "module",
+        exports: "./src/index.ts",
+      }),
+      "deadset.json": JSON.stringify({ target: { kind: "library" } }),
+      "src/index.ts": [
+        'type Inline = string & { readonly __inline: "Inline" };',
+        "interface Label {",
+        "  readonly text?: string;",
+        "}",
+        "export function aliasOf(s: string): Inline | undefined {",
+        '  return s === "" ? undefined : (s as Inline);',
+        "}",
+        "export function labelOf(): Label {",
+        "  return {};",
+        "}",
+        "",
+      ].join("\n"),
+    });
+
+    expect(lines(report).filter((line) => line.includes("."))).toEqual([
+      "DS1003 Inline.__inline certain",
+      "DS1003 Label.text possible",
+    ]);
+  });
+});

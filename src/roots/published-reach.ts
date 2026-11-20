@@ -18,6 +18,7 @@ import {
   isSatisfiesExpression,
   isPropertyAccessExpression,
   isQualifiedName,
+  isIntersectionTypeNode,
   isTypeQueryNode,
   isTypeReferenceNode,
   isPropertyDeclaration,
@@ -26,6 +27,7 @@ import {
   SyntaxKind,
   type Expression,
   type FunctionLikeDeclaration,
+  type IntersectionTypeNode,
   type Node,
   type ObjectLiteralExpression,
   type SourceFile,
@@ -36,7 +38,12 @@ import { isGlobalBlock } from "../augmentations.ts";
 import { nodeKey, type Inventory, type InventorySymbol } from "../inventory.ts";
 import { UNANSWERED } from "../query.ts";
 import type { ProjectView } from "../session.ts";
-import { SymbolFlags, type Symbol as TSSymbol, type Type } from "@typescript/native/sync";
+import {
+  SymbolFlags,
+  TypeFlags,
+  type Symbol as TSSymbol,
+  type Type,
+} from "@typescript/native/sync";
 
 /** A release tag of a documentation comment: `@` and its name, between white space or the ends. */
 const RELEASE_TAG = /(?:^|\s)@(?:public|beta|alpha)(?=\s|$)/u;
@@ -131,10 +138,11 @@ export function publishedAPI<Brand>(
 /**
  * Every declaration a value of the `seeds` carries to code that holds it, the seeds
  * included and a file excluded: a namespace's or a file's exported members and any other
- * declaration's public and protected ones; a declaration one reached writes as a type or
- * the compiler infers for it; and, as `guessed`, each declaration spelled as a type name
- * the checker leaves unanswered. `grow`, called each time the walk runs out, may reach
- * more, and the walk goes on while it does.
+ * declaration's public and protected ones, but for those an object type intersected with
+ * a primitive declares; a declaration one reached writes as a type outside such an object
+ * type, or the compiler infers for it; and, as `guessed`, each declaration spelled as a
+ * type name the checker leaves unanswered. `grow`, called each time the walk runs out, may
+ * reach more, and the walk goes on while it does.
  */
 export function reachedTypes<Brand>(
   project: ProjectView<Brand>,
@@ -158,6 +166,29 @@ export function reachedTypes<Brand>(
       pending.push(id);
     }
   };
+  // What a declaration's own syntax writes outside the object types it intersects with a
+  // primitive, which only the type system sees, asked once per declaration that writes an
+  // intersection.
+  const typeOnly = new Map<string, readonly Node[]>();
+  const keptIn = (id: string): ((node: Node) => boolean) => {
+    let parts = typeOnly.get(id);
+    if (parts === undefined) {
+      const symbol = byId.get(id);
+      parts =
+        symbol === undefined || symbol.kind === "file"
+          ? []
+          : typeOnlyParts(project, nodes.intersectionsOf(symbol));
+      typeOnly.set(id, parts);
+    }
+    const within = parts;
+    return (node) =>
+      !within.some(
+        (part) =>
+          part.getSourceFile() === node.getSourceFile() &&
+          part.pos <= node.pos &&
+          node.end <= part.end,
+      );
+  };
   for (const id of seeds) {
     reach(id);
   }
@@ -171,18 +202,21 @@ export function reachedTypes<Brand>(
       for (let next = pending.shift(); next !== undefined; next = pending.shift()) {
         round.push(next);
         const exporting = EXPORTING_CONTAINERS.has(byId.get(next)?.kind ?? "");
+        const kept = keptIn(next);
         for (const member of children.get(next) ?? []) {
           const reachable = exporting
             ? member.exported
             : member.visibility !== "private" && member.visibility !== "private-name";
-          if (member.kind !== "type-parameter" && reachable) {
+          if (member.kind !== "type-parameter" && reachable && nodes.nodesOf(member).every(kept)) {
             reach(member.id);
           }
         }
       }
       const named = round.flatMap((id) => {
         const symbol = byId.get(id);
-        return symbol === undefined || symbol.kind === "file" ? [] : nodes.typeNamesOf(symbol);
+        return symbol === undefined || symbol.kind === "file"
+          ? []
+          : nodes.typeNamesOf(symbol).filter(keptIn(id));
       });
       const inferred = inferredTypeSymbols(
         project,
@@ -221,12 +255,16 @@ export function reachedTypes<Brand>(
   return { ids: [...reached], guessed: [...guessed] };
 }
 
-/** The type names declarations of the inventory write, each file walked once, when first asked. */
+/**
+ * The type names and the intersection types declarations of the inventory write, each file
+ * walked once, when first asked.
+ */
 function declarationNodes(
   held: Inventory,
   byPath: ReadonlyMap<string, SourceFile>,
 ): {
   typeNamesOf(symbol: InventorySymbol): readonly Node[];
+  intersectionsOf(symbol: InventorySymbol): readonly IntersectionTypeNode[];
   nodesOf(symbol: InventorySymbol): readonly Node[];
 } {
   const walked = new Map<string, { byId: Map<string, Node[]>; nodes: Set<Node> }>();
@@ -258,12 +296,94 @@ function declarationNodes(
         typeNamesOf(declaration, (nested) => nodes.has(nested)),
       );
     },
+    intersectionsOf: (symbol) => {
+      const { byId, nodes } = nodesIn(symbol.position.path);
+      const found: IntersectionTypeNode[] = [];
+      for (const declaration of byId.get(symbol.id) ?? []) {
+        eachOwnNode(
+          declaration,
+          (nested) => nodes.has(nested),
+          (node) => {
+            if (isIntersectionTypeNode(node)) {
+              found.push(node);
+            }
+          },
+        );
+      }
+      return found;
+    },
     nodesOf: (symbol) => nodesIn(symbol.position.path).byId.get(symbol.id) ?? [],
   };
 }
 
 /** The symbols of an anonymous object type a literal or a type literal writes. */
 const LITERAL_SYMBOLS = SymbolFlags.ObjectLiteral | SymbolFlags.TypeLiteral;
+
+/**
+ * Whether the constituents of an intersection hold a primitive, as a brand such as
+ * `string & { readonly __brand: "Id" }` does: a value of it is that primitive at runtime,
+ * so it carries the primitive's members and none of its object types' (references-ts.44).
+ */
+function brandsAPrimitive(parts: readonly Type[]): boolean {
+  return parts.some((part) => (part.flags & TypeFlags.Primitive) !== 0);
+}
+
+/**
+ * The constituents of a union or an intersection a value of it carries: each of `parts`,
+ * but for a primitive intersected with object types, whose object types are type-only.
+ */
+function carriedParts(type: Type, parts: readonly Type[]): readonly Type[] {
+  return type.isIntersectionType() && brandsAPrimitive(parts)
+    ? parts.filter((part) => !part.isObjectType())
+    : parts;
+}
+
+/**
+ * The constituents of the intersections among `written` whose types are a primitive
+ * intersected with object types, and whose own types are object types: only the type
+ * system sees them, so no value carries a member they declare or a type they name. A
+ * question the checker leaves unanswered makes nothing type-only.
+ */
+function typeOnlyParts<Brand>(
+  project: ProjectView<Brand>,
+  written: readonly IntersectionTypeNode[],
+): readonly Node[] {
+  if (written.length === 0) {
+    return [];
+  }
+  const { queries } = project;
+  const parts = written.flatMap((node) => [...node.types]);
+  const asked = queries.typesAt([...written, ...parts]);
+  const found: Node[] = [];
+  let next = written.length;
+  written.forEach((node, index) => {
+    const own = asked.slice(next, next + node.types.length);
+    next += node.types.length;
+    const type = asked[index];
+    if (type === UNANSWERED || type === undefined) {
+      return;
+    }
+    // A union of literals or `boolean` intersected with an object type is distributed into
+    // a union of intersections, one per literal.
+    const intersections = type.isUnionType() ? queries.constituents(type) : [type];
+    if (
+      intersections === UNANSWERED ||
+      !intersections.every((one) => {
+        const constituents = one.isIntersectionType() ? queries.constituents(one) : UNANSWERED;
+        return constituents !== UNANSWERED && brandsAPrimitive(constituents);
+      })
+    ) {
+      return;
+    }
+    node.types.forEach((part, at) => {
+      const one = own[at];
+      if (one !== UNANSWERED && one?.isObjectType() === true) {
+        found.push(part);
+      }
+    });
+  });
+  return found;
+}
 
 /** How deep the type arguments, constituents and literal property types of an inferred type are followed. */
 const INFERRED_DEPTH = 4;
@@ -441,7 +561,9 @@ function inferredTypeSymbols<Brand>(
     const parts = queries.constituents(type);
     const args = queries.typeArguments(type);
     for (const next of [
-      ...(parts === UNANSWERED || (parts.length === 1 && parts[0] === type) ? [] : parts),
+      ...(parts === UNANSWERED || (parts.length === 1 && parts[0] === type)
+        ? []
+        : carriedParts(type, parts)),
       ...(args === UNANSWERED ? [] : args),
       ...propertyTypes(type, symbol),
     ]) {
@@ -466,11 +588,23 @@ function inferredTypeSymbols<Brand>(
     visit(type, 0);
   });
   // A returned value carries each property of its type, one an anonymous type declares or
-  // an intersection merges included, which no type name reaches.
+  // an intersection merges included, which no type name reaches, but none of the object
+  // types a primitive is intersected with, alone or as a union's constituent.
   const members = new Map<number, TSSymbol>();
+  const brand = (one: Type): boolean => {
+    const parts = one.isIntersectionType() ? queries.constituents(one) : UNANSWERED;
+    return parts !== UNANSWERED && brandsAPrimitive(parts);
+  };
+  const carriedBy = (type: Type): readonly Type[] => {
+    const asked = queries.constituents(type);
+    const parts = asked === UNANSWERED ? [] : asked;
+    if (brand(type)) {
+      return carriedParts(type, parts);
+    }
+    return type.isUnionType() && parts.some(brand) ? parts.flatMap(carriedBy) : [type, ...parts];
+  };
   for (const type of returnedTypes) {
-    const parts = queries.constituents(type);
-    for (const one of [type, ...(parts === UNANSWERED ? [] : parts)]) {
+    for (const one of carriedBy(type)) {
       const properties = queries.propertiesOf(one);
       for (const property of properties === UNANSWERED ? [] : properties) {
         members.set(property.id, property);
@@ -481,19 +615,40 @@ function inferredTypeSymbols<Brand>(
 }
 
 /**
- * The names of types one declaration's own syntax writes: in a type reference, a
- * heritage clause or a type query. A function body is not read, and neither is a
- * declaration nested in this one that `readAlone` says is read on its own.
+ * Each node of one declaration's own syntax, the declaration's included: a function body is
+ * not read, and neither is a declaration nested in this one that `readAlone` says is read
+ * on its own.
+ */
+function eachOwnNode(
+  declaration: Node,
+  readAlone: (nested: Node) => boolean,
+  visit: (node: Node) => void,
+): void {
+  const walk = (node: Node): void => {
+    if (node !== declaration && readAlone(node)) {
+      return;
+    }
+    visit(node);
+    const body = isFunctionLikeDeclaration(node) ? node.body : undefined;
+    node.forEachChild((child) => {
+      if (child !== body) {
+        walk(child);
+      }
+    });
+  };
+  walk(declaration);
+}
+
+/**
+ * The names of types one declaration's own syntax writes, as {@link eachOwnNode} reads it:
+ * in a type reference, a heritage clause or a type query.
  */
 export function typeNamesOf(
   declaration: Node,
   readAlone: (nested: Node) => boolean,
 ): readonly Node[] {
   const found: Node[] = [];
-  const visit = (node: Node): void => {
-    if (node !== declaration && readAlone(node)) {
-      return;
-    }
+  eachOwnNode(declaration, readAlone, (node) => {
     if (isTypeReferenceNode(node)) {
       found.push(isQualifiedName(node.typeName) ? node.typeName.right : node.typeName);
     } else if (isExpressionWithTypeArguments(node)) {
@@ -503,14 +658,7 @@ export function typeNamesOf(
     } else if (isTypeQueryNode(node)) {
       found.push(isQualifiedName(node.exprName) ? node.exprName.right : node.exprName);
     }
-    const body = isFunctionLikeDeclaration(node) ? node.body : undefined;
-    node.forEachChild((child) => {
-      if (child !== body) {
-        visit(child);
-      }
-    });
-  };
-  visit(declaration);
+  });
   return found;
 }
 
