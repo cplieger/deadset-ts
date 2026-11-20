@@ -2,7 +2,7 @@
   "corpus_version": "6.5.0",
   "product": { "name": "deadset-ts", "version": "0.1.0", "language": "ts" },
   "result": "pass",
-  "totals": { "fixtures": 400, "pass": 398, "gap": 0, "fail": 0, "pending": 2 },
+  "totals": { "fixtures": 402, "pass": 400, "gap": 0, "fail": 0, "pending": 2 },
   "fixtures": [
     {
       "fixture": "abstract-member-through-this",
@@ -7470,6 +7470,116 @@
         },
         { "symbol": "PaymentFile", "result": "pass", "actual": { "report": "none" } },
         { "symbol": "RefundFile", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "primitive-intersected-with-object-types",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "AliasAlias",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "type-member",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "BrandedNamed",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "type-member",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "FlagFlag",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "type-member",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "TagLabel",
+          "result": "pass",
+          "actual": {
+            "report": "DS1102",
+            "symbol_kind": "type-member",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "primitive-intersected-with-object-types-published",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "AliasAlias",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "type-member",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "AliasOf",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "possible",
+            "reachability_class": "possible",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "LabelOf",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "possible",
+            "reachability_class": "possible",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "LabelText",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "type-member",
+            "confidence": "possible",
+            "reachability_class": "possible",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
       ],
       "unexpected": []
     },
