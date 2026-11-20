@@ -10,7 +10,7 @@ import type { Host } from "../host.ts";
 import { failureExit } from "../failure.ts";
 import { joinPath, relativePath } from "../paths.ts";
 import { message } from "../product.ts";
-import { utf8Bytes } from "../reporters/sha256.ts";
+import { utf8Length } from "../text/utf8.ts";
 import { UsageError } from "../usage.ts";
 
 function unreadable(label: string, reason: string): Error {
@@ -20,9 +20,18 @@ function unreadable(label: string, reason: string): Error {
   );
 }
 
+/**
+ * The text of the input document at `path`, read no further than one byte past the
+ * Contract's bound, so a larger file is never held whole and {@link refuseOverBound}
+ * refuses it. A failed read throws as the host's does.
+ */
+export function readBoundedDocument(host: Host, path: string): string {
+  return host.readFile(path, CONFIG_MAX_BYTES + 1);
+}
+
 /** Refuses a document past the Contract's bound with the usage code, naming it `label`. */
 export function refuseOverBound(label: string, text: string): void {
-  if (utf8Bytes(text).length > CONFIG_MAX_BYTES) {
+  if (utf8Length(text) > CONFIG_MAX_BYTES) {
     throw new UsageError(`${label}: holds more than ${String(CONFIG_MAX_BYTES)} bytes`);
   }
 }
@@ -64,7 +73,7 @@ export function readTargetDocument(
   if (kind !== "file") {
     throw refuse(label, "is not a regular file");
   }
-  const text = attempt(() => host.readFile(real, CONFIG_MAX_BYTES + 1));
+  const text = attempt(() => readBoundedDocument(host, real));
   refuseOverBound(label, text);
   return text;
 }

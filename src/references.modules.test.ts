@@ -756,6 +756,28 @@ describe("a load by a computed path", () => {
     ]);
   });
 
+  it("matches a relative glob of 1,024 characters as written below a caller in a long directory", () => {
+    const caller = "w".repeat(200);
+    const deep = Array.from({ length: 4 }, (_, index) => String(index).repeat(200)).join("/");
+    const glob = (length: number): string => `./${deep}/${"x".repeat(length - 810)}*.ts`;
+
+    expect(glob(1024)).toHaveLength(1024);
+    expect(
+      computedLoadsOf({
+        "package.json": ESM,
+        "env.d.ts": GLOB,
+        [`${caller}/main.ts`]: [
+          `export const kept = import.meta.glob(${JSON.stringify(glob(1024))});`,
+          `export const over = import.meta.glob(${JSON.stringify(glob(1025))});`,
+          "",
+        ].join("\n"),
+        [`${caller}/${deep}/${"x".repeat(215)}one.ts`]: "export const one = 1;\n",
+      }).filter((line) => line.endsWith("evaluation")),
+    ).toEqual([
+      `${caller}/main.ts:1:21 kept ${caller}/${deep}/${"x".repeat(215)}one.ts evaluation`,
+    ]);
+  });
+
   it("leaves unresolved a glob through an alias, a computed base, a root the configuration hides, and a require under another name", () => {
     const result = analyzeProject(
       {

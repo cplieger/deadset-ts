@@ -110,6 +110,14 @@ describe("the edges document", () => {
     ],
     ["a scope holding a space", `{"edges": {${edge("a", "go://example.com/a pp#A", TS_A)}}}`],
     ["a scope holding a tab", `{"edges": {${edge("a", "go://example.com/a\tpp#A", TS_A)}}}`],
+    [
+      "a scope holding a form feed",
+      `{"edges": {${edge("a", "ts://@example/a\fpp/src/a.ts#A", TS_A)}}}`,
+    ],
+    [
+      "a fragment holding a form feed",
+      `{"edges": {${edge("a", "go://example.com/app#A\fB", TS_A)}}}`,
+    ],
     ["an edge that is not an object", `{"edges": {"a": "a"}}`],
     ["a second value after the document", `{"edges": {}} {"edges": {}}`],
     ["a document that is not an object", `["edges"]`],
@@ -125,6 +133,19 @@ describe("the edges document", () => {
     [
       "a wildcard after a computed key",
       `{"edges": {${edge("a", "ts://@example/app/src/a.ts#Sizes.[k].*", TS_A)}}}`,
+    ],
+    ["a raw percent sign in a scope", `{"edges": {${edge("a", "ts://./src/100%.ts#A", TS_A)}}}`],
+    [
+      "an escape with lowercase digits in a scope",
+      `{"edges": {${edge("a", "ts://./src/a%2a.ts#A", TS_A)}}}`,
+    ],
+    [
+      "a space outside a quoted component",
+      `{"edges": {${edge("a", "ts://./src/h.ts#Headers.content type", TS_A)}}}`,
+    ],
+    [
+      "a quoted component that never closes",
+      `{"edges": {${edge("a", "ts://./src/h.ts#Headers.'content type", TS_A)}}}`,
     ],
   ])("is refused with the usage code when it holds %s", (_name, document) => {
     expect(refusal(document)).toMatch(/^deadset-edges\.json(?::[0-9]+:[0-9]+)?: \S.*$/u);
@@ -247,7 +268,8 @@ describe("the edges document", () => {
     ],
     ["a question mark in a quoted name", "ts://@example/app/src/a.ts#Flags.'active?'"],
     ["a question mark outside the grammar", "ts://@example/app/src/a.ts#Serve?"],
-    ["a form feed in the scope", "ts://@example/a\fpp/src/a.ts#A"],
+    ["a space inside a quoted component", "ts://./src/h.ts#Headers.'content type'"],
+    ["a percent-encoded scope", "ts://./src/a%23b%20c%25.ts#X"],
   ])("carries a side that still names one symbol as written: %s", (_name, side) => {
     const document = `{"edges": {${edge("a", GO_A, side)}}}`;
 

@@ -4,7 +4,7 @@ export const CONTRACT_VERSION = "8.0.0";
 export const SCHEMA_VERSIONS = ["9.0.0"] as const;
 export const SCHEMA_VERSION = "9.0.0";
 export const FACTS_VERSION = "1.0.0";
-export const CORPUS_VERSION = "6.4.0";
+export const CORPUS_VERSION = "6.5.0";
 export const CODE_PREFIX = "DS";
 export const FAMILY_KEY_LENGTH = 4;
 
@@ -1425,6 +1425,17 @@ export const GENERATORS = [
   readonly versions?: { readonly min: string; readonly max: string };
   readonly cell: string;
 }[];
+
+/** symbol-ref.md's unsafe set, one inclusive range of code points per row of its table. */
+export const UNSAFE_RANGES = [
+  [0, 31],
+  [127, 159],
+  [1564, 1564],
+  [8206, 8207],
+  [8232, 8233],
+  [8234, 8238],
+  [8294, 8297],
+] as const;
 
 /** Each group of failure classes, and the text opening the line that names one of its failures. */
 export const FAILURE_PREFIXES = { setup: "setup failure: ", run: "run failure: " } as const;

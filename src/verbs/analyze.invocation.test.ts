@@ -65,6 +65,37 @@ const FAILING_TO_LOAD = {
 };
 
 describe("an analyze invocation", () => {
+  it.each([
+    { name: "24 two-member brace lists", entry: "{a,b}".repeat(24), why: "more than 256 globs" },
+    {
+      name: "100,000 one-member brace lists",
+      entry: "{a}".repeat(100_000),
+      why: "holds 300000 characters",
+    },
+    { name: "200,000 characters", entry: "a".repeat(200_000), why: "holds 200000 characters" },
+  ])(
+    "refuses a ts.test_files entry of $name with the usage code before analyzing",
+    ({ entry, why }) => {
+      const started = performance.now();
+      const got = analyze(
+        {
+          ...CLEAN_APPLICATION,
+          "deadset.json": JSON.stringify({
+            target: { kind: "application" },
+            ts: { test_files: [entry] },
+          }),
+        },
+        [],
+      );
+
+      expect(got.code).toBe(2);
+      expect(got.err).toContain("ts.test_files[0]");
+      expect(got.err).toContain(why);
+      expect(got.written).toEqual([]);
+      expect(performance.now() - started).toBeLessThan(1000);
+    },
+  );
+
   it("is refused when --report names an empty path", () => {
     const got = analyze(FAILING_TO_LOAD, ["--report="]);
 

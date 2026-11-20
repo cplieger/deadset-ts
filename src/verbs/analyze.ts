@@ -11,6 +11,7 @@ import { kindOf } from "../config.ts";
 import { CONFORMANCE, DECLARED_GAPS } from "../conformance.ts";
 import { analyzerProvenance, verdictOf } from "../findings-pass.ts";
 import { factsDocument } from "../facts.ts";
+import { readBoundedDocument, refuseOverBound } from "../fs/document.ts";
 import { dirnamePath, joinPath, normalizePath, relativePath, resolvePath } from "../paths.ts";
 import type { Host } from "../host.ts";
 import type { ManifestEntry } from "../roots/manifest.ts";
@@ -233,6 +234,28 @@ function writeDocument(
   }
 }
 
+const BASELINE_FIX =
+  "name a path the run can write, or repair the rows of the baseline the run would keep";
+
+/**
+ * The text of the baseline a write replaces, undefined where none is there. One past the
+ * Contract's bound is refused with the usage code before it is read whole, as
+ * suppression.md's refusal table gives a baseline past it; one the run cannot read ends
+ * the run with the failure code, nothing written.
+ */
+function heldBaseline(host: Host, path: string): string | undefined {
+  let text: string | undefined;
+  try {
+    text = host.kindOf(path) === "file" ? readBoundedDocument(host, path) : undefined;
+  } catch (error: unknown) {
+    throw failureExit("unwritten-output", `${path}: ${message(error)}: ${BASELINE_FIX}`);
+  }
+  if (text !== undefined) {
+    refuseOverBound(path, text);
+  }
+  return text;
+}
+
 /** A count with its noun, so a message reads for one record as well as for several. */
 function counted(n: number, noun: string): string {
   return `${String(n)} ${noun}${n === 1 ? "" : "s"}`;
@@ -428,17 +451,13 @@ export const analyzeVerb: Verb = ({ err, host, inputs, scope, openClient, option
   }
   const baselinePath = documents.baseline;
   if (baselinePath !== undefined) {
-    writeDocument(
-      host,
-      baselinePath,
-      "name a path the run can write, or repair the rows of the baseline the run would keep",
-      () => {
-        const kept =
-          host.kindOf(baselinePath) === "file"
-            ? otherRows(baselineRows(host.readFile(baselinePath)))
-            : [];
-        return writeBaseline(recorded, analyzerProvenance(version), kept);
-      },
+    const held = heldBaseline(host, baselinePath);
+    writeDocument(host, baselinePath, BASELINE_FIX, () =>
+      writeBaseline(
+        recorded,
+        analyzerProvenance(version),
+        held === undefined ? [] : otherRows(baselineRows(held)),
+      ),
     );
   }
 

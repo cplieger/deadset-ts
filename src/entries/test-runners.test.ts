@@ -1,4 +1,5 @@
-import { rmSync } from "node:fs";
+import { rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { nodeHost } from "../../bin/node-host.ts";
 import { writeProject } from "../../__test-helpers__/projects.ts";
@@ -62,6 +63,12 @@ function testFiles(files: Readonly<Record<string, string>>, host: Host = nodeHos
 
 const TEST = 'console.log("test");\n';
 
+/** 257 extensions, `js` the last, which a runner reads as a list and never as a glob of its own. */
+const MANY_EXTENSIONS = [...Array.from({ length: 256 }, (_, index) => `e${String(index)}`), "js"];
+
+/** Four directories of 200 characters each, a path segment's length well within a file system's. */
+const DEEP = Array.from({ length: 4 }, (_, index) => String(index).repeat(200)).join("/");
+
 describe("the files mocha runs", () => {
   it.each<[string, Record<string, string>, string[]]>([
     [
@@ -97,6 +104,26 @@ describe("the files mocha runs", () => {
         "near/b.js": TEST,
       },
       ["checks/a.js", "near/b.js"],
+    ],
+    [
+      "a directory spec's files with any of 257 extensions, the list counting toward no bound",
+      {
+        ...declaring("mocha", "11.7.5"),
+        ".mocharc.json": `${JSON.stringify({ spec: "spec", extension: MANY_EXTENSIONS })}\n`,
+        "spec/a.js": TEST,
+        "spec/b.cjs": TEST,
+      },
+      ["spec/a.js"],
+    ],
+    [
+      "a spec that names no path with each of 257 extensions appended",
+      {
+        ...declaring("mocha", "11.7.5"),
+        ".mocharc.json": `${JSON.stringify({ spec: "lib/only", extension: MANY_EXTENSIONS })}\n`,
+        "lib/only.js": TEST,
+        "lib/only.cjs": TEST,
+      },
+      ["lib/only.js"],
     ],
     [
       "a spec that names no path with each extension appended",
@@ -340,6 +367,25 @@ describe("the files Jest runs", () => {
       ["checks/a.js"],
     ],
     [
+      "those of a testMatch of 1,024 characters as written, its <rootDir> counting as written",
+      {
+        ...declaring("jest", "29.7.0"),
+        "jest.config.js": `export default { testMatch: [${JSON.stringify(`<rootDir>/${DEEP}/${"t".repeat(202)}.test.js`)}] };\n`,
+        [`${DEEP}/${"t".repeat(202)}.test.js`]: TEST,
+        "lib/x.test.js": TEST,
+      },
+      [`${DEEP}/${"t".repeat(202)}.test.js`],
+    ],
+    [
+      "none of a testMatch of 1,025 characters as written",
+      {
+        ...declaring("jest", "29.7.0"),
+        "jest.config.js": `export default { testMatch: [${JSON.stringify(`<rootDir>/${DEEP}/${"t".repeat(203)}.test.js`)}] };\n`,
+        [`${DEEP}/${"t".repeat(203)}.test.js`]: TEST,
+      },
+      [],
+    ],
+    [
       "none where a configuration writes both testMatch and testRegex",
       {
         ...declaring("jest", "29.7.0"),
@@ -393,6 +439,58 @@ describe("the files Jest runs", () => {
     },
     LOAD_TIMEOUT,
   );
+
+  it.each([
+    ["none for a testMatch V8 cannot compile", { testMatch: ["<rootDir>/*.test.js"] }, false],
+    [
+      "none for a testPathIgnorePatterns entry V8 cannot compile",
+      { testPathIgnorePatterns: ["<rootDir>/.*x"] },
+      false,
+    ],
+    [
+      "those a testPathIgnorePatterns entry of literal text leaves, which V8 compiles at any length",
+      { testPathIgnorePatterns: ["<rootDir>/x"] },
+      true,
+    ],
+  ])(
+    "are %s below a long rootDir, and the run does not fault",
+    (_label, options, found) => {
+      const root = writeProject({
+        ...declaring("jest", "29.7.0"),
+        "lib/x.test.js": TEST,
+      });
+      onTestFinished(() => {
+        rmSync(root, { recursive: true, force: true });
+      });
+      writeFileSync(
+        join(root, "package.json"),
+        `${JSON.stringify({
+          name: "@example/app",
+          private: true,
+          type: "module",
+          main: "lib/index.js",
+          devDependencies: { jest: "29.7.0" },
+          scripts: { test: "jest" },
+          jest: { rootDir: "a".repeat(40_000), roots: [join(root, "lib")], ...options },
+        })}\n`,
+      );
+      writeFileSync(
+        join(root, "deadset.json"),
+        `${JSON.stringify({ target: { kind: "application" }, ts: { test_files: ["**/*.never"] } })}\n`,
+      );
+      const out = new MemoryWriter();
+      const err = new MemoryWriter();
+
+      expect(run(["print-roots", `--target=${root}`], out, err, nodeHost()), err.text).toBe(0);
+      expect(
+        out.text
+          .split("\n")
+          .filter((line) => line.split("\t")[1] === "test-runner")
+          .map((line) => line.split("#")[0]),
+      ).toEqual(found ? ["ts://@example/app/lib/x.test.js"] : []);
+    },
+    LOAD_TIMEOUT,
+  );
 });
 
 describe("the files AVA runs", () => {
@@ -404,6 +502,16 @@ describe("the files AVA runs", () => {
         "ava.config.js": 'export default { files: ["!tests/slow/**"] };\n',
         "tests/a.js": TEST,
         "tests/slow/b.js": TEST,
+      },
+      ["tests/a.js"],
+    ],
+    [
+      "its defaults with any of 257 extensions, the list counting toward no bound",
+      {
+        ...declaring("ava", "6.4.0"),
+        "ava.config.js": `export default { extensions: ${JSON.stringify(MANY_EXTENSIONS)} };\n`,
+        "tests/a.js": TEST,
+        "tests/c.mjs": TEST,
       },
       ["tests/a.js"],
     ],

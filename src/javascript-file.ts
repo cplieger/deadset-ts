@@ -1,5 +1,6 @@
 import { LANGUAGE_ROWS } from "./contract/contract.generated.ts";
 import { globExpression } from "./text/glob.ts";
+import { utf8Length } from "./text/utf8.ts";
 
 export const JAVASCRIPT_FILE = /\.(?:js|jsx|mjs|cjs)$/u;
 
@@ -38,17 +39,7 @@ export function minifiedBy(fileName: string, text: string): string | undefined {
     return undefined;
   }
   const lines = text.split(/\r?\n/u).length;
-  return utf8Bytes(text) >= MINIFIED_BYTES && text.length / lines > MINIFIED_LINE
+  return utf8Length(text) >= MINIFIED_BYTES && text.length / lines > MINIFIED_LINE
     ? LONG_LINES
     : undefined;
-}
-
-/** The length of a text in UTF-8, a lone surrogate counting as the three bytes of U+FFFD. */
-function utf8Bytes(text: string): number {
-  let bytes = 0;
-  for (const character of text) {
-    const point = character.codePointAt(0) ?? 0;
-    bytes += point < 0x80 ? 1 : point < 0x800 ? 2 : point < 0x10000 ? 3 : 4;
-  }
-  return bytes;
 }

@@ -51,7 +51,12 @@ import { bytewise } from "../text/compare.ts";
 import { isRecord } from "../json-document.ts";
 import { filesIn } from "../fs/tree.ts";
 import { DEPENDENCY_SECTIONS, INSTALLED_PACKAGES, MANIFEST, readJSON } from "../fs/manifest.ts";
-import { globExpression } from "../text/glob.ts";
+import {
+  caselessGlobExpression,
+  globExpression,
+  rewrittenGlobExpression,
+  type Glob,
+} from "../text/glob.ts";
 import { yamlDocument } from "../text/yaml.ts";
 import { APPENDED_EXTENSIONS, braced } from "../extensions.ts";
 
@@ -82,9 +87,9 @@ export interface AppliedConvention {
 interface ConventionGlob {
   readonly dir: string;
   readonly row: string;
-  readonly expression: RegExp;
+  readonly expression: Glob;
   /** The expressions of the row's excludes, read against the same directory. */
-  readonly excludes: readonly RegExp[];
+  readonly excludes: readonly Glob[];
 }
 
 /** One directory an applied row names as generated, read against its manifest's directory. */
@@ -394,9 +399,10 @@ function testDirectoryGlobs(
  * case is not compared (https://github.com/microsoft/playwright/blob/main/packages/playwright/src/util.ts,
  * `createFileMatcher`).
  */
-function anywhereBelow(pattern: string): RegExp {
-  const expression = globExpression(pattern.startsWith("**/") ? pattern : `**/${pattern}`);
-  return new RegExp(expression.source, "iu");
+function anywhereBelow(pattern: string): Glob {
+  return pattern.startsWith("**/")
+    ? caselessGlobExpression(pattern)
+    : rewrittenGlobExpression(pattern, `**/${pattern}`, true);
 }
 
 /** The strings an applied row's selection keys hold, added per configuration file to `into`. */
@@ -543,6 +549,19 @@ function expand(
     out.push(...expand(replaced, resolved));
   }
   return out;
+}
+
+/**
+ * The matcher of each glob a template stands for, held to `analysis.2` as the row writes the
+ * template: a directory a placeholder stands for is no glob the target writes.
+ */
+function expandedGlobs(
+  template: string,
+  resolved: ReadonlyMap<string, readonly (string | undefined)[]>,
+): readonly Glob[] {
+  return [...new Set(expand(template, resolved))].map((glob) =>
+    rewrittenGlobExpression(template, glob),
+  );
 }
 
 /** The configuration files in one directory that one glob names, by name. */
@@ -942,23 +961,18 @@ export function readConventions(
       testFilesNamed(read, manifest.dir, row.testFiles ?? [], testFiles, selected);
       testDirectoryGlobs(read, manifest.dir, row.testDirectories ?? [], testGlobs);
       testGlobs.push(...(row.testRunner?.(runnerInput()) ?? []));
-      const excludes = [
-        ...new Set((row.excludes ?? []).flatMap((one) => expand(one, resolved))),
-      ].map(globExpression);
+      const excludes = (row.excludes ?? []).flatMap((one) => expandedGlobs(one, resolved));
       for (const below of new Set((row.generated ?? []).flatMap((one) => expand(one, resolved)))) {
         generated.push({ dir: manifest.dir, row: row.name, below });
       }
-      const written = [
-        ...row.entries.flatMap((entry) => expand(entry, resolved)),
-        ...manifestEntryGlobs(declared, row.manifestEntries ?? []),
+      const expressions = [
+        ...row.entries.flatMap((entry) => expandedGlobs(entry, resolved)),
+        ...[...new Set(manifestEntryGlobs(declared, row.manifestEntries ?? []))].map(
+          globExpression,
+        ),
       ];
-      for (const glob of new Set(written)) {
-        globs.push({
-          dir: manifest.dir,
-          row: row.name,
-          expression: globExpression(glob),
-          excludes,
-        });
+      for (const expression of expressions) {
+        globs.push({ dir: manifest.dir, row: row.name, expression, excludes });
       }
     }
     testGlobs.push(...nodeTestGlobs(scripts.flatMap((one) => one.tests)));

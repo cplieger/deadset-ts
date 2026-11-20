@@ -1,7 +1,7 @@
-import { CONFIG_MAX_BYTES, SETTINGS } from "./contract/config.generated.ts";
+import { SETTINGS } from "./contract/config.generated.ts";
 import { EXIT_FAILURE, EXIT_USAGE } from "./contract/contract.generated.ts";
 import { REPOSITORY_DOCUMENT, type Document, type Inputs } from "./config.ts";
-import { readTargetDocument } from "./fs/document.ts";
+import { readBoundedDocument, readTargetDocument } from "./fs/document.ts";
 import type { Host } from "./host.ts";
 import { joinPath, resolvePath } from "./paths.ts";
 import { renderDiagnostic } from "./load/diagnostics.ts";
@@ -121,8 +121,8 @@ function readOptions(args: readonly string[], own: VerbOptions): Options {
 function documentAt(host: Host, label: string): Document {
   try {
     const path = resolvePath(host.workingDirectory(), label);
-    // A file past the bound reads as one byte more than it, which resolution refuses.
-    return { text: host.readFile(path, CONFIG_MAX_BYTES + 1), label };
+    // Resolution refuses a document past the bound.
+    return { text: readBoundedDocument(host, path), label };
   } catch (error: unknown) {
     throw new UsageError(`${label}: ${message(error)}`);
   }

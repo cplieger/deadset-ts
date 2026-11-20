@@ -181,3 +181,47 @@ describe("a build script nodemon's command runs", () => {
     }
   });
 });
+
+describe("a glob a build script's bundler call names", () => {
+  it("is held to its bound as the script writes it, not as read against the script's directory", () => {
+    const deep = Array.from({ length: 4 }, (_, index) => String(index).repeat(200)).join("/");
+    const kept = `src/${deep}/${"a".repeat(212)}*.ts`;
+    const over = `src/${deep}/${"b".repeat(213)}*.ts`;
+    const root = writeProject({
+      "package.json": JSON.stringify({
+        name: "@example/globbed",
+        type: "module",
+        scripts: { build: "node build.js" },
+      }),
+      "deadset.json": JSON.stringify({ target: { kind: "application" } }),
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: { strict: true, noEmit: true, module: "esnext", target: "es2022" },
+        include: ["src"],
+      }),
+      "build.js": `import { build } from "esbuild";\n\nbuild({ entryPoints: ${JSON.stringify([kept, over])} });\n`,
+      [`src/${deep}/${"a".repeat(212)}x.ts`]: "console.log('kept');\n",
+      [`src/${deep}/${"b".repeat(213)}x.ts`]: "console.log('over');\n",
+    });
+    const out = mkdtempSync(join(tmpdir(), "deadset-ts-build-scripts-"));
+    try {
+      const report = join(out, "report.json");
+      run(
+        ["analyze", "--target=.", "--min-confidence=possible", `--report=${report}`],
+        new MemoryWriter(),
+        new MemoryWriter(),
+        { ...nodeHost(), workingDirectory: () => root },
+      );
+      const { findings } = JSON.parse(readFileSync(report, "utf8")) as {
+        findings: { code: string; symbol: { name: string } }[];
+      };
+
+      expect(kept).toHaveLength(1024);
+      expect(findings.filter((one) => one.code === "DS1602").map((one) => one.symbol.name)).toEqual(
+        [`src/${deep}/${"b".repeat(213)}x.ts`],
+      );
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});

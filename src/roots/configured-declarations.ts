@@ -133,10 +133,14 @@ function typeMembersOf<Brand>(
   return type === undefined ? [] : must(queries.propertiesOf(type));
 }
 
+/** How the checker names a private member: this prefix, an identifier, `@` and the name. */
+const PRIVATE_SYMBOL = "__#";
+
 /**
- * The member of one container a path component spells, followed through any alias. A
- * component in brackets is a computed key, compared with the key each declaration of a
- * candidate writes: the checker names a member a symbol keys by no spelling of its own.
+ * The member of one container a path component spells, followed through any alias. The
+ * checker names a key by its value, which the component spells; it names a member a
+ * symbol keys, and a private member, by no spelling of its own, so those are compared
+ * with the component each declaration of a candidate spells.
  */
 function memberOf<Brand>(
   project: ProjectView<Brand>,
@@ -145,18 +149,27 @@ function memberOf<Brand>(
   isStatic: boolean,
 ): TSSymbol | undefined {
   const computed = component.startsWith("[");
+  const isPrivate = component.startsWith("#");
   const candidates = candidatesOf(project, container, isStatic);
+  const declares = (candidate: TSSymbol): boolean =>
+    candidate.declarations.some((handle) => {
+      const node = project.declarationAt(handle)?.node;
+      return node !== undefined && declaredComponent(node) === component;
+    });
   const member = (
     computed ? [...candidates, ...typeMembersOf(project, container, isStatic)] : candidates
-  ).find(
-    (candidate) =>
-      nameComponent(candidate.name) === component ||
-      (computed &&
-        candidate.declarations.some((handle) => {
-          const node = project.declarationAt(handle)?.node;
-          return node !== undefined && declaredComponent(node) === component;
-        })),
-  );
+  ).find((candidate) => {
+    if (computed) {
+      return declares(candidate);
+    }
+    if (isPrivate) {
+      return candidate.name.endsWith(`@${component}`) && declares(candidate);
+    }
+    return (
+      nameComponent(candidate.name) === component &&
+      (!candidate.name.startsWith(PRIVATE_SYMBOL) || declares(candidate))
+    );
+  });
   return member === undefined ? undefined : unaliased(project, member);
 }
 

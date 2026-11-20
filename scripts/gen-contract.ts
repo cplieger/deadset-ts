@@ -93,6 +93,37 @@ function familyKey(range: { readonly start: string; readonly end: string }): str
 const union = (values: readonly string[]): string =>
   values.map((value) => JSON.stringify(value)).join(" | ");
 
+/**
+ * The ranges of the table under symbol-ref.md's "The unsafe set" heading, each row's first
+ * and last code point written `U+` and four or more uppercase hexadecimal digits.
+ */
+function unsafeRanges(page: string): readonly (readonly [number, number])[] {
+  const lines = page.split("\n");
+  const start = lines.indexOf("### The unsafe set");
+  if (start < 0) {
+    throw new Error("contract/grammar/symbol-ref.md: no section The unsafe set");
+  }
+  const end = lines.findIndex((line, at) => at > start && line.startsWith("#"));
+  const rows = lines
+    .slice(start + 1, end < 0 ? undefined : end)
+    .filter((line) => line.startsWith("| `U+"));
+  return rows.map((row) => {
+    const [first, last] = row
+      .split("|")
+      .slice(1, 3)
+      .map((cell) => {
+        const code = /^`U\+([0-9A-F]{4,6})`$/u.exec(cell.trim())?.[1];
+        if (code === undefined) {
+          throw new Error(
+            `contract/grammar/symbol-ref.md: the unsafe-set row ${row} names no code point`,
+          );
+        }
+        return Number.parseInt(code, 16);
+      });
+    return [first ?? 0, last ?? 0] as const;
+  });
+}
+
 /** The generated module's text, formatted as the repository formats every file. */
 export async function generated(read: Reader): Promise<string> {
   const doc = (path: string): unknown => JSON.parse(read(path));
@@ -290,6 +321,9 @@ export async function generated(read: Reader): Promise<string> {
           cell: row.cell,
         })),
     )} as const satisfies readonly { readonly id: string; readonly plugin: string; readonly header: string; readonly runtimeImport?: string; readonly versions?: { readonly min: string; readonly max: string }; readonly cell: string }[];`,
+    "",
+    "/** symbol-ref.md's unsafe set, one inclusive range of code points per row of its table. */",
+    `export const UNSAFE_RANGES = ${JSON.stringify(unsafeRanges(read("contract/grammar/symbol-ref.md")))} as const;`,
     "",
     "/** Each group of failure classes, and the text opening the line that names one of its failures. */",
     `export const FAILURE_PREFIXES = ${JSON.stringify(Object.fromEntries(Object.entries(exits.failure_classes).map(([group, row]) => [group, row.prefix])))} as const;`,

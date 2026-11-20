@@ -16,7 +16,8 @@ import { positionKey } from "./position.ts";
 import { UNANSWERED } from "./query.ts";
 import { scopeForDir } from "./scope.ts";
 import { openEngine, runSession } from "./session.ts";
-import { isRef } from "./ref.ts";
+import { isRef, isUnsafe } from "./ref.ts";
+import { treeFindings } from "../__test-helpers__/tree-findings.ts";
 
 /** The fixture holding one instance of every declaration form, enumerated afresh per case. */
 function everyDeclaration(): Analyzed {
@@ -124,6 +125,216 @@ describe("the symbol table of every declaration form", () => {
   it("renders every reference in the grammar's canonical spelling", () => {
     const symbols = symbolsOf(everyDeclaration());
     expect(symbols.filter((symbol) => !isRef(symbol.ref)).map((symbol) => symbol.ref)).toEqual([]);
+  });
+
+  it("spells each segment of a file's path percent-encoded where the set leaves it, and keeps its position's path raw", () => {
+    const analyzed = analyzeProject({
+      "src/my file.ts": "export const spaced = 1;\n",
+      "src/a#b.ts": "export const signed = 1;\n",
+      "src/100%.ts": "export const percent = 1;\n",
+      "src/date utils/[id]?.ts": "export const nested = 1;\n",
+    });
+    const declared = (analyzed.inventories[0]?.symbols ?? [])
+      .filter((symbol) => symbol.kind !== "file")
+      .map((symbol) => `${symbol.position.path} ${symbol.ref}`)
+      .sort();
+
+    expect(declared).toEqual([
+      "src/100%.ts ts://./src/100%25.ts#percent",
+      "src/a#b.ts ts://./src/a%23b.ts#signed",
+      "src/date utils/[id]?.ts ts://./src/date%20utils/[id]%3F.ts#nested",
+      "src/my file.ts ts://./src/my%20file.ts#spaced",
+    ]);
+  });
+
+  it("spells a control or a whitespace character past ASCII in a file's path percent-encoded", () => {
+    const analyzed = analyzeProject({
+      "src/a\u0085b.ts": "export const nextLine = 1;\n",
+      "src/a\u00a0b.ts": "export const noBreak = 1;\n",
+      "src/a\u2028b\u3000c.ts": "export const separated = 1;\n",
+      "src/a\u00a1b.ts": "export const inverted = 1;\n",
+    });
+    const declared = (analyzed.inventories[0]?.symbols ?? [])
+      .filter((symbol) => symbol.kind !== "file")
+      .map((symbol) => symbol.ref)
+      .sort();
+
+    expect(declared).toEqual([
+      "ts://./src/a%C2%85b.ts#nextLine",
+      "ts://./src/a%C2%A0b.ts#noBreak",
+      "ts://./src/a%E2%80%A8b%E3%80%80c.ts#separated",
+      "ts://./src/a\u00a1b.ts#inverted",
+    ]);
+    expect(declared.filter((ref) => !isRef(ref))).toEqual([]);
+  });
+
+  it("spells a member by the name the compiler holds, never by its source text", () => {
+    const analyzed = analyzeProject({
+      "src/keys.ts": String.raw`export class Box {
+  #a = 1;
+  "#a" = 2;
+  "a\u0062" = 3;
+  \u0063d = 4;
+  'it\'s' = 5;
+  "a\x20b" = 6;
+  0x10 = 7;
+  1.50 = 8;
+  .5 = 9;
+  #\u0065f = 11;
+}
+export interface Shape {
+  '#k': number;
+}
+export function wrap<\u0054>(value: T): T {
+  return value;
+}
+`,
+    });
+    const declared = (analyzed.inventories[0]?.symbols ?? [])
+      .filter((symbol) => symbol.kind !== "file")
+      .map((symbol) => `${symbol.ref} ${symbol.name}`)
+      .sort();
+
+    expect(declared).toEqual([
+      "ts://./src/keys.ts#Box Box",
+      "ts://./src/keys.ts#Box.#a Box.#a",
+      "ts://./src/keys.ts#Box.#ef Box.#ef",
+      "ts://./src/keys.ts#Box.'#a' Box.'#a'",
+      "ts://./src/keys.ts#Box.'0.5' Box.'0.5'",
+      "ts://./src/keys.ts#Box.'1.5' Box.'1.5'",
+      "ts://./src/keys.ts#Box.'16' Box.'16'",
+      "ts://./src/keys.ts#Box.'a b' Box.'a b'",
+      "ts://./src/keys.ts#Box.'it\\'s' Box.'it\\'s'",
+      "ts://./src/keys.ts#Box.ab Box.ab",
+      "ts://./src/keys.ts#Box.cd Box.cd",
+      "ts://./src/keys.ts#Shape Shape",
+      "ts://./src/keys.ts#Shape.'#k' Shape.'#k'",
+      "ts://./src/keys.ts#wrap wrap",
+      "ts://./src/keys.ts#wrap<T> wrap<T>",
+    ]);
+    expect((analyzed.inventories[0]?.symbols ?? []).filter((symbol) => !isRef(symbol.ref))).toEqual(
+      [],
+    );
+  });
+
+  it("spells every key, a lone surrogate and a character of the unsafe set as an escape, and gives no component to a bigint key", () => {
+    const analyzed = analyzeProject({
+      "src/keys.ts": String.raw`export class Box {
+  "\uD800" = 1;
+  "\uFFFD" = 2;
+  "\uD801" = 3;
+  "\u001b[31mX" = 4;
+  "a\u0000b" = 5;
+  "c\u009bd" = 6;
+  "v\u000bw" = 7;
+  "t\tb" = 8;
+  "l\nm" = 9;
+  0b11n = 10;
+}
+export interface Shape {
+  "\u0007": number;
+  "\uDC00": number;
+}
+`,
+    });
+    const symbols = analyzed.inventories[0]?.symbols ?? [];
+
+    expect(
+      symbols
+        .filter((symbol) => symbol.kind !== "file")
+        .map((symbol) => symbol.ref)
+        .sort(),
+    ).toEqual([
+      "ts://./src/keys.ts#Box",
+      "ts://./src/keys.ts#Box.'\\u{1B}[31mX'",
+      "ts://./src/keys.ts#Box.'\\u{D800}'",
+      "ts://./src/keys.ts#Box.'\\u{D801}'",
+      "ts://./src/keys.ts#Box.'a\\u{0}b'",
+      "ts://./src/keys.ts#Box.'c\\u{9B}d'",
+      "ts://./src/keys.ts#Box.'l\\nm'",
+      "ts://./src/keys.ts#Box.'t\tb'",
+      "ts://./src/keys.ts#Box.'v\\u{B}w'",
+      "ts://./src/keys.ts#Box.'\uFFFD'",
+      "ts://./src/keys.ts#Shape",
+      "ts://./src/keys.ts#Shape.'\\u{7}'",
+      "ts://./src/keys.ts#Shape.'\\u{DC00}'",
+    ]);
+    for (const symbol of symbols) {
+      expect(symbol.ref.isWellFormed() && isRef(symbol.ref), symbol.ref).toBe(true);
+      expect(
+        [...`${symbol.ref} ${symbol.name}`].filter((character) => {
+          const point = character.codePointAt(0) ?? 0;
+          return point !== 0x09 && isUnsafe(point);
+        }),
+        symbol.ref,
+      ).toEqual([]);
+    }
+  });
+
+  it("writes no character of the unsafe set but a tab into a finding, and reports every key whatever its value holds", () => {
+    const found = treeFindings({
+      "box.ts": [
+        "export class Box {",
+        String.raw`  "\u001b[31mX" = 1;`,
+        String.raw`  "a\u0000b" = 2;`,
+        String.raw`  "t\tb" = 3;`,
+        String.raw`  "safe\u202E.exe" = 4;`,
+        String.raw`  "x\u2028y" = 5;`,
+        String.raw`  "z\u200Fw" = 6;`,
+        "  read(): number {",
+        "    return 0;",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+      "main.ts": 'import { Box } from "./box.ts";\nconsole.log(new Box().read());\n',
+    });
+
+    expect([...found].sort()).toEqual([
+      "DS1003 Box.'\\u{1B}[31mX'",
+      "DS1003 Box.'a\\u{0}b'",
+      "DS1003 Box.'safe\\u{202E}.exe'",
+      "DS1003 Box.'t\tb'",
+      "DS1003 Box.'x\\u{2028}y'",
+      "DS1003 Box.'z\\u{200F}w'",
+    ]);
+    for (const line of found) {
+      expect(
+        [...line].filter((c) => c !== "\t" && isUnsafe(c.codePointAt(0) ?? 0)),
+        line,
+      ).toEqual([]);
+    }
+  });
+
+  it("reports a string key whose text is a private name's apart from that private name", () => {
+    expect(
+      treeFindings({
+        "box.ts": [
+          "export class Box {",
+          "  #a = 1;",
+          '  "#a" = 2;',
+          "  read(): number {",
+          "    return this.#a;",
+          "  }",
+          "}",
+          "",
+        ].join("\n"),
+        "main.ts": 'import { Box } from "./box.ts";\nconsole.log(new Box().read());\n',
+      }),
+    ).toEqual(["DS1003 Box.'#a'"]);
+  });
+
+  it("spells a computed key with its whitespace past ASCII dropped, and none whose text holds a control character", () => {
+    const analyzed = analyzeProject({
+      "src/keys.ts":
+        'export class Keys {\n  ["a\u00a0b"]() {}\n  ["c\u0001d"]() {}\n  ["e\u3000f"]() {}\n}\nnew Keys();\n',
+    });
+    const members = (analyzed.inventories[0]?.symbols ?? [])
+      .filter((symbol) => symbol.kind === "method")
+      .map((symbol) => symbol.ref)
+      .sort();
+
+    expect(members).toEqual(['ts://./src/keys.ts#Keys.["ab"]', 'ts://./src/keys.ts#Keys.["ef"]']);
   });
 
   it("names the container of every declaration but a file", () => {

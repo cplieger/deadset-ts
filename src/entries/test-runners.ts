@@ -9,7 +9,7 @@ import type { CommandTests } from "../commands/read.ts";
 import { readJSON, readJSONFile } from "../fs/manifest.ts";
 import type { Host } from "../host.ts";
 import { ancestors, dirnamePath, joinPath, relativePath, resolvePath } from "../paths.ts";
-import { globExpression } from "../text/glob.ts";
+import { compiledNow, globExpression, rewrittenGlobExpression, type Glob } from "../text/glob.ts";
 import {
   documentValue,
   membersNamed,
@@ -98,10 +98,12 @@ function configurationAt(input: RunnerInput, path: string): Configuration | unde
 /** Whether a pattern holds a character a glob reads specially. */
 const MAGIC = /[*?[\]{}()!+@]/u;
 
-/** A glob over the path below `dir`, case compared unless `caseless`. */
-function belowGlob(dir: string, pattern: string, caseless = false): TestGlob {
-  const expression = globExpression(pattern.replace(/^(?:\.\/)+/u, ""));
-  const tested = caseless ? new RegExp(expression.source, "iu") : expression;
+/**
+ * A glob over the path below `dir`, case compared unless `caseless`. `written` is the entry as
+ * its configuration writes it, a leading `!` included, which `analysis.2` bounds.
+ */
+function belowGlob(dir: string, pattern: string, caseless = false, written = pattern): TestGlob {
+  const tested = rewrittenGlobExpression(written, pattern.replace(/^(?:\.\/)+/u, ""), caseless);
   return {
     dir,
     pattern,
@@ -109,6 +111,28 @@ function belowGlob(dir: string, pattern: string, caseless = false): TestGlob {
       const below = relativePath(dir, fileName);
       return below !== undefined && below !== "" && tested.test(below);
     },
+  };
+}
+
+/**
+ * A runner's own glob `<base>.{<extensions>}` below `dir`, read as `base` over a path less one
+ * of the extensions: the extension list a configuration names is no glob it writes.
+ */
+function extendedGlob(
+  dir: string,
+  base: string,
+  extensions: readonly string[],
+  caseless = false,
+): TestGlob {
+  const inner = belowGlob(dir, base, caseless);
+  const suffixes = extensions.map((one) => `.${one}`);
+  return {
+    dir,
+    pattern: `${base}.{${extensions.join(",")}}`,
+    matches: (fileName) =>
+      suffixes.some(
+        (suffix) => fileName.endsWith(suffix) && inner.matches(fileName.slice(0, -suffix.length)),
+      ),
   };
 }
 
@@ -309,13 +333,13 @@ function mochaSpec(
   recursive: boolean,
 ): TestGlob {
   const path = resolvePath(cwd, spec);
-  const braced = `{${extensions.map((one) => one.replace(/^\./u, "")).join(",")}}`;
+  const bare = extensions.map((one) => one.replace(/^\./u, ""));
   const kind = host.kindOf(path);
   if (kind === "file") {
     return exactly(cwd, spec);
   }
   if (kind === "directory") {
-    const inner = belowGlob(path, `${recursive ? "**/" : ""}*.${braced}`);
+    const inner = extendedGlob(path, `${recursive ? "**/" : ""}*`, bare);
     return {
       ...inner,
       pattern: spec,
@@ -323,7 +347,15 @@ function mochaSpec(
         inner.matches(name) && !name.slice(name.lastIndexOf("/") + 1).startsWith("."),
     };
   }
-  return belowGlob(cwd, MAGIC.test(spec) ? spec : `${spec}.${braced}`);
+  if (MAGIC.test(spec)) {
+    return belowGlob(cwd, spec);
+  }
+  const named = new Set(bare.map((one) => `${path}.${one}`));
+  return {
+    dir: cwd,
+    pattern: spec,
+    matches: (name) => named.has(name) && (relativePath(cwd, name) ?? "") !== "",
+  };
 }
 
 /**
@@ -441,17 +473,12 @@ export const MOCHA_10 = mochaRunner([".mocharc.cjs", ".mocharc.js", ...MOCHARC])
 /** Mocha 12. */
 export const MOCHA_12 = mochaRunner([".mocharc.cjs", ".mocharc.js", ".mocharc.mjs", ...MOCHARC]);
 
-/** A regular expression a runner writes as text, `undefined` where it is none. */
+/**
+ * A regular expression a runner writes as text, `undefined` where it is none or one V8
+ * cannot hold, which the runner could not compile either.
+ */
 function expressionOf(source: string): RegExp | undefined {
-  try {
-    return new RegExp(source, "u");
-  } catch {
-    try {
-      return new RegExp(source);
-    } catch {
-      return undefined;
-    }
-  }
+  return compiledNow(source, "u") ?? compiledNow(source, "");
 }
 
 /** One Jest version's defaults (jest-config `Defaults`), its `testMatch` read over a file's whole path. */
@@ -646,11 +673,11 @@ function jestGlobs(
   globs: readonly string[],
   rootDir: string,
 ): readonly { pattern: string; test: (path: string) => boolean }[] {
-  const expression = (glob: string): RegExp =>
-    globExpression(inRoot(glob, rootDir).replace(/^\/+/u, ""));
+  const expression = (glob: string, written = glob): Glob =>
+    rewrittenGlobExpression(written, inRoot(glob, rootDir).replace(/^\/+/u, ""));
   const excluded = globs
     .filter((one) => one.startsWith("!"))
-    .map((one) => expression(one.slice(1)));
+    .map((one) => expression(one.slice(1), one));
   return globs
     .filter((one) => !one.startsWith("!"))
     .map((glob) => {
@@ -754,57 +781,54 @@ function avaRunner(configNames: readonly string[], defaults: readonly string[]):
     if (files === undefined || extensions === undefined || files?.length === 0) {
       return [];
     }
-    const pattern = `{${(extensions ?? defaults).join(",")}}`;
-    const written =
-      files === null || files.every((one) => one.startsWith("!"))
-        ? [
-            `test.${pattern}`,
-            `{src,source}/test.${pattern}`,
-            `**/__tests__/**/*.${pattern}`,
-            `**/*.spec.${pattern}`,
-            `**/*.test.${pattern}`,
-            `**/test-*.${pattern}`,
-            `**/test/**/*.${pattern}`,
-            `**/tests/**/*.${pattern}`,
-            ...(files ?? []),
-          ]
-        : files;
+    const listed = extensions ?? defaults;
+    const defaulted = files === null || files.every((one) => one.startsWith("!"));
+    const included = defaulted
+      ? AVA_DEFAULTS.map((base) => extendedGlob(dir, base, listed, true))
+      : files.filter((one) => !one.startsWith("!")).map((one) => belowGlob(dir, one, true));
     const excluded = [
-      ...written
+      ...(files ?? [])
         .filter((one) => one.startsWith("!"))
-        .map((one) => belowGlob(dir, one.slice(1), true).matches),
-      ...(files === null || files.every((one) => one.startsWith("!"))
+        .map((one) => belowGlob(dir, one.slice(1), true, one).matches),
+      ...(defaulted
         ? AVA_HELPERS.map(
             (expression) => (name: string) => expression.test(relativePath(dir, name) ?? ""),
           )
         : []),
     ];
-    const kept = new RegExp(
-      `\\.(?:${(extensions ?? defaults).map((one) => one.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")).join("|")})$`,
-      "u",
-    );
-    return written
-      .filter((one) => !one.startsWith("!"))
-      .map((one) => {
-        const glob = less(belowGlob(dir, one, true), excluded);
-        return {
-          ...glob,
-          matches: (name: string) => {
-            const below = relativePath(dir, name) ?? "";
-            return (
-              glob.matches(name) &&
-              kept.test(name) &&
-              !AVA_IGNORED.test(below) &&
-              !below.split("/").some((segment) => segment.startsWith(".")) &&
-              !name.slice(name.lastIndexOf("/") + 1).startsWith("_")
-            );
-          },
-        };
-      });
+    const kept = listed.map((one) => `.${one}`);
+    return included.map((found) => {
+      const glob = less(found, excluded);
+      return {
+        ...glob,
+        matches: (name: string) => {
+          const below = relativePath(dir, name) ?? "";
+          return (
+            glob.matches(name) &&
+            kept.some((one) => name.endsWith(one)) &&
+            !AVA_IGNORED.test(below) &&
+            !below.split("/").some((segment) => segment.startsWith(".")) &&
+            !name.slice(name.lastIndexOf("/") + 1).startsWith("_")
+          );
+        },
+      };
+    });
   };
 }
 
 const AVA_CONFIG = ["ava.config.js", "ava.config.cjs", "ava.config.mjs"];
+
+/** AVA's default test files, `lib/globs.js`, each before its `.{<extensions>}`. */
+const AVA_DEFAULTS = [
+  "test",
+  "{src,source}/test",
+  "**/__tests__/**/*",
+  "**/*.spec",
+  "**/*.test",
+  "**/test-*",
+  "**/test/**/*",
+  "**/tests/**/*",
+];
 
 /** AVA 6 and 7. */
 export const AVA_6 = avaRunner(AVA_CONFIG, ["cjs", "mjs", "js"]);

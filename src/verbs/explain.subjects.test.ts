@@ -150,4 +150,33 @@ describe("the symbol an explain request names", () => {
     },
     LOAD_TIMEOUT,
   );
+
+  it(
+    "is read by its reference in the encoded spelling of its file's path",
+    () => {
+      const root = writeProject({
+        "package.json": '{ "name": "@example/encoded", "private": true, "type": "module" }\n',
+        "deadset.json": '{ "target": { "kind": "library" } }\n',
+        "a#b.ts": "export function signed(): number {\n  return 1;\n}\n",
+        "my file.ts": "export function spaced(): number {\n  return 2;\n}\n",
+      });
+      onTestFinished(() => {
+        rmSync(root, { recursive: true, force: true });
+      });
+
+      for (const [ref, kept] of [
+        ["ts://@example/encoded/a%23b.ts#signed", "signed"],
+        ["ts://@example/encoded/my%20file.ts#spaced", "spaced"],
+      ] as const) {
+        const got = explain(root, `--why=${ref}`);
+
+        expect(got.err).toBe("");
+        expect(got.out.split("\n").slice(0, 2)).toEqual([
+          `symbol: ${ref}`,
+          `declaration: function ${kept}`,
+        ]);
+      }
+    },
+    LOAD_TIMEOUT,
+  );
 });

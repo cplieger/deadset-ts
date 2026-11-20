@@ -1,8 +1,8 @@
 {
-  "corpus_version": "6.4.0",
+  "corpus_version": "6.5.0",
   "product": { "name": "deadset-ts", "version": "0.1.0", "language": "ts" },
   "result": "pass",
-  "totals": { "fixtures": 394, "pass": 392, "gap": 0, "fail": 0, "pending": 2 },
+  "totals": { "fixtures": 402, "pass": 400, "gap": 0, "fail": 0, "pending": 2 },
   "fixtures": [
     {
       "fixture": "abstract-member-through-this",
@@ -3427,6 +3427,28 @@
       "unexpected": []
     },
     {
+      "fixture": "edge-side-quoted-member-with-space",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "Headers", "result": "pass", "actual": { "report": "none" } },
+        {
+          "symbol": "contentType",
+          "result": "pass",
+          "actual": { "report": "none", "retained_by": ["reflective-lookup"] }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "edge-side-with-an-encoded-scope",
+      "result": "pass",
+      "expectations": [
+        { "symbol": "dead", "result": "pass", "actual": { "report": "none" } },
+        { "symbol": "live", "result": "pass", "actual": { "report": "none" } }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "effect-import-of-a-script",
       "result": "pass",
       "expectations": [
@@ -4580,6 +4602,12 @@
         { "symbol": "start", "result": "pass", "actual": { "report": "none" } },
         { "symbol": "widget", "result": "pass", "actual": { "report": "none" } }
       ],
+      "unexpected": []
+    },
+    {
+      "fixture": "ignore-entry-for-an-encoded-path",
+      "result": "pass",
+      "expectations": [{ "symbol": "unused", "result": "pass", "actual": { "report": "none" } }],
       "unexpected": []
     },
     {
@@ -7446,6 +7474,116 @@
       "unexpected": []
     },
     {
+      "fixture": "primitive-intersected-with-object-types",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "AliasAlias",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "type-member",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "BrandedNamed",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "type-member",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "FlagFlag",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "type-member",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "TagLabel",
+          "result": "pass",
+          "actual": {
+            "report": "DS1102",
+            "symbol_kind": "type-member",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "primitive-intersected-with-object-types-published",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "AliasAlias",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "type-member",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "AliasOf",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "possible",
+            "reachability_class": "possible",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "LabelOf",
+          "result": "pass",
+          "actual": {
+            "report": "DS1001",
+            "symbol_kind": "function",
+            "confidence": "possible",
+            "reachability_class": "possible",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        },
+        {
+          "symbol": "LabelText",
+          "result": "pass",
+          "actual": {
+            "report": "DS1003",
+            "symbol_kind": "type-member",
+            "confidence": "possible",
+            "reachability_class": "possible",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
       "fixture": "private-member-unread",
       "result": "pass",
       "expectations": [
@@ -8515,6 +8653,63 @@
           "actual": {
             "report": "DS1003",
             "symbol_kind": "type-member",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "scope-path-with-a-number-sign",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "unused",
+          "result": "pass",
+          "actual": {
+            "report": "DS1002",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "scope-path-with-a-percent-sign",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "unused",
+          "result": "pass",
+          "actual": {
+            "report": "DS1002",
+            "symbol_kind": "function",
+            "confidence": "certain",
+            "reachability_class": "certain",
+            "liveness_relation": "reference-counting"
+          },
+          "suppression": { "suppressed": true, "stale": false }
+        }
+      ],
+      "unexpected": []
+    },
+    {
+      "fixture": "scope-path-with-a-space",
+      "result": "pass",
+      "expectations": [
+        {
+          "symbol": "unused",
+          "result": "pass",
+          "actual": {
+            "report": "DS1002",
+            "symbol_kind": "function",
             "confidence": "certain",
             "reachability_class": "certain",
             "liveness_relation": "reference-counting"

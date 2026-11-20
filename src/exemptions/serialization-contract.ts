@@ -102,7 +102,7 @@ import {
   spelledEntry,
 } from "../roots/configured-declarations.ts";
 import type { DetectorInput, Evidence } from "./lifecycle.ts";
-import type { Inventory } from "../inventory.ts";
+import { heldName, type Inventory } from "../inventory.ts";
 import { renderPosition, type Position } from "../position.ts";
 import { must, Unanswerable } from "../query.ts";
 import type { ProjectView } from "../session.ts";
@@ -317,7 +317,7 @@ function enumeratedParameters<Brand>(
   }[] = [];
   for (const parameter of erased.values()) {
     const fn = parameter.name.parent.parent;
-    const spelled = parameter.name.getText();
+    const spelled = heldName(parameter.name);
     const written = namesWritten(fn);
     const visit = (node: Node): void => {
       if (isFunctionNode(node)) {
@@ -383,13 +383,13 @@ function handedOn<Brand>(
   sites: ProjectSites,
   erased: ReadonlyMap<number, ParameterSite>,
 ): readonly Forwarded[] {
-  const spellings = new Set([...erased.values()].map((parameter) => parameter.name.getText()));
+  const spellings = new Set([...erased.values()].map((parameter) => heldName(parameter.name)));
   const candidates = sites.calls.flatMap((site) =>
     sites.invocations
       .of(site.call)
       .arguments.flatMap((argument, index) =>
         carriedValues(argument).flatMap((value) =>
-          value.name !== undefined && spellings.has(value.name.getText())
+          value.name !== undefined && spellings.has(heldName(value.name))
             ? [{ site, argument: index, value: { ...value, name: value.name } }]
             : [],
         ),

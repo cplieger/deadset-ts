@@ -14,6 +14,7 @@ describe("the published index", () => {
       "isRef",
       "nameComponent",
       "positionKey",
+      "readPathSegment",
       "renderPosition",
       "renderRef",
       "run",

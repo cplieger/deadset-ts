@@ -1,14 +1,19 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { contractDocument, fixture } from "../__test-helpers__/fixtures.ts";
+import { contractDocument, fixture, readFixture } from "../__test-helpers__/fixtures.ts";
 import {
   computedComponent,
+  isUnsafe,
+  hasRefShape,
   importRef,
   isRef,
   nameComponent,
   parameterRef,
+  readPathSegment,
   REF_EXPRESSIONS,
+  REF_SHAPE,
   renderRef,
+  spell,
   type Component,
   type Fragment,
   type Module,
@@ -21,6 +26,41 @@ interface Token {
   readonly form: string;
   readonly accepted: boolean;
   readonly reason: string;
+  /** For a refused case, whether the shape every document checks admits it. */
+  readonly shape?: boolean;
+}
+
+/** One case of the Contract's published path segment corpus. */
+interface SegmentCase {
+  readonly set: string;
+  readonly spelled: string;
+  readonly canonical: boolean;
+  /** The bytes a canonical spelling spells, two lowercase hexadecimal digits each. */
+  readonly raw_hex?: string;
+  readonly reason: string;
+}
+
+/** The source-path cases of the segment corpus: the one set this language spells a path in. */
+function sourcePathSegments(): readonly SegmentCase[] {
+  return (
+    JSON.parse(readFixture("contract", "grammar", "segment-corpus.json")) as readonly SegmentCase[]
+  ).filter((one) => one.set === "source-path");
+}
+
+/** The text bytes spell, where they are well-formed UTF-8, which is all a string can hold. */
+function textOf(hex: string): string | undefined {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(Buffer.from(hex, "hex"));
+  } catch {
+    return undefined;
+  }
+}
+
+/** The expression the grammar page prints expanded under its shape section. */
+function publishedShape(): string {
+  const page = readFileSync(fixture("contract", "grammar", "symbol-ref.md"), "utf8");
+  const section = page.slice(page.indexOf("### The shape every document checks"));
+  return /```text\n(\^[^\n]*)\n```/u.exec(section)?.[1] ?? "no expanded shape on the page";
 }
 
 function corpus(): readonly Token[] {
@@ -48,11 +88,15 @@ function publishedExpressions(language: string): string[] {
 }
 
 function name(text: string): Component {
-  return { text, computed: false };
+  return { text, kind: "key" };
+}
+
+function privateName(text: string): Component {
+  return { text, kind: "private" };
 }
 
 function computed(text: string): Component {
-  return { text, computed: true };
+  return { text, kind: "computed" };
 }
 
 function declaration(
@@ -72,12 +116,6 @@ const TABS: Module = { package: "@example/app", path: "src/features/tabs/index.t
 const INDEX: Module = { package: "@example/app", path: "src/index.ts" };
 const MANIFEST: Module = { package: "@example/app", path: "package.json" };
 
-/**
- * One row per accepted TypeScript case of the published corpus: the parts a symbol
- * of that form is rendered from, and the token the corpus carries. Rendering the
- * parts must reproduce the token byte for byte, which is what makes a reference
- * written by hand into an ignore entry match one this analyzer emits.
- */
 /** The one accepted import-binding token of the corpus, which `importRef` renders. */
 const IMPORT_BINDING = "ts://@example/app/src/main.ts#basename:import";
 
@@ -100,6 +138,12 @@ const PARAMETERS: readonly { holder: string; name: string; input: string }[] = [
   },
 ];
 
+/**
+ * One row per accepted TypeScript case of the published corpus: the parts a symbol
+ * of that form is rendered from, and the token the corpus carries. Rendering the
+ * parts must reproduce the token byte for byte, which is what makes a reference
+ * written by hand into an ignore entry match one this analyzer emits.
+ */
 const RENDERED: readonly { module: Module; fragment: Fragment; input: string }[] = [
   {
     module: { package: "@example/app", path: "gen/v1/service_pb.ts" },
@@ -204,7 +248,7 @@ const RENDERED: readonly { module: Module; fragment: Fragment; input: string }[]
   },
   {
     module: TABS,
-    fragment: declaration([name("TabStrip"), name("#frame")]),
+    fragment: declaration([name("TabStrip"), privateName("#frame")]),
     input: "ts://@example/app/src/features/tabs/index.ts#TabStrip.#frame",
   },
   {
@@ -236,6 +280,71 @@ const RENDERED: readonly { module: Module; fragment: Fragment; input: string }[]
     module: APP,
     fragment: declaration([name("Labels"), name("größe")]),
     input: "ts://@example/app/src/wire.ts#Labels.größe",
+  },
+  {
+    module: APP,
+    fragment: declaration([name("Prices"), name("a€b")]),
+    input: "ts://@example/app/src/wire.ts#Prices.'a€b'",
+  },
+  {
+    module: APP,
+    fragment: declaration([name("Prices"), name("a\u200Bb")]),
+    input: "ts://@example/app/src/wire.ts#Prices.'a\u200Bb'",
+  },
+  {
+    module: { package: "@example/app", path: "src/wire.ts" },
+    fragment: declaration([name("Prices"), name("#a")]),
+    input: "ts://@example/app/src/wire.ts#Prices.'#a'",
+  },
+  {
+    module: { package: "@example/app", path: "src/wire.ts" },
+    fragment: declaration([name("Prices"), name("ab")]),
+    input: "ts://@example/app/src/wire.ts#Prices.ab",
+  },
+  {
+    module: { package: "@example/app", path: "src/wire.ts" },
+    fragment: declaration([name("Prices"), name("16")]),
+    input: "ts://@example/app/src/wire.ts#Prices.'16'",
+  },
+  {
+    module: { package: "@example/app", path: "src/wire.ts" },
+    fragment: declaration([name("Prices"), name("t\tb")]),
+    input: "ts://@example/app/src/wire.ts#Prices.'t\tb'",
+  },
+  {
+    module: { package: "@example/app", path: "src/wire.ts" },
+    fragment: declaration([name("Prices"), name("\u001b[31mX")]),
+    input: "ts://@example/app/src/wire.ts#Prices.'\\u{1B}[31mX'",
+  },
+  {
+    module: { package: "@example/app", path: "src/wire.ts" },
+    fragment: declaration([name("Prices"), name("a\u0000b")]),
+    input: "ts://@example/app/src/wire.ts#Prices.'a\\u{0}b'",
+  },
+  {
+    module: { package: "@example/app", path: "src/wire.ts" },
+    fragment: declaration([name("Prices"), name("safe\u202E.exe")]),
+    input: "ts://@example/app/src/wire.ts#Prices.'safe\\u{202E}.exe'",
+  },
+  {
+    module: { package: "@example/app", path: "src/wire.ts" },
+    fragment: declaration([name("Prices"), name("x\u2028y")]),
+    input: "ts://@example/app/src/wire.ts#Prices.'x\\u{2028}y'",
+  },
+  {
+    module: { package: "@example/app", path: "src/wire.ts" },
+    fragment: declaration([name("Prices"), name("\uD800")]),
+    input: "ts://@example/app/src/wire.ts#Prices.'\\u{D800}'",
+  },
+  {
+    module: { package: "@example/app", path: "src/wire.ts" },
+    fragment: declaration([name("Prices"), name("a\u009Bb\u007F")]),
+    input: "ts://@example/app/src/wire.ts#Prices.'a\\u{9B}b\\u{7F}'",
+  },
+  {
+    module: { package: "@example/app", path: "src/wire.ts" },
+    fragment: declaration([name("Prices"), name("\u061C\u200F\u2069")]),
+    input: "ts://@example/app/src/wire.ts#Prices.'\\u{61C}\\u{200F}\\u{2069}'",
   },
   {
     module: { package: "@example/app", path: "src/layout.ts" },
@@ -323,6 +432,56 @@ const RENDERED: readonly { module: Module; fragment: Fragment; input: string }[]
     module: { package: "@example/app", path: "tools/package.json" },
     fragment: { of: "dependency", name: "lodash", section: "dependency" },
     input: "ts://@example/app/tools/package.json#lodash:dependency",
+  },
+  {
+    module: { package: ".", path: "src/my file.ts" },
+    fragment: declaration([name("unused")]),
+    input: "ts://./src/my%20file.ts#unused",
+  },
+  {
+    module: { package: ".", path: "src/a#b.ts" },
+    fragment: declaration([name("unused")]),
+    input: "ts://./src/a%23b.ts#unused",
+  },
+  {
+    module: { package: ".", path: "src/100%.ts" },
+    fragment: declaration([name("unused")]),
+    input: "ts://./src/100%25.ts#unused",
+  },
+  {
+    module: { package: ".", path: "app/[id].tsx" },
+    fragment: declaration([name("default")]),
+    input: "ts://./app/[id].tsx#default",
+  },
+  {
+    module: { package: ".", path: "src/größe.ts" },
+    fragment: declaration([name("X")]),
+    input: "ts://./src/größe.ts#X",
+  },
+  {
+    module: { package: ".", path: "src/h.ts" },
+    fragment: declaration([name("Headers"), name("content type")]),
+    input: "ts://./src/h.ts#Headers.'content type'",
+  },
+  {
+    module: { package: ".", path: "my tools/package.json" },
+    fragment: { of: "dependency", name: "lodash", section: "dependency" },
+    input: "ts://./my%20tools/package.json#lodash:dependency",
+  },
+  {
+    module: { package: ".", path: "src/a\u0085b.ts" },
+    fragment: declaration([name("unused")]),
+    input: "ts://./src/a%C2%85b.ts#unused",
+  },
+  {
+    module: { package: ".", path: "src/a\u00a0b\u2028.ts" },
+    fragment: declaration([name("unused")]),
+    input: "ts://./src/a%C2%A0b%E2%80%A8.ts#unused",
+  },
+  {
+    module: { package: "@example/app", path: "src/headers.ts" },
+    fragment: declaration([name("Headers"), name("content\u00a0type")]),
+    input: "ts://@example/app/src/headers.ts#Headers.'content\u00a0type'",
   },
 ];
 
@@ -414,6 +573,143 @@ describe("the canonical spelling of one reference", () => {
   });
 });
 
+describe("the shape every document checks", () => {
+  it("is the expression the pinned grammar page publishes, and the one the finding schema's reference takes", () => {
+    const schema = contractDocument("finding.schema.json") as {
+      $defs: { reference: { pattern: string } };
+    };
+
+    expect(REF_SHAPE).toBe(publishedShape());
+    expect(REF_SHAPE).toBe(schema.$defs.reference.pattern);
+  });
+
+  it("admits every token the corpus accepts, in every language", () => {
+    const refused = corpus()
+      .filter((token) => token.accepted && !hasRefShape(token.input))
+      .map((token) => `${token.language} ${token.form}: ${token.input}`);
+
+    expect(refused).toEqual([]);
+  });
+
+  it("decides every refused token of the corpus as the corpus's shape member does", () => {
+    const disagreeing = corpus()
+      .filter((token) => !token.accepted && hasRefShape(token.input) !== token.shape)
+      .map((token) => `${token.input}: shape ${String(token.shape)}`);
+
+    expect(disagreeing).toEqual([]);
+  });
+});
+
+describe("one source-path segment's spelling", () => {
+  const segments = sourcePathSegments();
+  const canonical = segments.filter((one) => one.canonical);
+
+  it("is decided by a corpus that covers both outcomes", () => {
+    expect(canonical.length).toBeGreaterThan(0);
+    expect(segments.length).toBeGreaterThan(canonical.length);
+  });
+
+  it.each(
+    canonical.flatMap((one) => {
+      const text = textOf(one.raw_hex ?? "");
+      return text === undefined ? [] : [[one.spelled, text, one.reason] as const];
+    }),
+  )("spells a segment as %s", (spelled, text) => {
+    expect(renderRef({ package: ".", path: `${text}/unit.ts` }, { of: "module" })).toBe(
+      `ts://./${spelled}/unit.ts#`,
+    );
+  });
+
+  it("spells a lone surrogate by the bytes of its value, as a package component does", () => {
+    expect(renderRef({ package: ".", path: "a\uD800/unit.ts" }, { of: "module" })).toBe(
+      "ts://./a%ED%A0%80/unit.ts#",
+    );
+  });
+
+  it.each(canonical.map((one) => [one.spelled, one.raw_hex ?? "", one.reason] as const))(
+    "reads %s as the bytes %s",
+    (spelled, hex) => {
+      expect(Buffer.from(readPathSegment(spelled) ?? []).toString("hex")).toBe(hex);
+    },
+  );
+
+  it.each(
+    segments.filter((one) => !one.canonical).map((one) => [one.spelled, one.reason] as const),
+  )("reads %j as the spelling of no segment: %s", (spelled) => {
+    expect(readPathSegment(spelled)).toBeUndefined();
+  });
+
+  it("reads a segment holding a lone surrogate, which no encoder writes, as the spelling of none", () => {
+    expect(readPathSegment("a\uD800")).toBeUndefined();
+  });
+
+  it("keeps a byte run as itself exactly where a strict UTF-8 decoder reads a character", () => {
+    // Every run of up to four bytes over each boundary of RFC 3629's table, with `a` kept
+    // and DEL, the C1 controls and the no-break space escaped; Node's fatal TextDecoder is
+    // the oracle.
+    const strict = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+    const leads = [
+      0x61, 0x7f, 0x80, 0xbf, 0xc0, 0xc1, 0xc2, 0xdf, 0xe0, 0xe1, 0xec, 0xed, 0xee, 0xef, 0xf0,
+      0xf1, 0xf3, 0xf4, 0xf5, 0xff,
+    ];
+    const trails = [0x61, 0x7f, 0x80, 0x8f, 0x90, 0x9f, 0xa0, 0xbf, 0xc0];
+    const escape = (byte: number) => `%${byte.toString(16).toUpperCase().padStart(2, "0")}`;
+    const encoded = (point: number): boolean => point >= 0x7f && point <= 0xa0;
+    const decoded = (bytes: Uint8Array): string | undefined => {
+      try {
+        return strict.decode(bytes);
+      } catch {
+        return undefined;
+      }
+    };
+    const oracle = (bytes: Uint8Array): string => {
+      let out = "";
+      for (let at = 0; at < bytes.length;) {
+        let length = 1;
+        let read: string | undefined;
+        for (; length <= 4 && at + length <= bytes.length; length += 1) {
+          read = decoded(bytes.subarray(at, at + length));
+          if (read !== undefined) {
+            break;
+          }
+        }
+        if (read === undefined) {
+          out += escape(bytes[at] ?? 0);
+          at += 1;
+        } else if (encoded(read.codePointAt(0) ?? 0)) {
+          out += Array.from(bytes.subarray(at, at + length), escape).join("");
+          at += length;
+        } else {
+          out += read;
+          at += length;
+        }
+      }
+      return out;
+    };
+    let runs: number[][] = leads.map((lead) => [lead]);
+    const differing: string[] = [];
+    for (let size = 1; size <= 4; size += 1) {
+      for (const run of runs) {
+        const bytes = Uint8Array.from(run);
+        const hex = Buffer.from(bytes).toString("hex");
+        const spelled = oracle(bytes);
+        const allEscaped = run.map(escape).join("");
+        if (Buffer.from(readPathSegment(spelled) ?? []).toString("hex") !== hex) {
+          differing.push(`${hex}: ${spelled} not read back`);
+        }
+        if ((readPathSegment(allEscaped) !== undefined) !== (allEscaped === spelled)) {
+          differing.push(`${hex}: ${allEscaped} read against the oracle's ${spelled}`);
+        }
+      }
+      if (size < 4) {
+        runs = runs.flatMap((run) => trails.map((trail) => [...run, trail]));
+      }
+    }
+
+    expect(differing).toEqual([]);
+  });
+});
+
 describe("one component's spelling", () => {
   it.each([
     { given: "TabStrip", want: "TabStrip" },
@@ -421,14 +717,118 @@ describe("one component's spelling", () => {
     { given: "static", want: "static" },
     { given: "größe", want: "größe" },
     { given: "$dollar", want: "$dollar" },
-    { given: "#frame", want: "#frame" },
+    { given: "#frame", want: "'#frame'" },
     { given: "content-type", want: "'content-type'" },
     { given: "it's", want: "'it\\'s'" },
     { given: "back\\slash", want: "'back\\\\slash'" },
     { given: "1.5", want: "'1.5'" },
     { given: "", want: "''" },
+    { given: "#", want: "'#'" },
+    { given: "a\u0300", want: "a\u0300" },
+    { given: "ℕ", want: "ℕ" },
+    { given: "a\u200Cb", want: "a\u200Cb" },
+    { given: "a€b", want: "'a€b'" },
+    { given: "·a", want: "'·a'" },
+    { given: "a©", want: "'a©'" },
+    { given: "\u{1F600}", want: "'\u{1F600}'" },
+    { given: "a\u200Bb", want: "'a\u200Bb'" },
+    { given: "a\u00ADb", want: "'a\u00ADb'" },
+    { given: "a\u2060b", want: "'a\u2060b'" },
+    { given: "\u0300a", want: "'\u0300a'" },
+    { given: "#a€b", want: "'#a€b'" },
   ])("spells $given as $want", ({ given, want }) => {
     expect(nameComponent(given)).toBe(want);
+    expect(isRef(`ts://./src/a.ts#Headers.${nameComponent(given)}`)).toBe(true);
+  });
+
+  it.each([
+    { given: "t\tb", want: "'t\tb'" },
+    { given: "l\nm", want: "'l\\nm'" },
+    { given: "c\rr", want: "'c\\rr'" },
+    { given: "\uFFFD", want: "'\uFFFD'" },
+    { given: "\u{1F600}", want: "'\u{1F600}'" },
+    { given: "a\u00A0b", want: "'a\u00A0b'" },
+    { given: "a\u200Db", want: "a\u200Db" },
+    { given: "a b", want: "'a b'" },
+    { given: "\uD800", want: "'\\u{D800}'" },
+    { given: "a\uDC00", want: "'a\\u{DC00}'" },
+    { given: "\uDC00\uD800", want: "'\\u{DC00}\\u{D800}'" },
+    { given: "a\u0000b", want: "'a\\u{0}b'" },
+    { given: "\u001b[31mX", want: "'\\u{1B}[31mX'" },
+    { given: "v\u000Bw", want: "'v\\u{B}w'" },
+    { given: "f\u000Cg", want: "'f\\u{C}g'" },
+    { given: "\u007F", want: "'\\u{7F}'" },
+    { given: "n\u0085l", want: "'n\\u{85}l'" },
+    { given: "c\u009Bd", want: "'c\\u{9B}d'" },
+    { given: "safe\u202E.exe", want: "'safe\\u{202E}.exe'" },
+    { given: "x\u2028y\u2029z", want: "'x\\u{2028}y\\u{2029}z'" },
+    {
+      given: "\u061C\u200E\u200F\u2066\u2069",
+      want: "'\\u{61C}\\u{200E}\\u{200F}\\u{2066}\\u{2069}'",
+    },
+    { given: "\\u{41}", want: "'\\\\u{41}'" },
+  ])(
+    "spells the key $given as $want, a reference with no raw character of the unsafe set but a tab",
+    ({ given, want }) => {
+      expect(nameComponent(given)).toBe(want);
+      const ref = `ts://./src/a.ts#Headers.${nameComponent(given)}`;
+      expect(isRef(ref)).toBe(true);
+      expect(
+        [...ref].some((character) => character !== "\t" && isUnsafe(character.codePointAt(0) ?? 0)),
+      ).toBe(false);
+    },
+  );
+
+  it("refuses a string holding a lone surrogate, which no UTF-8 document carries", () => {
+    expect(isRef("ts://./src/a.ts#Box.'\uD800'")).toBe(false);
+    expect(isRef("ts://./src/a.ts#Box.'\uFFFD'")).toBe(true);
+    expect(isRef("ts://./src/a.ts#Box.'\\u{D800}'")).toBe(true);
+  });
+
+  it("refuses a raw character of the unsafe set and an escape the writer never writes", () => {
+    for (const fragment of [
+      "'safe\u202E.exe'",
+      "'x\u2028y'",
+      "'\\u{1b}'",
+      "'\\u{01B}'",
+      "'\\u{41}'",
+      "'\\u{9}'",
+      "'\\u{A}'",
+      "'\\u{D}'",
+    ]) {
+      expect(isRef(`ts://./src/a.ts#Box.${fragment}`), fragment).toBe(false);
+    }
+  });
+
+  it("spells a private name with its number sign and a key of the same text quoted", () => {
+    expect(spell({ text: "#frame", kind: "private" })).toBe("#frame");
+    expect(spell({ text: "#frame", kind: "key" })).toBe("'#frame'");
+    expect(spell({ text: "frame", kind: "key" })).toBe("frame");
+    expect(spell({ text: "Symbol.iterator", kind: "computed" })).toBe("[Symbol.iterator]");
+  });
+
+  it("spells a name of 16 Mi characters, bare or quoted, on a flat stack", () => {
+    const long = "a".repeat(16 << 20);
+
+    expect(nameComponent(long)).toBe(long);
+    expect(nameComponent(`${long}€`)).toBe(`'${long}€'`);
+  });
+
+  it("writes a name bare exactly when it is an ECMAScript IdentifierName", () => {
+    const identifierName = /^[\p{ID_Start}$_][\p{ID_Continue}$\u200C\u200D]*$/u;
+    const differing: string[] = [];
+    for (let point = 0; point <= 0x10ffff; point += 1) {
+      if (point >= 0xd800 && point <= 0xdfff) {
+        continue;
+      }
+      const character = String.fromCodePoint(point);
+      for (const name of [character, `a${character}`]) {
+        if ((nameComponent(name) === name) !== identifierName.test(name)) {
+          differing.push(point.toString(16));
+        }
+      }
+    }
+    expect(differing).toEqual([]);
   });
 
   it("drops every ASCII whitespace character from a computed key", () => {
@@ -437,6 +837,29 @@ describe("one component's spelling", () => {
       "[globalThis.Symbol.iterator]",
     );
   });
+
+  it.each([
+    "\u0085",
+    "\u00a0",
+    "\u1680",
+    "\u2000",
+    "\u200a",
+    "\u2028",
+    "\u2029",
+    "\u202f",
+    "\u205f",
+    "\u3000",
+    "\ufeff",
+  ])("drops %j, whitespace past ASCII, from a computed key", (space) => {
+    expect(computedComponent(`Symbol.${space}iterator${space}`)).toBe("[Symbol.iterator]");
+  });
+
+  it.each(["\u200b", "\u00a1", "\u2027"])(
+    "keeps %j, which is no whitespace, in a computed key",
+    (kept) => {
+      expect(computedComponent(`a${kept}b`)).toBe(`[a${kept}b]`);
+    },
+  );
 
   it("keeps two spellings of one key apart, because they are two declarations", () => {
     expect(computedComponent("Symbol.iterator")).not.toBe(

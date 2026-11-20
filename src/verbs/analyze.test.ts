@@ -1,4 +1,12 @@
-import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  lstatSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -1157,6 +1165,53 @@ describe("the baseline", () => {
     LOAD_TIMEOUT,
   );
 
+  it.each([
+    ["at the target root", true],
+    ["outside the target", false],
+  ])(
+    "refuses with the usage code a baseline write over a document past the Contract's bound %s, read one byte past it, and leaves it as it was",
+    (_, inTarget) => {
+      const tree = mkdtempSync(join(tmpdir(), "deadset-ts-baseline-"));
+      const beside = outputDir();
+      onTestFinished(() => {
+        rmSync(tree, { recursive: true, force: true });
+      });
+      cpSync(fixture("projects", "unused-declarations"), tree, { recursive: true });
+      const baseline = join(inTarget ? tree : beside, "deadset-baseline.json");
+      const held = '{"baseline": []}'.padEnd((16 << 20) + 1);
+      writeFileSync(baseline, held);
+      const limits: (number | undefined)[] = [];
+      const host: Host = {
+        ...hostAt(tree),
+        readFile: (path, limit) => {
+          if (path === baseline) {
+            limits.push(limit);
+          }
+          return nodeHost().readFile(path, limit);
+        },
+      };
+      const err = new MemoryWriter();
+
+      const code = run(
+        [
+          "analyze",
+          `--target=${tree}`,
+          `--report=${join(beside, "report.json")}`,
+          `--baseline-write=${baseline}`,
+        ],
+        new MemoryWriter(),
+        err,
+        host,
+      );
+
+      expect(code, err.text).toBe(2);
+      expect(err.text).toContain(`${baseline}: holds more than ${String(16 << 20)} bytes`);
+      expect(limits).toEqual([(16 << 20) + 1]);
+      expect(readFileSync(baseline, "utf8")).toBe(held);
+    },
+    LOAD_TIMEOUT,
+  );
+
   it(
     "leaves an existing baseline untouched when the run fails",
     () => {
@@ -1530,4 +1585,380 @@ describe("analyze --facts", () => {
     expect(ran.code).toBe(2);
     expect(ran.err).toContain("--facts names the path the facts document is written to");
   });
+});
+
+/**
+ * A target holding the files given beside a tsconfig and a manifest, analyzed at every
+ * confidence: an application entered at src/main.ts, or a library publishing it.
+ */
+function unsafeTarget(
+  kind: "application" | "library",
+  files: Readonly<Record<string, string>>,
+): string {
+  return project({
+    "tsconfig.json": TSCONFIG,
+    "package.json": `${JSON.stringify({
+      name: "@example/unsafe",
+      type: "module",
+      ...(kind === "library" ? { exports: "./src/main.ts" } : { private: true }),
+    })}\n`,
+    "deadset.json": `${JSON.stringify({
+      target: { kind },
+      analysis: { min_confidence: "possible" },
+      ...(kind === "application" ? { ts: { entry_files: ["src/main.ts"] } } : {}),
+    })}\n`,
+    ...files,
+  });
+}
+
+/**
+ * Every location of a report the report schema holds a path at: a value of
+ * finding.schema.json's relative_path, or one whose pattern refuses the control
+ * characters a path refuses. A location is the member names leading to it, joined by
+ * dots, with [] after an array.
+ */
+function schemaPathLocations(): readonly string[] {
+  const documents: Readonly<Record<string, Record<string, unknown>>> = {
+    "report.schema.json": contractDocument("report.schema.json"),
+    "finding.schema.json": contractDocument("finding.schema.json"),
+  };
+  const found = new Set<string>();
+  const open = new Set<string>();
+  const resolved = (file: string, pointer: string): unknown =>
+    pointer === ""
+      ? documents[file]
+      : pointer
+          .slice(1)
+          .split("/")
+          .reduce<unknown>(
+            (node, part) => (node as Record<string, unknown>)[part],
+            documents[file],
+          );
+  const walk = (file: string, node: unknown, at: string): void => {
+    if (typeof node !== "object" || node === null) {
+      return;
+    }
+    const object = node as Record<string, unknown>;
+    const ref = object["$ref"];
+    if (typeof ref === "string") {
+      const [named = "", pointer = ""] = ref.split("#");
+      const target = named === "" ? file : named;
+      if (pointer === "/$defs/relative_path") {
+        found.add(at);
+        return;
+      }
+      const key = `${target}#${pointer}`;
+      if (!open.has(key)) {
+        open.add(key);
+        walk(target, resolved(target, pointer), at);
+        open.delete(key);
+      }
+    }
+    const pattern = object["pattern"];
+    if (typeof pattern === "string" && pattern.includes(String.raw`\x00-\x1f\x7f`)) {
+      found.add(at);
+    }
+    for (const [name, property] of Object.entries(
+      (object["properties"] ?? {}) as Record<string, unknown>,
+    )) {
+      walk(file, property, at === "" ? name : `${at}.${name}`);
+    }
+    walk(file, object["items"], `${at}[]`);
+    for (const keyword of ["allOf", "anyOf", "oneOf"]) {
+      for (const branch of (object[keyword] ?? []) as unknown[]) {
+        walk(file, branch, at);
+      }
+    }
+    walk(file, object["then"], at);
+    walk(file, object["else"], at);
+  };
+  walk("report.schema.json", documents["report.schema.json"], "");
+  return [...found].sort();
+}
+
+/** Every string `document` holds at `location`, spelled as `schemaPathLocations` spells one. */
+function valuesAt(document: unknown, location: string): readonly string[] {
+  let nodes: unknown[] = [document];
+  for (const part of location.split(".")) {
+    const name = part.endsWith("[]") ? part.slice(0, -2) : part;
+    nodes = nodes.flatMap((node) => {
+      const value =
+        typeof node === "object" && node !== null
+          ? (node as Record<string, unknown>)[name]
+          : undefined;
+      if (value === undefined) {
+        return [];
+      }
+      return part.endsWith("[]") ? ((value as unknown[] | undefined) ?? []) : [value];
+    });
+  }
+  return nodes.filter((node): node is string => typeof node === "string");
+}
+
+/**
+ * The path locations the fixture below fills, those of them it fills with the file whose
+ * name holds the class's character, and every other location the report schema holds. A
+ * location the schema gains fails the test until it is listed.
+ */
+const FILLED_PATHS = [
+  "target.root",
+  "findings[].position.path",
+  "findings[].details.write_positions[].path",
+  "findings[].details.implementations[].position.path",
+  "components[].members[].position.path",
+  "stale_suppressions[].position.path",
+  "stale_suppressions[].entry.path",
+];
+const NAMING_THE_FILE = [
+  "findings[].position.path",
+  "findings[].details.write_positions[].path",
+  "findings[].details.implementations[].position.path",
+  "components[].members[].position.path",
+];
+const UNFILLED_PATHS = [
+  "findings[].details.name_literal.path",
+  "findings[].details.entry.path",
+  "edge_evaluations[].finding.position.path",
+  "edge_evaluations[].finding.details.write_positions[].path",
+  "edge_evaluations[].finding.details.implementations[].position.path",
+  "edge_evaluations[].finding.details.name_literal.path",
+  "edge_evaluations[].finding.details.entry.path",
+  "configurations[].project",
+  "configurations_not_built[].project",
+  "excluded_by_cgo[]",
+  "type_error_skips[].path",
+  "notes[].path",
+  "conventions_applied[].manifest",
+];
+
+/**
+ * One file name per class of character a reference spells apart: a C0 control, a C1
+ * control, a bidirectional control, the line separator, a space, % and #. A report path
+ * holds each as the file name does, and the report's path form refuses only a C0 control
+ * or DEL, so a run whose report would name such a file ends with the run failure
+ * product-fault.
+ */
+const PATH_CLASSES = [
+  { label: "c0-control", name: "src/w\u001bx.ts", faults: true },
+  { label: "c1-control", name: "src/w\u009bx.ts", faults: false },
+  { label: "bidi-control", name: "src/w\u202ex.ts", faults: false },
+  { label: "line-separator", name: "src/w\u2028x.ts", faults: false },
+  { label: "space", name: "src/w x.ts", faults: false },
+  { label: "percent", name: "src/w%x.ts", faults: false },
+  { label: "number-sign", name: "src/w#x.ts", faults: false },
+];
+
+/**
+ * The findings of the fixture below, as `findingSummary` writes each, with `%s` standing
+ * for the file whose name holds the class's character.
+ */
+const PATH_CLASS_FINDINGS = [
+  "DS1002 dead src/main.ts:3",
+  "DS1602 src/shape.ts src/shape.ts:1",
+  "DS1201 Unused src/shape.ts:1 implementations=[%s:5]",
+  "DS1503 Box src/state.ts:1",
+  "DS1301 Box.count src/state.ts:2 writes=[%s:3]",
+  "DS1301 Box.shared src/state.ts:3 writes=[src/main.ts:2 %s:4]",
+  "DS1001 Other %s:5",
+  "DS1001 hidden %s:8",
+];
+
+/** A position as the report writes it, by the members a summary reads. */
+interface At {
+  readonly path: string;
+  readonly line: number;
+}
+
+/**
+ * A finding's code, name and position, then the paths and lines of the nested positions
+ * it carries, which two runs over one tree agree on whatever spelling their references take.
+ */
+function findingSummary(finding: Record<string, unknown>): string {
+  const at = (position: At): string => `${position.path}:${String(position.line)}`;
+  const details = finding["details"] as {
+    implementations?: { position: At }[];
+    name_literal?: At;
+    write_positions?: At[];
+  };
+  return [
+    `${String(finding["code"])} ${(finding["symbol"] as { name: string }).name} ${at(finding["position"] as At)}`,
+    ...(details.implementations === undefined || details.implementations.length === 0
+      ? []
+      : [`implementations=[${details.implementations.map((one) => at(one.position)).join(" ")}]`]),
+    ...(details.name_literal === undefined ? [] : [`name_literal=${at(details.name_literal)}`]),
+    ...(details.write_positions === undefined || details.write_positions.length === 0
+      ? []
+      : [`writes=[${details.write_positions.map(at).join(" ")}]`]),
+  ].join(" ");
+}
+
+describe("a file name of every class a reference spells apart", () => {
+  it("is listed at every location the report schema holds a path", () => {
+    expect([...schemaPathLocations()]).toEqual([...FILLED_PATHS, ...UNFILLED_PATHS].sort());
+  });
+
+  it.each(PATH_CLASSES)(
+    "is analyzed, and the report names it as the file system does ($label)",
+    ({ name, faults }) => {
+      const module = `./${name.slice("src/".length, -".ts".length)}.js`;
+      const root = project({
+        "tsconfig.json": TSCONFIG,
+        "package.json": `${JSON.stringify({ name: "@example/paths", private: true, type: "module" })}\n`,
+        "deadset.json": `${JSON.stringify({
+          target: { kind: "application" },
+          analysis: { min_confidence: "possible" },
+          ts: { entry_files: ["src/main.ts"] },
+          reporters: { cascade: "full" },
+        })}\n`,
+        // The import that names the file comes last: a line separator in it ends a line.
+        "src/main.ts": `import { box } from "./state.js";\nbox.shared = 1;\nfunction dead(): void {\n  hidden();\n}\nimport { hidden } from ${JSON.stringify(module)};\n`,
+        "src/state.ts":
+          "export class Box {\n  count = 0;\n  shared = 0;\n}\nexport const box = new Box();\n",
+        "src/shape.ts": "export interface Unused {\n  u(): void;\n}\n",
+        [name]: `import { box } from "./state.js";\nimport type { Unused } from "./shape.js";\nbox.count = 1;\nbox.shared = 2;\nexport class Other implements Unused {\n  u(): void {}\n}\nexport function hidden(): void {}\n`,
+        "deadset-ignore.json": `${JSON.stringify({
+          ignore: [
+            {
+              code: "DS1104",
+              symbol: "ts://@example/paths/src/main.ts#forgotten",
+              path: "src/main.ts",
+              reason: "Kept for the next release.",
+            },
+          ],
+        })}\n`,
+      });
+      const baseline = join(outputDir(), "baseline.json");
+      const got = analyze(
+        root,
+        ["--format=text", "--format=sarif", `--baseline-write=${baseline}`],
+        root,
+      );
+
+      if (faults) {
+        expect(got.code).toBe(3);
+        expect(got.err).toContain("product-fault");
+        return;
+      }
+      expect(got.err).not.toContain("run failure");
+      expect(got.code).toBe(1);
+      const report = reportOf(got);
+      expect(validate(report)).toEqual([]);
+      for (const location of schemaPathLocations()) {
+        const named = valuesAt(report, location);
+        for (const path of named) {
+          expect(() => lstatSync(join(root, path)), `${location} names ${path}`).not.toThrow();
+        }
+        if (NAMING_THE_FILE.includes(location)) {
+          expect(named, location).toContain(name);
+        }
+      }
+      const rows = (JSON.parse(readFileSync(baseline, "utf8")) as { baseline: { path: string }[] })
+        .baseline;
+      expect(rows.length).toBeGreaterThan(0);
+      for (const row of rows) {
+        expect(() => lstatSync(join(root, row.path)), row.path).not.toThrow();
+      }
+      expect(findingsOf(got).map(findingSummary)).toEqual(
+        PATH_CLASS_FINDINGS.map((line) => line.replaceAll("%s", name)),
+      );
+    },
+    LOAD_TIMEOUT,
+  );
+});
+
+describe("an export whose name is no identifier", () => {
+  it(
+    "keeps the declaration it exports, and spells the alias with escapes",
+    () => {
+      const root = unsafeTarget("library", {
+        "src/main.ts": String.raw`const a = 1;
+const b = 2;
+export { a as "\u001b[31mX", b as "\uD800" };
+export const c = 3;
+`,
+      });
+      const got = analyze(root, [], root);
+      const found = findingsOf(got).map((one) => [
+        one["code"],
+        (one["symbol"] as { ref: string }).ref,
+      ]);
+
+      expect(validate(reportOf(got))).toEqual([]);
+      expect(found.filter(([code]) => code === "DS1002")).toEqual([]);
+      expect(found.map(([, ref]) => ref).sort()).toEqual([
+        "ts://@example/unsafe/src/main.ts#'\\u{1B}[31mX':alias",
+        "ts://@example/unsafe/src/main.ts#'\\u{D800}':alias",
+        "ts://@example/unsafe/src/main.ts#c",
+      ]);
+    },
+    LOAD_TIMEOUT,
+  );
+
+  it(
+    "keeps what a namespace re-export under such a name carries",
+    () => {
+      const root = unsafeTarget("library", {
+        "src/main.ts": String.raw`export * as "\u001b[31mX" from "./x.js";
+export * as plain from "./y.js";
+`,
+        "src/x.ts": "export const p = 1;\n",
+        "src/y.ts": "export const q = 2;\n",
+      });
+      const refs = findingsOf(analyze(root, [], root)).map(
+        (one) => (one["symbol"] as { ref: string }).ref,
+      );
+
+      expect(refs.filter((ref) => ref.includes("x.ts"))).toEqual([]);
+      expect(refs).toContain("ts://@example/unsafe/src/main.ts#'\\u{1B}[31mX':alias");
+    },
+    LOAD_TIMEOUT,
+  );
+});
+
+describe("a key holding a character of the unsafe set", () => {
+  it(
+    "is reported under an escaped spelling a root copied from the finding names",
+    () => {
+      const files = {
+        "src/main.ts": 'import { Box } from "./box.js";\nconsole.log(new Box().read());\n',
+        "src/box.ts": String.raw`export class Box {
+  "\u001b[31mX" = 1;
+  "a\u0000b" = 2;
+  "safe\u202E.exe" = 3;
+  "x\u2028y" = 4;
+  "\uD800" = 5;
+  read(): number {
+    return 0;
+  }
+}
+`,
+      };
+      const first = analyze(unsafeTarget("application", files), [], tmpdir());
+      const refs = findingsOf(first)
+        .filter((one) => one["code"] === "DS1003")
+        .map((one) => (one["symbol"] as { ref: string }).ref)
+        .sort();
+
+      expect(validate(reportOf(first))).toEqual([]);
+      expect(refs).toEqual([
+        "ts://@example/unsafe/src/box.ts#Box.'\\u{1B}[31mX'",
+        "ts://@example/unsafe/src/box.ts#Box.'\\u{D800}'",
+        "ts://@example/unsafe/src/box.ts#Box.'a\\u{0}b'",
+        "ts://@example/unsafe/src/box.ts#Box.'safe\\u{202E}.exe'",
+        "ts://@example/unsafe/src/box.ts#Box.'x\\u{2028}y'",
+      ]);
+      const rooted = unsafeTarget("application", {
+        ...files,
+        "deadset.json": `${JSON.stringify({
+          target: { kind: "application" },
+          analysis: { min_confidence: "possible" },
+          roots: { patterns: refs },
+          ts: { entry_files: ["src/main.ts"] },
+        })}\n`,
+      });
+
+      expect(findingsOf(analyze(rooted, [], tmpdir())).map((one) => one["code"])).toEqual([]);
+    },
+    LOAD_TIMEOUT,
+  );
 });

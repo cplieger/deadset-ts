@@ -29,7 +29,7 @@ import type { SourceFiles } from "../source-files.ts";
 import { bytewise } from "../text/compare.ts";
 import { unwrapped } from "../unwrap.ts";
 import { holdsManifest, inInstalledPackages, manifestAt } from "../fs/manifest.ts";
-import { globExpression } from "../text/glob.ts";
+import { rewrittenGlobExpression } from "../text/glob.ts";
 import { pathsNamed, readCommands } from "../commands/read.ts";
 import { manifestCommands } from "../roots/manifest.ts";
 import { extensionOf, MODULE_EXTENSIONS } from "../extensions.ts";
@@ -128,7 +128,7 @@ function entriesNamed(
     return [];
   }
   if (api.paths && /[*?[{]/u.test(entry.text)) {
-    const expression = globExpression(entry.path);
+    const expression = rewrittenGlobExpression(entry.text, entry.path);
     return [...files.byName.values()].filter((file) => expression.test(file.fileName));
   }
   const dir = dirnamePath(entry.path);

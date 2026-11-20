@@ -156,6 +156,39 @@ describe("the generated contract module", () => {
     await expect(generatedConfig(planted)).resolves.toContain("edge_identifier");
   });
 
+  it("copies the definition its own definition of the same name references, in that one's place", () => {
+    const finding = JSON.parse(fixturesReader("contract/finding.schema.json")) as {
+      $defs: Schema;
+    };
+    const own = JSON.parse(fixturesReader("contract/edges.schema.json")) as { $defs: Schema };
+    expect(own.$defs["reference"]).toHaveProperty("$ref", "finding.schema.json#/$defs/reference");
+
+    const edges = bundled(own as Schema, fixturesReader);
+
+    expect(edges).toHaveProperty(["$defs", "reference"], finding.$defs["reference"]);
+    expect(JSON.stringify(edges)).not.toContain("finding.schema.json#");
+  });
+
+  it("refuses to write the edges schema where its own definition shares the name of one another document names", async () => {
+    const planted = (path: string): string =>
+      path === "contract/edges.schema.json"
+        ? fixturesReader(path)
+            .replace('"$ref": "finding.schema.json#/$defs/reference"', '"type": "string"')
+            .replace(
+              '"because": {',
+              '"planted_member": { "$ref": "finding.schema.json#/$defs/reference" },\n        "because": {',
+            )
+        : fixturesReader(path);
+    expect(JSON.parse(planted("contract/edges.schema.json"))).toHaveProperty(
+      ["$defs", "reference", "type"],
+      "string",
+    );
+
+    await expect(generatedConfig(planted)).rejects.toThrow(
+      "not a definition the schema can hold under its own name",
+    );
+  });
+
   it("copies a definition two references into another document name once", async () => {
     const planted = (path: string): string =>
       path === "contract/edges.schema.json"

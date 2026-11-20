@@ -218,6 +218,31 @@ describe("the test files of a Playwright configuration", () => {
     LOAD_TIMEOUT,
   );
 
+  it.each([
+    { length: 1022, named: true },
+    { length: 1024, named: true },
+    { length: 1025, named: false },
+  ])(
+    "match a pattern of $length characters as written, its leading ** segment uncounted: $named",
+    ({ length, named }) => {
+      const deep = Array.from({ length: 4 }, (_, index) => String(index).repeat(200)).join("/");
+      const pattern = `${deep}/${"f".repeat(length - 812)}.flow.ts`;
+
+      expect(pattern).toHaveLength(length);
+      expect(
+        testRoots(
+          {
+            ...PLAYWRIGHT,
+            [`flows/${pattern}`]: "export {};\n",
+            "playwright.config.ts": `export default { testDir: "./flows", testMatch: ${JSON.stringify(pattern)} };\n`,
+          },
+          /^flows/u,
+        ),
+      ).toEqual(named ? [`flows/${pattern}#\ttest-runner\t${pattern}`] : []);
+    },
+    LOAD_TIMEOUT,
+  );
+
   it(
     "are read through a top-level binding the default export names",
     () => {

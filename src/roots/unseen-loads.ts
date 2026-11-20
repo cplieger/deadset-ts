@@ -33,7 +33,7 @@ import {
 } from "../paths.ts";
 import type { Position } from "../position.ts";
 import { unwrapped } from "../unwrap.ts";
-import { globExpression } from "../text/glob.ts";
+import { rewrittenGlobExpression, type Glob } from "../text/glob.ts";
 
 /** One load the analysis cannot resolve, in the configuration whose production file writes it. */
 export interface UnseenLoad {
@@ -154,8 +154,8 @@ function globbed(
     return top === undefined ? undefined : resolvePath(top, `.${at}`);
   };
   const from = base?.[0] === undefined ? dir : against(base[0]);
-  const keep: RegExp[] = [];
-  const drop: RegExp[] = [];
+  const keep: Glob[] = [];
+  const drop: Glob[] = [];
   for (const written of patterns) {
     const negated = written.startsWith("!");
     const pattern = negated ? written.slice(1) : written;
@@ -170,7 +170,7 @@ function globbed(
     if (path === undefined) {
       return undefined;
     }
-    (negated ? drop : keep).push(globExpression(path));
+    (negated ? drop : keep).push(rewrittenGlobExpression(written, path));
   }
   return others.filter(
     (candidate) =>

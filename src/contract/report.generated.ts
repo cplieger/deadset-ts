@@ -630,7 +630,7 @@ export const REPORT_SCHEMAS = {
           properties: {
             edge: { $ref: "finding.schema.json#/$defs/edge_identifier" },
             side: { type: "string", enum: ["provides", "used_by"] },
-            symbol: { type: "string" },
+            symbol: { $ref: "finding.schema.json#/$defs/reference" },
             state: { type: "string", enum: ["live", "dead", "absent"] },
             finding: { $ref: "finding.schema.json" },
             analyzer: { type: "string", pattern: "^[a-z][a-z0-9]*(-[a-z0-9]+)*$" },
@@ -655,7 +655,7 @@ export const REPORT_SCHEMAS = {
               required: ["code", "path", "reason"],
               properties: {
                 code: { type: "string", pattern: "^DS[0-9]{4}$" },
-                symbol: { type: "string" },
+                symbol: { $ref: "finding.schema.json#/$defs/reference" },
                 path: {
                   type: "string",
                   pattern:
@@ -678,7 +678,7 @@ export const REPORT_SCHEMAS = {
                 column: { type: "integer", minimum: 1 },
               },
             },
-            symbol: { type: "string" },
+            symbol: { $ref: "finding.schema.json#/$defs/reference" },
             message: { type: "string", minLength: 1, pattern: "[^ \\t\\r\\n]" },
             analyzer: { type: "string", pattern: "^[a-z][a-z0-9]*(-[a-z0-9]+)*$" },
           },
@@ -987,11 +987,13 @@ export const REPORT_SCHEMAS = {
             ],
           },
           name: { type: "string", pattern: "^[^\\r\\n]+$" },
-          parent: { $ref: "#/$defs/symbol_reference" },
+          parent: { $ref: "#/$defs/reference" },
           exported: { type: "boolean" },
           size_lines: { type: "integer", minimum: 1 },
           objectpath: { type: "string", minLength: 1 },
         },
+        if: { properties: { kind: { enum: ["root", "configured-declaration"] } } },
+        else: { properties: { ref: { $ref: "#/$defs/reference" } } },
       },
       reachability_class: { type: "string", enum: ["certain", "probable", "possible"] },
       confidence: { type: "string", enum: ["certain", "probable", "possible"] },
@@ -1053,7 +1055,7 @@ export const REPORT_SCHEMAS = {
             required: ["code"],
             properties: {
               code: { type: "string", pattern: "^DS[0-9]{4}$" },
-              symbol: { $ref: "#/$defs/symbol_reference" },
+              symbol: { $ref: "#/$defs/reference" },
               path: { $ref: "#/$defs/relative_path" },
               reason: { type: "string", pattern: "[^ \\t\\r\\n]" },
             },
@@ -1075,7 +1077,7 @@ export const REPORT_SCHEMAS = {
               required: ["side", "symbol", "state"],
               properties: {
                 side: { type: "string", enum: ["provides", "used_by"] },
-                symbol: { $ref: "#/$defs/symbol_reference" },
+                symbol: { $ref: "#/$defs/reference" },
                 state: { type: "string", enum: ["live", "dead", "absent"] },
               },
             },
@@ -1237,13 +1239,18 @@ export const REPORT_SCHEMAS = {
         pattern:
           "^(?:[^/.\\x00-\\x1f\\x7f][^/\\x00-\\x1f\\x7f]*|\\.[^/.\\x00-\\x1f\\x7f][^/\\x00-\\x1f\\x7f]*|\\.\\.[^/\\x00-\\x1f\\x7f]+)(?:/(?:[^/.\\x00-\\x1f\\x7f][^/\\x00-\\x1f\\x7f]*|\\.[^/.\\x00-\\x1f\\x7f][^/\\x00-\\x1f\\x7f]*|\\.\\.[^/\\x00-\\x1f\\x7f]+))*$",
       },
+      reference: {
+        type: "string",
+        pattern:
+          "^[a-z][a-z0-9]*://(?:[^\\x00-\\x20\\x7F-\\xA0                　﻿؜‎‏‪‫‬‭‮⁦⁧⁨⁩#%*]|%[0-9A-F]{2})+#(?:(?:[^\\x00-\\x20\\x7F-\\xA0                　﻿؜‎‏‪‫‬‭‮⁦⁧⁨⁩'\\[\\]*%]|%[0-9A-F]{2})|'(?:[^'\\\\\\x00-\\x08\\x0A-\\x1F\\x7F-\\x9F؜‎‏‪‫‬‭‮⁦⁧⁨⁩  ]|\\\\['\\\\nr]|\\\\u\\{(?:[0-8BCEF]|1[0-9A-F]|7F|[89][0-9A-F]|61C|200[EF]|202[89A-E]|206[6-9]|D[89A-F][0-9A-F]{2})\\})*'|\\[[^\\]\\x00-\\x20\\x7F-\\xA0                　﻿؜‎‏‪‫‬‭‮⁦⁧⁨⁩]+\\])*$",
+      },
       symbol_reference: { type: "string", minLength: 1 },
       positioned_symbol: {
         type: "object",
         additionalProperties: false,
         required: ["ref", "name", "position"],
         properties: {
-          ref: { $ref: "#/$defs/symbol_reference" },
+          ref: { $ref: "#/$defs/reference" },
           name: { type: "string", pattern: "^[^\\r\\n]+$" },
           position: { $ref: "#/$defs/position" },
         },

@@ -12,7 +12,8 @@ import {
   type Ledger,
   type StaleSuppression,
 } from "./ledger.ts";
-import { CODE_FORM, PATH_EXPRESSION, REFERENCE_FORM, type SuppressionRecord } from "./records.ts";
+import { hasRefShape } from "../ref.ts";
+import { CODE_FORM, PATH_EXPRESSION, type SuppressionRecord } from "./records.ts";
 
 describe("the forms an entry's values take", () => {
   const schema = contractDocument("finding.schema.json") as {
@@ -25,7 +26,7 @@ describe("the forms an entry's values take", () => {
     expect(CODE_FORM.source).toBe(schema.properties.code.pattern);
   });
 
-  it("hold any scheme's reference to the form every scheme shares, and refuse a bare name", () => {
+  it("hold any scheme's reference to the shape every document checks, and refuse a bare name", () => {
     expect(
       [
         "go://example.com/app#Catalog.ResolveAlias",
@@ -35,8 +36,8 @@ describe("the forms an entry's values take", () => {
         "Catalog.ResolveAlias",
         "Go://example.com/app#Catalog",
         "ts://",
-      ].map((ref) => REFERENCE_FORM.test(ref)),
-    ).toEqual([true, true, true, true, false, false, false]);
+      ].map((ref) => hasRefShape(ref)),
+    ).toEqual([true, true, true, false, false, false, false]);
   });
 });
 

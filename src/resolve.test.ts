@@ -318,6 +318,44 @@ describe("a value the closed key list constrains", () => {
     ).toBe("exemptions.disabled[0]");
   });
 
+  it.each([
+    {
+      key: "test_files",
+      entries: ["a".repeat(1025)],
+      place: "ts.test_files[0]",
+      why: "holds 1025 characters, past the bound of 1024",
+    },
+    {
+      key: "entry_files",
+      entries: ["src/*.ts", "{a,b}".repeat(24)],
+      place: "ts.entry_files[1]",
+      why: "its brace lists expand it to more than 256 globs",
+    },
+    {
+      key: "test_files",
+      entries: ["{a}".repeat(100_000)],
+      place: "ts.test_files[0]",
+      why: "holds 300000 characters",
+    },
+  ])(
+    "refuses a $key entry past the glob bound, naming it and the bound",
+    ({ key, entries, place, why }) => {
+      const got = refuse(library({ ts: { [key]: entries } }));
+
+      expect(refusedPlace(got.message)).toBe(place);
+      expect(got.message).toContain(why);
+    },
+  );
+
+  it("reads a glob entry at the bound", () => {
+    const { config } = resolve(
+      library({ ts: { test_files: ["a".repeat(1024)], entry_files: ["{a,b}".repeat(8)] } }),
+    );
+
+    expect(config.ts.test_files).toEqual(["a".repeat(1024)]);
+    expect(config.ts.entry_files).toEqual(["{a,b}".repeat(8)]);
+  });
+
   it("refuses a disabled convention naming no row this analyzer carries", () => {
     const got = refuse(library({ ts: { disabled_conventions: ["no-such-convention"] } }));
 

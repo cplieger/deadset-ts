@@ -10,6 +10,7 @@ import { sourcePaths } from "../file-facts.ts";
 import type { Host } from "../host.ts";
 import { ancestors, dirnamePath, joinPath } from "../paths.ts";
 import { bytewise } from "../text/compare.ts";
+import type { Glob } from "../text/glob.ts";
 import { holdsManifest } from "../fs/manifest.ts";
 import type { Configuration } from "./discover.ts";
 import type { ProgramPlan } from "./plan.ts";
@@ -33,7 +34,7 @@ export function joinedTestFiles(
   host: Host,
   root: string,
   configurations: readonly Configuration[],
-  patterns: readonly RegExp[],
+  patterns: readonly Glob[],
 ): ReadonlyMap<string, readonly string[]> {
   const listed = new Set<string>();
   const byDir = new Map<string, string[]>();

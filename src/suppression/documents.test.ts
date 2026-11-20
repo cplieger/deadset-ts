@@ -12,7 +12,7 @@ import {
   readBaseline,
   readIgnoreFile,
 } from "./documents.ts";
-import { REFERENCE_FORM } from "./records.ts";
+import { hasRefShape } from "../ref.ts";
 import { whole } from "../../__test-helpers__/whole.ts";
 
 /** One case of the published suppression token corpus. */
@@ -115,7 +115,11 @@ function outcome(one: CorpusCase): string {
 /** Whether a case names a reference of another scheme than this analyzer's. */
 function otherScheme(one: CorpusCase): boolean {
   const { symbol } = one.input;
-  return typeof symbol === "string" && REFERENCE_FORM.test(symbol) && !symbol.startsWith("ts://");
+  return (
+    typeof symbol === "string" &&
+    /^[a-z][a-z0-9]*:\/\//u.test(symbol) &&
+    !symbol.startsWith("ts://")
+  );
 }
 
 /** The case with its other-scheme reference spelled as this language's, fragment kept. */
@@ -143,10 +147,13 @@ describe("every entry and row case of the published token corpus", () => {
   it.each(
     cases.filter(otherScheme).map((one) => [one.kind, JSON.stringify(one.input), one] as const),
   )(
-    "%s %s is held to the form every scheme shares here and otherwise left to its analyzer",
+    "%s %s is held to the shape every document checks here and otherwise left to its analyzer",
     (_kind, _input, one) => {
+      const symbol = String(one.input["symbol"]);
       expect(outcome(one)).toBe(
-        declared(one) === "exit 2" && one.rule !== "symbol-form" ? "exit 2" : "nothing",
+        declared(one) === "exit 2" && (one.rule !== "symbol-form" || !hasRefShape(symbol))
+          ? "exit 2"
+          : "nothing",
       );
     },
   );
@@ -250,6 +257,68 @@ describe("an ignore entry", () => {
     );
 
     expect(held.records.map((one) => one.bound)).toEqual([""]);
+  });
+
+  it("binds the declaration of the file its reference's encoded path spells, its path written raw", () => {
+    const named = declaration("ts://./src/my%20file.ts#unused", "src/my file.ts");
+    const entry = { ...ENTRY, symbol: named.ref, path: "src/my file.ts" };
+    const held = readIgnoreFile(
+      hostWith({
+        [IGNORE_FILE]: JSON.stringify({ ignore: [entry, { ...entry, path: "src/my%20file.ts" }] }),
+      }),
+      ROOT,
+      [named],
+    );
+
+    expect(held.records.map((one) => one.bound)).toEqual([named.id, ""]);
+  });
+});
+
+describe("the reference an entry or a row names", () => {
+  const refusalOf = (entry: Readonly<Record<string, string>>, file = IGNORE_FILE): string => {
+    const array = file === IGNORE_FILE ? "ignore" : "baseline";
+    try {
+      const read = file === IGNORE_FILE ? readIgnoreFile : readBaseline;
+      const held = read(hostWith({ [file]: JSON.stringify({ [array]: [entry] }) }), ROOT, []);
+      return `read ${String(held.records.length)}`;
+    } catch (error: unknown) {
+      return error instanceof UsageError ? error.message : `not a usage refusal: ${String(error)}`;
+    }
+  };
+  const SHAPE_WANT =
+    "want a stable symbol reference in the shape every document checks, <scheme>://<scope>#<fragment>";
+
+  it.each([
+    ["a space outside a quoted component", "go://example.com/app#not a reference"],
+    ["a raw space in its scope", "go://example.com/a b#X"],
+    ["a raw percent sign", "proto://v1#my%protos/a.proto:file"],
+    ["an escape with lowercase digits", "go://example.com/a%2fb#X"],
+    ["a quoted component that never closes", "py://example/app#Headers.'content type"],
+    ["a wildcard outside a quoted component", "go://example.com/app#Catalog.*"],
+  ])("of another scheme is refused with the usage code when it holds %s", (_what, symbol) => {
+    for (const file of [IGNORE_FILE, BASELINE_FILE]) {
+      expect(refusalOf({ ...ENTRY, symbol }, file)).toBe(
+        `${file === IGNORE_FILE ? "ignore" : "baseline"} ${file}:1:${file === IGNORE_FILE ? "12" : "14"}: ${JSON.stringify(symbol)}: ${SHAPE_WANT}`,
+      );
+    }
+  });
+
+  it.each([
+    ["a space inside a quoted component", "py://example/app#Headers.'content type'"],
+    ["a percent-encoded scope", "go://example.com/app/c%2B%2B#Run"],
+    ["a form its own language does not define", "go://example.com/app#not..a..reference"],
+  ])("of another scheme is read and left to its analyzer when it holds %s", (_what, symbol) => {
+    expect(refusalOf({ ...ENTRY, symbol })).toBe("read 0");
+    expect(refusalOf({ ...ENTRY, symbol }, BASELINE_FILE)).toBe("read 0");
+  });
+
+  it("of this analyzer's scheme is refused with the usage code when it spells a path raw", () => {
+    expect(refusalOf({ ...ENTRY, symbol: "ts://./src/my file.ts#unused" })).toBe(
+      `ignore ${IGNORE_FILE}:1:12: "ts://./src/my file.ts#unused": ${SHAPE_WANT}`,
+    );
+    expect(refusalOf({ ...ENTRY, symbol: "ts://./src/a#b.ts#unused" })).toMatch(
+      /^ignore deadset-ignore\.json:1:12: "ts:\/\/\.\/src\/a#b\.ts#unused": want a stable symbol reference of ts:\/\//u,
+    );
   });
 });
 
@@ -484,7 +553,7 @@ describe("a record of another scheme than this analyzer's", () => {
 
   it("is read unread whatever its scheme: another language's, a schema reader's, or one no analyzer implements", () => {
     for (const symbol of [
-      "go://example.com/app#Catalog.*",
+      "go://example.com/app/c%2B%2B#Catalog.Lookup[K]",
       "proto://acme/v1/backup.proto#BackupRequest",
       "py://example/app.py#helper",
     ]) {

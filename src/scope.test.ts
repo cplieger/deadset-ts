@@ -16,6 +16,9 @@ import { UsageError } from "./usage.ts";
 
 const HOST = nodeHost();
 
+/** The Contract's bound on an input document, x-max-bytes of config.schema.json. */
+const DOCUMENT_BOUND = 16 << 20;
+
 /**
  * A directory of this test's own, removed afterwards. It is outside the committed
  * fixtures because another test hashes those to pin that a run edits nothing, and
@@ -140,23 +143,22 @@ describe("a scope document", () => {
     expect(thrown instanceof Error ? thrown.message : "").toContain(`scope: ${file}:`);
   });
 
-  it("is read at the longest length it admits and refused one character past it", () => {
+  it("is read at the Contract's document bound and refused one byte past it", () => {
     const dir = scratch();
     const file = join(dir, "scope.json");
     const text = '{"target":{"path":"."}}';
-    const longest = 1 << 20;
-    writeFileSync(file, text.padEnd(longest));
+    writeFileSync(file, text.padEnd(DOCUMENT_BOUND));
 
     expect(readScope(HOST, file).target.path).toBe(dir);
 
-    writeFileSync(file, text.padEnd(longest + 1));
+    writeFileSync(file, text.padEnd(DOCUMENT_BOUND + 1));
 
     expect(() => readScope(HOST, file)).toThrow(
-      new UsageError(`scope: ${file} is longer than ${String(longest)} characters`),
+      new UsageError(`scope: ${file}: holds more than ${String(DOCUMENT_BOUND)} bytes`),
     );
   });
 
-  it("is read no further than the bytes that settle its length", () => {
+  it("is read no further than one byte past the bound", () => {
     const dir = scratch();
     const file = join(dir, "scope.json");
     writeFileSync(file, '{"target":{"path":"."}}');
@@ -171,19 +173,46 @@ describe("a scope document", () => {
 
     readScope(host, file);
 
-    expect(limits).toEqual([3 * ((1 << 20) + 1)]);
+    expect(limits).toEqual([DOCUMENT_BOUND + 1]);
   });
 
-  it.each(["é", "😀", "\u{FFFD}"])(
-    "is refused past its longest length written in %s, whatever byte the read stops at",
-    (char) => {
+  it("is bounded in bytes, so one of two mebi three-byte characters, under the bound, is read", () => {
+    const dir = scratch();
+    const file = join(dir, "scope.json");
+    const id = "\u{20AC}".repeat(2 << 20);
+    writeFileSync(file, JSON.stringify({ target: { id, path: "." } }));
+
+    expect(readScope(HOST, file).target.id).toBe(id);
+  });
+
+  it("is read at the bound when one string of nearly 16 Mi characters fills it", () => {
+    const dir = scratch();
+    const file = join(dir, "scope.json");
+    const shape = (id: string): string => JSON.stringify({ target: { id, path: "." } });
+    const id = "x".repeat(DOCUMENT_BOUND - shape("").length);
+    writeFileSync(file, shape(id));
+
+    expect(readScope(HOST, file).target.id).toBe(id);
+  });
+
+  it.each(
+    ["é", "😀", "\u{FFFD}"].flatMap((char) =>
+      Array.from({ length: Buffer.byteLength(char) }, (_, shift) => [char, shift] as const),
+    ),
+  )(
+    "is refused past the bound written in %s after %i spaces, wherever in a character the read stops",
+    (char, shift) => {
       const dir = scratch();
       const file = join(dir, "scope.json");
-      const longest = 1 << 20;
-      writeFileSync(file, `{"target":{"path":"."}}${char.repeat(longest)}`);
+      const head = `{"target":{"path":"."}}${" ".repeat(shift)}`;
+      const width = Buffer.byteLength(char);
+      writeFileSync(
+        file,
+        head + char.repeat(Math.ceil((DOCUMENT_BOUND - head.length) / width) + 1),
+      );
 
       expect(() => readScope(HOST, file)).toThrow(
-        new UsageError(`scope: ${file} is longer than ${String(longest)} characters`),
+        new UsageError(`scope: ${file}: holds more than ${String(DOCUMENT_BOUND)} bytes`),
       );
     },
   );

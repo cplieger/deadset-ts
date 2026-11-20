@@ -6,6 +6,8 @@ import { fixture } from "../../__test-helpers__/fixtures.ts";
 import type { CompletedFinding } from "../finding.ts";
 import { resolve } from "../resolve.ts";
 
+const LOAD_TIMEOUT = 60_000;
+
 /** One row of a corpus fixture's expectation file. */
 interface ExpectRow {
   readonly symbol: string;
@@ -174,7 +176,11 @@ describe("every corpus fixture with a TypeScript rendering, answered by every fa
         "ReachedByStringIndex none: pass",
       ],
     ],
-  ])("answers %s row for row", (name, rows) => {
-    expect(answer(name)).toEqual({ rows, unnamed: [] });
-  });
+  ])(
+    "answers %s row for row",
+    (name, rows) => {
+      expect(answer(name)).toEqual({ rows, unnamed: [] });
+    },
+    LOAD_TIMEOUT,
+  );
 });

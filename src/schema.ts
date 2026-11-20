@@ -1,11 +1,12 @@
 /**
  * Holds a value to a JSON Schema the generator copies from the Contract. It evaluates the
  * keywords the Contract's schemas use; the schemas' patterns are written to match alike in
- * RE2 and in ECMAScript.
+ * RE2 and in ECMAScript, and are matched in linear time, as a value may be 16 Mi long.
  */
 
 import { isRecord, pointerOf, pointerSegments } from "./json-document.ts";
 import { bytewise } from "./text/compare.ts";
+import { expression } from "./text/expression.ts";
 
 /**
  * One value a schema refuses: its JSON Pointer, the keyword, and why. `member` names the
@@ -34,15 +35,25 @@ const KEYWORDS: ReadonlySet<string> = new Set([
   ...["allOf", "anyOf", "oneOf", "not", "if", "then", "else"],
 ]);
 
-const patterns = new Map<string, RegExp>();
+/** A control, a format character or a space past ASCII, which a message never holds as itself. */
+const INVISIBLE = /[\p{Cc}\p{Cf}\p{Z}]/gu;
+const JSON_ESCAPE = (point: number): string =>
+  Array.from(
+    { length: point > 0xffff ? 2 : 1 },
+    (_, unit) => `\\u${String.fromCodePoint(point).charCodeAt(unit).toString(16).padStart(4, "0")}`,
+  ).join("");
+const PATTERN_ESCAPE = (point: number): string => `\\u{${point.toString(16).toUpperCase()}}`;
 
-function pattern(source: string): RegExp {
-  let held = patterns.get(source);
-  if (held === undefined) {
-    held = new RegExp(source, "u");
-    patterns.set(source, held);
-  }
-  return held;
+/**
+ * A refusal's text with each invisible character past ASCII written as an escape of its
+ * own syntax, so the message is one line of visible text that still states the value or
+ * the expression.
+ */
+function visible(text: string, escape: (point: number) => string): string {
+  return text.replace(INVISIBLE, (character) => {
+    const point = character.codePointAt(0) ?? 0;
+    return point < 0x80 ? character : escape(point);
+  });
 }
 
 function typeOf(value: unknown): string {
@@ -207,8 +218,11 @@ class Checker {
       refuse("const", `${canonical(value)} is not ${canonical(schema["const"])}`);
     }
     if (typeof value === "string") {
-      if (typeof schema["pattern"] === "string" && !pattern(schema["pattern"]).test(value)) {
-        refuse("pattern", `${JSON.stringify(value)} does not match ${schema["pattern"]}`);
+      if (typeof schema["pattern"] === "string" && !expression(schema["pattern"]).test(value)) {
+        refuse(
+          "pattern",
+          `${visible(JSON.stringify(value), JSON_ESCAPE)} does not match ${visible(schema["pattern"], PATTERN_ESCAPE)}`,
+        );
       }
       if (typeof schema["minLength"] === "number" && codePoints(value) < schema["minLength"]) {
         refuse(

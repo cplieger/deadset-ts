@@ -9,6 +9,7 @@ import {
 } from "@typescript/native/ast";
 import { bindingsOf } from "../import-bindings.ts";
 import type { Site } from "../index/sites.ts";
+import { heldName } from "../inventory.ts";
 import { byPosition, renderPosition, type Position } from "../position.ts";
 import type { ConsumerSide, Reference, Resolution, Use } from "../references.ts";
 import { bytewise } from "../text/compare.ts";
@@ -237,7 +238,7 @@ function aloneIn(
   }
   const occurrences = new Map<string, Node[]>();
   for (const site of uses) {
-    const text = site.node.getText();
+    const text = heldName(site.node);
     const parent = site.node.parent;
     if (!bindings.has(text) || (isPropertyAccessExpression(parent) && parent.name === site.node)) {
       continue;

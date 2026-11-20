@@ -15,6 +15,7 @@ import {
 import type { InventorySymbol } from "../inventory.ts";
 import { positionKey, type Position } from "../position.ts";
 import { declarationKey, isRef } from "../ref.ts";
+import { expression } from "../text/expression.ts";
 import { UsageError } from "../usage.ts";
 
 /** Which document a suppression is written in, spelled as a finding carries it. */
@@ -109,15 +110,12 @@ export const CODE_FORM = /^DS[0-9]{4}$/u;
  */
 export const PATH_EXPRESSION = String.raw`^(?:[^/.\x00-\x1f\x7f][^/\x00-\x1f\x7f]*|\.[^/.\x00-\x1f\x7f][^/\x00-\x1f\x7f]*|\.\.[^/\x00-\x1f\x7f]+)(?:/(?:[^/.\x00-\x1f\x7f][^/\x00-\x1f\x7f]*|\.[^/.\x00-\x1f\x7f][^/\x00-\x1f\x7f]*|\.\.[^/\x00-\x1f\x7f]+))*$`;
 
-const PATH_FORM = new RegExp(PATH_EXPRESSION, "u");
+const PATH_FORM = expression(PATH_EXPRESSION);
 
 /** Whether one value is a path in the form an entry's `path` takes. */
 export function isEntryPath(value: string): boolean {
   return PATH_FORM.test(value);
 }
-
-/** The opening of every stable symbol reference: a scheme name and `://`. */
-export const REFERENCE_FORM = /^[a-z][a-z0-9]*:\/\/[^\r\n]+$/u;
 
 /** The scheme of this analyzer's language, which opens every reference it binds. */
 export const OWN_SCHEME = "ts://";

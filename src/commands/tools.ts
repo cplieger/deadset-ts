@@ -916,7 +916,7 @@ interface Lines {
   /** The command lines it runs that no word writes whole, as env runs its `-S` value's words before its later ones. */
   readonly texts?: readonly string[];
   /** The texts it replaces, in each word at {@link at}, with a part only the run knows. */
-  readonly replaced?: RegExp;
+  readonly replaced?: Replacer;
 }
 
 const NO_LINES: Lines = { at: new Map(), input: false };
@@ -931,7 +931,7 @@ interface Appending {
   /** Where each command it runs starts, `undefined` where it has an option or a construct no row reads. */
   readonly starts: readonly number[] | undefined;
   /** The texts it replaces with each path, in each word from `from` on. */
-  readonly replaced: RegExp | undefined;
+  readonly replaced: Replacer | undefined;
   readonly from: number;
   /** Where its command's words end and the paths it is handed begin, as at `parallel`'s `:::`. */
   readonly end?: number;
@@ -1104,15 +1104,53 @@ function dlxLines(words: readonly Word[], before: readonly Word[] = []): Lines {
  */
 const pnpmLines = subcommandLines(new Set(["exec", "dlx"]), dlxLines, PNPM);
 
-/** Each of `texts` as a pattern of each place it stands in a word, or `undefined` where none is. */
-function textsPattern(texts: readonly string[]): RegExp | undefined {
+/**
+ * What a launcher replaces in a word with a part only the run knows: a `String.replace`
+ * search value, which a global expression is as well.
+ */
+export interface Replacer {
+  [Symbol.replace](text: string, replacement: string): string;
+}
+
+/** A brace pair holding no brace or blank, `parallel`'s replacement string. */
+const BRACED = /\{[^{}\s]*\}/uy;
+
+/**
+ * Each place, leftmost first, where a `{…}` stands when `braced` holds or one of `texts`
+ * does, the first that matches there winning. The texts are compared as written rather than
+ * compiled into an expression, whose size the command's length would set.
+ */
+function literalReplacer(texts: readonly string[], braced: boolean): Replacer {
+  return {
+    [Symbol.replace](text: string, replacement: string): string {
+      let out = "";
+      let at = 0;
+      while (at < text.length) {
+        BRACED.lastIndex = at;
+        const length =
+          braced && BRACED.test(text) ? BRACED.lastIndex - at : matchedAt(texts, text, at);
+        if (length > 0) {
+          out += replacement;
+          at += length;
+        } else {
+          out += text[at] ?? "";
+          at += 1;
+        }
+      }
+      return out;
+    },
+  };
+}
+
+/** The length of the first of `texts` that stands at `at` in `text`, or 0. */
+function matchedAt(texts: readonly string[], text: string, at: number): number {
+  return texts.find((one) => text.startsWith(one, at))?.length ?? 0;
+}
+
+/** Each of `texts` at each place it stands in a word, or `undefined` where none is. */
+function textsPattern(texts: readonly string[]): Replacer | undefined {
   const written = texts.filter((text) => text !== "");
-  return written.length === 0
-    ? undefined
-    : new RegExp(
-        written.map((text) => text.replaceAll(/[.*+?^${}()|[\]\\]/gu, "\\$&")).join("|"),
-        "gu",
-      );
+  return written.length === 0 ? undefined : literalReplacer(written, false);
 }
 
 /** The words of an appending tool with an option or a construct no row reads. */
@@ -1259,12 +1297,11 @@ function parallel(words: readonly Word[]): Appending {
   if (command.some((word) => (word.value ?? word.written ?? word.text).includes("{="))) {
     return UNREAD;
   }
-  const texts = textsPattern(PARALLEL_REPLACING.flatMap((name) => read.values.get(name) ?? []));
   return {
     starts: [read.at],
-    replaced: new RegExp(
-      [/\{[^{}\s]*\}/u.source, ...(texts === undefined ? [] : [texts.source])].join("|"),
-      "gu",
+    replaced: literalReplacer(
+      PARALLEL_REPLACING.flatMap((name) => read.values.get(name) ?? []).filter((one) => one !== ""),
+      true,
     ),
     from: read.at,
     ...(end < 0 ? {} : { end }),
@@ -2060,7 +2097,7 @@ interface Chain {
   /** The words, each holding a text a launcher replaces with a path it finds dynamic, that text a part. */
   readonly words: readonly Word[];
   /** Each such text, by the place of the words it may stand in. */
-  readonly replaced: ReadonlyMap<number, RegExp>;
+  readonly replaced: ReadonlyMap<number, Replacer>;
   /** Where the words of an appending launcher's command end, as at `parallel`'s `:::`. */
   readonly end: number | undefined;
   /** The place of the first appending launcher with an option or a construct no row reads. */
@@ -2077,7 +2114,7 @@ interface Chain {
  */
 function chainOf(words: readonly Word[]): Chain {
   const read = [...words];
-  const replaced = new Map<number, RegExp>();
+  const replaced = new Map<number, Replacer>();
   const programs = new Map<number, Word>();
   let dynamic: number | undefined;
   let end: number | undefined;
@@ -2157,7 +2194,7 @@ interface FileOperands {
   /** Whether a runtime runs its standard input as its entry, as `node` given no file does. */
   readonly stdin: boolean;
   /** The texts, by the place of each word they may stand in, a launcher replaces with each path it finds. */
-  readonly replaced: ReadonlyMap<number, RegExp>;
+  readonly replaced: ReadonlyMap<number, Replacer>;
   /** The places, each from one word up to before another, whose words joined by blanks it hands a shell as one command line. */
   readonly joined: readonly (readonly [number, number])[];
   /** The command lines it hands a shell that no word writes whole. */

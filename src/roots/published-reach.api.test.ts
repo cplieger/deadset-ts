@@ -243,4 +243,44 @@ describe("the published API of a library", () => {
     },
     LOAD_TIMEOUT,
   );
+
+  it(
+    "holds, as guessed, the declaration an unanswered type name spells with an escape",
+    () => {
+      const text = [
+        String.raw`export function take(value: H\u0069dden): void {`,
+        "  void value;",
+        "}",
+        "interface Hidden {",
+        "  h: number;",
+        "}",
+        "",
+      ].join("\n");
+      const at = text.indexOf(": H") + 1;
+      const analyzed = analyzeProject(
+        { "package.json": MANIFEST, "src/index.ts": text },
+        {
+          roots: { patterns: [], entryFiles: [], testFiles: [], publishedAPI: true },
+          panicsOn: (accessor, locations) =>
+            accessor === "getSymbolAtLocation" &&
+            locations.some((location) => location.endsWith(`/src/index.ts:${String(at)}`)),
+        },
+      );
+      const refs = new Map(
+        (analyzed.inventories[0]?.symbols ?? []).map((symbol) => [
+          symbol.id,
+          symbol.ref.slice("ts://@example/lib/src/index.ts#".length),
+        ]),
+      );
+      const [rooted] = analyzed.roots;
+
+      expect(rooted?.unanswered.map((id) => refs.get(id) ?? id)).toEqual(["Hidden"]);
+      expect(
+        rooted?.liveUnderReachability
+          .filter((root) => root.kind === "published-api")
+          .map((root) => refs.get(root.id) ?? root.id),
+      ).toEqual(["take", "Hidden", "Hidden.h"]);
+    },
+    LOAD_TIMEOUT,
+  );
 });

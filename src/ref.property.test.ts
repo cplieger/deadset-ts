@@ -1,7 +1,7 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { analyzeProject } from "../__test-helpers__/projects.ts";
-import { isRef, renderRef, type Module } from "./ref.ts";
+import { isRef, readPathSegment, renderRef, type Module } from "./ref.ts";
 
 /**
  * The two references the enumeration must render for the generated tree's one
@@ -142,6 +142,93 @@ describe("the package component", () => {
 });
 
 /**
+ * A file's path may hold any character its file system admits, so the scope spells every
+ * segment as `symbol-ref.md` "Path segments" states: a character of the source-path set as
+ * itself, and every other byte, `%` included, percent-encoded with uppercase digits.
+ */
+describe("the path of a scope", () => {
+  const MODULE = { of: "module" } as const;
+  /** The whitespace of the grammar's rule 5 past U+00A0 and the Bidi_Control characters, which the set encodes. */
+  const wide = [
+    0x1680, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000, 0xfeff, 0x061c, 0x200e, 0x200f, 0x202a, 0x202b,
+    0x202c, 0x202d, 0x202e, 0x2066, 0x2067, 0x2068, 0x2069,
+  ];
+  /** RFC 3986's encoding of a character outside the set: `encodeURIComponent` leaves `*` alone. */
+  const expected = (segment: string): string =>
+    [...segment]
+      .map((character) => {
+        const code = character.codePointAt(0) ?? 0;
+        const kept =
+          code > 0x20 &&
+          (code < 0x7f || code > 0xa0) &&
+          (code < 0x2000 || code > 0x200a) &&
+          !wide.includes(code) &&
+          !"#%*?/".includes(character);
+        return kept ? character : character === "*" ? "%2A" : encodeURIComponent(character);
+      })
+      .join("");
+  /** The characters either side of each range the set encodes past ASCII, drawn often. */
+  const boundary = fc.constantFrom(
+    ..."\u007e\u007f\u0080\u0085\u009f\u00a0\u00a1\u167f\u1680\u1681\u1fff\u2000\u200a\u200b",
+    ..."\u2027\u2028\u2029\u202a\u202e\u202f\u2030\u205e\u205f\u2060\u2fff\u3000\u3001\ufeff",
+    ..."\u061b\u061c\u061d\u200d\u200e\u200f\u2065\u2066\u2069\u206a",
+  );
+  const segment = fc
+    .string({
+      unit: fc.oneof(
+        { weight: 3, arbitrary: fc.string({ unit: "binary", minLength: 1, maxLength: 1 }) },
+        boundary,
+      ),
+      minLength: 1,
+      maxLength: 8,
+    })
+    .filter((one) => !one.includes("/"));
+  const spelledPath = (path: string): readonly string[] =>
+    renderRef({ package: ".", path }, MODULE).slice("ts://./".length, -"#".length).split("/");
+
+  it("spells every segment as RFC 3986 encodes the bytes outside its set, and reads it back", () => {
+    fc.assert(
+      fc.property(fc.array(segment, { minLength: 1, maxLength: 4 }), (segments) => {
+        const raw = [...segments.slice(0, -1), `${segments.at(-1) ?? ""}.ts`];
+        const path = raw.join("/");
+        const spelled = spelledPath(path);
+
+        expect(isRef(renderRef({ package: ".", path }, MODULE)), path).toBe(true);
+        expect(spelled).toEqual(raw.map(expected));
+        expect(spelled.map((one) => Buffer.from(readPathSegment(one) ?? []).toString())).toEqual(
+          raw,
+        );
+      }),
+      { numRuns: 500 },
+    );
+  });
+
+  it("keeps two paths apart, a lone surrogate's included, and spells each as a reference", () => {
+    const unit = fc.oneof(
+      { weight: 4, arbitrary: fc.string({ unit: "binary", minLength: 1, maxLength: 1 }) },
+      fc.integer({ min: 0xd800, max: 0xdfff }).map((code) => String.fromCharCode(code)),
+    );
+    const name = fc
+      .string({ unit, minLength: 1, maxLength: 6 })
+      .filter((one) => !one.includes("/"));
+    fc.assert(
+      fc.property(name, name, (one, other) => {
+        const ref = renderRef({ package: ".", path: `${one}.ts` }, MODULE);
+
+        expect(isRef(ref), ref).toBe(true);
+        expect(spelledPath(`${one}.ts`).every((part) => readPathSegment(part) !== undefined)).toBe(
+          true,
+        );
+        if (one !== other) {
+          expect(renderRef({ package: ".", path: `${other}.ts` }, MODULE)).not.toBe(ref);
+        }
+      }),
+      { numRuns: 500 },
+    );
+  });
+});
+
+/**
  * Property dead-code-suite/P28: for any pair of symbols with the same name in the two
  * languages, their identifiers differ and each finding names its language.
  *
@@ -170,7 +257,7 @@ describe("language namespacing", () => {
         (chain, parameter) => {
           const ts = renderRef(SHARED, {
             of: "declaration",
-            chain: chain.map((text) => ({ text, computed: false })),
+            chain: chain.map((text) => ({ text, kind: "key" as const })),
             static: false,
             ...(parameter === undefined ? {} : { typeParameter: parameter }),
           });
